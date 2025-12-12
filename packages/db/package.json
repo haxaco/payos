@@ -1,0 +1,12 @@
+{
+  "name": "@payos/db",
+  "version": "0.1.0",
+  "scripts": {
+    "db:migrate": "echo 'Migrations are applied via Supabase MCP'",
+    "db:seed": "echo 'Seeds are applied via Supabase MCP'"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
+

@@ -1,0 +1,3953 @@
+# PayOS PoC — Product Requirements Document (PRD)
+
+**Version:** 1.1  
+**Date:** December 11, 2025  
+**Status:** Ready for Development  
+
+---
+
+## Executive Summary
+
+PayOS is a B2B stablecoin payout operating system for LATAM. This PRD covers the PoC implementation that demonstrates:
+
+1. **Core payment infrastructure** — Quotes, transfers, internal movements
+2. **Agent system** — AI agents as first-class actors with KYA verification
+3. **Money streaming** — Continuous per-second payments
+4. **Partner dashboard** — Full UI for managing accounts, agents, and payments
+
+### Implementation Phases
+
+| Phase | Focus | External Services | Timeline |
+|-------|-------|-------------------|----------|
+| **Phase 1** | Full PoC with mocked externals | Supabase only | Weekend 1-2 |
+| **Phase 2** | Circle sandbox integration | + Circle Sandbox | Weekend 3 |
+| **Phase 3** | On-chain streaming | + Superfluid Testnet | Weekend 4+ |
+
+**Phase 1 is fully functional and demo-ready.** Phases 2-3 add blockchain "realness" but aren't required for a compelling demo.
+
+**Tech Stack:** Next.js, TypeScript, Supabase (Postgres), Hono, Vercel, Railway  
+
+---
+
+## Table of Contents
+
+1. [Product Overview](#1-product-overview)
+2. [Technical Architecture](#2-technical-architecture)
+3. [External Services & Phasing](#3-external-services--phasing)
+4. [Data Models](#4-data-models)
+5. [Epic 1: Foundation & Multi-Tenancy](#epic-1-foundation--multi-tenancy)
+6. [Epic 2: Account System](#epic-2-account-system)
+7. [Epic 3: Agent System & KYA](#epic-3-agent-system--kya)
+8. [Epic 4: Transfers & Payments](#epic-4-transfers--payments)
+9. [Epic 5: Money Streaming](#epic-5-money-streaming)
+10. [Epic 6: Reports & Documents](#epic-6-reports--documents)
+11. [Epic 7: Dashboard UI](#epic-7-dashboard-ui)
+12. [Implementation Schedule](#implementation-schedule)
+13. [API Reference](#api-reference)
+14. [Testing & Demo Scenarios](#testing--demo-scenarios)
+
+---
+
+## 1. Product Overview
+
+### 1.1 What is PayOS?
+
+PayOS enables fintechs to offer stablecoin-powered payouts through white-label infrastructure. Partners integrate via API, their customers see a seamless experience.
+
+### 1.2 Core Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Tenant** | A fintech partner using PayOS |
+| **Account** | Person or Business entity that holds funds |
+| **Agent** | AI actor registered under an Account |
+| **Transfer** | One-time movement of funds |
+| **Stream** | Continuous per-second payment flow |
+| **KYC/KYB** | Identity verification for persons/businesses |
+| **KYA** | Identity verification for AI agents |
+
+### 1.3 Key Differentiators
+
+1. **KYA Framework** — Agents have formal verification tiers
+2. **Money Streaming** — Real-time payments, not just batches
+3. **Agent-Native** — Agents can initiate and manage payments
+4. **LATAM Focus** — Built for Pix, SPEI, local rails
+
+### 1.4 PoC Success Criteria
+
+- [ ] Partner can create accounts (Person/Business)
+- [ ] Partner can register agents under accounts
+- [ ] User or Agent can create transfers
+- [ ] User or Agent can create and manage streams
+- [ ] Transfers settle through mock payout provider
+- [ ] Stream balances update in real-time
+- [ ] Full dashboard UI is functional
+- [ ] All operations < 500ms latency
+
+---
+
+## 2. Technical Architecture
+
+### 2.1 Stack Overview
+
+**Architecture: Monorepo with Separate Services**
+
+The UI (Dashboard) and API are separate applications that can be deployed independently. They share types and utilities through internal packages.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     DASHBOARD (UI)                          │
+│  Next.js 14 + React + TypeScript + Tailwind                 │
+│  Deployed on Vercel                                         │
+│  Port: 3000 (dev)                                           │
+│  Calls API via NEXT_PUBLIC_API_URL                          │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼ HTTP/REST
+┌─────────────────────────────────────────────────────────────┐
+│                     API SERVER                               │
+│  Node.js + Hono + TypeScript                                │
+│  Deployed on Railway / Render / Fly.io                      │
+│  Port: 4000 (dev)                                           │
+│  /v1/* endpoints                                            │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     DATABASE                                 │
+│  Supabase (Postgres + RLS + Auth)                           │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  EXTERNAL SERVICES                           │
+│  Circle (mock) │ Payout Provider (mock) │ Superfluid        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Monorepo Structure
+
+Using **Turborepo** for monorepo management with **pnpm** workspaces.
+
+```
+payos/
+├── apps/
+│   ├── dashboard/                # Next.js Dashboard UI
+│   │   ├── app/
+│   │   │   ├── (dashboard)/      # Authenticated routes
+│   │   │   │   ├── accounts/
+│   │   │   │   │   ├── page.tsx
+│   │   │   │   │   └── [id]/
+│   │   │   │   │       └── page.tsx
+│   │   │   │   ├── agents/
+│   │   │   │   │   ├── page.tsx
+│   │   │   │   │   └── [id]/
+│   │   │   │   │       └── page.tsx
+│   │   │   │   ├── transactions/
+│   │   │   │   │   └── page.tsx
+│   │   │   │   ├── streams/
+│   │   │   │   │   └── page.tsx
+│   │   │   │   ├── reports/
+│   │   │   │   │   └── page.tsx
+│   │   │   │   ├── treasury/
+│   │   │   │   │   └── page.tsx
+│   │   │   │   └── layout.tsx
+│   │   │   ├── layout.tsx
+│   │   │   └── page.tsx
+│   │   ├── components/
+│   │   │   ├── ui/               # Shadcn components
+│   │   │   ├── layout/
+│   │   │   │   ├── Sidebar.tsx
+│   │   │   │   ├── Header.tsx
+│   │   │   │   └── DashboardLayout.tsx
+│   │   │   ├── accounts/
+│   │   │   │   ├── AccountsTable.tsx
+│   │   │   │   ├── AccountDetail.tsx
+│   │   │   │   ├── AccountOverview.tsx
+│   │   │   │   ├── AccountTransactions.tsx
+│   │   │   │   ├── AccountStreams.tsx
+│   │   │   │   ├── AccountAgents.tsx
+│   │   │   │   └── AccountDocuments.tsx
+│   │   │   ├── agents/
+│   │   │   │   ├── AgentsTable.tsx
+│   │   │   │   ├── AgentDetail.tsx
+│   │   │   │   ├── AgentOverview.tsx
+│   │   │   │   ├── AgentStreams.tsx
+│   │   │   │   ├── AgentAuthentication.tsx
+│   │   │   │   ├── AgentKYA.tsx
+│   │   │   │   └── AgentActivity.tsx
+│   │   │   ├── streams/
+│   │   │   │   ├── StreamsTable.tsx
+│   │   │   │   ├── StreamHealthBadge.tsx
+│   │   │   │   ├── StreamRunway.tsx
+│   │   │   │   └── BalanceBreakdown.tsx
+│   │   │   ├── payments/
+│   │   │   │   ├── NewPaymentModal.tsx
+│   │   │   │   └── TransactionsTable.tsx
+│   │   │   └── reports/
+│   │   │       ├── ReportsPage.tsx
+│   │   │       ├── DocumentsTab.tsx
+│   │   │       └── ExportModal.tsx
+│   │   ├── lib/
+│   │   │   ├── api-client.ts     # API client wrapper
+│   │   │   └── utils.ts
+│   │   ├── hooks/
+│   │   │   ├── use-accounts.ts
+│   │   │   ├── use-agents.ts
+│   │   │   ├── use-streams.ts
+│   │   │   └── use-transfers.ts
+│   │   ├── package.json
+│   │   ├── next.config.js
+│   │   ├── tailwind.config.js
+│   │   └── tsconfig.json
+│   │
+│   └── api/                      # Hono API Server
+│       ├── src/
+│       │   ├── index.ts          # Entry point
+│       │   ├── app.ts            # Hono app setup
+│       │   ├── routes/
+│       │   │   ├── index.ts      # Route aggregator
+│       │   │   ├── accounts.ts
+│       │   │   ├── agents.ts
+│       │   │   ├── transfers.ts
+│       │   │   ├── streams.ts
+│       │   │   ├── quotes.ts
+│       │   │   └── reports.ts
+│       │   ├── middleware/
+│       │   │   ├── auth.ts       # API key / OAuth validation
+│       │   │   ├── tenant.ts     # Tenant resolution
+│       │   │   ├── error.ts      # Error handling
+│       │   │   └── logging.ts    # Request logging
+│       │   ├── services/
+│       │   │   ├── accounts.ts
+│       │   │   ├── agents.ts
+│       │   │   ├── transfers.ts
+│       │   │   ├── streams.ts
+│       │   │   ├── balances.ts
+│       │   │   ├── limits.ts
+│       │   │   └── reports.ts
+│       │   ├── providers/
+│       │   │   ├── circle/
+│       │   │   ├── payout/
+│       │   │   └── superfluid/
+│       │   ├── workers/
+│       │   │   ├── transfer-processor.ts
+│       │   │   ├── stream-health-monitor.ts
+│       │   │   └── usage-settlement.ts
+│       │   ├── db/
+│       │   │   ├── client.ts     # Supabase client
+│       │   │   └── queries/      # Typed queries
+│       │   └── utils/
+│       │       ├── errors.ts
+│       │       ├── response.ts
+│       │       └── validation.ts
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── Dockerfile
+│
+├── packages/
+│   ├── types/                    # Shared TypeScript types
+│   │   ├── src/
+│   │   │   ├── account.ts
+│   │   │   ├── agent.ts
+│   │   │   ├── transfer.ts
+│   │   │   ├── stream.ts
+│   │   │   ├── api.ts            # API request/response types
+│   │   │   └── index.ts
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   │
+│   ├── utils/                    # Shared utilities
+│   │   ├── src/
+│   │   │   ├── currency.ts
+│   │   │   ├── dates.ts
+│   │   │   ├── validation.ts
+│   │   │   └── index.ts
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   │
+│   └── db/                       # Database schema & migrations
+│       ├── migrations/
+│       │   ├── 001_initial_schema.sql
+│       │   ├── 002_agents.sql
+│       │   ├── 003_streams.sql
+│       │   └── 004_reports.sql
+│       ├── seed.sql
+│       ├── package.json
+│       └── README.md
+│
+├── turbo.json                    # Turborepo config
+├── pnpm-workspace.yaml           # Workspace config
+├── package.json                  # Root package.json
+├── .env.example                  # Environment template
+└── README.md
+```
+
+### 2.3 Workspace Configuration
+
+```yaml
+# pnpm-workspace.yaml
+packages:
+  - 'apps/*'
+  - 'packages/*'
+```
+
+```json
+// turbo.json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env"],
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {},
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "db:seed": {
+      "cache": false
+    }
+  }
+}
+```
+
+### 2.4 Package Configurations
+
+```json
+// apps/dashboard/package.json
+{
+  "name": "@payos/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@payos/types": "workspace:*",
+    "@payos/utils": "workspace:*",
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@tanstack/react-query": "^5.0.0",
+    "zustand": "^4.4.0"
+  }
+}
+```
+
+```json
+// apps/api/package.json
+{
+  "name": "@payos/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@payos/types": "workspace:*",
+    "@payos/utils": "workspace:*",
+    "@supabase/supabase-js": "^2.38.0",
+    "@hono/node-server": "^1.3.0",
+    "hono": "^3.11.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "tsup": "^8.0.0"
+  }
+}
+```
+
+```json
+// packages/types/package.json
+{
+  "name": "@payos/types",
+  "version": "0.1.0",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch"
+  }
+}
+```
+
+### 2.5 Environment Variables
+
+```env
+# Root .env.example
+# Copy to .env and fill in values
+# Each app will read from root .env or their own .env.local
+
+# ============================================
+# DATABASE (used by API)
+# ============================================
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+
+# ============================================
+# API SERVER (apps/api)
+# ============================================
+API_PORT=4000
+API_HOST=0.0.0.0
+NODE_ENV=development
+
+# CORS - Dashboard origin(s)
+CORS_ORIGINS=http://localhost:3000,https://dashboard.payos.dev
+
+# External Services
+CIRCLE_API_KEY=
+CIRCLE_API_URL=https://api-sandbox.circle.com
+
+# Superfluid (Base Sepolia)
+SUPERFLUID_HOST_ADDRESS=0x...
+SUPERFLUID_USDC_ADDRESS=0x...
+SUPERFLUID_USDCX_ADDRESS=0x...
+
+# ============================================
+# DASHBOARD (apps/dashboard)
+# ============================================
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+### 2.6 API Client (Dashboard)
+
+The dashboard communicates with the API server via a typed client.
+
+```typescript
+// apps/dashboard/lib/api-client.ts
+import type {
+  Account,
+  Agent,
+  Transfer,
+  Stream,
+  ApiResponse,
+  PaginatedResponse,
+  CreateAccountRequest,
+  CreateAgentRequest,
+  CreateTransferRequest,
+  CreateStreamRequest,
+} from '@payos/types';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+class ApiClient {
+  private apiKey: string | null = null;
+
+  setApiKey(key: string) {
+    this.apiKey = key;
+  }
+
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
+    }
+
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Request failed' }));
+      throw new ApiError(error.message || 'Request failed', response.status, error);
+    }
+
+    return response.json();
+  }
+
+  // ============================================
+  // ACCOUNTS
+  // ============================================
+  
+  async getAccounts(params?: {
+    type?: 'person' | 'business';
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<Account>> {
+    const searchParams = new URLSearchParams();
+    if (params?.type) searchParams.set('type', params.type);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    
+    const query = searchParams.toString();
+    return this.request(`/v1/accounts${query ? `?${query}` : ''}`);
+  }
+
+  async getAccount(id: string): Promise<ApiResponse<Account>> {
+    return this.request(`/v1/accounts/${id}`);
+  }
+
+  async createAccount(data: CreateAccountRequest): Promise<ApiResponse<Account>> {
+    return this.request('/v1/accounts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAccountBalance(id: string): Promise<ApiResponse<AccountBalance>> {
+    return this.request(`/v1/accounts/${id}/balances`);
+  }
+
+  async getAccountAgents(id: string): Promise<ApiResponse<Agent[]>> {
+    return this.request(`/v1/accounts/${id}/agents`);
+  }
+
+  async getAccountStreams(id: string): Promise<ApiResponse<Stream[]>> {
+    return this.request(`/v1/accounts/${id}/streams`);
+  }
+
+  // ============================================
+  // AGENTS
+  // ============================================
+
+  async getAgents(params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+  }): Promise<PaginatedResponse<Agent>> {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    
+    const query = searchParams.toString();
+    return this.request(`/v1/agents${query ? `?${query}` : ''}`);
+  }
+
+  async getAgent(id: string): Promise<ApiResponse<Agent>> {
+    return this.request(`/v1/agents/${id}`);
+  }
+
+  async createAgent(data: CreateAgentRequest): Promise<ApiResponse<Agent>> {
+    return this.request('/v1/agents', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAgentStreams(id: string): Promise<ApiResponse<Stream[]>> {
+    return this.request(`/v1/agents/${id}/streams`);
+  }
+
+  async suspendAgent(id: string): Promise<ApiResponse<Agent>> {
+    return this.request(`/v1/agents/${id}/suspend`, { method: 'POST' });
+  }
+
+  async activateAgent(id: string): Promise<ApiResponse<Agent>> {
+    return this.request(`/v1/agents/${id}/activate`, { method: 'POST' });
+  }
+
+  // ============================================
+  // TRANSFERS
+  // ============================================
+
+  async getTransfers(params?: {
+    status?: string;
+    type?: string;
+    fromDate?: string;
+    toDate?: string;
+    page?: number;
+  }): Promise<PaginatedResponse<Transfer>> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.type) searchParams.set('type', params.type);
+    if (params?.page) searchParams.set('page', String(params.page));
+    
+    const query = searchParams.toString();
+    return this.request(`/v1/transfers${query ? `?${query}` : ''}`);
+  }
+
+  async getTransfer(id: string): Promise<ApiResponse<Transfer>> {
+    return this.request(`/v1/transfers/${id}`);
+  }
+
+  async createTransfer(
+    data: CreateTransferRequest,
+    idempotencyKey?: string
+  ): Promise<ApiResponse<Transfer>> {
+    const headers: HeadersInit = {};
+    if (idempotencyKey) {
+      headers['X-Idempotency-Key'] = idempotencyKey;
+    }
+    return this.request('/v1/transfers', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createInternalTransfer(
+    data: { fromAccountId: string; toAccountId: string; amount: number; description?: string },
+    idempotencyKey?: string
+  ): Promise<ApiResponse<Transfer>> {
+    const headers: HeadersInit = {};
+    if (idempotencyKey) {
+      headers['X-Idempotency-Key'] = idempotencyKey;
+    }
+    return this.request('/v1/internal-transfers', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ============================================
+  // QUOTES
+  // ============================================
+
+  async getQuote(data: {
+    fromCurrency: string;
+    toCurrency: string;
+    amount: number;
+  }): Promise<ApiResponse<Quote>> {
+    return this.request('/v1/quotes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ============================================
+  // STREAMS
+  // ============================================
+
+  async getStreams(params?: {
+    status?: string;
+    page?: number;
+  }): Promise<PaginatedResponse<Stream>> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    
+    const query = searchParams.toString();
+    return this.request(`/v1/streams${query ? `?${query}` : ''}`);
+  }
+
+  async getStream(id: string): Promise<ApiResponse<Stream>> {
+    return this.request(`/v1/streams/${id}`);
+  }
+
+  async createStream(data: CreateStreamRequest): Promise<ApiResponse<Stream>> {
+    return this.request('/v1/streams', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async pauseStream(id: string): Promise<ApiResponse<Stream>> {
+    return this.request(`/v1/streams/${id}/pause`, { method: 'POST' });
+  }
+
+  async resumeStream(id: string): Promise<ApiResponse<Stream>> {
+    return this.request(`/v1/streams/${id}/resume`, { method: 'POST' });
+  }
+
+  async cancelStream(id: string): Promise<ApiResponse<Stream>> {
+    return this.request(`/v1/streams/${id}/cancel`, { method: 'POST' });
+  }
+
+  async topUpStream(id: string, amount: number): Promise<ApiResponse<Stream>> {
+    return this.request(`/v1/streams/${id}/top-up`, {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+  }
+
+  async withdrawFromStream(id: string, amount?: number): Promise<ApiResponse<Transfer>> {
+    return this.request(`/v1/streams/${id}/withdraw`, {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+  }
+
+  // ============================================
+  // REPORTS
+  // ============================================
+
+  async getReports(params?: { accountId?: string }): Promise<ApiResponse<Report[]>> {
+    const searchParams = new URLSearchParams();
+    if (params?.accountId) searchParams.set('accountId', params.accountId);
+    
+    const query = searchParams.toString();
+    return this.request(`/v1/reports${query ? `?${query}` : ''}`);
+  }
+
+  async generateReport(data: {
+    type: 'statement' | 'transactions' | 'streams';
+    accountId?: string;
+    periodStart: string;
+    periodEnd: string;
+    format: 'pdf' | 'csv' | 'json';
+  }): Promise<ApiResponse<Report>> {
+    return this.request('/v1/reports/generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+}
+
+// Singleton instance
+export const apiClient = new ApiClient();
+
+// Error class
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+```
+
+### 2.7 React Query Hooks (Dashboard)
+
+```typescript
+// apps/dashboard/hooks/use-accounts.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/lib/api-client';
+
+export function useAccounts(params?: { type?: string; search?: string }) {
+  return useQuery({
+    queryKey: ['accounts', params],
+    queryFn: () => apiClient.getAccounts(params),
+  });
+}
+
+export function useAccount(id: string) {
+  return useQuery({
+    queryKey: ['accounts', id],
+    queryFn: () => apiClient.getAccount(id),
+    enabled: !!id,
+  });
+}
+
+export function useAccountBalance(id: string) {
+  return useQuery({
+    queryKey: ['accounts', id, 'balance'],
+    queryFn: () => apiClient.getAccountBalance(id),
+    enabled: !!id,
+    refetchInterval: 30000, // Refresh every 30s for streaming balances
+  });
+}
+
+export function useAccountAgents(id: string) {
+  return useQuery({
+    queryKey: ['accounts', id, 'agents'],
+    queryFn: () => apiClient.getAccountAgents(id),
+    enabled: !!id,
+  });
+}
+
+export function useAccountStreams(id: string) {
+  return useQuery({
+    queryKey: ['accounts', id, 'streams'],
+    queryFn: () => apiClient.getAccountStreams(id),
+    enabled: !!id,
+    refetchInterval: 10000, // Refresh every 10s for stream updates
+  });
+}
+
+export function useCreateAccount() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: apiClient.createAccount.bind(apiClient),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
+}
+```
+
+```typescript
+// apps/dashboard/hooks/use-streams.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/lib/api-client';
+
+export function useStreams(params?: { status?: string }) {
+  return useQuery({
+    queryKey: ['streams', params],
+    queryFn: () => apiClient.getStreams(params),
+  });
+}
+
+export function useStream(id: string) {
+  return useQuery({
+    queryKey: ['streams', id],
+    queryFn: () => apiClient.getStream(id),
+    enabled: !!id,
+    refetchInterval: 10000, // Keep stream data fresh
+  });
+}
+
+export function useCreateStream() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: apiClient.createStream.bind(apiClient),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['streams'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Balance changed
+    },
+  });
+}
+
+export function usePauseStream() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id: string) => apiClient.pauseStream(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['streams', id] });
+      queryClient.invalidateQueries({ queryKey: ['streams'] });
+    },
+  });
+}
+
+export function useTopUpStream() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, amount }: { id: string; amount: number }) => 
+      apiClient.topUpStream(id, amount),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['streams', id] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] }); // Balance changed
+    },
+  });
+}
+```
+
+### 2.8 API Server Setup (Hono)
+
+```typescript
+// apps/api/src/app.ts
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { prettyJSON } from 'hono/pretty-json';
+
+import { authMiddleware } from './middleware/auth';
+import { errorHandler } from './middleware/error';
+
+import accountsRouter from './routes/accounts';
+import agentsRouter from './routes/agents';
+import transfersRouter from './routes/transfers';
+import internalTransfersRouter from './routes/internal-transfers';
+import streamsRouter from './routes/streams';
+import quotesRouter from './routes/quotes';
+import reportsRouter from './routes/reports';
+
+const app = new Hono();
+
+// Global middleware
+app.use('*', logger());
+app.use('*', prettyJSON());
+app.use('*', cors({
+  origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+  allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key'],
+}));
+
+// Health check (no auth)
+app.get('/health', (c) => c.json({ 
+  status: 'ok', 
+  timestamp: new Date().toISOString(),
+  version: '0.1.0'
+}));
+
+// API v1 routes (with auth)
+const v1 = new Hono();
+v1.use('*', authMiddleware);
+
+v1.route('/accounts', accountsRouter);
+v1.route('/agents', agentsRouter);
+v1.route('/transfers', transfersRouter);
+v1.route('/internal-transfers', internalTransfersRouter);
+v1.route('/streams', streamsRouter);
+v1.route('/quotes', quotesRouter);
+v1.route('/reports', reportsRouter);
+
+app.route('/v1', v1);
+
+// Global error handler
+app.onError(errorHandler);
+
+// 404 handler
+app.notFound((c) => c.json({ error: 'Not found' }, 404));
+
+export default app;
+```
+
+```typescript
+// apps/api/src/index.ts
+import { serve } from '@hono/node-server';
+import app from './app';
+
+const port = parseInt(process.env.API_PORT || '4000');
+const host = process.env.API_HOST || '0.0.0.0';
+
+console.log(`
+╔════════════════════════════════════════════╗
+║           PayOS API Server                 ║
+╠════════════════════════════════════════════╣
+║  🚀 Starting on http://${host}:${port}         ║
+║  📚 Health: http://${host}:${port}/health      ║
+║  🔒 Environment: ${process.env.NODE_ENV || 'development'}           ║
+╚════════════════════════════════════════════╝
+`);
+
+serve({
+  fetch: app.fetch,
+  port,
+  hostname: host,
+});
+```
+
+```typescript
+// apps/api/src/middleware/auth.ts
+import { Context, Next } from 'hono';
+import { createClient } from '../db/client';
+
+export interface RequestContext {
+  tenantId: string;
+  actorType: 'user' | 'agent';
+  actorId: string;
+  actorName: string;
+}
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    ctx: RequestContext;
+  }
+}
+
+export async function authMiddleware(c: Context, next: Next) {
+  const authHeader = c.req.header('Authorization');
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    return c.json({ error: 'Missing or invalid authorization header' }, 401);
+  }
+  
+  const token = authHeader.slice(7);
+  const supabase = createClient();
+  
+  // Partner API key (pk_test_xxx)
+  if (token.startsWith('pk_')) {
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('id, name')
+      .eq('api_key', token)
+      .eq('status', 'active')
+      .single();
+    
+    if (error || !tenant) {
+      return c.json({ error: 'Invalid API key' }, 401);
+    }
+    
+    c.set('ctx', {
+      tenantId: tenant.id,
+      actorType: 'user',
+      actorId: 'api_user',
+      actorName: 'API User',
+    });
+    
+    return next();
+  }
+  
+  // Agent token (agent_xxx)
+  if (token.startsWith('agent_')) {
+    const { data: agent, error } = await supabase
+      .from('agents')
+      .select('id, name, tenant_id, status, kya_tier')
+      .eq('auth_client_id', token)
+      .single();
+    
+    if (error || !agent) {
+      return c.json({ error: 'Invalid agent token' }, 401);
+    }
+    
+    if (agent.status !== 'active') {
+      return c.json({ error: 'Agent is not active', status: agent.status }, 403);
+    }
+    
+    c.set('ctx', {
+      tenantId: agent.tenant_id,
+      actorType: 'agent',
+      actorId: agent.id,
+      actorName: agent.name,
+    });
+    
+    return next();
+  }
+  
+  return c.json({ error: 'Invalid token format' }, 401);
+}
+```
+
+### 2.9 Development Workflow
+
+```bash
+# Initial setup
+git clone <repo>
+cd payos
+pnpm install
+
+# Start everything in dev mode (runs both apps)
+pnpm dev
+
+# Or run specific apps
+pnpm --filter @payos/dashboard dev    # Dashboard on :3000
+pnpm --filter @payos/api dev          # API on :4000
+
+# Build all packages and apps
+pnpm build
+
+# Type check everything
+pnpm typecheck
+
+# Lint everything
+pnpm lint
+
+# Database operations
+pnpm --filter @payos/db migrate       # Run migrations
+pnpm --filter @payos/db seed          # Seed data
+
+# Add a dependency to a specific package
+pnpm --filter @payos/dashboard add zustand
+pnpm --filter @payos/api add zod
+```
+
+### 2.10 Deployment
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        VERCEL                                │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │              @payos/dashboard                           ││
+│  │         https://dashboard.payos.dev                     ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   RAILWAY / RENDER                           │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │                  @payos/api                             ││
+│  │            https://api.payos.dev                        ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       SUPABASE                               │
+│                   xxx.supabase.co                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Deploy Dashboard (Vercel):**
+```bash
+cd apps/dashboard
+vercel --prod
+```
+
+**Deploy API (Railway):**
+```bash
+cd apps/api
+railway up
+```
+
+**Or via Docker:**
+```dockerfile
+# apps/api/Dockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN npm install -g pnpm
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @payos/api build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+CMD ["node", "dist/index.js"]
+```
+
+---
+
+## 3. External Services & Phasing
+
+### 4.1 The Two-Layer Money Model
+
+PayOS has two layers of "money" — understanding this is key to the phased approach:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                LAYER 1: PayOS Ledger (Your Database)         │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Account: TechCorp         Balance: $250,000 USDC          │
+│   Account: Maria Garcia     Balance: $5,000 USDC            │
+│   Account: Carlos Martinez  Balance: $2,500 USDC            │
+│                                                              │
+│   These are NUMBERS in Supabase. You control them.          │
+│   No blockchain required. Instant. Free.                    │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Only when money moves IN or OUT
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│             LAYER 2: Real Stablecoins (Blockchain)           │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Circle: USDC deposits/withdrawals                         │
+│   Superfluid: On-chain streaming                            │
+│   Payout Rails: Pix, SPEI, local bank transfers             │
+│                                                              │
+│   Real blockchain transactions. Requires setup.             │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key insight:** For demos, Layer 1 is all you need. Layer 2 adds "realness" but isn't required.
+
+### 4.2 Phase 1: Database Only (This Weekend)
+
+Everything runs on your ledger. External services are mocked.
+
+**What works:**
+- ✅ Full dashboard UI
+- ✅ Account management (create, view, verify)
+- ✅ Agent management (create, KYA tiers, permissions)
+- ✅ Transfers between accounts (instant ledger updates)
+- ✅ Money streaming (calculated mathematically)
+- ✅ Real-time balance updates
+- ✅ Reports and exports
+- ✅ All API endpoints
+
+**What's mocked:**
+- 🔸 Circle deposits/withdrawals (instant success)
+- 🔸 Payout settlement (simulated delay, then success)
+- 🔸 FX rates (static values)
+- 🔸 KYC verification (auto-approve in sandbox)
+
+**External services needed:**
+
+| Service | Purpose | Signup |
+|---------|---------|--------|
+| **Supabase** | Database | https://supabase.com (free) |
+| **Vercel** | Dashboard hosting | https://vercel.com (free) |
+| **Railway** | API hosting | https://railway.app (free tier) |
+
+**Environment variables:**
+```env
+# That's it for Phase 1!
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+API_PORT=4000
+CORS_ORIGINS=http://localhost:3000
+```
+
+### 4.3 Phase 2: Circle Sandbox Integration
+
+Add real Circle sandbox for USDC operations.
+
+**What's added:**
+- ✅ Real USDC test deposits (sandbox)
+- ✅ Real USDC test withdrawals (sandbox)
+- ✅ Circle wallet creation
+- ✅ Transaction IDs from Circle
+
+**What's still mocked:**
+- 🔸 Payout rails (Pix, SPEI)
+- 🔸 Superfluid streaming
+
+**Additional services:**
+
+| Service | Purpose | Signup |
+|---------|---------|--------|
+| **Circle** | USDC sandbox | https://console.circle.com (free sandbox) |
+
+**Additional environment variables:**
+```env
+# Add to Phase 1 vars
+CIRCLE_API_KEY=TEST_API_KEY:xxx
+CIRCLE_API_URL=https://api-sandbox.circle.com
+```
+
+### 4.4 Phase 3: Superfluid Testnet Integration
+
+Add on-chain streaming via Superfluid on Base Sepolia testnet.
+
+**What's added:**
+- ✅ Real on-chain streams
+- ✅ Blockchain transaction hashes
+- ✅ Block explorer links
+- ✅ True per-second streaming on-chain
+
+**What's still mocked:**
+- 🔸 Payout rails (requires business contracts)
+
+**Additional services:**
+
+| Service | Purpose | Setup |
+|---------|---------|-------|
+| **Superfluid** | On-chain streaming | No signup (it's a protocol) |
+| **Base Sepolia** | Testnet | Get free ETH from faucet |
+
+**Additional environment variables:**
+```env
+# Add to Phase 2 vars
+SUPERFLUID_RPC_URL=https://sepolia.base.org
+SUPERFLUID_PRIVATE_KEY=0x...  # Server wallet for signing
+SUPERFLUID_HOST_ADDRESS=0x109412E3C84f0539b43d39dB691B08c90f58dC7c
+```
+
+**Testnet setup:**
+1. Create a wallet (MetaMask or via code)
+2. Get testnet ETH: https://www.alchemy.com/faucets/base-sepolia
+3. Get test tokens: https://app.superfluid.finance (faucet)
+
+### 4.5 Mock Implementations (Phase 1)
+
+These mocks let you build and demo without external dependencies:
+
+**Circle Mock:**
+```typescript
+// apps/api/src/providers/circle/mock.ts
+export class MockCircleProvider implements CircleProvider {
+  async createWallet(accountId: string): Promise<Wallet> {
+    return {
+      id: `wallet_${Date.now()}`,
+      address: `0x${accountId.slice(0, 40)}`,
+      currency: 'USDC',
+    };
+  }
+  
+  async getBalance(walletId: string): Promise<number> {
+    // Return balance from our ledger, not Circle
+    const account = await db.accounts.findByWalletId(walletId);
+    return account?.balance_available || 0;
+  }
+  
+  async deposit(walletId: string, amount: number): Promise<Transaction> {
+    // Instant success in mock
+    return {
+      id: `tx_${Date.now()}`,
+      status: 'complete',
+      amount,
+      completedAt: new Date().toISOString(),
+    };
+  }
+}
+```
+
+**Payout Mock:**
+```typescript
+// apps/api/src/providers/payout/mock.ts
+export class MockPayoutProvider implements PayoutProvider {
+  async createPayout(request: PayoutRequest): Promise<Payout> {
+    // Simulate realistic processing time
+    const processingMs = 2000 + Math.random() * 3000; // 2-5 seconds
+    
+    return {
+      id: `payout_${Date.now()}`,
+      status: 'processing',
+      amount: request.amount,
+      currency: request.currency,
+      estimatedCompletion: new Date(Date.now() + processingMs).toISOString(),
+    };
+  }
+  
+  async getStatus(payoutId: string): Promise<PayoutStatus> {
+    // Simulate completion after delay
+    const created = parseInt(payoutId.split('_')[1]);
+    const elapsed = Date.now() - created;
+    
+    if (elapsed > 5000) {
+      return { 
+        status: 'completed', 
+        completedAt: new Date().toISOString() 
+      };
+    }
+    return { status: 'processing' };
+  }
+}
+```
+
+**FX Rates Mock:**
+```typescript
+// apps/api/src/providers/fx/mock.ts
+export const MOCK_FX_RATES: Record<string, number> = {
+  USD_MXN: 17.15,
+  USD_BRL: 4.97,
+  USD_ARS: 365.00,
+  USD_COP: 4150.00,
+  MXN_USD: 0.058,
+  BRL_USD: 0.201,
+};
+
+export function getExchangeRate(from: string, to: string): number {
+  if (from === to) return 1;
+  return MOCK_FX_RATES[`${from}_${to}`] || 1;
+}
+
+export function convertAmount(amount: number, from: string, to: string): number {
+  return amount * getExchangeRate(from, to);
+}
+```
+
+**Stream Calculation (No Blockchain):**
+```typescript
+// apps/api/src/services/streams.ts
+export function calculateStreamedAmount(stream: Stream): number {
+  if (stream.status === 'cancelled') {
+    return stream.totalStreamed;
+  }
+  
+  const now = Date.now();
+  const startTime = new Date(stream.startedAt).getTime();
+  const elapsedMs = now - startTime;
+  
+  // Subtract any paused time
+  const pausedMs = stream.totalPausedSeconds * 1000;
+  const activeMs = elapsedMs - pausedMs;
+  const activeSeconds = Math.max(0, activeMs / 1000);
+  
+  return activeSeconds * stream.flowRate.perSecond;
+}
+
+export function calculateRunway(stream: Stream): RunwayInfo {
+  const streamed = calculateStreamedAmount(stream);
+  const remaining = stream.funded - streamed;
+  const runwaySeconds = remaining / stream.flowRate.perSecond;
+  
+  return {
+    seconds: runwaySeconds,
+    display: formatRunway(runwaySeconds),
+    health: runwaySeconds > 604800 ? 'healthy' : 
+            runwaySeconds > 259200 ? 'warning' : 'critical',
+  };
+}
+```
+
+### 4.6 Provider Interface Pattern
+
+Use interfaces so you can swap mocks for real implementations:
+
+```typescript
+// packages/types/src/providers.ts
+export interface CircleProvider {
+  createWallet(accountId: string): Promise<Wallet>;
+  getBalance(walletId: string): Promise<number>;
+  deposit(walletId: string, amount: number): Promise<Transaction>;
+  withdraw(walletId: string, amount: number, destination: string): Promise<Transaction>;
+}
+
+export interface PayoutProvider {
+  createPayout(request: PayoutRequest): Promise<Payout>;
+  getStatus(payoutId: string): Promise<PayoutStatus>;
+  cancelPayout(payoutId: string): Promise<void>;
+}
+
+export interface StreamProvider {
+  createStream(params: CreateStreamParams): Promise<StreamResult>;
+  updateStream(streamId: string, flowRate: number): Promise<StreamResult>;
+  cancelStream(streamId: string): Promise<void>;
+  getStreamBalance(streamId: string): Promise<StreamBalance>;
+}
+```
+
+```typescript
+// apps/api/src/providers/index.ts
+import { MockCircleProvider } from './circle/mock';
+import { RealCircleProvider } from './circle/real';
+import { MockPayoutProvider } from './payout/mock';
+import { MockStreamProvider } from './superfluid/mock';
+import { SuperfluidProvider } from './superfluid/real';
+
+// Switch based on environment
+export function getCircleProvider(): CircleProvider {
+  if (process.env.CIRCLE_API_KEY) {
+    return new RealCircleProvider(process.env.CIRCLE_API_KEY);
+  }
+  return new MockCircleProvider();
+}
+
+export function getPayoutProvider(): PayoutProvider {
+  // Always mock for now - real requires contracts
+  return new MockPayoutProvider();
+}
+
+export function getStreamProvider(): StreamProvider {
+  if (process.env.SUPERFLUID_PRIVATE_KEY) {
+    return new SuperfluidProvider();
+  }
+  return new MockStreamProvider();
+}
+```
+
+### 4.7 Phase Comparison
+
+| Feature | Phase 1 (Mock) | Phase 2 (Circle) | Phase 3 (Superfluid) |
+|---------|----------------|------------------|----------------------|
+| Dashboard UI | ✅ Full | ✅ Full | ✅ Full |
+| Accounts CRUD | ✅ Real | ✅ Real | ✅ Real |
+| Agents & KYA | ✅ Real | ✅ Real | ✅ Real |
+| Internal transfers | ✅ Instant | ✅ Instant | ✅ Instant |
+| External transfers | 🔸 Mock success | 🔸 Mock success | 🔸 Mock success |
+| USDC deposits | 🔸 Mock instant | ✅ Circle sandbox | ✅ Circle sandbox |
+| USDC withdrawals | 🔸 Mock instant | ✅ Circle sandbox | ✅ Circle sandbox |
+| Stream creation | ✅ DB + math | ✅ DB + math | ✅ On-chain |
+| Stream balances | ✅ Calculated | ✅ Calculated | ✅ On-chain query |
+| Blockchain links | ❌ None | ❌ None | ✅ Real tx hashes |
+| Setup time | 30 min | 1-2 hours | 3-4 hours |
+| Demo quality | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+
+### 4.8 Recommended Path
+
+```
+Weekend 1-2: Phase 1 (Database Only)
+├── Full working PoC
+├── All features functional
+├── Demo-ready for most audiences
+└── No external dependencies beyond Supabase
+
+Weekend 3: Phase 2 (Circle)
+├── Add Circle sandbox
+├── Real USDC test transactions
+└── Good for: "We integrate with Circle" proof
+
+Weekend 4+: Phase 3 (Superfluid)
+├── Add on-chain streaming
+├── Blockchain explorer links
+└── Good for: Crypto-native investors, technical deep-dives
+```
+
+---
+
+## 4. Data Models
+
+### 4.1 Core Types
+
+```typescript
+// types/account.ts
+export type AccountType = 'person' | 'business';
+export type VerificationStatus = 'unverified' | 'pending' | 'verified';
+export type VerificationTier = 0 | 1 | 2 | 3;
+
+export interface Account {
+  id: string;
+  tenantId: string;
+  type: AccountType;
+  name: string;
+  email?: string;
+  
+  verification: {
+    tier: VerificationTier;
+    status: VerificationStatus;
+    type: 'kyc' | 'kyb';
+  };
+  
+  balance: {
+    total: number;
+    available: number;
+    inStreams: {
+      total: number;
+      buffer: number;
+      streaming: number;
+    };
+    currency: 'USDC';
+  };
+  
+  agents: {
+    count: number;
+    active: number;
+  };
+  
+  createdAt: string;
+  updatedAt: string;
+}
+
+// types/agent.ts
+export type AgentStatus = 'active' | 'paused' | 'suspended';
+export type KYATier = 0 | 1 | 2 | 3;
+export type KYAStatus = 'unverified' | 'pending' | 'verified' | 'suspended';
+export type AuthType = 'api_key' | 'oauth' | 'x402';
+
+export interface Agent {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  status: AgentStatus;
+  
+  parentAccount: {
+    id: string;
+    type: AccountType;
+    name: string;
+    verificationTier: VerificationTier;
+  };
+  
+  kya: {
+    tier: KYATier;
+    status: KYAStatus;
+    verifiedAt?: string;
+    agentLimits: Limits;
+    effectiveLimits: Limits & { cappedByParent: boolean };
+  };
+  
+  permissions: {
+    transactions: { initiate: boolean; approve: boolean; view: boolean };
+    streams: { initiate: boolean; modify: boolean; pause: boolean; terminate: boolean; view: boolean };
+    accounts: { view: boolean; create: boolean };
+    treasury: { view: boolean; rebalance: boolean };
+  };
+  
+  streamStats: {
+    activeStreams: number;
+    totalOutflow: number;
+    maxActiveStreams: number;
+    maxTotalOutflow: number;
+  };
+  
+  auth: {
+    type: AuthType;
+    clientId?: string;
+  };
+  
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Limits {
+  perTransaction: number;
+  daily: number;
+  monthly: number;
+}
+
+// types/transfer.ts
+export type TransferType = 
+  | 'cross_border' 
+  | 'internal' 
+  | 'stream_start' 
+  | 'stream_withdraw' 
+  | 'stream_cancel'
+  | 'wrap'
+  | 'unwrap';
+
+export type TransferStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface Transfer {
+  id: string;
+  tenantId: string;
+  type: TransferType;
+  status: TransferStatus;
+  
+  from: { accountId: string; accountName: string };
+  to: { accountId: string; accountName: string };
+  
+  initiatedBy: {
+    type: 'user' | 'agent';
+    id: string;
+    name: string;
+  };
+  
+  amount: number;
+  currency: 'USDC';
+  
+  // Cross-border specific
+  destinationAmount?: number;
+  destinationCurrency?: string;
+  fxRate?: number;
+  
+  // Stream specific
+  streamId?: string;
+  
+  fees: number;
+  
+  idempotencyKey?: string;
+  
+  createdAt: string;
+  completedAt?: string;
+  failedAt?: string;
+  failureReason?: string;
+}
+
+// types/stream.ts
+export type StreamStatus = 'active' | 'paused' | 'cancelled';
+export type StreamHealth = 'healthy' | 'warning' | 'critical';
+export type StreamCategory = 'salary' | 'subscription' | 'service' | 'other';
+
+export interface Stream {
+  id: string;
+  tenantId: string;
+  status: StreamStatus;
+  
+  sender: { accountId: string; accountName: string };
+  receiver: { accountId: string; accountName: string };
+  
+  initiatedBy: {
+    type: 'user' | 'agent';
+    id: string;
+    name: string;
+    timestamp: string;
+  };
+  
+  managedBy: {
+    type: 'user' | 'agent';
+    id: string;
+    name: string;
+    permissions: {
+      canModify: boolean;
+      canPause: boolean;
+      canTerminate: boolean;
+    };
+  };
+  
+  flowRate: {
+    perSecond: number;
+    perMonth: number;
+    currency: 'USDC';
+  };
+  
+  streamed: {
+    total: number;
+    withdrawn: number;
+    available: number;
+  };
+  
+  funding: {
+    wrapped: number;
+    buffer: number;
+    runway: {
+      seconds: number;
+      display: string;
+    };
+  };
+  
+  health: StreamHealth;
+  
+  description: string;
+  category: StreamCategory;
+  
+  startedAt: string;
+  pausedAt?: string;
+  cancelledAt?: string;
+  
+  onChain?: {
+    network: string;
+    flowId: string;
+    txHash: string;
+  };
+  
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### 4.2 Database Schema
+
+See `supabase/migrations/001_initial_schema.sql` in the repository.
+
+---
+
+## Epic 1: Foundation & Multi-Tenancy
+
+### Overview
+Set up the monorepo project foundation, database schema, and multi-tenant infrastructure.
+
+### Stories
+
+#### Story 1.1: Monorepo Setup
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Initialize Turborepo monorepo with dashboard and API apps, plus shared packages.
+
+**Acceptance Criteria:**
+- [ ] Turborepo project created with pnpm workspaces
+- [ ] `apps/dashboard` - Next.js 14 with TypeScript, Tailwind, Shadcn/ui
+- [ ] `apps/api` - Hono with TypeScript
+- [ ] `packages/types` - Shared TypeScript types
+- [ ] `packages/utils` - Shared utilities
+- [ ] `packages/db` - Database migrations and seed
+- [ ] ESLint and Prettier configured at root
+- [ ] `pnpm dev` runs both apps concurrently
+- [ ] Git repository initialized with .gitignore
+
+**Commands:**
+```bash
+# Create directory structure
+mkdir -p payos/{apps/{dashboard,api},packages/{types,utils,db}}
+cd payos
+
+# Initialize root package.json
+pnpm init
+
+# Install turborepo
+pnpm add -D turbo
+
+# Create workspace config
+cat > pnpm-workspace.yaml << 'EOF'
+packages:
+  - 'apps/*'
+  - 'packages/*'
+EOF
+
+# Initialize dashboard
+cd apps/dashboard
+pnpm create next-app@latest . --typescript --tailwind --app --src-dir=false --import-alias="@/*"
+pnpm add @tanstack/react-query zustand
+pnpm dlx shadcn@latest init
+
+# Initialize API
+cd ../api
+pnpm init
+pnpm add hono @hono/node-server @supabase/supabase-js zod
+pnpm add -D tsx tsup typescript @types/node
+
+# Initialize shared packages
+cd ../../packages/types
+pnpm init
+pnpm add -D tsup typescript
+
+cd ../utils
+pnpm init
+pnpm add -D tsup typescript
+
+cd ../db
+pnpm init
+```
+
+**Files to Create:**
+- `turbo.json`
+- `pnpm-workspace.yaml`
+- `package.json` (root)
+- `.env.example`
+- `apps/dashboard/*` (Next.js scaffold)
+- `apps/api/src/index.ts`
+- `apps/api/src/app.ts`
+- `packages/types/src/index.ts`
+- `packages/utils/src/index.ts`
+
+---
+
+#### Story 1.2: Database Schema - Core Tables
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Create core database tables: tenants, accounts, ledger.
+
+**Acceptance Criteria:**
+- [ ] `tenants` table created with id, name, api_key
+- [ ] `accounts` table created with all fields from data model
+- [ ] `ledger_entries` table for balance tracking
+- [ ] RLS policies for tenant isolation
+- [ ] Indexes for common queries
+
+**File:** `packages/db/migrations/001_initial_schema.sql`
+
+```sql
+-- Tenants
+CREATE TABLE tenants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  api_key TEXT UNIQUE NOT NULL,
+  api_key_hash TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Accounts
+CREATE TABLE accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('person', 'business')),
+  name TEXT NOT NULL,
+  email TEXT,
+  
+  -- Verification
+  verification_tier INTEGER DEFAULT 0,
+  verification_status TEXT DEFAULT 'unverified',
+  verification_type TEXT CHECK (verification_type IN ('kyc', 'kyb')),
+  
+  -- Balance (denormalized)
+  balance_total NUMERIC(20,8) DEFAULT 0,
+  balance_available NUMERIC(20,8) DEFAULT 0,
+  balance_in_streams NUMERIC(20,8) DEFAULT 0,
+  balance_buffer NUMERIC(20,8) DEFAULT 0,
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  
+  CONSTRAINT valid_verification_type CHECK (
+    (type = 'person' AND verification_type = 'kyc') OR
+    (type = 'business' AND verification_type = 'kyb') OR
+    verification_type IS NULL
+  )
+);
+
+-- Ledger Entries
+CREATE TABLE ledger_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  account_id UUID NOT NULL REFERENCES accounts(id),
+  
+  type TEXT NOT NULL, -- 'credit', 'debit', 'hold', 'release'
+  amount NUMERIC(20,8) NOT NULL,
+  balance_after NUMERIC(20,8) NOT NULL,
+  
+  reference_type TEXT, -- 'transfer', 'stream', 'fee'
+  reference_id UUID,
+  
+  description TEXT,
+  
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX idx_accounts_tenant ON accounts(tenant_id);
+CREATE INDEX idx_accounts_type ON accounts(tenant_id, type);
+CREATE INDEX idx_ledger_account ON ledger_entries(account_id);
+CREATE INDEX idx_ledger_reference ON ledger_entries(reference_type, reference_id);
+
+-- RLS
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ledger_entries ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies (service role bypasses, anon uses tenant context)
+CREATE POLICY "Tenant isolation for accounts" ON accounts
+  FOR ALL USING (tenant_id = current_setting('app.tenant_id')::uuid);
+```
+
+---
+
+#### Story 1.3: API Middleware & Auth
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Create API middleware for authentication and tenant resolution in the Hono API server.
+
+**Acceptance Criteria:**
+- [ ] Middleware extracts API key from Authorization header
+- [ ] Tenant resolved from API key
+- [ ] Request context includes tenantId, actorType, actorId
+- [ ] Unauthorized requests return 401
+- [ ] Invalid tenant returns 403
+- [ ] Agent tokens validated and status checked
+
+**File:** `apps/api/src/middleware/auth.ts`
+
+```typescript
+import { Context, Next } from 'hono';
+import { createClient } from '../db/client';
+
+export interface RequestContext {
+  tenantId: string;
+  actorType: 'user' | 'agent';
+  actorId: string;
+  actorName: string;
+}
+
+// Extend Hono's context type
+declare module 'hono' {
+  interface ContextVariableMap {
+    ctx: RequestContext;
+  }
+}
+
+export async function authMiddleware(c: Context, next: Next) {
+  const authHeader = c.req.header('Authorization');
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    return c.json({ error: 'Missing or invalid authorization header' }, 401);
+  }
+  
+  const token = authHeader.slice(7);
+  const supabase = createClient();
+  
+  // Partner API key (pk_test_xxx)
+  if (token.startsWith('pk_')) {
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('id, name')
+      .eq('api_key', token)
+      .eq('status', 'active')
+      .single();
+    
+    if (error || !tenant) {
+      return c.json({ error: 'Invalid API key' }, 401);
+    }
+    
+    c.set('ctx', {
+      tenantId: tenant.id,
+      actorType: 'user',
+      actorId: 'api_user',
+      actorName: 'API User',
+    });
+    
+    return next();
+  }
+  
+  // Agent token (agent_xxx)
+  if (token.startsWith('agent_')) {
+    const { data: agent, error } = await supabase
+      .from('agents')
+      .select('id, name, tenant_id, status, kya_tier')
+      .eq('auth_client_id', token)
+      .single();
+    
+    if (error || !agent) {
+      return c.json({ error: 'Invalid agent token' }, 401);
+    }
+    
+    if (agent.status !== 'active') {
+      return c.json({ error: 'Agent is not active', status: agent.status }, 403);
+    }
+    
+    c.set('ctx', {
+      tenantId: agent.tenant_id,
+      actorType: 'agent',
+      actorId: agent.id,
+      actorName: agent.name,
+    });
+    
+    return next();
+  }
+  
+  return c.json({ error: 'Invalid token format' }, 401);
+}
+```
+
+**File:** `apps/api/src/db/client.ts`
+
+```typescript
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+
+export function createClient() {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing Supabase environment variables');
+  }
+  
+  return createSupabaseClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false }
+  });
+}
+```
+
+---
+
+#### Story 1.4: Seed Data
+**Points:** 1  
+**Priority:** P0  
+
+**Description:**  
+Create seed data for development and demos.
+
+**Acceptance Criteria:**
+- [ ] Demo tenant created with API key
+- [ ] Sample Person accounts (Maria Garcia, Carlos Martinez)
+- [ ] Sample Business account (TechCorp Inc)
+- [ ] Initial balances set
+
+**File:** `packages/db/seed.sql`
+
+```sql
+-- Demo Tenant
+INSERT INTO tenants (id, name, api_key, api_key_hash, status)
+VALUES (
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  'Demo Fintech',
+  'pk_test_demo_fintech_key_12345',
+  'hashed_value_here',
+  'active'
+);
+
+-- Business Account
+INSERT INTO accounts (id, tenant_id, type, name, email, verification_tier, verification_status, verification_type, balance_total, balance_available)
+VALUES (
+  'bbbbbbbb-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  'business',
+  'TechCorp Inc',
+  'finance@techcorp.com',
+  2,
+  'verified',
+  'kyb',
+  250000.00,
+  250000.00
+);
+
+-- Person Accounts
+INSERT INTO accounts (id, tenant_id, type, name, email, verification_tier, verification_status, verification_type, balance_total, balance_available)
+VALUES 
+(
+  'cccccccc-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  'person',
+  'Maria Garcia',
+  'maria@email.com',
+  2,
+  'verified',
+  'kyc',
+  5000.00,
+  5000.00
+),
+(
+  'cccccccc-0000-0000-0000-000000000002',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  'person',
+  'Carlos Martinez',
+  'carlos@email.com',
+  1,
+  'verified',
+  'kyc',
+  2500.00,
+  2500.00
+);
+```
+
+---
+
+## Epic 2: Account System
+
+### Overview
+Implement account management including CRUD operations, balance tracking, and verification.
+
+### Stories
+
+#### Story 2.1: Accounts API - List & Create
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Implement GET (list) and POST (create) endpoints for accounts.
+
+**Acceptance Criteria:**
+- [ ] GET /v1/accounts returns paginated list
+- [ ] Supports filtering by type (person/business)
+- [ ] Supports search by name/email
+- [ ] POST /v1/accounts creates new account
+- [ ] Validates required fields
+- [ ] Returns proper error messages
+
+**File:** `apps/api/src/routes/accounts.ts`
+
+```typescript
+import { Hono } from 'hono';
+import { createClient } from '../db/client';
+import { mapAccountFromDb, logAudit } from '../utils/helpers';
+import type { Account } from '@payos/types';
+
+const accounts = new Hono();
+
+// GET /v1/accounts - List accounts
+accounts.get('/', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  
+  const type = c.req.query('type');
+  const search = c.req.query('search');
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = parseInt(c.req.query('limit') || '20');
+  
+  let query = supabase
+    .from('accounts')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+  
+  if (type) query = query.eq('type', type);
+  if (search) query = query.ilike('name', `%${search}%`);
+  
+  const { data, count, error } = await query;
+  
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+  
+  return c.json({
+    data: data.map(mapAccountFromDb),
+    pagination: {
+      page,
+      limit,
+      total: count,
+      totalPages: Math.ceil((count || 0) / limit),
+    },
+  });
+});
+
+// POST /v1/accounts - Create account
+accounts.post('/', async (c) => {
+  const ctx = c.get('ctx');
+  const body = await c.req.json();
+  const supabase = createClient();
+  
+  // Validation
+  if (!body.type || !body.name) {
+    return c.json({ error: 'type and name are required' }, 400);
+  }
+  
+  if (!['person', 'business'].includes(body.type)) {
+    return c.json({ error: 'type must be person or business' }, 400);
+  }
+  
+  const { data, error } = await supabase
+    .from('accounts')
+    .insert({
+      tenant_id: ctx.tenantId,
+      type: body.type,
+      name: body.name,
+      email: body.email,
+      verification_type: body.type === 'person' ? 'kyc' : 'kyb',
+    })
+    .select()
+    .single();
+  
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+  
+  // Audit log
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'account',
+    entityId: data.id,
+    action: 'created',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+  });
+  
+  return c.json({ data: mapAccountFromDb(data) }, 201);
+});
+
+// GET /v1/accounts/:id - Get single account
+accounts.get('/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (error || !data) {
+    return c.json({ error: 'Account not found' }, 404);
+  }
+  
+  // Get agent count
+  const { count: agentCount } = await supabase
+    .from('agents')
+    .select('*', { count: 'exact', head: true })
+    .eq('parent_account_id', id);
+  
+  const account = mapAccountFromDb(data);
+  account.agents = { count: agentCount || 0, active: agentCount || 0 };
+  
+  return c.json({ data: account });
+});
+
+// GET /v1/accounts/:id/balances - Get balance breakdown
+accounts.get('/:id/balances', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('id, name, balance_total, balance_available, balance_in_streams, balance_buffer')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (error || !data) {
+    return c.json({ error: 'Account not found' }, 404);
+  }
+  
+  return c.json({
+    data: {
+      accountId: data.id,
+      accountName: data.name,
+      balance: {
+        total: parseFloat(data.balance_total),
+        available: parseFloat(data.balance_available),
+        inStreams: {
+          total: parseFloat(data.balance_in_streams),
+          buffer: parseFloat(data.balance_buffer),
+          streaming: parseFloat(data.balance_in_streams) - parseFloat(data.balance_buffer),
+        },
+        currency: 'USDC',
+      },
+    },
+  });
+});
+
+// GET /v1/accounts/:id/agents - Get account's agents
+accounts.get('/:id/agents', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  const { data, error } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('parent_account_id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+  
+  return c.json({ data: data.map(mapAgentFromDb) });
+});
+
+// GET /v1/accounts/:id/streams - Get account's streams
+accounts.get('/:id/streams', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  // Get streams where account is sender or receiver
+  const { data, error } = await supabase
+    .from('streams')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .or(`sender_account_id.eq.${id},receiver_account_id.eq.${id}`)
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+  
+  return c.json({ data: data.map(mapStreamFromDb) });
+});
+
+export default accounts;
+      actorId: ctx.actorId,
+      actorName: ctx.actorName,
+    });
+    
+    return NextResponse.json({ data: mapAccountFromDb(data) }, { status: 201 });
+  });
+}
+
+function mapAccountFromDb(row: any): Account {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    type: row.type,
+    name: row.name,
+    email: row.email,
+    verification: {
+      tier: row.verification_tier,
+      status: row.verification_status,
+      type: row.verification_type,
+    },
+    balance: {
+      total: parseFloat(row.balance_total),
+      available: parseFloat(row.balance_available),
+      inStreams: {
+        total: parseFloat(row.balance_in_streams),
+        buffer: parseFloat(row.balance_buffer),
+        streaming: parseFloat(row.balance_in_streams) - parseFloat(row.balance_buffer),
+      },
+      currency: 'USDC',
+    },
+    agents: { count: 0, active: 0 }, // Populated separately
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+```
+
+---
+
+#### Story 2.2: Accounts API - Get, Update, Delete
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Implement GET, PATCH, DELETE for individual accounts.
+
+**Acceptance Criteria:**
+- [ ] GET /api/v1/accounts/:id returns account with agents count
+- [ ] PATCH updates allowed fields (name, email)
+- [ ] DELETE soft-deletes or rejects if has balance
+- [ ] 404 for non-existent accounts
+- [ ] 403 for wrong tenant
+
+**File:** `app/api/v1/accounts/[id]/route.ts`
+
+---
+
+#### Story 2.3: Balance Service
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Implement balance tracking service with ledger entries.
+
+**Acceptance Criteria:**
+- [ ] Credit/debit operations create ledger entries
+- [ ] Balance updates are atomic
+- [ ] Hold/release for stream buffers
+- [ ] Get balance breakdown endpoint
+- [ ] Insufficient balance returns clear error
+
+**File:** `lib/services/balances.ts`
+
+```typescript
+export class BalanceService {
+  constructor(private supabase: SupabaseClient) {}
+  
+  async getBalance(accountId: string): Promise<AccountBalance> {
+    const { data } = await this.supabase
+      .from('accounts')
+      .select('balance_total, balance_available, balance_in_streams, balance_buffer')
+      .eq('id', accountId)
+      .single();
+    
+    return {
+      total: parseFloat(data.balance_total),
+      available: parseFloat(data.balance_available),
+      inStreams: {
+        total: parseFloat(data.balance_in_streams),
+        buffer: parseFloat(data.balance_buffer),
+        streaming: parseFloat(data.balance_in_streams) - parseFloat(data.balance_buffer),
+      },
+      currency: 'USDC',
+    };
+  }
+  
+  async credit(
+    accountId: string,
+    amount: number,
+    reference: { type: string; id: string },
+    description: string
+  ): Promise<void> {
+    // Transaction: create ledger entry + update balance
+    await this.supabase.rpc('credit_account', {
+      p_account_id: accountId,
+      p_amount: amount,
+      p_reference_type: reference.type,
+      p_reference_id: reference.id,
+      p_description: description,
+    });
+  }
+  
+  async debit(
+    accountId: string,
+    amount: number,
+    reference: { type: string; id: string },
+    description: string
+  ): Promise<void> {
+    // Check available balance first
+    const balance = await this.getBalance(accountId);
+    if (balance.available < amount) {
+      throw new InsufficientBalanceError(balance.available, amount);
+    }
+    
+    await this.supabase.rpc('debit_account', {
+      p_account_id: accountId,
+      p_amount: amount,
+      p_reference_type: reference.type,
+      p_reference_id: reference.id,
+      p_description: description,
+    });
+  }
+  
+  async holdForStream(
+    accountId: string,
+    streamId: string,
+    amount: number,
+    bufferAmount: number
+  ): Promise<void> {
+    // Move from available to in_streams
+    await this.supabase.rpc('hold_for_stream', {
+      p_account_id: accountId,
+      p_stream_id: streamId,
+      p_amount: amount,
+      p_buffer: bufferAmount,
+    });
+  }
+  
+  async releaseFromStream(
+    accountId: string,
+    streamId: string,
+    returnBuffer: boolean
+  ): Promise<void> {
+    await this.supabase.rpc('release_from_stream', {
+      p_account_id: accountId,
+      p_stream_id: streamId,
+      p_return_buffer: returnBuffer,
+    });
+  }
+}
+```
+
+---
+
+#### Story 2.4: Account Balance Endpoint
+**Points:** 1  
+**Priority:** P0  
+
+**Description:**  
+GET endpoint for account balance breakdown.
+
+**Acceptance Criteria:**
+- [ ] Returns total, available, inStreams breakdown
+- [ ] Includes net flow information
+- [ ] Includes stream counts
+
+**File:** `app/api/v1/accounts/[id]/balances/route.ts`
+
+---
+
+## Epic 3: Agent System & KYA
+
+### Overview
+Implement agent registration, KYA verification, permissions, and limit inheritance.
+
+### Stories
+
+#### Story 3.1: Agents Database Schema
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Create agents table and related structures.
+
+**File:** `supabase/migrations/002_agents.sql`
+
+```sql
+-- Agents
+CREATE TABLE agents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  parent_account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused', 'suspended')),
+  
+  -- KYA
+  kya_tier INTEGER DEFAULT 0 CHECK (kya_tier BETWEEN 0 AND 3),
+  kya_status TEXT DEFAULT 'unverified' CHECK (kya_status IN ('unverified', 'pending', 'verified', 'suspended')),
+  kya_verified_at TIMESTAMPTZ,
+  
+  -- Limits (from KYA tier)
+  limit_per_transaction NUMERIC(20,8) DEFAULT 0,
+  limit_daily NUMERIC(20,8) DEFAULT 0,
+  limit_monthly NUMERIC(20,8) DEFAULT 0,
+  
+  -- Effective limits (calculated)
+  effective_limit_per_tx NUMERIC(20,8) DEFAULT 0,
+  effective_limit_daily NUMERIC(20,8) DEFAULT 0,
+  effective_limit_monthly NUMERIC(20,8) DEFAULT 0,
+  effective_limits_capped BOOLEAN DEFAULT false,
+  
+  -- Stream limits
+  max_active_streams INTEGER DEFAULT 5,
+  max_flow_rate_per_stream NUMERIC(20,8) DEFAULT 5000,
+  max_total_outflow NUMERIC(20,8) DEFAULT 50000,
+  
+  -- Current stream stats (denormalized)
+  active_streams_count INTEGER DEFAULT 0,
+  total_stream_outflow NUMERIC(20,8) DEFAULT 0,
+  
+  -- Permissions
+  permissions JSONB DEFAULT '{
+    "transactions": {"initiate": true, "approve": false, "view": true},
+    "streams": {"initiate": true, "modify": true, "pause": true, "terminate": true, "view": true},
+    "accounts": {"view": true, "create": false},
+    "treasury": {"view": false, "rebalance": false}
+  }'::jsonb,
+  
+  -- Auth
+  auth_type TEXT DEFAULT 'api_key' CHECK (auth_type IN ('api_key', 'oauth', 'x402')),
+  auth_client_id TEXT UNIQUE,
+  auth_client_secret_hash TEXT,
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Indexes
+CREATE INDEX idx_agents_tenant ON agents(tenant_id);
+CREATE INDEX idx_agents_parent ON agents(parent_account_id);
+CREATE INDEX idx_agents_client_id ON agents(auth_client_id);
+
+-- RLS
+ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
+
+-- Trigger to calculate effective limits
+CREATE OR REPLACE FUNCTION calculate_effective_limits()
+RETURNS TRIGGER AS $$
+DECLARE
+  parent_tier INTEGER;
+  parent_limits RECORD;
+BEGIN
+  -- Get parent account tier
+  SELECT verification_tier INTO parent_tier
+  FROM accounts WHERE id = NEW.parent_account_id;
+  
+  -- Get tier limits (simplified - would be a lookup table in production)
+  -- KYC/KYB T2 = 50000/200000/500000
+  -- KYA T1 = 1000/10000/50000, T2 = 10000/100000/500000
+  
+  NEW.effective_limit_per_tx := LEAST(NEW.limit_per_transaction, 50000); -- Simplified
+  NEW.effective_limit_daily := LEAST(NEW.limit_daily, 200000);
+  NEW.effective_limit_monthly := LEAST(NEW.limit_monthly, 500000);
+  NEW.effective_limits_capped := (
+    NEW.limit_per_transaction > NEW.effective_limit_per_tx OR
+    NEW.limit_daily > NEW.effective_limit_daily OR
+    NEW.limit_monthly > NEW.effective_limit_monthly
+  );
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER agent_effective_limits
+  BEFORE INSERT OR UPDATE ON agents
+  FOR EACH ROW EXECUTE FUNCTION calculate_effective_limits();
+```
+
+---
+
+#### Story 3.2: Agents API - CRUD
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Implement full CRUD for agents.
+
+**Acceptance Criteria:**
+- [ ] POST creates agent under parent account
+- [ ] Generates unique client_id for auth
+- [ ] Calculates effective limits on create
+- [ ] GET list includes parent account info
+- [ ] GET single includes all details
+- [ ] PATCH updates name, description, permissions
+- [ ] Cannot change parent account
+
+**File:** `app/api/v1/agents/route.ts` and `app/api/v1/agents/[id]/route.ts`
+
+---
+
+#### Story 3.3: Agent Status Management
+**Points:** 2  
+**Priority:** P1  
+
+**Description:**  
+Implement suspend/activate endpoints for agents.
+
+**Acceptance Criteria:**
+- [ ] POST /agents/:id/suspend sets status to suspended
+- [ ] POST /agents/:id/activate sets status to active
+- [ ] Suspended agents cannot make API calls
+- [ ] Logs status changes to audit
+
+**Files:** 
+- `app/api/v1/agents/[id]/suspend/route.ts`
+- `app/api/v1/agents/[id]/activate/route.ts`
+
+---
+
+#### Story 3.4: Agent Streams Endpoint
+**Points:** 2  
+**Priority:** P1  
+
+**Description:**  
+GET endpoint for streams managed by an agent.
+
+**Acceptance Criteria:**
+- [ ] Returns streams where managed_by_id = agent.id
+- [ ] Includes health status
+- [ ] Includes flow rates and runway
+
+**File:** `app/api/v1/agents/[id]/streams/route.ts`
+
+---
+
+#### Story 3.5: Limit Checking Service
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Service to check if an action is within agent limits.
+
+**Acceptance Criteria:**
+- [ ] Checks per-transaction limit
+- [ ] Tracks and checks daily usage
+- [ ] Tracks and checks monthly usage
+- [ ] Returns clear error with limit details
+- [ ] Works for both transfers and streams
+
+**File:** `lib/services/limits.ts`
+
+```typescript
+export class LimitService {
+  async checkTransactionLimit(
+    agentId: string,
+    amount: number
+  ): Promise<LimitCheckResult> {
+    const agent = await this.getAgent(agentId);
+    
+    // Per-transaction check
+    if (amount > agent.effectiveLimits.perTransaction) {
+      return {
+        allowed: false,
+        reason: 'exceeds_per_transaction',
+        limit: agent.effectiveLimits.perTransaction,
+        requested: amount,
+      };
+    }
+    
+    // Daily usage check
+    const dailyUsage = await this.getDailyUsage(agentId);
+    if (dailyUsage + amount > agent.effectiveLimits.daily) {
+      return {
+        allowed: false,
+        reason: 'exceeds_daily',
+        limit: agent.effectiveLimits.daily,
+        used: dailyUsage,
+        requested: amount,
+      };
+    }
+    
+    // Monthly usage check
+    const monthlyUsage = await this.getMonthlyUsage(agentId);
+    if (monthlyUsage + amount > agent.effectiveLimits.monthly) {
+      return {
+        allowed: false,
+        reason: 'exceeds_monthly',
+        limit: agent.effectiveLimits.monthly,
+        used: monthlyUsage,
+        requested: amount,
+      };
+    }
+    
+    return { allowed: true };
+  }
+  
+  async checkStreamLimit(
+    agentId: string,
+    flowRatePerMonth: number
+  ): Promise<LimitCheckResult> {
+    const agent = await this.getAgent(agentId);
+    
+    // Stream count check
+    if (agent.streamStats.activeStreams >= agent.streamStats.maxActiveStreams) {
+      return {
+        allowed: false,
+        reason: 'max_streams_reached',
+        limit: agent.streamStats.maxActiveStreams,
+      };
+    }
+    
+    // Per-stream flow rate check
+    if (flowRatePerMonth > agent.streamStats.maxFlowRatePerStream) {
+      return {
+        allowed: false,
+        reason: 'exceeds_max_flow_rate',
+        limit: agent.streamStats.maxFlowRatePerStream,
+        requested: flowRatePerMonth,
+      };
+    }
+    
+    // Total outflow check
+    const newTotalOutflow = agent.streamStats.totalOutflow + flowRatePerMonth;
+    if (newTotalOutflow > agent.streamStats.maxTotalOutflow) {
+      return {
+        allowed: false,
+        reason: 'exceeds_total_outflow',
+        limit: agent.streamStats.maxTotalOutflow,
+        current: agent.streamStats.totalOutflow,
+        requested: flowRatePerMonth,
+      };
+    }
+    
+    return { allowed: true };
+  }
+}
+```
+
+---
+
+## Epic 4: Transfers & Payments
+
+### Overview
+Implement transfer creation, processing, and status tracking.
+
+### Stories
+
+#### Story 4.1: Transfers Database Schema
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Create transfers table with all required fields.
+
+**Migration additions to initial schema:**
+
+```sql
+-- Transfers
+CREATE TABLE transfers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  
+  type TEXT NOT NULL CHECK (type IN (
+    'cross_border', 'internal', 'stream_start', 'stream_withdraw', 
+    'stream_cancel', 'wrap', 'unwrap'
+  )),
+  status TEXT DEFAULT 'pending' CHECK (status IN (
+    'pending', 'processing', 'completed', 'failed', 'cancelled'
+  )),
+  
+  from_account_id UUID REFERENCES accounts(id),
+  from_account_name TEXT,
+  to_account_id UUID REFERENCES accounts(id),
+  to_account_name TEXT,
+  
+  -- Attribution
+  initiated_by_type TEXT NOT NULL CHECK (initiated_by_type IN ('user', 'agent')),
+  initiated_by_id TEXT NOT NULL,
+  initiated_by_name TEXT,
+  
+  amount NUMERIC(20,8) NOT NULL,
+  currency TEXT DEFAULT 'USDC',
+  
+  -- Cross-border
+  destination_amount NUMERIC(20,8),
+  destination_currency TEXT,
+  fx_rate NUMERIC(20,8),
+  corridor_id TEXT,
+  
+  -- Stream reference
+  stream_id UUID REFERENCES streams(id),
+  
+  -- Fees
+  fee_amount NUMERIC(20,8) DEFAULT 0,
+  
+  -- External references
+  external_payout_id TEXT,
+  external_issuer_id TEXT,
+  
+  -- Idempotency
+  idempotency_key TEXT UNIQUE,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT now(),
+  processing_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  failed_at TIMESTAMPTZ,
+  failure_reason TEXT
+);
+
+CREATE INDEX idx_transfers_tenant ON transfers(tenant_id);
+CREATE INDEX idx_transfers_from ON transfers(from_account_id);
+CREATE INDEX idx_transfers_to ON transfers(to_account_id);
+CREATE INDEX idx_transfers_status ON transfers(tenant_id, status);
+CREATE INDEX idx_transfers_idempotency ON transfers(idempotency_key);
+```
+
+---
+
+#### Story 4.2: Quotes API
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Implement quotes endpoint for transfer pricing.
+
+**Acceptance Criteria:**
+- [ ] POST /api/v1/quotes returns quote
+- [ ] Calculates FX rate (mocked)
+- [ ] Calculates fees
+- [ ] Returns destination amount
+- [ ] Quote valid for 5 minutes
+
+**File:** `app/api/v1/quotes/route.ts`
+
+```typescript
+export async function POST(request: NextRequest) {
+  return withAuth(request, async (req, ctx) => {
+    const body = await req.json();
+    
+    const { 
+      fromCurrency = 'USD',
+      toCurrency,
+      amount,
+      corridor 
+    } = body;
+    
+    // Validate
+    if (!toCurrency || !amount) {
+      return NextResponse.json(
+        { error: 'toCurrency and amount are required' },
+        { status: 400 }
+      );
+    }
+    
+    // Get FX rate (mocked for PoC)
+    const fxRates: Record<string, number> = {
+      'USD_MXN': 17.15,
+      'USD_BRL': 4.95,
+    };
+    
+    const rateKey = `${fromCurrency}_${toCurrency}`;
+    const fxRate = fxRates[rateKey] || 1;
+    
+    // Calculate fees (simplified)
+    const feePercent = 0.005; // 0.5%
+    const feeAmount = amount * feePercent;
+    const netAmount = amount - feeAmount;
+    const destinationAmount = netAmount * fxRate;
+    
+    const quote = {
+      id: `quote_${Date.now()}`,
+      fromCurrency,
+      toCurrency,
+      fromAmount: amount,
+      toAmount: Math.round(destinationAmount * 100) / 100,
+      fxRate,
+      fees: {
+        total: feeAmount,
+        breakdown: [
+          { type: 'platform_fee', amount: feeAmount }
+        ]
+      },
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      estimatedSettlement: '1-2 minutes',
+    };
+    
+    return NextResponse.json({ data: quote });
+  });
+}
+```
+
+---
+
+#### Story 4.3: Transfers API - Create
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Implement transfer creation with idempotency.
+
+**Acceptance Criteria:**
+- [ ] POST /api/v1/transfers creates transfer
+- [ ] Validates sender has sufficient balance
+- [ ] If agent, checks limits
+- [ ] Supports idempotency key
+- [ ] Returns immediately with status=processing
+- [ ] Enqueues background job for execution
+
+**File:** `app/api/v1/transfers/route.ts`
+
+---
+
+#### Story 4.4: Internal Transfers API
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Ledger-only transfers between accounts.
+
+**Acceptance Criteria:**
+- [ ] POST /api/v1/internal-transfers
+- [ ] Both accounts must be in same tenant
+- [ ] Debits sender, credits receiver atomically
+- [ ] Completes synchronously (no background job)
+- [ ] < 300ms response time
+
+**File:** `app/api/v1/internal-transfers/route.ts`
+
+---
+
+#### Story 4.5: Transfer Processing Worker
+**Points:** 3  
+**Priority:** P1  
+
+**Description:**  
+Background worker to process transfers.
+
+**Acceptance Criteria:**
+- [ ] Polls for pending transfers
+- [ ] Calls payout provider (mock)
+- [ ] Updates status on completion/failure
+- [ ] Handles retries
+- [ ] Updates balances on completion
+
+**File:** `lib/workers/transfer-processor.ts`
+
+---
+
+## Epic 5: Money Streaming
+
+### Overview
+Implement Superfluid-based money streaming with health monitoring.
+
+### Stories
+
+#### Story 5.1: Streams Database Schema
+**Points:** 2  
+**Priority:** P0  
+
+**File:** `supabase/migrations/003_streams.sql`
+
+```sql
+-- Streams
+CREATE TABLE streams (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused', 'cancelled')),
+  
+  -- Parties
+  sender_account_id UUID NOT NULL REFERENCES accounts(id),
+  sender_account_name TEXT NOT NULL,
+  receiver_account_id UUID NOT NULL REFERENCES accounts(id),
+  receiver_account_name TEXT NOT NULL,
+  
+  -- Attribution
+  initiated_by_type TEXT NOT NULL CHECK (initiated_by_type IN ('user', 'agent')),
+  initiated_by_id TEXT NOT NULL,
+  initiated_by_name TEXT,
+  
+  managed_by_type TEXT NOT NULL CHECK (managed_by_type IN ('user', 'agent')),
+  managed_by_id TEXT NOT NULL,
+  managed_by_name TEXT,
+  managed_by_can_modify BOOLEAN DEFAULT true,
+  managed_by_can_pause BOOLEAN DEFAULT true,
+  managed_by_can_terminate BOOLEAN DEFAULT true,
+  
+  -- Flow
+  flow_rate_per_second NUMERIC(30,18) NOT NULL,
+  flow_rate_per_month NUMERIC(20,8) NOT NULL,
+  currency TEXT DEFAULT 'USDC',
+  
+  -- Amounts (updated periodically or on events)
+  total_streamed NUMERIC(20,8) DEFAULT 0,
+  total_withdrawn NUMERIC(20,8) DEFAULT 0,
+  
+  -- Funding
+  funded_amount NUMERIC(20,8) DEFAULT 0,
+  buffer_amount NUMERIC(20,8) DEFAULT 0,
+  runway_seconds INTEGER,
+  
+  -- Health
+  health TEXT DEFAULT 'healthy' CHECK (health IN ('healthy', 'warning', 'critical')),
+  
+  -- Metadata
+  description TEXT,
+  category TEXT CHECK (category IN ('salary', 'subscription', 'service', 'other')),
+  
+  -- On-chain
+  onchain_network TEXT,
+  onchain_flow_id TEXT,
+  onchain_tx_hash TEXT,
+  
+  -- Timestamps
+  started_at TIMESTAMPTZ DEFAULT now(),
+  paused_at TIMESTAMPTZ,
+  resumed_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Stream events (for activity log)
+CREATE TABLE stream_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stream_id UUID NOT NULL REFERENCES streams(id),
+  tenant_id UUID NOT NULL,
+  
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'created', 'funded', 'paused', 'resumed', 'cancelled',
+    'withdrawn', 'topped_up', 'health_changed', 'rate_modified'
+  )),
+  
+  actor_type TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  actor_name TEXT,
+  
+  data JSONB,
+  
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_streams_tenant ON streams(tenant_id);
+CREATE INDEX idx_streams_sender ON streams(sender_account_id);
+CREATE INDEX idx_streams_receiver ON streams(receiver_account_id);
+CREATE INDEX idx_streams_manager ON streams(managed_by_type, managed_by_id);
+CREATE INDEX idx_streams_status ON streams(tenant_id, status);
+CREATE INDEX idx_stream_events_stream ON stream_events(stream_id);
+```
+
+---
+
+#### Story 5.2: Streams API - Create
+**Points:** 4  
+**Priority:** P0  
+
+**Description:**  
+Create stream with funding and optional Superfluid integration.
+
+**Acceptance Criteria:**
+- [ ] POST /api/v1/streams creates stream
+- [ ] Calculates buffer (4 hours of flow)
+- [ ] Validates sender has sufficient balance
+- [ ] If agent, checks stream limits
+- [ ] Holds funds from sender balance
+- [ ] Optionally creates on-chain Superfluid flow
+- [ ] Returns with health status
+
+**File:** `app/api/v1/streams/route.ts`
+
+```typescript
+export async function POST(request: NextRequest) {
+  return withAuth(request, async (req, ctx) => {
+    const body = await req.json();
+    const supabase = createClient();
+    
+    const {
+      senderAccountId,
+      receiverAccountId,
+      flowRatePerMonth,
+      initialFunding,
+      description,
+      category = 'other',
+    } = body;
+    
+    // Validation
+    if (!senderAccountId || !receiverAccountId || !flowRatePerMonth) {
+      return NextResponse.json(
+        { error: 'senderAccountId, receiverAccountId, and flowRatePerMonth are required' },
+        { status: 400 }
+      );
+    }
+    
+    // Get accounts
+    const [sender, receiver] = await Promise.all([
+      getAccount(supabase, senderAccountId),
+      getAccount(supabase, receiverAccountId),
+    ]);
+    
+    if (!sender || !receiver) {
+      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
+    }
+    
+    // Calculate flow rates
+    const flowRatePerSecond = flowRatePerMonth / (30 * 24 * 60 * 60);
+    
+    // Calculate buffer (4 hours)
+    const bufferHours = 4;
+    const bufferAmount = flowRatePerSecond * bufferHours * 60 * 60;
+    
+    // Calculate minimum funding (buffer + 7 days runway)
+    const minFunding = bufferAmount + (flowRatePerSecond * 7 * 24 * 60 * 60);
+    const fundingAmount = initialFunding || minFunding;
+    
+    if (fundingAmount < minFunding) {
+      return NextResponse.json(
+        { error: `Minimum funding is ${minFunding.toFixed(2)} USDC` },
+        { status: 400 }
+      );
+    }
+    
+    // Check sender balance
+    if (sender.balance.available < fundingAmount) {
+      return NextResponse.json(
+        { error: 'Insufficient balance', available: sender.balance.available, required: fundingAmount },
+        { status: 400 }
+      );
+    }
+    
+    // If agent, check limits
+    if (ctx.actorType === 'agent') {
+      const limitService = new LimitService(supabase);
+      const check = await limitService.checkStreamLimit(ctx.actorId, flowRatePerMonth);
+      if (!check.allowed) {
+        return NextResponse.json(
+          { error: 'Stream limit exceeded', details: check },
+          { status: 403 }
+        );
+      }
+    }
+    
+    // Calculate runway
+    const runwaySeconds = Math.floor((fundingAmount - bufferAmount) / flowRatePerSecond);
+    const health = calculateHealth(runwaySeconds);
+    
+    // Create stream
+    const { data: stream, error } = await supabase
+      .from('streams')
+      .insert({
+        tenant_id: ctx.tenantId,
+        status: 'active',
+        sender_account_id: senderAccountId,
+        sender_account_name: sender.name,
+        receiver_account_id: receiverAccountId,
+        receiver_account_name: receiver.name,
+        initiated_by_type: ctx.actorType,
+        initiated_by_id: ctx.actorId,
+        initiated_by_name: ctx.actorName,
+        managed_by_type: ctx.actorType,
+        managed_by_id: ctx.actorId,
+        managed_by_name: ctx.actorName,
+        flow_rate_per_second: flowRatePerSecond,
+        flow_rate_per_month: flowRatePerMonth,
+        funded_amount: fundingAmount,
+        buffer_amount: bufferAmount,
+        runway_seconds: runwaySeconds,
+        health,
+        description,
+        category,
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    
+    // Hold funds from sender
+    const balanceService = new BalanceService(supabase);
+    await balanceService.holdForStream(senderAccountId, stream.id, fundingAmount, bufferAmount);
+    
+    // Update agent stream stats if applicable
+    if (ctx.actorType === 'agent') {
+      await updateAgentStreamStats(supabase, ctx.actorId, 1, flowRatePerMonth);
+    }
+    
+    // Log event
+    await logStreamEvent(supabase, stream.id, ctx.tenantId, 'created', ctx, { fundingAmount });
+    
+    return NextResponse.json({ data: mapStreamFromDb(stream) }, { status: 201 });
+  });
+}
+
+function calculateHealth(runwaySeconds: number): StreamHealth {
+  const days = runwaySeconds / (24 * 60 * 60);
+  if (days > 7) return 'healthy';
+  if (days > 1) return 'warning';
+  return 'critical';
+}
+
+function formatRunway(seconds: number): string {
+  const days = Math.floor(seconds / (24 * 60 * 60));
+  if (days > 0) return `${days} days`;
+  const hours = Math.floor(seconds / (60 * 60));
+  if (hours > 0) return `${hours} hours`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} minutes`;
+}
+```
+
+---
+
+#### Story 5.3: Streams API - Management
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Implement pause, resume, cancel, top-up endpoints.
+
+**Acceptance Criteria:**
+- [ ] POST /streams/:id/pause - sets status to paused
+- [ ] POST /streams/:id/resume - sets status to active
+- [ ] POST /streams/:id/cancel - sets status to cancelled, releases funds
+- [ ] POST /streams/:id/top-up - adds funding, extends runway
+- [ ] Only manager can perform actions
+- [ ] All actions logged to stream_events
+
+**Files:**
+- `app/api/v1/streams/[id]/pause/route.ts`
+- `app/api/v1/streams/[id]/resume/route.ts`
+- `app/api/v1/streams/[id]/cancel/route.ts`
+- `app/api/v1/streams/[id]/top-up/route.ts`
+
+---
+
+#### Story 5.4: Stream Withdraw API
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Receiver withdraws accumulated funds from stream.
+
+**Acceptance Criteria:**
+- [ ] POST /streams/:id/withdraw
+- [ ] Only receiver can withdraw
+- [ ] Calculates available amount (streamed - withdrawn)
+- [ ] Credits receiver balance
+- [ ] Creates withdrawal transfer record
+- [ ] Updates stream totals
+
+**File:** `app/api/v1/streams/[id]/withdraw/route.ts`
+
+---
+
+#### Story 5.5: Stream Balance Calculation
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Real-time stream balance calculation service.
+
+**Acceptance Criteria:**
+- [ ] Calculates current streamed amount from start time
+- [ ] Accounts for pause periods
+- [ ] Returns available to withdraw
+- [ ] Updates runway based on remaining funds
+- [ ] Updates health status
+
+**File:** `lib/services/streams.ts`
+
+```typescript
+export class StreamService {
+  calculateCurrentBalance(stream: Stream): StreamBalance {
+    if (stream.status === 'cancelled') {
+      return {
+        total: stream.totalStreamed,
+        withdrawn: stream.totalWithdrawn,
+        available: stream.totalStreamed - stream.totalWithdrawn,
+      };
+    }
+    
+    if (stream.status === 'paused') {
+      // Use stored values
+      return {
+        total: stream.totalStreamed,
+        withdrawn: stream.totalWithdrawn,
+        available: stream.totalStreamed - stream.totalWithdrawn,
+      };
+    }
+    
+    // Active stream - calculate based on time
+    const startTime = new Date(stream.startedAt).getTime();
+    const now = Date.now();
+    const elapsedSeconds = (now - startTime) / 1000;
+    
+    // Account for any pause periods
+    const pausedSeconds = this.calculatePausedSeconds(stream);
+    const activeSeconds = elapsedSeconds - pausedSeconds;
+    
+    const totalStreamed = activeSeconds * stream.flowRate.perSecond;
+    const available = totalStreamed - stream.totalWithdrawn;
+    
+    return {
+      total: Math.min(totalStreamed, stream.funding.wrapped),
+      withdrawn: stream.totalWithdrawn,
+      available: Math.max(0, available),
+    };
+  }
+  
+  calculateRunway(stream: Stream): { seconds: number; display: string; health: StreamHealth } {
+    const balance = this.calculateCurrentBalance(stream);
+    const remainingFunding = stream.funding.wrapped - balance.total;
+    const runwaySeconds = Math.floor(remainingFunding / stream.flowRate.perSecond);
+    
+    return {
+      seconds: runwaySeconds,
+      display: formatRunway(runwaySeconds),
+      health: calculateHealth(runwaySeconds),
+    };
+  }
+}
+```
+
+---
+
+#### Story 5.6: Stream Health Monitor Worker
+**Points:** 2  
+**Priority:** P1  
+
+**Description:**  
+Background job to update stream health and send alerts.
+
+**Acceptance Criteria:**
+- [ ] Runs every 5 minutes
+- [ ] Recalculates runway for active streams
+- [ ] Updates health status
+- [ ] Logs health_changed events
+- [ ] (Future) Sends webhook notifications
+
+**File:** `lib/workers/stream-health-monitor.ts`
+
+---
+
+## Epic 6: Reports & Documents
+
+### Overview
+Implement report generation and export functionality.
+
+### Stories
+
+#### Story 6.1: Documents Database Schema
+**Points:** 1  
+**Priority:** P1  
+
+**File:** `supabase/migrations/004_reports.sql`
+
+```sql
+-- Documents
+CREATE TABLE documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  account_id UUID REFERENCES accounts(id),
+  
+  type TEXT NOT NULL CHECK (type IN ('statement', 'invoice', 'receipt', 'activity_log')),
+  name TEXT NOT NULL,
+  
+  period_start DATE,
+  period_end DATE,
+  
+  summary JSONB,
+  
+  format TEXT CHECK (format IN ('pdf', 'csv', 'json')),
+  storage_path TEXT,
+  
+  status TEXT DEFAULT 'ready' CHECK (status IN ('generating', 'ready', 'failed')),
+  
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_documents_tenant ON documents(tenant_id);
+CREATE INDEX idx_documents_account ON documents(account_id);
+
+-- Audit Log
+CREATE TABLE audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  
+  entity_type TEXT NOT NULL,
+  entity_id UUID NOT NULL,
+  action TEXT NOT NULL,
+  
+  actor_type TEXT NOT NULL,
+  actor_id TEXT,
+  actor_name TEXT,
+  
+  changes JSONB,
+  
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_audit_entity ON audit_log(entity_type, entity_id);
+CREATE INDEX idx_audit_tenant ON audit_log(tenant_id, created_at DESC);
+```
+
+---
+
+#### Story 6.2: Reports API
+**Points:** 2  
+**Priority:** P1  
+
+**Description:**  
+Implement reports listing and generation.
+
+**Acceptance Criteria:**
+- [ ] GET /api/v1/reports lists available reports
+- [ ] POST /api/v1/reports/generate creates report
+- [ ] Supports date range
+- [ ] Supports format selection (PDF, CSV, JSON)
+
+**File:** `app/api/v1/reports/route.ts`
+
+---
+
+#### Story 6.3: Export Service
+**Points:** 3  
+**Priority:** P1  
+
+**Description:**  
+Service to generate exports in various formats.
+
+**Acceptance Criteria:**
+- [ ] CSV export for transactions
+- [ ] CSV export for streams
+- [ ] JSON export for all data types
+- [ ] (Stretch) PDF statement generation
+
+**File:** `lib/services/exports.ts`
+
+---
+
+## Epic 7: Dashboard UI
+
+### Overview
+Implement the full Partner Dashboard UI, starting from the Figma Make export.
+
+### 7.0 Figma Make Integration Strategy
+
+The UI has been designed in Figma and can be exported via Figma Make as a React project. This gives us a head start but requires cleanup and wiring to real data.
+
+#### What Figma Make Gives Us
+```
+✅ Component structure (pages, layouts, components)
+✅ Styling (Tailwind classes, design tokens)
+✅ Static UI (buttons, tables, cards, modals)
+✅ Responsive layouts
+✅ Dark mode styles
+
+❌ Real data fetching (uses hardcoded/mock data)
+❌ State management (no React Query, no Zustand)
+❌ API integration (no fetch calls)
+❌ Form handling (no validation, no submission)
+❌ Proper TypeScript types (may use `any`)
+```
+
+#### Integration Steps
+
+**Step 1: Export from Figma Make**
+```bash
+# Download the React project from Figma Make
+# You'll get a zip with structure like:
+figma-export/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── styles/
+├── package.json
+└── ...
+```
+
+**Step 2: Copy Components to Dashboard App**
+```bash
+# Copy Figma components into the monorepo dashboard
+cp -r figma-export/src/components/* apps/dashboard/components/figma/
+
+# Review and reorganize:
+# - Move reusable UI components → components/ui/
+# - Move page sections → components/{feature}/
+# - Move layouts → components/layout/
+```
+
+**Step 3: Clean Up Components**
+
+Figma Make components typically need:
+
+| Issue | Fix |
+|-------|-----|
+| Hardcoded data | Replace with props |
+| No TypeScript types | Add proper interfaces |
+| Inline styles | Convert to Tailwind (if not already) |
+| Static images | Wire to real data or icons |
+| No interactivity | Add onClick handlers, state |
+
+**Example cleanup:**
+
+```tsx
+// BEFORE: Figma Make export
+const AccountCard = () => {
+  return (
+    <div className="p-4 bg-white rounded-lg">
+      <h3>TechCorp Inc</h3>
+      <p>$250,000.00</p>
+      <span>Verified</span>
+    </div>
+  );
+};
+
+// AFTER: Cleaned up with props and types
+import { Account } from '@payos/types';
+import { formatCurrency } from '@payos/utils';
+
+interface AccountCardProps {
+  account: Account;
+  onClick?: () => void;
+}
+
+export function AccountCard({ account, onClick }: AccountCardProps) {
+  return (
+    <div 
+      className="p-4 bg-white rounded-lg cursor-pointer hover:shadow-md"
+      onClick={onClick}
+    >
+      <h3 className="font-medium">{account.name}</h3>
+      <p className="text-2xl font-bold">
+        {formatCurrency(account.balance.total, 'USDC')}
+      </p>
+      <VerificationBadge status={account.verification.status} />
+    </div>
+  );
+}
+```
+
+**Step 4: Wire to API**
+
+Replace static data with React Query hooks:
+
+```tsx
+// BEFORE: Static data
+const AccountsPage = () => {
+  const accounts = [
+    { name: 'TechCorp', balance: 250000 },
+    { name: 'Maria', balance: 5000 },
+  ];
+  
+  return <AccountsList accounts={accounts} />;
+};
+
+// AFTER: Real data from API
+import { useAccounts } from '@/hooks/use-accounts';
+
+export default function AccountsPage() {
+  const { data, isLoading, error } = useAccounts();
+  
+  if (isLoading) return <AccountsListSkeleton />;
+  if (error) return <ErrorState error={error} />;
+  
+  return <AccountsList accounts={data.data} />;
+}
+```
+
+**Step 5: Add Missing Interactivity**
+
+Figma exports are visual-only. Add:
+
+```tsx
+// Forms with validation
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+// Modals with state
+const [isOpen, setIsOpen] = useState(false);
+
+// Navigation
+import { useRouter } from 'next/navigation';
+const router = useRouter();
+router.push(`/accounts/${account.id}`);
+
+// Mutations
+const createAccount = useCreateAccount();
+await createAccount.mutateAsync(formData);
+```
+
+#### Recommended File Mapping
+
+| Figma Page | Dashboard Route | Components Needed |
+|------------|-----------------|-------------------|
+| Accounts List | `/accounts` | AccountsTable, AccountFilters, AccountCard |
+| Account Detail | `/accounts/[id]` | AccountHeader, BalanceBreakdown, AccountTabs |
+| Agents List | `/agents` | AgentsTable, AgentFilters |
+| Agent Detail | `/agents/[id]` | AgentHeader, KYAStatus, AgentTabs |
+| Transactions | `/transactions` | TransactionsTable, TransactionFilters, ExportDropdown |
+| Reports | `/reports` | ReportsTable, GenerateReportModal |
+| New Payment | Modal | PaymentTypeToggle, RecipientSelect, AmountInput, StreamConfig |
+
+#### Component Checklist
+
+For each Figma component, ensure:
+
+- [ ] Props interface defined with proper types
+- [ ] Hardcoded strings replaced with props
+- [ ] Mock data removed, accepts real data
+- [ ] Loading state handled (skeleton or spinner)
+- [ ] Error state handled
+- [ ] Empty state handled
+- [ ] Click handlers wired up
+- [ ] Responsive on mobile
+- [ ] Accessible (keyboard nav, aria labels)
+
+#### Time Estimate
+
+| Task | Time |
+|------|------|
+| Export and initial copy | 30 min |
+| Reorganize file structure | 1 hour |
+| Clean up 20-30 components | 4-6 hours |
+| Wire to API (React Query) | 3-4 hours |
+| Add forms and validation | 2-3 hours |
+| Testing and polish | 2-3 hours |
+| **Total** | **12-18 hours** |
+
+This is faster than building from scratch (~40+ hours) but still requires significant work.
+
+---
+
+### Stories
+
+#### Story 7.1: Dashboard Layout
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Create main layout with sidebar navigation.
+
+**Acceptance Criteria:**
+- [ ] Responsive sidebar with all nav items
+- [ ] Header with tenant name
+- [ ] Dark mode support
+- [ ] Mobile-friendly
+
+**Files:**
+- `components/layout/DashboardLayout.tsx`
+- `components/layout/Sidebar.tsx`
+- `components/layout/Header.tsx`
+
+---
+
+#### Story 7.2: Accounts UI
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Accounts list and detail pages.
+
+**Acceptance Criteria:**
+- [ ] List page with search and type filter
+- [ ] Detail page with tabs
+- [ ] Overview tab with balance breakdown
+- [ ] Transactions tab
+- [ ] Streams tab with health badges
+- [ ] Agents tab
+- [ ] Documents tab
+
+**Files:**
+- `app/(dashboard)/accounts/page.tsx`
+- `app/(dashboard)/accounts/[id]/page.tsx`
+- `components/accounts/*`
+
+---
+
+#### Story 7.3: Agents UI
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Agents list and detail pages.
+
+**Acceptance Criteria:**
+- [ ] List page with parent account column
+- [ ] Detail page with tabs
+- [ ] Overview with parent account card
+- [ ] Streams tab showing managed streams
+- [ ] KYA tab with tier info
+- [ ] Activity tab
+
+**Files:**
+- `app/(dashboard)/agents/page.tsx`
+- `app/(dashboard)/agents/[id]/page.tsx`
+- `components/agents/*`
+
+---
+
+#### Story 7.4: Transactions UI
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Transactions list with filters and export.
+
+**Acceptance Criteria:**
+- [ ] List with type, status, date filters
+- [ ] Search by account
+- [ ] Export dropdown (PDF/CSV/JSON)
+- [ ] Click to view details
+
+**Files:**
+- `app/(dashboard)/transactions/page.tsx`
+- `components/payments/TransactionsTable.tsx`
+
+---
+
+#### Story 7.5: New Payment Modal
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Modal for creating transactions or streams.
+
+**Acceptance Criteria:**
+- [ ] Transaction vs Stream toggle
+- [ ] Recipient search/select
+- [ ] Amount / Flow Rate input
+- [ ] Stream options (duration, funding, protection)
+- [ ] Per-second rate calculation display
+- [ ] Submit creates appropriate resource
+
+**File:** `components/payments/NewPaymentModal.tsx`
+
+---
+
+#### Story 7.6: Reports UI
+**Points:** 2  
+**Priority:** P1  
+
+**Description:**  
+Reports page with export functionality.
+
+**Acceptance Criteria:**
+- [ ] Quick export section
+- [ ] Report types grid
+- [ ] Monthly statements list
+- [ ] Download buttons
+
+**Files:**
+- `app/(dashboard)/reports/page.tsx`
+- `components/reports/ReportsPage.tsx`
+
+---
+
+#### Story 7.7: Stream Components
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Reusable stream-related components.
+
+**Acceptance Criteria:**
+- [ ] StreamHealthBadge (green/amber/red/gray)
+- [ ] StreamRunway (days/hours display)
+- [ ] BalanceBreakdown (available vs in streams)
+- [ ] StreamsTable with all columns
+
+**Files:**
+- `components/streams/StreamHealthBadge.tsx`
+- `components/streams/StreamRunway.tsx`
+- `components/streams/BalanceBreakdown.tsx`
+- `components/streams/StreamsTable.tsx`
+
+---
+
+## Implementation Schedule
+
+### Phase 1: Full PoC with Mocks (Weekends 1-2)
+
+**Goal:** Complete, demo-ready system using database-only approach.
+
+#### Pre-Work: Figma Export (30 min)
+- [ ] Export React project from Figma Make
+- [ ] Copy components to `apps/dashboard/components/figma/`
+- [ ] Review structure, identify reusable components
+
+#### Weekend 1: Foundation + Core Features
+- [ ] Epic 1: Monorepo Setup (Story 1.1)
+- [ ] Epic 1: Database Schema (Story 1.2)
+- [ ] Epic 1: API Middleware (Story 1.3)
+- [ ] Epic 1: Seed Data (Story 1.4)
+- [ ] Epic 2: Accounts API (Stories 2.1-2.2)
+- [ ] Epic 7: Dashboard Layout (Story 7.1) — use Figma layout components
+- [ ] Epic 7: Accounts UI (Story 7.2) — wire Figma components to API
+- [ ] Mock providers: Circle, Payout, FX
+
+#### Weekend 2: Agents + Streaming + Polish
+- [ ] Epic 3: Agent System (Stories 3.1-3.5)
+- [ ] Epic 4: Transfers (Stories 4.1-4.3)
+- [ ] Epic 5: Streaming (Stories 5.1-5.5) — math-based, no blockchain
+- [ ] Epic 7: Agents UI, Transactions UI, Streams UI (Stories 7.3-7.7)
+- [ ] Epic 6: Basic Reports (Story 6.1)
+
+**Deliverable:** Fully functional demo with all features working on mock data.
+
+---
+
+### Phase 2: Circle Integration (Weekend 3)
+
+**Goal:** Add real Circle sandbox for USDC operations.
+
+- [ ] Create Circle sandbox account
+- [ ] Implement real Circle provider
+- [ ] Wire up deposits/withdrawals
+- [ ] Test end-to-end USDC flow
+
+**Deliverable:** "Real" USDC deposits/withdrawals via Circle sandbox.
+
+---
+
+### Phase 3: Superfluid On-Chain (Weekend 4+)
+
+**Goal:** Add on-chain streaming via Superfluid testnet.
+
+- [ ] Set up testnet wallet
+- [ ] Get testnet ETH and tokens
+- [ ] Implement Superfluid provider
+- [ ] Wire up stream creation/management
+- [ ] Add blockchain explorer links to UI
+
+**Deliverable:** Real on-chain streams with transaction hashes.
+
+---
+
+### Quick Start: First Hour
+
+```bash
+# 1. Clone and install
+git clone <repo>
+cd payos
+pnpm install
+
+# 2. Set up Supabase
+# - Create project at supabase.com
+# - Run migrations: pnpm --filter @payos/db migrate
+# - Seed data: pnpm --filter @payos/db seed
+
+# 3. Configure environment
+cp .env.example .env
+# Fill in SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+
+# 4. Start development
+pnpm dev
+# Dashboard: http://localhost:3000
+# API: http://localhost:4000
+```
+
+---
+
+## API Reference
+
+See separate API documentation or the route files for detailed request/response formats.
+
+**Base URL:** `http://localhost:4000/v1` (dev) or `https://api.payos.dev/v1` (prod)
+
+### Quick Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /v1/accounts | List accounts |
+| POST | /v1/accounts | Create account |
+| GET | /v1/accounts/:id | Get account |
+| GET | /v1/accounts/:id/balances | Get balance breakdown |
+| GET | /v1/accounts/:id/agents | Get account's agents |
+| GET | /v1/accounts/:id/streams | Get account's streams |
+| GET | /v1/agents | List agents |
+| POST | /v1/agents | Register agent |
+| GET | /v1/agents/:id | Get agent |
+| GET | /v1/agents/:id/streams | Get agent's managed streams |
+| POST | /v1/agents/:id/suspend | Suspend agent |
+| POST | /v1/agents/:id/activate | Activate agent |
+| POST | /v1/quotes | Get transfer quote |
+| GET | /v1/transfers | List transfers |
+| POST | /v1/transfers | Create transfer |
+| POST | /v1/internal-transfers | Internal transfer |
+| GET | /v1/streams | List streams |
+| POST | /v1/streams | Create stream |
+| GET | /v1/streams/:id | Get stream |
+| POST | /v1/streams/:id/pause | Pause stream |
+| POST | /v1/streams/:id/resume | Resume stream |
+| POST | /v1/streams/:id/cancel | Cancel stream |
+| POST | /v1/streams/:id/top-up | Top up stream |
+| POST | /v1/streams/:id/withdraw | Withdraw from stream |
+| GET | /v1/reports | List reports |
+| POST | /v1/reports/generate | Generate report |
+
+---
+
+## Testing & Demo Scenarios
+
+### Demo 1: Cross-Border Payout
+1. Show TechCorp account with $250K balance
+2. Get quote for $1,000 USD → MXN
+3. Create transfer to Maria Garcia
+4. Watch status go pending → processing → completed
+5. Show Maria's balance increased
+
+### Demo 2: Agent-Initiated Payroll Stream
+1. Show Payroll Autopilot agent under TechCorp
+2. Agent creates $2,000/month stream to Carlos
+3. Show stream in TechCorp's Streams tab (Managed By: Agent)
+4. Show stream in Carlos's incoming Streams
+5. Show stream in Agent's Streams tab
+
+### Demo 3: Stream Health Monitoring
+1. Show stream with < 7 days runway (warning state)
+2. Amber badge, warning banner displayed
+3. Click "Top Up" and add funds
+4. Health returns to green (healthy)
+
+### Demo 4: Limit Enforcement
+1. Agent tries to create stream exceeding maxTotalOutflow
+2. Request rejected with clear error message
+3. Show agent's limits are capped by parent account
+
+### Demo 5: Reports & Export
+1. Navigate to Reports page
+2. Select date range and format
+3. Generate monthly statement
+4. Download as PDF/CSV
+
+---
+
+## Notes for Developers
+
+### Using with Cursor/Claude Code
+
+1. **Start with Epic 1** - Get the foundation right
+2. **Run migrations** before coding API routes
+3. **Use the types** defined in this PRD
+4. **Follow the file structure** for consistency
+5. **Test each story** before moving to next
+
+### Key Patterns
+
+- **Multi-tenant:** Always filter by tenant_id
+- **Attribution:** Always include initiatedBy on mutations
+- **Idempotency:** Use idempotency keys for transfers/streams
+- **Audit:** Log all state changes
+- **Limits:** Check agent limits before actions
+
+### Mock vs Real
+
+- Circle: Mock for PoC
+- Payout Provider: Mock for PoC
+- Superfluid: Real on Base Sepolia testnet
+- FX Rates: Hardcoded for reliability
+
+---
+
+*End of PRD*
