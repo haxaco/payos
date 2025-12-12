@@ -5,6 +5,8 @@ import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Activity, Plus, Search, Filter, Play, Pause } from 'lucide-react';
 import Link from 'next/link';
 import type { Stream } from '@payos/api-client';
+import { CardListSkeleton } from '@/components/ui/skeletons';
+import { StreamsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
 
 export default function StreamsPage() {
   const api = useApiClient();
@@ -102,28 +104,13 @@ export default function StreamsPage() {
       {/* Streams List */}
       <div className="space-y-4">
         {loading ? (
-          [...Array(5)].map((_, i) => (
-            <div key={i} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 animate-pulse">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 bg-gray-200 dark:bg-gray-800 rounded-full"></div>
-                  <div>
-                    <div className="h-4 w-48 bg-gray-200 dark:bg-gray-800 rounded mb-2"></div>
-                    <div className="h-3 w-32 bg-gray-200 dark:bg-gray-800 rounded"></div>
-                  </div>
-                </div>
-                <div className="h-6 w-20 bg-gray-200 dark:bg-gray-800 rounded-full"></div>
-              </div>
-            </div>
-          ))
+          <CardListSkeleton count={5} />
         ) : filteredStreams.length === 0 ? (
-          <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
-            <Activity className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No streams found</h3>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {search ? 'Try a different search term' : 'Create your first stream to get started'}
-            </p>
-          </div>
+          search ? (
+            <SearchEmptyState query={search} />
+          ) : (
+            <StreamsEmptyState />
+          )
         ) : (
           filteredStreams.map((stream) => (
             <div 

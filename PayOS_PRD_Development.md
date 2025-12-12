@@ -4846,17 +4846,17 @@ Query: ?type=transfer|stream_create|limit_check&limit=50&offset=0
 - [x] Story 8.2: Agent Performance Dashboard Card (P0) ✅
 - [x] Story 8.3: Agent Activity Feed (P0) ✅
 - [x] Story 8.4: Transaction Attribution Badges (P0) ✅
-- [ ] Story 8.5: Agent Quick Actions (P1)
+- [x] Story 8.5: Agent Quick Actions (P1) ✅
 
 #### Demo Polish (Epic 9) — 3-4 hours
 - [x] Story 9.1: Reports Page Implementation (P0) ✅
 - [x] Story 9.2: Streams Page Verification (P0) ✅
-- [ ] Story 9.3: Empty States (P1)
-- [ ] Story 9.4: Loading Skeletons (P1)
-- [ ] Story 9.5: Error States (P1)
-- [ ] Story 9.6: Global Search Enhancement (P1)
-- [ ] Story 9.7: Notifications Center (P2)
-- [ ] Story 9.8: Real-Time Balance Animation (P2)
+- [x] Story 9.3: Empty States (P1) ✅
+- [x] Story 9.4: Loading Skeletons (P1) ✅
+- [x] Story 9.5: Error States (P1) ✅
+- [x] Story 9.6: Global Search Enhancement (P1) ✅
+- [x] Story 9.7: Notifications Center (P2) ✅
+- [x] Story 9.8: Real-Time Balance Animation (P2) ✅
 
 **Deliverable:** Demo where AI story is visible and compelling.
 

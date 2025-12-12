@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { Agent, Stream, AgentLimits } from '@payos/api-client';
 import { AgentActivityFeed } from '@/components/agents/agent-activity-feed';
+import { AgentQuickActions } from '@/components/agents/agent-quick-actions';
 import { getAgentActivity } from '@/lib/mock-data/agent-activity';
 
 type TabType = 'overview' | 'streams' | 'kya' | 'activity';
@@ -216,7 +217,12 @@ export default function AgentDetailPage() {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Quick Actions */}
+          <AgentQuickActions 
+            agent={{ id: agent.id, name: agent.name, status: agent.status }} 
+          />
+
           <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${
             agent.status === 'active'
               ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'

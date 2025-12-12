@@ -5,7 +5,8 @@ import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Users, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
 import type { Account } from '@payos/api-client';
-import { TableSkeleton } from '@/components/skeletons';
+import { TableSkeleton } from '@/components/ui/skeletons';
+import { AccountsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
 
 export default function AccountsPage() {
   const api = useApiClient();
@@ -96,13 +97,11 @@ export default function AccountsPage() {
         {loading ? (
           <TableSkeleton rows={8} columns={5} />
         ) : filteredAccounts.length === 0 ? (
-          <div className="p-8 text-center">
-            <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No accounts found</h3>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {search ? 'Try a different search term' : 'Create your first account to get started'}
-            </p>
-          </div>
+          search ? (
+            <SearchEmptyState query={search} />
+          ) : (
+            <AccountsEmptyState />
+          )
         ) : (
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-900">

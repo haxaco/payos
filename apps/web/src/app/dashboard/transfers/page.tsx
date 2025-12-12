@@ -23,6 +23,8 @@ import {
 import Link from 'next/link';
 import type { Transfer } from '@payos/api-client';
 import { InitiatedByBadgeCompact } from '@/components/transactions/initiated-by-badge';
+import { TableSkeleton } from '@/components/ui/skeletons';
+import { TransactionsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
 
 export default function TransfersPage() {
   const api = useApiClient();
@@ -247,20 +249,13 @@ export default function TransfersPage() {
       {/* Transfers Table */}
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center">
-            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
-            <p className="text-gray-500 mt-4">Loading transactions...</p>
-          </div>
+          <TableSkeleton rows={8} columns={6} />
         ) : filteredTransfers.length === 0 ? (
-          <div className="p-8 text-center">
-            <ArrowLeftRight className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No transactions found</h3>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {search || statusFilter !== 'all' || typeFilter !== 'all' 
-                ? 'Try adjusting your filters' 
-                : 'Transactions will appear here'}
-            </p>
-          </div>
+          (search || statusFilter !== 'all' || typeFilter !== 'all') ? (
+            <SearchEmptyState query={search || 'filtered results'} />
+          ) : (
+            <TransactionsEmptyState />
+          )
         ) : (
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-900">

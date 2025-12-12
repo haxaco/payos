@@ -5,6 +5,8 @@ import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Bot, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
 import type { Agent } from '@payos/api-client';
+import { AgentsEmptyState } from '@/components/ui/empty-state';
+import { CardListSkeleton } from '@/components/ui/skeletons';
 
 export default function AgentsPage() {
   const api = useApiClient();
@@ -92,20 +94,22 @@ export default function AgentsPage() {
       {/* Agents Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
-          [...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 animate-pulse">
-              <div className="h-12 w-12 bg-gray-200 dark:bg-gray-800 rounded-xl mb-4"></div>
-              <div className="h-4 w-32 bg-gray-200 dark:bg-gray-800 rounded mb-2"></div>
-              <div className="h-3 w-48 bg-gray-200 dark:bg-gray-800 rounded"></div>
-            </div>
-          ))
+          <div className="col-span-full">
+            <CardListSkeleton count={6} />
+          </div>
         ) : filteredAgents.length === 0 ? (
-          <div className="col-span-full p-8 text-center">
-            <Bot className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No agents found</h3>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {search ? 'Try a different search term' : 'Create your first agent to get started'}
-            </p>
+          <div className="col-span-full">
+            {search ? (
+              <div className="p-8 text-center">
+                <div className="text-5xl mb-4">🔍</div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No results found</h3>
+                <p className="text-gray-500 dark:text-gray-400 mt-2">
+                  Try a different search term
+                </p>
+              </div>
+            ) : (
+              <AgentsEmptyState />
+            )}
           </div>
         ) : (
           filteredAgents.map((agent) => (

@@ -2,10 +2,12 @@
 
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { Bell, LogOut, Settings, User, Search, ChevronDown, Check } from 'lucide-react';
+import { LogOut, Settings, User, Search, ChevronDown, Check } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { useState } from 'react';
 import { ThemeToggleSimple } from '@/components/theme-toggle';
+import { GlobalSearch, useGlobalSearch } from '@/components/search/global-search';
+import { NotificationsCenter } from '@/components/notifications/notifications-center';
 
 type Environment = 'sandbox' | 'production';
 
@@ -18,6 +20,7 @@ export function Header({ user }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvMenu, setShowEnvMenu] = useState(false);
   const [environment, setEnvironment] = useState<Environment>('sandbox');
+  const globalSearch = useGlobalSearch();
 
   const handleSignOut = async () => {
     const supabase = createSupabaseBrowserClient();
@@ -41,19 +44,18 @@ export function Header({ user }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        {/* Search */}
+        {/* Search - Now triggers global search modal */}
         <div className="flex-1 max-w-xl">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search or ask anything..."
-              className="w-full pl-10 pr-16 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white placeholder-gray-500"
-            />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs text-gray-500 dark:text-gray-400 font-medium">
+          <button
+            onClick={globalSearch.open}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+          >
+            <Search className="w-4 h-4 text-gray-400" />
+            <span className="flex-1 text-gray-500 dark:text-gray-400">Search or ask anything...</span>
+            <kbd className="hidden sm:flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs text-gray-500 dark:text-gray-400 font-medium">
               ⌘K
-            </div>
-          </div>
+            </kbd>
+          </button>
         </div>
 
         {/* Right side */}
@@ -112,11 +114,8 @@ export function Header({ user }: HeaderProps) {
           {/* Theme Toggle */}
           <ThemeToggleSimple />
 
-          {/* Notifications */}
-          <button className="relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-          </button>
+          {/* Notifications - Now uses NotificationsCenter */}
+          <NotificationsCenter />
 
           {/* User menu */}
           <div className="relative">
@@ -184,6 +183,9 @@ export function Header({ user }: HeaderProps) {
           </div>
         </div>
       </header>
+
+      {/* Global Search Modal */}
+      <GlobalSearch isOpen={globalSearch.isOpen} onClose={globalSearch.close} />
     </>
   );
 }
