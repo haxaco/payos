@@ -20,7 +20,9 @@ import {
   XCircle,
   Pause,
 } from 'lucide-react';
-import type { Account, Agent, Stream, LedgerEntry } from '@payos/api-client';
+import type { Account, Agent, Stream, LedgerEntry, Transfer } from '@payos/api-client';
+import { useLocale } from '@/lib/locale';
+import { formatCurrency } from '@payos/ui';
 
 type TabType = 'overview' | 'transactions' | 'streams' | 'agents';
 
@@ -34,26 +36,34 @@ export default function AccountDetailPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
   const [transactions, setTransactions] = useState<LedgerEntry[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [actionLoading, setActionLoading] = useState(false);
+  const { formatCurrency: formatCurrencyLocale, formatDate: formatDateLocale } = useLocale();
 
   useEffect(() => {
     async function fetchData() {
       if (!api) return;
 
       try {
-        const [accountData, agentsData, streamsData, transactionsData] = await Promise.all([
+        const [accountData, agentsData, streamsData, transactionsData, transfersData] = await Promise.all([
           api.accounts.get(accountId),
           api.accounts.getAgents(accountId, { limit: 50 }),
           api.accounts.getStreams(accountId, { limit: 50 }),
           api.accounts.getTransactions(accountId, { limit: 50 }),
+          api.transfers.list({ limit: 100 }), // Get all transfers, filter client-side
         ]);
 
         setAccount(accountData);
         setAgents(agentsData.data || []);
         setStreams(streamsData.data || []);
         setTransactions(transactionsData.data || []);
+        // Filter transfers for this account
+        const accountTransfers = (transfersData.data || []).filter(
+          t => t.from?.accountId === accountId || t.to?.accountId === accountId
+        );
+        setTransfers(accountTransfers);
       } catch (error) {
         console.error('Failed to fetch account:', error);
       } finally {
@@ -132,7 +142,7 @@ export default function AccountDetailPage() {
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Wallet },
-    { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactions.length },
+    { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: Math.max(transactions.length, transfers.length) },
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
     { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agents.length },
   ];
@@ -252,19 +262,19 @@ export default function AccountDetailPage() {
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Balance</div>
           <div className="text-2xl font-bold text-gray-900 dark:text-white">
-            ${account.balanceTotal?.toLocaleString() || '0.00'}
+            {formatCurrencyLocale(account.balanceTotal || 0, 'USDC')}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Available</div>
           <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-            ${account.balanceAvailable?.toLocaleString() || '0.00'}
+            {formatCurrencyLocale(account.balanceAvailable || 0, 'USDC')}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">In Streams</div>
           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-            ${account.balanceInStreams?.toLocaleString() || '0.00'}
+            {formatCurrencyLocale(account.balanceInStreams || 0, 'USDC')}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
@@ -306,7 +316,7 @@ export default function AccountDetailPage() {
         <OverviewTab account={account} />
       )}
       {activeTab === 'transactions' && (
-        <TransactionsTab transactions={transactions} />
+        <TransactionsTab transactions={transactions} transfers={transfers} accountId={accountId} />
       )}
       {activeTab === 'streams' && (
         <StreamsTab streams={streams} />
@@ -344,7 +354,7 @@ function OverviewTab({ account }: { account: Account }) {
           <div className="flex justify-between">
             <dt className="text-gray-500 dark:text-gray-400">Created</dt>
             <dd className="text-gray-900 dark:text-white">
-              {new Date(account.createdAt).toLocaleString()}
+              {formatDateLocale(account.createdAt)}
             </dd>
           </div>
         </dl>
@@ -357,7 +367,7 @@ function OverviewTab({ account }: { account: Account }) {
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-500 dark:text-gray-400">Available</span>
               <span className="text-gray-900 dark:text-white">
-                ${account.balanceAvailable?.toLocaleString() || '0.00'}
+                {formatCurrencyLocale(account.balanceAvailable || 0, 'USDC')}
               </span>
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -373,7 +383,7 @@ function OverviewTab({ account }: { account: Account }) {
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-500 dark:text-gray-400">In Streams</span>
               <span className="text-gray-900 dark:text-white">
-                ${account.balanceInStreams?.toLocaleString() || '0.00'}
+                {formatCurrencyLocale(account.balanceInStreams || 0, 'USDC')}
               </span>
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -391,9 +401,25 @@ function OverviewTab({ account }: { account: Account }) {
   );
 }
 
-// Transactions Tab Component
-function TransactionsTab({ transactions }: { transactions: LedgerEntry[] }) {
-  if (transactions.length === 0) {
+// Transactions Tab Component - Shows both ledger entries and transfers
+function TransactionsTab({ 
+  transactions, 
+  transfers, 
+  accountId 
+}: { 
+  transactions: LedgerEntry[];
+  transfers: Transfer[];
+  accountId: string;
+}) {
+  const { formatCurrency: formatCurrencyLocale, formatDate: formatDateLocale } = useLocale();
+  
+  // Combine and sort by date (most recent first)
+  const allTransactions = [
+    ...transactions.map(tx => ({ ...tx, _type: 'ledger' as const })),
+    ...transfers.map(tf => ({ ...tf, _type: 'transfer' as const })),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  if (allTransactions.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
         <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -411,40 +437,80 @@ function TransactionsTab({ transactions }: { transactions: LedgerEntry[] }) {
         <thead className="bg-gray-50 dark:bg-gray-900">
           <tr>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance After</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-          {transactions.map((tx) => (
-            <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-900">
-              <td className="px-6 py-4">
-                <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                  tx.type === 'credit'
-                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                    : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                }`}>
-                  {tx.type}
-                </span>
-              </td>
-              <td className="px-6 py-4">
-                <span className={tx.type === 'credit' ? 'text-emerald-600' : 'text-red-600'}>
-                  {tx.type === 'credit' ? '+' : '-'}${Math.abs(tx.amount).toLocaleString()}
-                </span>
-              </td>
-              <td className="px-6 py-4 text-gray-900 dark:text-white">
-                ${tx.balanceAfter?.toLocaleString() || '-'}
-              </td>
-              <td className="px-6 py-4 text-gray-500 dark:text-gray-400 text-sm">
-                {tx.referenceType || '-'}
-              </td>
-              <td className="px-6 py-4 text-gray-500 dark:text-gray-400 text-sm">
-                {new Date(tx.createdAt).toLocaleString()}
-              </td>
-            </tr>
-          ))}
+          {allTransactions.map((item) => {
+            if (item._type === 'ledger') {
+              const tx = item as LedgerEntry & { _type: 'ledger' };
+              return (
+                <tr key={`ledger-${tx.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                  <td className="px-6 py-4">
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+                      tx.type === 'credit'
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+                    }`}>
+                      {tx.type}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-gray-900 dark:text-white text-sm">
+                    {tx.description || tx.referenceType || '-'}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={tx.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                      {tx.type === 'credit' ? '+' : '-'}{formatCurrencyLocale(Math.abs(tx.amount), 'USDC')}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-gray-900 dark:text-white">
+                    {tx.balanceAfter ? formatCurrencyLocale(tx.balanceAfter, 'USDC') : '-'}
+                  </td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400 text-sm">
+                    {formatDateLocale(tx.createdAt)}
+                  </td>
+                </tr>
+              );
+            } else {
+              const tf = item as Transfer & { _type: 'transfer' };
+              const isIncoming = tf.to?.accountId === accountId;
+              const isOutgoing = tf.from?.accountId === accountId;
+              
+              return (
+                <tr key={`transfer-${tf.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                  <td className="px-6 py-4">
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+                      isIncoming
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+                    }`}>
+                      {isIncoming ? 'Incoming' : 'Outgoing'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-gray-900 dark:text-white text-sm">
+                    {isIncoming 
+                      ? `From ${tf.from?.accountName || 'External'}`
+                      : `To ${tf.to?.accountName || 'External'}`
+                    }
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={isIncoming ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                      {isIncoming ? '+' : '-'}{formatCurrencyLocale(tf.amount, tf.currency || 'USDC')}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400 text-sm">
+                    -
+                  </td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400 text-sm">
+                    {formatDateLocale(tf.createdAt)}
+                  </td>
+                </tr>
+              );
+            }
+          })}
         </tbody>
       </table>
     </div>

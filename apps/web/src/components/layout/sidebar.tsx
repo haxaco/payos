@@ -24,7 +24,7 @@ import {
   Layers,
   UserCheck,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useSidebar } from './sidebar-context';
 
 const mainNav = [
   { href: '/dashboard', label: 'Home', icon: Home },
@@ -62,7 +62,7 @@ interface NavItemProps {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, setCollapsed } = useSidebar();
 
   const isActive = (href: string) => {
     if (href === '/dashboard') {
@@ -174,30 +174,14 @@ export function Sidebar() {
         </div>
       </nav>
 
-      {/* User Profile at Bottom */}
-      <div className="px-3 py-4 border-t border-gray-200 dark:border-gray-800">
-        <Link
-          href="/dashboard/settings"
-          className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
-            collapsed && 'justify-center'
-          )}
-        >
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
-            JS
+      {/* Version */}
+      {!collapsed && (
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            PayOS v0.1.0
           </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                John Smith
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                john@acmefintech.com
-              </div>
-            </div>
-          )}
-        </Link>
-      </div>
+        </div>
+      )}
     </aside>
   );
 }

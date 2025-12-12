@@ -7,17 +7,23 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Format a number as currency
+ * Always shows at least 2 decimal places (more for FX/streams/stablecoin if needed)
  */
 export function formatCurrency(
   amount: number,
   currency: string = 'USD',
   options?: Intl.NumberFormatOptions
 ): string {
+  // For stablecoins, FX, or streams, allow more precision if specified
+  const isStablecoin = currency === 'USDC' || currency === 'USDT';
+  const minDecimals = options?.minimumFractionDigits ?? 2;
+  const maxDecimals = options?.maximumFractionDigits ?? (isStablecoin ? 6 : 2);
+  
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: minDecimals,
+    maximumFractionDigits: maxDecimals,
     ...options,
   }).format(amount);
 }

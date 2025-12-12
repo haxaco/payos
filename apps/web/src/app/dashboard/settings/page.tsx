@@ -2,16 +2,39 @@
 
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
-import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check } from 'lucide-react';
+import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe } from 'lucide-react';
+import { useLocale, type Locale } from '@/lib/locale';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const { locale, setLocale, formatCurrency, formatDate } = useLocale();
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
     streams: true,
     transfers: true,
   });
+
+  const localeOptions: Array<{ value: Locale; label: string; description: string; example: string }> = [
+    { 
+      value: 'en-US', 
+      label: 'United States', 
+      description: 'USD, MM/DD/YYYY',
+      example: `${formatCurrency(1234.56, 'USD')} • ${formatDate(new Date())}`
+    },
+    { 
+      value: 'en-EU', 
+      label: 'Europe', 
+      description: 'EUR, DD/MM/YYYY',
+      example: `${formatCurrency(1234.56, 'EUR')} • ${formatDate(new Date())}`
+    },
+    { 
+      value: 'es-LATAM', 
+      label: 'Latin America', 
+      description: 'USD, DD/MM/YYYY',
+      example: `${formatCurrency(1234.56, 'USD')} • ${formatDate(new Date())}`
+    },
+  ];
 
   const themeOptions = [
     { value: 'light', label: 'Light', icon: Sun, description: 'Light background with dark text' },
@@ -61,6 +84,53 @@ export default function SettingsPage() {
                 disabled
               />
               <p className="mt-1 text-xs text-gray-500">Email cannot be changed</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Localization Section */}
+        <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-green-100 dark:bg-green-950 rounded-xl flex items-center justify-center">
+              <Globe className="h-5 w-5 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Localization</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Date and currency formatting</p>
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              Region
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {localeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setLocale(option.value)}
+                  className={`relative p-4 rounded-xl border-2 transition-all text-left ${
+                    locale === option.value
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
+                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
+                  }`}
+                >
+                  {locale === option.value && (
+                    <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                      <Check className="h-3 w-3 text-white" />
+                    </div>
+                  )}
+                  <div className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                    {option.label}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                    {option.description}
+                  </div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                    {option.example}
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </section>

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import type { Account } from '@payos/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { AccountsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
+import { useLocale } from '@/lib/locale';
 
 export default function AccountsPage() {
   const api = useApiClient();
@@ -14,6 +15,7 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const { formatCurrency } = useLocale();
 
   useEffect(() => {
     async function fetchAccounts() {
@@ -147,7 +149,7 @@ export default function AccountsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                    ${account.balanceTotal?.toLocaleString() || '0.00'}
+                    {formatCurrency(account.balanceTotal || 0, 'USDC')}
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-sm text-gray-500 dark:text-gray-400">

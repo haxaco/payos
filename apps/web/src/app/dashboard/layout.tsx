@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation';
 import { getUser } from '@/lib/supabase/server';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
+import { SidebarProvider } from '@/components/layout/sidebar-context';
+import { LocaleProvider } from '@/lib/locale';
+import { SidebarLayout } from '@/components/layout/sidebar-layout';
 
 export default async function DashboardLayout({
   children,
@@ -15,14 +18,18 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black">
-      <Sidebar />
-      <div className="lg:pl-64">
-        <Header user={user} />
-        <main className="flex-1">
-          {children}
-        </main>
-      </div>
-    </div>
+    <LocaleProvider>
+      <SidebarProvider>
+        <div className="min-h-screen bg-gray-50 dark:bg-black">
+          <Sidebar />
+          <SidebarLayout>
+            <Header user={user} />
+            <main className="flex-1">
+              {children}
+            </main>
+          </SidebarLayout>
+        </div>
+      </SidebarProvider>
+    </LocaleProvider>
   );
 }
