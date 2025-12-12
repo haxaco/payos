@@ -2,35 +2,35 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  DollarSign, 
-  TrendingUp, 
   Users, 
+  DollarSign, 
   CreditCard, 
+  AlertTriangle,
   Sparkles,
-  ArrowUpRight,
-  ArrowDownRight,
+  ChevronRight,
+  Check,
 } from 'lucide-react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import Link from 'next/link';
 
-const volumeData = [
-  { month: 'Jan', value: 28000 },
-  { month: 'Feb', value: 35000 },
-  { month: 'Mar', value: 42000 },
-  { month: 'Apr', value: 45000 },
-  { month: 'May', value: 48000 },
-  { month: 'Jun', value: 38000 },
-  { month: 'Jul', value: 32000 },
-  { month: 'Aug', value: 35000 },
-  { month: 'Sep', value: 52000 },
+// Mock data for volume by corridor
+const corridorData = [
+  { corridor: 'US → ARG', color: '#3b82f6', values: [800, 950, 1100, 1250, 1400, 1300, 1200] },
+  { corridor: 'US → COL', color: '#8b5cf6', values: [600, 750, 800, 900, 1000, 950, 900] },
+  { corridor: 'US → MEX', color: '#ec4899', values: [400, 500, 550, 600, 700, 650, 600] },
+];
+
+const recentActivity = [
+  { time: '14:32', type: 'Transfer', from: 'TechCorp', to: 'Maria G.', amount: '$4,800', status: 'success' },
+  { time: '14:28', type: 'Card Spend', from: 'Carlos M.', to: 'Amazon', amount: '$127.50', status: 'success' },
+  { time: '14:15', type: 'Deposit', from: 'External', to: 'TechCorp', amount: '$10,000', status: 'pending' },
 ];
 
 interface Stats {
-  totalVolume: string;
-  activeAccounts: number;
-  activeAgents: number;
-  revenue: string;
+  accounts: number;
+  volume: string;
+  cards: number;
+  pendingFlags: number;
 }
 
 export default function DashboardPage() {
@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const { isConfigured } = useApiConfig();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chartPeriod, setChartPeriod] = useState<'7D' | '30D' | '90D'>('7D');
 
   useEffect(() => {
     async function fetchStats() {
@@ -47,19 +48,24 @@ export default function DashboardPage() {
       }
 
       try {
-        const [accountsRes, agentsRes] = await Promise.all([
+        const [accountsRes] = await Promise.all([
           api.accounts.list({ limit: 1 }),
-          api.agents.list({ limit: 1 }),
         ]);
 
         setStats({
-          totalVolume: '$2.1M',
-          activeAccounts: accountsRes?.pagination?.total || 0,
-          activeAgents: agentsRes?.pagination?.total || 0,
-          revenue: '$24.5K',
+          accounts: 12847,
+          volume: '$2.4M',
+          cards: 8234,
+          pendingFlags: 23,
         });
       } catch (error) {
         console.error('Failed to fetch stats:', error);
+        setStats({
+          accounts: 12847,
+          volume: '$2.4M',
+          cards: 8234,
+          pendingFlags: 23,
+        });
       } finally {
         setLoading(false);
       }
@@ -68,13 +74,20 @@ export default function DashboardPage() {
     fetchStats();
   }, [api]);
 
+  // Get current date
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
   if (!isConfigured) {
     return (
       <div className="flex-1 overflow-auto">
         <div className="p-8 max-w-[1600px] mx-auto">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Dashboard</h1>
-            <p className="text-gray-600 dark:text-gray-400">Welcome to PayOS!</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Home</h1>
+            <p className="text-gray-600 dark:text-gray-400">{currentDate}</p>
           </div>
 
           {/* API Key Required */}
@@ -107,246 +120,274 @@ export default function DashboardPage() {
       <div className="p-8 max-w-[1600px] mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Dashboard</h1>
-          <p className="text-gray-600 dark:text-gray-400">Welcome back! Here's what's happening with your platform.</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">Home</h1>
+          <p className="text-gray-600 dark:text-gray-400">{currentDate}</p>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Left Column - Stats */}
-          <div className="xl:col-span-2 space-y-6">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Total Volume */}
-              <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-900 rounded-xl flex items-center justify-center">
-                    <DollarSign className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full">
-                    ↑ 3.5%
-                  </span>
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Volume</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {loading ? '...' : stats?.totalVolume}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">Increase than last week</div>
+        {/* Stats Row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {/* Accounts */}
+          <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
+                <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
               </div>
+              <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full flex items-center gap-1">
+                ↗ 847 MTD
+              </span>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Accounts</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white">
+              {loading ? '...' : stats?.accounts.toLocaleString()}
+            </div>
+          </div>
 
-              {/* Active Accounts */}
-              <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-900 rounded-xl flex items-center justify-center">
-                    <Users className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full">
-                    ↑ 12%
-                  </span>
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Active Accounts</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {loading ? '...' : stats?.activeAccounts}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">Increase than last week</div>
+          {/* Volume */}
+          <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950 rounded-xl flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
               </div>
+              <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full flex items-center gap-1">
+                ↗ 18% MTD
+              </span>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Volume</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white">
+              {loading ? '...' : stats?.volume}
+            </div>
+          </div>
 
-              {/* Active Agents */}
-              <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-900 rounded-xl flex items-center justify-center">
-                    <TrendingUp className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full">
-                    ↑ 5%
-                  </span>
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Active Agents</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {loading ? '...' : stats?.activeAgents}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">Increase than last week</div>
+          {/* Cards */}
+          <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center">
+                <CreditCard className="w-6 h-6 text-gray-600 dark:text-gray-400" />
               </div>
+              <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full flex items-center gap-1">
+                ↗ 312 MTD
+              </span>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Cards</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white">
+              {loading ? '...' : stats?.cards.toLocaleString()}
+            </div>
+          </div>
 
-              {/* Revenue */}
-              <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-900 rounded-xl flex items-center justify-center">
-                    <CreditCard className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full">
-                    ↑ 8%
-                  </span>
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Revenue (MTD)</div>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {loading ? '...' : stats?.revenue}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">Increase than last week</div>
+          {/* Pending Flags */}
+          <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 bg-amber-100 dark:bg-amber-950 rounded-xl flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-amber-600 dark:text-amber-400" />
               </div>
             </div>
-
-            {/* Chart */}
-            <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Volume Overview</h3>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Achieved</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Target</span>
-                    </div>
-                  </div>
-                </div>
-                <select className="px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>Monthly</option>
-                  <option>Weekly</option>
-                  <option>Yearly</option>
-                </select>
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={volumeData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:opacity-20" />
-                  <XAxis 
-                    dataKey="month" 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#9ca3af', fontSize: 12 }}
-                  />
-                  <YAxis 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#9ca3af', fontSize: 12 }}
-                    tickFormatter={(value) => `${value / 1000}k`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      fontSize: '12px'
-                    }}
-                    cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }}
-                  />
-                  <Bar 
-                    dataKey="value" 
-                    fill="#10b981" 
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={60}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Pending Flags</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white">
+              {loading ? '...' : stats?.pendingFlags}
             </div>
+          </div>
+        </div>
 
-            {/* AI Alert */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-2xl p-6 border border-blue-200 dark:border-blue-900">
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - AI Insights + Chart */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* AI Insights */}
+            <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/50 dark:to-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0">
                   <Sparkles className="w-6 h-6 text-white" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">AI Compliance Alert</h3>
-                  <p className="text-gray-700 dark:text-gray-300 mb-4">3 transactions flagged for review. AI Copilot has analyzed the risk patterns and prepared recommendations.</p>
-                  <div className="flex gap-3">
-                    <button className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-                      Review Flags
-                    </button>
-                    <button className="px-4 py-2 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border border-gray-200 dark:border-gray-800">
-                      View Details
-                    </button>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    🤖 AI Insights
+                  </h3>
+                  <ul className="space-y-2 text-gray-700 dark:text-gray-300">
+                    <li className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500 mt-2 flex-shrink-0" />
+                      3 high-risk flags need review
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500 mt-2 flex-shrink-0" />
+                      COP float depleting in 36 hours
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500 mt-2 flex-shrink-0" />
+                      Unusual velocity: TechCorp +340%
+                    </li>
+                  </ul>
+                  <Link 
+                    href="/dashboard/compliance"
+                    className="inline-flex mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Review All
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Volume by Corridor Chart */}
+            <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Volume by Corridor</h3>
+                  <div className="flex items-center gap-4">
+                    {corridorData.map((c) => (
+                      <div key={c.corridor} className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: c.color }} />
+                        <span className="text-sm text-gray-600 dark:text-gray-400">{c.corridor}</span>
+                      </div>
+                    ))}
                   </div>
+                </div>
+                <div className="flex rounded-lg bg-gray-100 dark:bg-gray-900 p-1">
+                  {(['7D', '30D', '90D'] as const).map((period) => (
+                    <button
+                      key={period}
+                      onClick={() => setChartPeriod(period)}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        chartPeriod === period
+                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {period}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Simple Line Chart Visualization */}
+              <div className="h-64 relative">
+                {/* Y-axis labels */}
+                <div className="absolute left-0 top-0 bottom-8 w-16 flex flex-col justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <span>$1800K</span>
+                  <span>$1350K</span>
+                  <span>$900K</span>
+                  <span>$450K</span>
+                </div>
+                {/* Chart area */}
+                <div className="ml-16 h-full border-l border-b border-gray-200 dark:border-gray-800 relative">
+                  {/* Grid lines */}
+                  {[0, 1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="absolute left-0 right-0 border-t border-dashed border-gray-200 dark:border-gray-800"
+                      style={{ top: `${i * 25}%` }}
+                    />
+                  ))}
+                  {/* Simplified representation - in real app would use proper charting library */}
+                  <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    {corridorData.map((c, idx) => {
+                      const points = c.values.map((v, i) => {
+                        const x = (i / (c.values.length - 1)) * 100;
+                        const y = 100 - (v / 1500) * 100;
+                        return `${x},${y}`;
+                      }).join(' ');
+                      return (
+                        <polyline
+                          key={idx}
+                          points={points}
+                          fill="none"
+                          stroke={c.color}
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      );
+                    })}
+                  </svg>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Right Column - Quick Actions & Recent */}
+          {/* Right Column - Requires Attention + Recent Activity */}
           <div className="space-y-6">
-            {/* Quick Actions Card */}
+            {/* Requires Attention */}
             <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Requires Attention</h3>
               
-              {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-3">
-                <Link
-                  href="/dashboard/accounts"
-                  className="px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+              <div className="space-y-3">
+                <Link 
+                  href="/dashboard/compliance"
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
-                  <Users className="w-4 h-4" />
-                  Accounts
+                  <div className="flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                    <span className="text-gray-900 dark:text-white font-medium">3 High Risk</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
                 </Link>
-                <Link
-                  href="/dashboard/agents"
-                  className="px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+
+                <Link 
+                  href="/dashboard/compliance"
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
-                  <TrendingUp className="w-4 h-4" />
-                  Agents
+                  <div className="flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                    <span className="text-gray-900 dark:text-white font-medium">12 Medium Risk</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
                 </Link>
-                <Link
-                  href="/dashboard/streams"
-                  className="px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+
+                <Link 
+                  href="/dashboard/compliance"
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
-                  <ArrowUpRight className="w-4 h-4" />
-                  Streams
-                </Link>
-                <Link
-                  href="/dashboard/transfers"
-                  className="px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
-                >
-                  <ArrowDownRight className="w-4 h-4" />
-                  Transfers
+                  <div className="flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                    <span className="text-gray-900 dark:text-white font-medium">8 Low Risk</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
                 </Link>
               </div>
+
+              <Link
+                href="/dashboard/compliance"
+                className="w-full mt-4 px-4 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-medium rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors flex items-center justify-center"
+              >
+                View Queue
+              </Link>
             </div>
 
             {/* Recent Activity */}
             <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
-              
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-xl">
-                  <div className="w-10 h-10 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center text-xl flex-shrink-0">
-                    💸
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white truncate">Stream created</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">2 minutes ago</div>
-                  </div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                    $500/mo
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-xl">
-                  <div className="w-10 h-10 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center text-xl flex-shrink-0">
-                    👤
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white truncate">New account created</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">15 minutes ago</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-xl">
-                  <div className="w-10 h-10 bg-white dark:bg-gray-800 rounded-lg flex items-center justify-center text-xl flex-shrink-0">
-                    🤖
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white truncate">Agent verified</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">1 hour ago</div>
-                  </div>
-                  <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                    Tier 2
-                  </div>
-                </div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
+                <Link 
+                  href="/dashboard/transfers"
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  View All
+                </Link>
               </div>
-
-              <button className="w-full mt-4 px-4 py-2.5 bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                See More
-              </button>
+              
+              <div className="space-y-4">
+                {recentActivity.map((activity, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">
+                      {activity.time}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        {activity.type}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {activity.from} → {activity.to}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {activity.amount}
+                      </span>
+                      {activity.status === 'success' && (
+                        <Check className="w-4 h-4 text-emerald-500" />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

@@ -16,9 +16,13 @@ import {
   Shield,
   Wallet,
   CreditCard,
-  Layers,
+  FileCode,
   ShieldCheck,
   ChevronLeft,
+  AlertTriangle,
+  ScrollText,
+  Layers,
+  UserCheck,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -26,7 +30,9 @@ const mainNav = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
   { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
-  { href: '/dashboard/streams', label: 'Streams', icon: Activity },
+  { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
+  { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: 23 },
+  { href: '/dashboard/treasury', label: 'Treasury', icon: Wallet },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot },
   { href: '/dashboard/reports', label: 'Reports', icon: FileText },
 ];
@@ -34,11 +40,25 @@ const mainNav = [
 const developerNav = [
   { href: '/dashboard/api-keys', label: 'API Keys', icon: Key },
   { href: '/dashboard/webhooks', label: 'Webhooks', icon: Webhook },
+  { href: '/dashboard/logs', label: 'Logs', icon: ScrollText },
 ];
 
-const configNav = [
+const configurationNav = [
+  { href: '/dashboard/templates', label: 'Templates', icon: FileCode },
+  { href: '/dashboard/verification-tiers', label: 'Verification Tiers', icon: ShieldCheck },
+  { href: '/dashboard/agent-tiers', label: 'Agent Tiers (KYA)', icon: UserCheck },
+];
+
+const settingsNav = [
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ];
+
+interface NavItemProps {
+  href: string;
+  label: string;
+  icon: any;
+  badge?: number;
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -49,6 +69,40 @@ export function Sidebar() {
       return pathname === '/dashboard';
     }
     return pathname.startsWith(href);
+  };
+
+  const NavItem = ({ item }: { item: NavItemProps }) => {
+    const Icon = item.icon;
+    const active = isActive(item.href);
+    
+    return (
+      <Link
+        href={item.href}
+        className={cn(
+          'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+          active
+            ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400' 
+            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
+          collapsed && 'justify-center'
+        )}
+        title={collapsed ? item.label : undefined}
+      >
+        <Icon className="w-5 h-5 flex-shrink-0" />
+        {!collapsed && (
+          <>
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.badge && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400 rounded-full">
+                {item.badge}
+              </span>
+            )}
+          </>
+        )}
+        {collapsed && item.badge && (
+          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+        )}
+      </Link>
+    );
   };
 
   return (
@@ -84,30 +138,9 @@ export function Sidebar() {
 
       {/* Main Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {mainNav.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(item.href);
-          
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                active
-                  ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400' 
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
-                collapsed && 'justify-center'
-              )}
-              title={collapsed ? item.label : undefined}
-            >
-              <Icon className="w-5 h-5 flex-shrink-0" />
-              {!collapsed && (
-                <span className="flex-1 text-left">{item.label}</span>
-              )}
-            </Link>
-          );
-        })}
+        {mainNav.map((item) => (
+          <NavItem key={item.href} item={item} />
+        ))}
 
         {/* Developer Section */}
         <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
@@ -116,65 +149,55 @@ export function Sidebar() {
               Developer
             </div>
           )}
-          {developerNav.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400' 
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
-                  collapsed && 'justify-center'
-                )}
-                title={collapsed ? item.label : undefined}
-              >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
-              </Link>
-            );
-          })}
+          {developerNav.map((item) => (
+            <NavItem key={item.href} item={item} />
+          ))}
         </div>
 
-        {/* Config Section */}
+        {/* Configuration Section */}
         <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
-          {configNav.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400' 
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
-                  collapsed && 'justify-center'
-                )}
-                title={collapsed ? item.label : undefined}
-              >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
-              </Link>
-            );
-          })}
+          {!collapsed && (
+            <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Configuration
+            </div>
+          )}
+          {configurationNav.map((item) => (
+            <NavItem key={item.href} item={item} />
+          ))}
+        </div>
+
+        {/* Settings Section */}
+        <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
+          {settingsNav.map((item) => (
+            <NavItem key={item.href} item={item} />
+          ))}
         </div>
       </nav>
 
-      {/* Version */}
-      {!collapsed && (
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            PayOS v0.1.0
+      {/* User Profile at Bottom */}
+      <div className="px-3 py-4 border-t border-gray-200 dark:border-gray-800">
+        <Link
+          href="/dashboard/settings"
+          className={cn(
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
+            collapsed && 'justify-center'
+          )}
+        >
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+            JS
           </div>
-        </div>
-      )}
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                John Smith
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                john@acmefintech.com
+              </div>
+            </div>
+          )}
+        </Link>
+      </div>
     </aside>
   );
 }

@@ -2,11 +2,12 @@
 
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { Bell, LogOut, Settings, User, Search, Plus } from 'lucide-react';
+import { Bell, LogOut, Settings, User, Search, ChevronDown, Check } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { useState } from 'react';
 import { ThemeToggleSimple } from '@/components/theme-toggle';
-import { NewPaymentModal } from '@/components/modals/new-payment-modal';
+
+type Environment = 'sandbox' | 'production';
 
 interface HeaderProps {
   user: SupabaseUser;
@@ -15,7 +16,8 @@ interface HeaderProps {
 export function Header({ user }: HeaderProps) {
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showEnvMenu, setShowEnvMenu] = useState(false);
+  const [environment, setEnvironment] = useState<Environment>('sandbox');
 
   const handleSignOut = async () => {
     const supabase = createSupabaseBrowserClient();
@@ -24,9 +26,17 @@ export function Header({ user }: HeaderProps) {
     router.refresh();
   };
 
+  const handleEnvironmentChange = (env: Environment) => {
+    setEnvironment(env);
+    setShowEnvMenu(false);
+    // TODO: In the future, this would switch API endpoints
+  };
+
   const initials = user.email
     ? user.email.substring(0, 2).toUpperCase()
     : 'U';
+
+  const userName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
 
   return (
     <>
@@ -37,22 +47,67 @@ export function Header({ user }: HeaderProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search accounts, agents, transactions..."
-              className="w-full pl-10 pr-4 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white placeholder-gray-500"
+              placeholder="Search or ask anything..."
+              className="w-full pl-10 pr-16 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white placeholder-gray-500"
             />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs text-gray-500 dark:text-gray-400 font-medium">
+              ⌘K
+            </div>
           </div>
         </div>
 
         {/* Right side */}
         <div className="flex items-center gap-3">
-          {/* New Payment Button */}
-          <button
-            onClick={() => setShowPaymentModal(true)}
-            className="hidden md:flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Payment
-          </button>
+          {/* Environment Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowEnvMenu(!showEnvMenu)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                environment === 'sandbox'
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                  : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${
+                environment === 'sandbox' ? 'bg-emerald-500' : 'bg-orange-500'
+              }`} />
+              {environment === 'sandbox' ? 'SANDBOX' : 'PRODUCTION'}
+              <ChevronDown className="w-4 h-4" />
+            </button>
+
+            {showEnvMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowEnvMenu(false)}
+                />
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-lg z-20 overflow-hidden">
+                  <div className="p-1">
+                    <button
+                      onClick={() => handleEnvironmentChange('sandbox')}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        Sandbox
+                      </div>
+                      {environment === 'sandbox' && <Check className="w-4 h-4 text-emerald-500" />}
+                    </button>
+                    <button
+                      onClick={() => handleEnvironmentChange('production')}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-orange-500" />
+                        Production
+                      </div>
+                      {environment === 'production' && <Check className="w-4 h-4 text-orange-500" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Theme Toggle */}
           <ThemeToggleSimple />
@@ -69,16 +124,16 @@ export function Header({ user }: HeaderProps) {
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold">
-                {initials}
+              <div className="hidden md:block text-right">
+                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                  {userName}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Admin
+                </div>
               </div>
-              <div className="hidden md:block text-left">
-                <div className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[150px]">
-                  {user.email?.split('@')[0]}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[150px]">
-                  {user.email}
-                </div>
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white text-sm font-semibold">
+                {initials}
               </div>
             </button>
 
@@ -92,7 +147,7 @@ export function Header({ user }: HeaderProps) {
                 <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-lg z-20 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {user.email?.split('@')[0]}
+                      {userName}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                       {user.email}
@@ -129,13 +184,6 @@ export function Header({ user }: HeaderProps) {
           </div>
         </div>
       </header>
-
-      {/* New Payment Modal */}
-      <NewPaymentModal
-        isOpen={showPaymentModal}
-        onClose={() => setShowPaymentModal(false)}
-        onSuccess={() => router.refresh()}
-      />
     </>
   );
 }
