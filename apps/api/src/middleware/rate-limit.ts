@@ -37,8 +37,8 @@ export function rateLimiter(config: Partial<RateLimitConfig> = {}) {
   const { windowMs, maxRequests, keyGenerator } = { ...defaultConfig, ...config };
 
   return async (c: Context, next: Next) => {
-    // Skip rate limiting in test environment
-    if (process.env.NODE_ENV === 'test') {
+    // Skip rate limiting in test environment or integration tests
+    if (process.env.NODE_ENV === 'test' || process.env.INTEGRATION === 'true') {
       return next();
     }
     // Generate key (default: IP + token prefix)
