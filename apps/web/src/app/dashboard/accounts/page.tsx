@@ -118,7 +118,11 @@ export default function AccountsPage() {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
               {filteredAccounts.map((account) => (
-                <tr key={account.id} className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer">
+                <tr 
+                  key={account.id} 
+                  onClick={() => window.location.href = `/dashboard/accounts/${account.id}`}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer"
+                >
                   <td className="px-6 py-4">
                     <div>
                       <div className="text-sm font-medium text-gray-900 dark:text-white">{account.name}</div>

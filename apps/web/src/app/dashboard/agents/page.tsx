@@ -109,7 +109,11 @@ export default function AgentsPage() {
           </div>
         ) : (
           filteredAgents.map((agent) => (
-            <div key={agent.id} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer">
+            <div 
+              key={agent.id} 
+              onClick={() => window.location.href = `/dashboard/agents/${agent.id}`}
+              className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer"
+            >
               <div className="flex items-start justify-between mb-4">
                 <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
                   <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />

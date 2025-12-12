@@ -126,7 +126,11 @@ export default function StreamsPage() {
           </div>
         ) : (
           filteredStreams.map((stream) => (
-            <div key={stream.id} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer">
+            <div 
+              key={stream.id} 
+              onClick={() => window.location.href = `/dashboard/streams/${stream.id}`}
+              className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer"
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
