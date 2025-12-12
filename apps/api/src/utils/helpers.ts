@@ -12,6 +12,16 @@ export function mapAccountFromDb(row: any): Account {
     type: row.type,
     name: row.name,
     email: row.email || undefined,
+    // Flat verification fields for client compatibility
+    verificationTier: row.verification_tier || 0,
+    verificationStatus: row.verification_status || 'unverified',
+    verificationType: row.verification_type || (row.type === 'person' ? 'kyc' : 'kyb'),
+    // Flat balance fields for client compatibility
+    balanceTotal: parseFloat(row.balance_total) || 0,
+    balanceAvailable: parseFloat(row.balance_available) || 0,
+    balanceInStreams: parseFloat(row.balance_in_streams) || 0,
+    balanceBuffer: parseFloat(row.balance_buffer) || 0,
+    // Also include nested structure for backward compatibility
     verification: {
       tier: row.verification_tier || 0,
       status: row.verification_status || 'unverified',
@@ -43,6 +53,11 @@ export function mapAgentFromDb(row: any): Agent {
     name: row.name,
     description: row.description || '',
     status: row.status,
+    // Flat fields for client compatibility
+    kyaTier: row.kya_tier || 0,
+    kyaStatus: row.kya_status || 'unverified',
+    parentAccountId: row.parent_account_id,
+    // Nested structure for backward compatibility
     parentAccount: {
       id: row.parent_account_id,
       type: row.parent_account_type || 'business',

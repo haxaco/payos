@@ -27,7 +27,7 @@ export interface RateLimitConfig {
 
 const defaultConfig: RateLimitConfig = {
   windowMs: 60000,     // 1 minute
-  maxRequests: 100,    // 100 requests per minute
+  maxRequests: 500,    // 500 requests per minute (generous for dashboard use)
 };
 
 /**
@@ -96,7 +96,7 @@ function getRateLimitKey(c: Context): string {
  */
 export const strictRateLimiter = rateLimiter({
   windowMs: 60000,    // 1 minute
-  maxRequests: 10,    // 10 requests per minute
+  maxRequests: 30,    // 30 requests per minute
 });
 
 /**
@@ -112,4 +112,3 @@ export const authRateLimiter = rateLimiter({
     return `auth:${ip}`;
   },
 });
-
