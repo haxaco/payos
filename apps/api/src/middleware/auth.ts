@@ -8,7 +8,6 @@ export interface RequestContext {
   actorName: string;
 }
 
-// Extend Hono's context type
 declare module 'hono' {
   interface ContextVariableMap {
     ctx: RequestContext;
@@ -25,7 +24,7 @@ export async function authMiddleware(c: Context, next: Next) {
   const token = authHeader.slice(7);
   const supabase = createClient();
 
-  // Partner API key (pk_test_xxx or pk_live_xxx)
+  // Partner API key (pk_test_xxx)
   if (token.startsWith('pk_')) {
     const { data: tenant, error } = await supabase
       .from('tenants')
@@ -76,5 +75,3 @@ export async function authMiddleware(c: Context, next: Next) {
 
   return c.json({ error: 'Invalid token format' }, 401);
 }
-
-

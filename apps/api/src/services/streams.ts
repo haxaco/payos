@@ -222,4 +222,3 @@ export async function updateStreamState(
     })
     .eq('id', streamId);
 }
-
