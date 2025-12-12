@@ -17,6 +17,7 @@ import internalTransfersRouter from './routes/internal-transfers.js';
 import streamsRouter from './routes/streams.js';
 import quotesRouter from './routes/quotes.js';
 import reportsRouter from './routes/reports.js';
+import eventsRouter from './routes/events.js';
 
 const app = new Hono();
 
@@ -101,6 +102,7 @@ v1.route('/internal-transfers', internalTransfersRouter);
 v1.route('/streams', streamsRouter);
 v1.route('/quotes', quotesRouter);
 v1.route('/reports', reportsRouter);
+v1.route('/events', eventsRouter);
 
 app.route('/v1', v1);
 
