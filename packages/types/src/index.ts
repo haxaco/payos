@@ -348,3 +348,4 @@ export interface GenerateReportRequest {
   format: 'pdf' | 'csv' | 'json';
 }
 
+

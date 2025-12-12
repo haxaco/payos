@@ -28,3 +28,4 @@ Seed data is in `seed.sql` and creates:
 
 Migrations are applied using the Supabase MCP connection in the development environment.
 
+

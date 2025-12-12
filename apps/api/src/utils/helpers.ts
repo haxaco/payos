@@ -1,0 +1,278 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Account, Agent, Transfer, Stream } from '@payos/types';
+
+// ============================================
+// DATABASE ROW MAPPERS
+// ============================================
+
+export function mapAccountFromDb(row: any): Account {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    type: row.type,
+    name: row.name,
+    email: row.email || undefined,
+    verification: {
+      tier: row.verification_tier || 0,
+      status: row.verification_status || 'unverified',
+      type: row.verification_type || (row.type === 'person' ? 'kyc' : 'kyb'),
+    },
+    balance: {
+      total: parseFloat(row.balance_total) || 0,
+      available: parseFloat(row.balance_available) || 0,
+      inStreams: {
+        total: parseFloat(row.balance_in_streams) || 0,
+        buffer: parseFloat(row.balance_buffer) || 0,
+        streaming: (parseFloat(row.balance_in_streams) || 0) - (parseFloat(row.balance_buffer) || 0),
+      },
+      currency: 'USDC',
+    },
+    agents: {
+      count: row.agents_count || 0,
+      active: row.agents_active || 0,
+    },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function mapAgentFromDb(row: any): Agent {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    description: row.description || '',
+    status: row.status,
+    parentAccount: {
+      id: row.parent_account_id,
+      type: row.parent_account_type || 'business',
+      name: row.parent_account_name || '',
+      verificationTier: row.parent_verification_tier || 0,
+    },
+    kya: {
+      tier: row.kya_tier || 0,
+      status: row.kya_status || 'unverified',
+      verifiedAt: row.kya_verified_at || undefined,
+      agentLimits: {
+        perTransaction: parseFloat(row.limit_per_transaction) || 0,
+        daily: parseFloat(row.limit_daily) || 0,
+        monthly: parseFloat(row.limit_monthly) || 0,
+      },
+      effectiveLimits: {
+        perTransaction: parseFloat(row.effective_limit_per_tx) || 0,
+        daily: parseFloat(row.effective_limit_daily) || 0,
+        monthly: parseFloat(row.effective_limit_monthly) || 0,
+        cappedByParent: row.effective_limits_capped || false,
+      },
+    },
+    permissions: row.permissions || {
+      transactions: { initiate: true, approve: false, view: true },
+      streams: { initiate: true, modify: true, pause: true, terminate: true, view: true },
+      accounts: { view: true, create: false },
+      treasury: { view: false, rebalance: false },
+    },
+    streamStats: {
+      activeStreams: row.active_streams_count || 0,
+      totalOutflow: parseFloat(row.total_stream_outflow) || 0,
+      maxActiveStreams: row.max_active_streams || 5,
+      maxTotalOutflow: parseFloat(row.max_total_outflow) || 50000,
+    },
+    auth: {
+      type: row.auth_type || 'api_key',
+      clientId: row.auth_client_id || undefined,
+    },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function mapTransferFromDb(row: any): Transfer {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    type: row.type,
+    status: row.status,
+    from: {
+      accountId: row.from_account_id,
+      accountName: row.from_account_name || '',
+    },
+    to: {
+      accountId: row.to_account_id,
+      accountName: row.to_account_name || '',
+    },
+    initiatedBy: {
+      type: row.initiated_by_type,
+      id: row.initiated_by_id,
+      name: row.initiated_by_name || '',
+    },
+    amount: parseFloat(row.amount),
+    currency: row.currency || 'USDC',
+    destinationAmount: row.destination_amount ? parseFloat(row.destination_amount) : undefined,
+    destinationCurrency: row.destination_currency || undefined,
+    fxRate: row.fx_rate ? parseFloat(row.fx_rate) : undefined,
+    streamId: row.stream_id || undefined,
+    fees: parseFloat(row.fee_amount) || 0,
+    idempotencyKey: row.idempotency_key || undefined,
+    createdAt: row.created_at,
+    completedAt: row.completed_at || undefined,
+    failedAt: row.failed_at || undefined,
+    failureReason: row.failure_reason || undefined,
+  };
+}
+
+export function mapStreamFromDb(row: any): Stream {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    status: row.status,
+    sender: {
+      accountId: row.sender_account_id,
+      accountName: row.sender_account_name,
+    },
+    receiver: {
+      accountId: row.receiver_account_id,
+      accountName: row.receiver_account_name,
+    },
+    initiatedBy: {
+      type: row.initiated_by_type,
+      id: row.initiated_by_id,
+      name: row.initiated_by_name || '',
+      timestamp: row.initiated_at || row.created_at,
+    },
+    managedBy: {
+      type: row.managed_by_type,
+      id: row.managed_by_id,
+      name: row.managed_by_name || '',
+      permissions: {
+        canModify: row.managed_by_can_modify ?? true,
+        canPause: row.managed_by_can_pause ?? true,
+        canTerminate: row.managed_by_can_terminate ?? true,
+      },
+    },
+    flowRate: {
+      perSecond: parseFloat(row.flow_rate_per_second),
+      perMonth: parseFloat(row.flow_rate_per_month),
+      currency: row.currency || 'USDC',
+    },
+    streamed: {
+      total: parseFloat(row.total_streamed) || 0,
+      withdrawn: parseFloat(row.total_withdrawn) || 0,
+      available: (parseFloat(row.total_streamed) || 0) - (parseFloat(row.total_withdrawn) || 0),
+    },
+    funding: {
+      wrapped: parseFloat(row.funded_amount) || 0,
+      buffer: parseFloat(row.buffer_amount) || 0,
+      runway: {
+        seconds: row.runway_seconds || 0,
+        display: formatRunway(row.runway_seconds || 0),
+      },
+    },
+    health: row.health || 'healthy',
+    description: row.description || '',
+    category: row.category || 'other',
+    startedAt: row.started_at,
+    pausedAt: row.paused_at || undefined,
+    cancelledAt: row.cancelled_at || undefined,
+    onChain: row.onchain_network ? {
+      network: row.onchain_network,
+      flowId: row.onchain_flow_id,
+      txHash: row.onchain_tx_hash,
+    } : undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function formatRunway(seconds: number): string {
+  if (seconds <= 0) return 'Depleted';
+  const days = Math.floor(seconds / (24 * 60 * 60));
+  const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
+  if (days > 0) return days === 1 ? '1 day' : `${days} days`;
+  if (hours > 0) return hours === 1 ? '1 hour' : `${hours} hours`;
+  const minutes = Math.floor(seconds / 60);
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+}
+
+// ============================================
+// AUDIT LOGGING
+// ============================================
+
+export interface AuditLogEntry {
+  tenantId: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  actorType: 'user' | 'agent' | 'system';
+  actorId: string;
+  actorName: string;
+  changes?: Record<string, any>;
+  metadata?: Record<string, any>;
+}
+
+export async function logAudit(
+  supabase: SupabaseClient,
+  entry: AuditLogEntry
+): Promise<void> {
+  try {
+    await supabase.from('audit_log').insert({
+      tenant_id: entry.tenantId,
+      entity_type: entry.entityType,
+      entity_id: entry.entityId,
+      action: entry.action,
+      actor_type: entry.actorType,
+      actor_id: entry.actorId,
+      actor_name: entry.actorName,
+      changes: entry.changes,
+      metadata: entry.metadata,
+    });
+  } catch (error) {
+    // Don't fail the request if audit logging fails
+    console.error('Failed to log audit entry:', error);
+  }
+}
+
+// ============================================
+// VALIDATION HELPERS
+// ============================================
+
+export function isValidUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
+export function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+// ============================================
+// PAGINATION HELPERS
+// ============================================
+
+export interface PaginationParams {
+  page: number;
+  limit: number;
+}
+
+export function getPaginationParams(query: Record<string, string>): PaginationParams {
+  const page = Math.max(1, parseInt(query.page || '1'));
+  const limit = Math.min(100, Math.max(1, parseInt(query.limit || '20')));
+  return { page, limit };
+}
+
+export function paginationResponse<T>(
+  data: T[],
+  total: number,
+  pagination: PaginationParams
+) {
+  return {
+    data,
+    pagination: {
+      page: pagination.page,
+      limit: pagination.limit,
+      total,
+      totalPages: Math.ceil(total / pagination.limit),
+    },
+  };
+}
+
