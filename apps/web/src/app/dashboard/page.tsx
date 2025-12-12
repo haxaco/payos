@@ -13,6 +13,12 @@ import {
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import Link from 'next/link';
 
+// Import mock data and new components
+import { mockAiInsights } from '@/lib/mock-data/ai-insights';
+import { mockAgentStats } from '@/lib/mock-data/agent-stats';
+import { AiInsightsPanel } from '@/components/dashboard/ai-insights-panel';
+import { AgentPerformanceCard } from '@/components/dashboard/agent-performance-card';
+
 // Mock data for volume by corridor
 const corridorData = [
   { corridor: 'US → ARG', color: '#3b82f6', values: [800, 950, 1100, 1250, 1400, 1300, 1200] },
@@ -21,9 +27,9 @@ const corridorData = [
 ];
 
 const recentActivity = [
-  { time: '14:32', type: 'Transfer', from: 'TechCorp', to: 'Maria G.', amount: '$4,800', status: 'success' },
-  { time: '14:28', type: 'Card Spend', from: 'Carlos M.', to: 'Amazon', amount: '$127.50', status: 'success' },
-  { time: '14:15', type: 'Deposit', from: 'External', to: 'TechCorp', amount: '$10,000', status: 'pending' },
+  { time: '14:32', type: 'Transfer', from: 'TechCorp', to: 'Maria G.', amount: '$4,800', status: 'success', initiatedBy: { type: 'agent' as const, name: 'Payroll Bot' } },
+  { time: '14:28', type: 'Card Spend', from: 'Carlos M.', to: 'Amazon', amount: '$127.50', status: 'success', initiatedBy: { type: 'user' as const, name: 'Manual' } },
+  { time: '14:15', type: 'Deposit', from: 'External', to: 'TechCorp', amount: '$10,000', status: 'pending', initiatedBy: { type: 'agent' as const, name: 'Treasury Bot' } },
 ];
 
 interface Stats {
@@ -190,41 +196,13 @@ export default function DashboardPage() {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - AI Insights + Chart */}
+          {/* Left Column - AI Insights + Agent Performance + Chart */}
           <div className="lg:col-span-2 space-y-6">
-            {/* AI Insights */}
-            <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/50 dark:to-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                    🤖 AI Insights
-                  </h3>
-                  <ul className="space-y-2 text-gray-700 dark:text-gray-300">
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500 mt-2 flex-shrink-0" />
-                      3 high-risk flags need review
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500 mt-2 flex-shrink-0" />
-                      COP float depleting in 36 hours
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500 mt-2 flex-shrink-0" />
-                      Unusual velocity: TechCorp +340%
-                    </li>
-                  </ul>
-                  <Link 
-                    href="/dashboard/compliance"
-                    className="inline-flex mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Review All
-                  </Link>
-                </div>
-              </div>
-            </div>
+            {/* NEW: AI Insights Panel - Using PRD component */}
+            <AiInsightsPanel insights={mockAiInsights} maxItems={4} />
+
+            {/* NEW: Agent Performance Card - Using PRD component */}
+            <AgentPerformanceCard stats={mockAgentStats} />
 
             {/* Volume by Corridor Chart */}
             <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
@@ -370,8 +348,14 @@ export default function DashboardPage() {
                       {activity.time}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
                         {activity.type}
+                        {/* NEW: Show if initiated by agent */}
+                        {activity.initiatedBy.type === 'agent' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 rounded-full">
+                            🤖 {activity.initiatedBy.name}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                         {activity.from} → {activity.to}

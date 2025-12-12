@@ -21,6 +21,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import type { Agent, Stream, AgentLimits } from '@payos/api-client';
+import { AgentActivityFeed } from '@/components/agents/agent-activity-feed';
+import { getAgentActivity } from '@/lib/mock-data/agent-activity';
 
 type TabType = 'overview' | 'streams' | 'kya' | 'activity';
 
@@ -358,7 +360,7 @@ export default function AgentDetailPage() {
         <KYATab agent={agent} limits={limits} />
       )}
       {activeTab === 'activity' && (
-        <ActivityTab />
+        <ActivityTab agentId={agentId} />
       )}
     </div>
   );
@@ -395,14 +397,21 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Permissions</h3>
         <div className="flex flex-wrap gap-2">
-          {agent.permissions?.map((perm) => (
-            <span
-              key={perm}
-              className="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 rounded-full"
-            >
-              {perm}
-            </span>
-          )) || (
+          {agent.permissions && typeof agent.permissions === 'object' ? (
+            Object.entries(agent.permissions).map(([category, perms]) => {
+              const enabledPerms = Object.entries(perms as Record<string, boolean>)
+                .filter(([_, enabled]) => enabled)
+                .map(([name]) => `${category}.${name}`);
+              return enabledPerms.map((perm) => (
+                <span
+                  key={perm}
+                  className="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 rounded-full"
+                >
+                  {perm}
+                </span>
+              ));
+            })
+          ) : (
             <span className="text-gray-500">No permissions configured</span>
           )}
         </div>
@@ -567,16 +576,27 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
   );
 }
 
-// Activity Tab
-function ActivityTab() {
-  // Placeholder - would integrate with audit logs in a real implementation
+// Activity Tab - NOW WITH REAL AI ACTIVITY FEED
+function ActivityTab({ agentId }: { agentId: string }) {
+  const activities = getAgentActivity(agentId);
+
   return (
-    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
-      <History className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Activity Log</h3>
-      <p className="text-gray-500 dark:text-gray-400 mt-2">
-        Agent activity history will appear here.
-      </p>
+    <div className="space-y-6">
+      {/* Activity Header */}
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-2xl p-6 border border-purple-200 dark:border-purple-900">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🤖</span>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Agent Activity Log</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              View all actions performed by this agent, including AI reasoning and decision explanations.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Activity Feed */}
+      <AgentActivityFeed activities={activities} showFilters={true} />
     </div>
   );
 }

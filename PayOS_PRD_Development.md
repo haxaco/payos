@@ -20,10 +20,11 @@ PayOS is a B2B stablecoin payout operating system for LATAM. This PRD covers the
 | Phase | Focus | External Services | Timeline |
 |-------|-------|-------------------|----------|
 | **Phase 1** | Full PoC with mocked externals | Supabase only | Weekend 1-2 |
-| **Phase 2** | Circle sandbox integration | + Circle Sandbox | Weekend 3 |
+| **Phase 1.5** | AI visibility & demo polish | Supabase only | Weekend 2-3 |
+| **Phase 2** | Circle sandbox integration | + Circle Sandbox | Weekend 3+ |
 | **Phase 3** | On-chain streaming | + Superfluid Testnet | Weekend 4+ |
 
-**Phase 1 is fully functional and demo-ready.** Phases 2-3 add blockchain "realness" but aren't required for a compelling demo.
+**Phase 1 is fully functional.** Phase 1.5 makes the AI-native story visible. Phases 2-3 add blockchain "realness" but aren't required for a compelling demo.
 
 **Tech Stack:** Next.js, TypeScript, Supabase (Postgres), Hono, Vercel, Railway  
 
@@ -42,9 +43,11 @@ PayOS is a B2B stablecoin payout operating system for LATAM. This PRD covers the
 9. [Epic 5: Money Streaming](#epic-5-money-streaming)
 10. [Epic 6: Reports & Documents](#epic-6-reports--documents)
 11. [Epic 7: Dashboard UI](#epic-7-dashboard-ui)
-12. [Implementation Schedule](#implementation-schedule)
-13. [API Reference](#api-reference)
-14. [Testing & Demo Scenarios](#testing--demo-scenarios)
+12. [Epic 8: AI Visibility & Agent Intelligence](#epic-8-ai-visibility--agent-intelligence)
+13. [Epic 9: Demo Polish & Missing Features](#epic-9-demo-polish--missing-features)
+14. [Implementation Schedule](#implementation-schedule)
+15. [API Reference](#api-reference)
+16. [Testing & Demo Scenarios](#testing--demo-scenarios)
 
 ---
 
@@ -3765,6 +3768,1043 @@ Reusable stream-related components.
 
 ---
 
+## Epic 8: AI Visibility & Agent Intelligence
+
+### Overview
+Make the "AI-native" differentiator visible throughout the application. Currently, agents exist but their intelligence and actions are invisible. This epic adds UI elements that showcase agent activity, AI-generated insights, and autonomous operations.
+
+**Why This Matters:**
+- Without visible AI, PayOS looks like "just another payment dashboard"
+- Investors/partners need to SEE the AI working, not just hear about it
+- The KYA framework is meaningless if agent actions aren't surfaced
+
+### Stories
+
+#### Story 8.1: Enhanced AI Insights Panel
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Replace generic placeholder insights with specific, actionable AI-generated recommendations.
+
+**Acceptance Criteria:**
+- [ ] Insights are specific (mention actual accounts, amounts, corridors)
+- [ ] Each insight has a severity (info, warning, success)
+- [ ] Actionable insights have a CTA button
+- [ ] Insights rotate/update (can be mocked with timer)
+- [ ] At least 4-5 insight types
+
+**Mock Data:**
+```typescript
+// apps/dashboard/lib/mock-data/ai-insights.ts
+export const mockAiInsights = [
+  {
+    id: 'insight-1',
+    type: 'treasury_optimization',
+    icon: '💡',
+    severity: 'info',
+    title: 'Treasury Optimization',
+    message: 'MXN corridor is 23% over-funded. Consider rebalancing $12,400 to BRL corridor.',
+    action: { label: 'Review Treasury', href: '/treasury' },
+    generatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'insight-2',
+    type: 'stream_health',
+    icon: '⚠️',
+    severity: 'warning',
+    title: 'Stream Health Alert',
+    message: '3 streams will run dry within 48 hours. Auto top-up is disabled for these accounts.',
+    action: { label: 'View Streams', href: '/streams?health=critical' },
+    generatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'insight-3',
+    type: 'agent_limit',
+    icon: '🤖',
+    severity: 'info',
+    title: 'Agent Limit Warning',
+    message: 'Payroll Autopilot has used 87% of monthly limit ($87,000 / $100,000).',
+    action: { label: 'Adjust Limits', href: '/agents/payroll-autopilot' },
+    generatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'insight-4',
+    type: 'compliance',
+    icon: '🛡️',
+    severity: 'warning',
+    title: 'Compliance Review Needed',
+    message: '2 transactions flagged for manual review. Average review time: 4 hours.',
+    action: { label: 'Review Flags', href: '/compliance' },
+    generatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'insight-5',
+    type: 'automation_success',
+    icon: '✅',
+    severity: 'success',
+    title: 'Automation Performing Well',
+    message: 'Agents processed 142 transactions today with 99.3% success rate.',
+    action: null,
+    generatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'insight-6',
+    type: 'fx_opportunity',
+    icon: '📈',
+    severity: 'info',
+    title: 'FX Rate Opportunity',
+    message: 'USD/BRL rate is 2.1% below 30-day average. Good time for BRL payouts.',
+    action: { label: 'View Rates', href: '/treasury' },
+    generatedAt: new Date().toISOString(),
+  },
+];
+```
+
+**Component:**
+```typescript
+// apps/dashboard/components/dashboard/AiInsightsPanel.tsx
+interface AiInsight {
+  id: string;
+  type: string;
+  icon: string;
+  severity: 'info' | 'warning' | 'success';
+  title: string;
+  message: string;
+  action?: { label: string; href: string };
+  generatedAt: string;
+}
+
+export function AiInsightsPanel({ insights }: { insights: AiInsight[] }) {
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="p-4 border-b flex items-center gap-2">
+        <span className="text-lg">🤖</span>
+        <h3 className="font-semibold">AI Insights</h3>
+        <span className="text-xs text-muted-foreground ml-auto">
+          Updated {formatRelative(insights[0]?.generatedAt)}
+        </span>
+      </div>
+      <div className="divide-y">
+        {insights.slice(0, 4).map((insight) => (
+          <div key={insight.id} className={cn(
+            "p-4",
+            insight.severity === 'warning' && "bg-amber-50 dark:bg-amber-950/20",
+            insight.severity === 'success' && "bg-green-50 dark:bg-green-950/20",
+          )}>
+            <div className="flex items-start gap-3">
+              <span className="text-xl">{insight.icon}</span>
+              <div className="flex-1">
+                <h4 className="font-medium text-sm">{insight.title}</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {insight.message}
+                </p>
+                {insight.action && (
+                  <Link 
+                    href={insight.action.href}
+                    className="text-sm text-primary hover:underline mt-2 inline-block"
+                  >
+                    {insight.action.label} →
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+#### Story 8.2: Agent Performance Dashboard Card
+**Points:** 1  
+**Priority:** P0  
+
+**Description:**  
+Add a prominent card to the dashboard showing aggregate agent performance metrics.
+
+**Acceptance Criteria:**
+- [ ] Shows active agents count (e.g., "8 of 14 active")
+- [ ] Shows actions processed today
+- [ ] Shows success rate percentage
+- [ ] Shows volume processed by agents
+- [ ] Shows top performing agent
+- [ ] Clicking card navigates to /agents
+
+**Mock Data:**
+```typescript
+// apps/dashboard/lib/mock-data/agent-stats.ts
+export const mockAgentStats = {
+  activeAgents: 8,
+  totalAgents: 14,
+  actionsToday: 142,
+  actionsTrend: +12, // vs yesterday
+  successRate: 99.3,
+  failedActions: 1,
+  volumeProcessed: 47230,
+  volumeCurrency: 'USDC',
+  topAgent: {
+    id: 'agent-payroll-bot',
+    name: 'Payroll Autopilot',
+    actions: 67,
+    volume: 28500,
+  },
+  byType: {
+    transfers: 89,
+    streams: 34,
+    topUps: 19,
+  },
+};
+```
+
+**Component:**
+```typescript
+// apps/dashboard/components/dashboard/AgentPerformanceCard.tsx
+export function AgentPerformanceCard({ stats }: { stats: AgentStats }) {
+  return (
+    <Link href="/agents" className="block">
+      <div className="rounded-lg border bg-card p-6 hover:shadow-md transition-shadow">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-2xl">🤖</span>
+          <h3 className="font-semibold">Agent Performance</h3>
+          <span className="text-xs text-muted-foreground">Today</span>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-2xl font-bold">{stats.activeAgents}</p>
+            <p className="text-sm text-muted-foreground">
+              of {stats.totalAgents} agents active
+            </p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold">{stats.actionsToday}</p>
+            <p className="text-sm text-muted-foreground">
+              actions today
+              {stats.actionsTrend > 0 && (
+                <span className="text-green-600 ml-1">+{stats.actionsTrend}%</span>
+              )}
+            </p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold">{stats.successRate}%</p>
+            <p className="text-sm text-muted-foreground">success rate</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold">
+              ${stats.volumeProcessed.toLocaleString()}
+            </p>
+            <p className="text-sm text-muted-foreground">volume processed</p>
+          </div>
+        </div>
+        
+        <div className="mt-4 pt-4 border-t">
+          <p className="text-sm">
+            <span className="text-muted-foreground">Top agent:</span>{' '}
+            <span className="font-medium">{stats.topAgent.name}</span>
+            <span className="text-muted-foreground"> ({stats.topAgent.actions} actions)</span>
+          </p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+```
+
+---
+
+#### Story 8.3: Agent Activity Feed
+**Points:** 3  
+**Priority:** P0  
+
+**Description:**  
+Add an Activity tab to Agent Detail page showing a timeline of agent actions with reasoning.
+
+**Acceptance Criteria:**
+- [ ] Shows chronological list of agent actions
+- [ ] Each action shows: timestamp, action type, description, status
+- [ ] Actions include AI reasoning where applicable
+- [ ] Filter by action type (transfers, streams, compliance)
+- [ ] Pagination or "load more"
+
+**Mock Data:**
+```typescript
+// apps/dashboard/lib/mock-data/agent-activity.ts
+export type AgentAction = {
+  id: string;
+  timestamp: string;
+  type: 'transfer' | 'stream_create' | 'stream_topup' | 'stream_pause' | 
+        'limit_check' | 'compliance_flag' | 'rebalance';
+  status: 'success' | 'failed' | 'pending';
+  description: string;
+  details: {
+    amount?: number;
+    currency?: string;
+    recipient?: string;
+    reference?: string;
+  };
+  reasoning?: string; // AI explanation
+};
+
+export const mockAgentActivity: Record<string, AgentAction[]> = {
+  'agent-payroll-bot': [
+    {
+      id: 'act-1',
+      timestamp: '2025-12-12T14:32:00Z',
+      type: 'stream_create',
+      status: 'success',
+      description: 'Created salary stream to Maria Garcia',
+      details: {
+        amount: 2000,
+        currency: 'USDC',
+        recipient: 'Maria Garcia',
+        reference: 'stream_abc123',
+      },
+      reasoning: 'Scheduled payroll execution for December. Recipient verified, within daily limits.',
+    },
+    {
+      id: 'act-2',
+      timestamp: '2025-12-12T14:31:45Z',
+      type: 'limit_check',
+      status: 'success',
+      description: 'Pre-transfer limit verification',
+      details: {},
+      reasoning: 'Daily usage: $4,200 of $10,000 limit. Monthly: $42,000 of $100,000. Approved.',
+    },
+    {
+      id: 'act-3',
+      timestamp: '2025-12-12T10:15:00Z',
+      type: 'stream_topup',
+      status: 'success',
+      description: 'Auto top-up for Carlos Martinez stream',
+      details: {
+        amount: 500,
+        currency: 'USDC',
+        reference: 'stream_def456',
+      },
+      reasoning: 'Stream runway fell below 7-day threshold. Auto top-up triggered per policy.',
+    },
+    {
+      id: 'act-4',
+      timestamp: '2025-12-12T09:00:00Z',
+      type: 'transfer',
+      status: 'success',
+      description: 'Bonus payment to Carlos Martinez',
+      details: {
+        amount: 500,
+        currency: 'USDC',
+        recipient: 'Carlos Martinez',
+        reference: 'txn_xyz789',
+      },
+      reasoning: 'Quarterly bonus scheduled. Manager approval obtained via webhook.',
+    },
+    {
+      id: 'act-5',
+      timestamp: '2025-12-11T16:45:00Z',
+      type: 'compliance_flag',
+      status: 'pending',
+      description: 'Flagged transaction for review',
+      details: {
+        amount: 8500,
+        reference: 'txn_review123',
+      },
+      reasoning: 'Transaction exceeds single-payment threshold for T1 recipient. Escalated for manual review.',
+    },
+  ],
+  'agent-treasury': [
+    {
+      id: 'act-t1',
+      timestamp: '2025-12-12T08:00:00Z',
+      type: 'rebalance',
+      status: 'success',
+      description: 'Rebalanced MXN corridor',
+      details: {
+        amount: 5000,
+        currency: 'USDC',
+      },
+      reasoning: 'MXN corridor utilization at 92%. Moved funds from over-funded BRL corridor (43% utilization).',
+    },
+  ],
+};
+```
+
+**Component:**
+```typescript
+// apps/dashboard/components/agents/AgentActivityFeed.tsx
+const actionIcons: Record<string, string> = {
+  transfer: '💸',
+  stream_create: '🌊',
+  stream_topup: '⬆️',
+  stream_pause: '⏸️',
+  limit_check: '✓',
+  compliance_flag: '🚩',
+  rebalance: '⚖️',
+};
+
+export function AgentActivityFeed({ activities }: { activities: AgentAction[] }) {
+  return (
+    <div className="space-y-4">
+      {activities.map((activity) => (
+        <div 
+          key={activity.id} 
+          className={cn(
+            "p-4 rounded-lg border",
+            activity.status === 'failed' && "border-red-200 bg-red-50",
+            activity.status === 'pending' && "border-amber-200 bg-amber-50",
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-xl">{actionIcons[activity.type]}</span>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium">{activity.description}</h4>
+                <span className="text-xs text-muted-foreground">
+                  {formatRelative(activity.timestamp)}
+                </span>
+              </div>
+              
+              {activity.details.amount && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  {formatCurrency(activity.details.amount, activity.details.currency)}
+                  {activity.details.recipient && ` → ${activity.details.recipient}`}
+                </p>
+              )}
+              
+              {activity.reasoning && (
+                <div className="mt-2 p-2 bg-muted/50 rounded text-sm">
+                  <span className="text-muted-foreground">AI Reasoning: </span>
+                  {activity.reasoning}
+                </div>
+              )}
+              
+              <div className="mt-2 flex items-center gap-2">
+                <StatusBadge status={activity.status} />
+                {activity.details.reference && (
+                  <code className="text-xs text-muted-foreground">
+                    {activity.details.reference}
+                  </code>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+#### Story 8.4: Transaction Attribution Badges
+**Points:** 1  
+**Priority:** P0  
+
+**Description:**  
+Add visual indicators showing whether transactions were initiated by humans or agents.
+
+**Acceptance Criteria:**
+- [ ] Transactions table shows "Initiated by" column or badge
+- [ ] Badge shows agent name with robot icon for agent-initiated
+- [ ] Badge shows "Manual" or user icon for human-initiated
+- [ ] Filter dropdown to show only agent-initiated transactions
+- [ ] Agent badge links to agent detail page
+
+**Component:**
+```typescript
+// apps/dashboard/components/transactions/InitiatedByBadge.tsx
+interface InitiatedByBadgeProps {
+  initiatedBy: {
+    type: 'user' | 'agent';
+    id: string;
+    name: string;
+  };
+}
+
+export function InitiatedByBadge({ initiatedBy }: InitiatedByBadgeProps) {
+  if (initiatedBy.type === 'agent') {
+    return (
+      <Link 
+        href={`/agents/${initiatedBy.id}`}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-100 text-purple-800 text-xs hover:bg-purple-200"
+      >
+        <span>🤖</span>
+        <span>{initiatedBy.name}</span>
+      </Link>
+    );
+  }
+  
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-600 text-xs">
+      <span>👤</span>
+      <span>Manual</span>
+    </span>
+  );
+}
+```
+
+**Update TransactionsTable:**
+```typescript
+// Add to columns
+{
+  header: 'Initiated By',
+  cell: ({ row }) => (
+    <InitiatedByBadge initiatedBy={row.original.initiatedBy} />
+  ),
+}
+
+// Add to filters
+<Select value={initiatedByFilter} onValueChange={setInitiatedByFilter}>
+  <SelectTrigger>
+    <SelectValue placeholder="Initiated By" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="all">All</SelectItem>
+    <SelectItem value="agent">Agent</SelectItem>
+    <SelectItem value="user">Manual</SelectItem>
+  </SelectContent>
+</Select>
+```
+
+---
+
+#### Story 8.5: Agent Quick Actions
+**Points:** 2  
+**Priority:** P1  
+
+**Description:**  
+Add ability to trigger common agent actions directly from UI (mocked for demo).
+
+**Acceptance Criteria:**
+- [ ] "Run Now" button on agent detail triggers immediate action
+- [ ] Shows confirmation dialog with estimated outcome
+- [ ] After "running", shows success toast with results
+- [ ] Updates activity feed with new action
+
+**Component:**
+```typescript
+// apps/dashboard/components/agents/AgentQuickActions.tsx
+export function AgentQuickActions({ agent }: { agent: Agent }) {
+  const [isRunning, setIsRunning] = useState(false);
+  
+  const handleRunNow = async () => {
+    setIsRunning(true);
+    // Simulate agent processing
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    setIsRunning(false);
+    
+    toast.success('Agent completed', {
+      description: `${agent.name} processed 3 pending payments ($4,500 total)`,
+    });
+  };
+  
+  return (
+    <div className="flex gap-2">
+      <Button 
+        onClick={handleRunNow} 
+        disabled={isRunning}
+        variant="outline"
+      >
+        {isRunning ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Running...
+          </>
+        ) : (
+          <>
+            <Play className="mr-2 h-4 w-4" />
+            Run Now
+          </>
+        )}
+      </Button>
+      
+      <Button variant="outline">
+        <Settings className="mr-2 h-4 w-4" />
+        Configure
+      </Button>
+    </div>
+  );
+}
+```
+
+---
+
+## Epic 9: Demo Polish & Missing Features
+
+### Overview
+Final polish items and features that surfaced during implementation but are needed for a complete demo experience.
+
+### Stories
+
+#### Story 9.1: Reports Page Implementation
+**Points:** 2  
+**Priority:** P0  
+
+**Description:**  
+Wire up the Reports stub page to the actual API.
+
+**Acceptance Criteria:**
+- [ ] List existing reports from API
+- [ ] Generate new report form (type, date range, format)
+- [ ] Download report (CSV/PDF)
+- [ ] Show report generation status
+
+**Files:**
+- `apps/dashboard/app/(dashboard)/reports/page.tsx`
+- `apps/dashboard/components/reports/ReportsTable.tsx`
+- `apps/dashboard/components/reports/GenerateReportModal.tsx`
+
+---
+
+#### Story 9.2: Streams Page Verification
+**Points:** 1  
+**Priority:** P0  
+
+**Description:**  
+Verify streams list page works with real data and all actions function.
+
+**Acceptance Criteria:**
+- [ ] List shows all streams with health badges
+- [ ] Click into stream shows detail with real-time balance
+- [ ] Pause/Resume buttons work
+- [ ] Cancel button works with confirmation
+- [ ] Top-up modal works
+
+---
+
+#### Story 9.3: Empty States
+**Points:** 1  
+**Priority:** P1  
+
+**Description:**  
+Add meaningful empty states for all list pages.
+
+**Acceptance Criteria:**
+- [ ] Accounts empty state with "Create Account" CTA
+- [ ] Agents empty state with "Register Agent" CTA
+- [ ] Streams empty state with "Create Stream" CTA
+- [ ] Transactions empty state
+- [ ] Empty states include helpful illustration/icon
+
+**Component:**
+```typescript
+// apps/dashboard/components/ui/EmptyState.tsx
+interface EmptyStateProps {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+
+export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="text-4xl mb-4">{icon}</div>
+      <h3 className="text-lg font-medium">{title}</h3>
+      <p className="text-muted-foreground mt-1 max-w-sm">{description}</p>
+      {action && (
+        <Button onClick={action.onClick} className="mt-4">
+          {action.label}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// Usage
+<EmptyState
+  icon="🤖"
+  title="No agents yet"
+  description="Register your first AI agent to automate payments and treasury operations."
+  action={{ label: 'Register Agent', onClick: () => setShowCreateModal(true) }}
+/>
+```
+
+---
+
+#### Story 9.4: Loading Skeletons
+**Points:** 1  
+**Priority:** P1  
+
+**Description:**  
+Add skeleton loading states for all data-fetching components.
+
+**Acceptance Criteria:**
+- [ ] Table skeleton for lists
+- [ ] Card skeleton for dashboard cards
+- [ ] Detail page skeleton
+- [ ] Skeletons match actual component layouts
+
+---
+
+#### Story 9.5: Error States
+**Points:** 1  
+**Priority:** P1  
+
+**Description:**  
+Add error handling UI for API failures.
+
+**Acceptance Criteria:**
+- [ ] Error boundary at page level
+- [ ] Retry button on error states
+- [ ] Toast notifications for action failures
+- [ ] Graceful degradation (show cached data if available)
+
+---
+
+#### Story 9.6: Global Search Enhancement
+**Points:** 2  
+**Priority:** P1  
+
+**Description:**  
+Make the ⌘K search actually functional with mock results.
+
+**Acceptance Criteria:**
+- [ ] Search modal opens on ⌘K / Ctrl+K
+- [ ] Search across accounts, agents, transactions
+- [ ] Shows categorized results
+- [ ] Keyboard navigation
+- [ ] Recent searches
+
+**Component:**
+```typescript
+// apps/dashboard/components/search/GlobalSearch.tsx
+const mockSearchResults = {
+  accounts: [
+    { id: 'acc-1', name: 'TechCorp Inc', type: 'business' },
+    { id: 'acc-2', name: 'Maria Garcia', type: 'person' },
+  ],
+  agents: [
+    { id: 'agent-1', name: 'Payroll Autopilot', status: 'active' },
+  ],
+  transactions: [
+    { id: 'txn-1', description: 'Payment to Maria', amount: 2000 },
+  ],
+};
+
+export function GlobalSearch() {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setOpen(true);
+      }
+    };
+    document.addEventListener('keydown', down);
+    return () => document.removeEventListener('keydown', down);
+  }, []);
+  
+  // Filter mock results based on query
+  const results = useMemo(() => {
+    if (!query) return null;
+    // ... filter logic
+  }, [query]);
+  
+  return (
+    <CommandDialog open={open} onOpenChange={setOpen}>
+      <CommandInput 
+        placeholder="Search accounts, agents, transactions..." 
+        value={query}
+        onValueChange={setQuery}
+      />
+      <CommandList>
+        {results?.accounts?.length > 0 && (
+          <CommandGroup heading="Accounts">
+            {results.accounts.map(acc => (
+              <CommandItem key={acc.id}>
+                <Building className="mr-2 h-4 w-4" />
+                {acc.name}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {/* Similar for agents, transactions */}
+      </CommandList>
+    </CommandDialog>
+  );
+}
+```
+
+---
+
+#### Story 9.7: Notifications Center
+**Points:** 2  
+**Priority:** P2  
+
+**Description:**  
+Add a notifications dropdown showing recent system events.
+
+**Acceptance Criteria:**
+- [ ] Bell icon in header with unread count
+- [ ] Dropdown shows recent notifications
+- [ ] Notification types: agent actions, stream alerts, compliance flags
+- [ ] Mark as read functionality
+- [ ] Link to relevant page
+
+**Mock Data:**
+```typescript
+export const mockNotifications = [
+  {
+    id: 'notif-1',
+    type: 'agent_action',
+    title: 'Payroll Autopilot',
+    message: 'Completed 12 scheduled payments',
+    timestamp: '5 minutes ago',
+    read: false,
+    href: '/agents/payroll-autopilot',
+  },
+  {
+    id: 'notif-2',
+    type: 'stream_alert',
+    title: 'Stream Health Warning',
+    message: 'Stream to Carlos Martinez has < 48h runway',
+    timestamp: '1 hour ago',
+    read: false,
+    href: '/streams/stream-123',
+  },
+  {
+    id: 'notif-3',
+    type: 'compliance',
+    title: 'Review Required',
+    message: 'Transaction #TXN-456 flagged for review',
+    timestamp: '2 hours ago',
+    read: true,
+    href: '/compliance',
+  },
+];
+```
+
+---
+
+#### Story 9.8: Real-Time Balance Animation
+**Points:** 1  
+**Priority:** P2  
+
+**Description:**  
+Add visual animation showing stream balances updating in real-time.
+
+**Acceptance Criteria:**
+- [ ] Balance numbers animate/tick up smoothly
+- [ ] Visual indicator showing "live" status
+- [ ] Works on stream detail page
+- [ ] Works on account balance breakdown
+
+**Component:**
+```typescript
+// apps/dashboard/components/ui/AnimatedNumber.tsx
+export function AnimatedNumber({ 
+  value, 
+  duration = 500,
+  formatFn = (n) => n.toFixed(2),
+}: { 
+  value: number; 
+  duration?: number;
+  formatFn?: (n: number) => string;
+}) {
+  const [displayValue, setDisplayValue] = useState(value);
+  
+  useEffect(() => {
+    const start = displayValue;
+    const end = value;
+    const startTime = Date.now();
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = start + (end - start) * eased;
+      
+      setDisplayValue(current);
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+    
+    requestAnimationFrame(animate);
+  }, [value]);
+  
+  return <span>{formatFn(displayValue)}</span>;
+}
+
+// Usage for streaming balance
+function StreamBalance({ stream }) {
+  const [balance, setBalance] = useState(stream.currentBalance);
+  
+  useEffect(() => {
+    // Update balance every second based on flow rate
+    const interval = setInterval(() => {
+      setBalance(prev => prev + stream.flowRate.perSecond);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [stream.flowRate.perSecond]);
+  
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-2xl font-bold">
+        $<AnimatedNumber value={balance} />
+      </span>
+      <span className="inline-flex items-center gap-1 text-xs text-green-600">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+        </span>
+        Live
+      </span>
+    </div>
+  );
+}
+```
+
+---
+
+## Epic 10: AI Insights API (Future)
+
+### Overview
+API routes to replace mock data with real AI-generated insights. Currently using mock data for demo purposes.
+
+### Stories
+
+#### Story 10.1: AI Insights Endpoint
+**Points:** 3  
+**Priority:** P2 (Post-Demo)
+
+**Description:**  
+Create API endpoint that generates AI insights based on real-time data analysis.
+
+**Endpoint:**
+```
+GET /v1/insights
+Authorization: Bearer {api_key}
+```
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "insight-1",
+      "type": "treasury_optimization",
+      "icon": "💡",
+      "severity": "info",
+      "title": "Treasury Optimization",
+      "message": "MXN corridor is 23% over-funded...",
+      "action": { "label": "Review", "href": "/treasury" },
+      "generatedAt": "2025-12-12T14:00:00Z"
+    }
+  ],
+  "generatedAt": "2025-12-12T14:00:00Z"
+}
+```
+
+**Implementation Notes:**
+- Analyze stream health (runway < 48h → warning)
+- Analyze agent limits (usage > 80% → warning)
+- Analyze treasury float levels
+- Analyze compliance queue
+- Analyze transaction velocity anomalies
+
+---
+
+#### Story 10.2: Agent Statistics Endpoint
+**Points:** 2  
+**Priority:** P2 (Post-Demo)
+
+**Description:**  
+Create API endpoint for aggregate agent performance statistics.
+
+**Endpoint:**
+```
+GET /v1/agents/stats
+Authorization: Bearer {api_key}
+```
+
+**Response:**
+```json
+{
+  "activeAgents": 8,
+  "totalAgents": 14,
+  "actionsToday": 142,
+  "actionsTrend": 12,
+  "successRate": 99.3,
+  "failedActions": 1,
+  "volumeProcessed": 47230,
+  "volumeCurrency": "USDC",
+  "topAgent": {
+    "id": "agent-payroll-bot",
+    "name": "Payroll Autopilot",
+    "actions": 67,
+    "volume": 28500
+  },
+  "byType": {
+    "transfers": 89,
+    "streams": 34,
+    "topUps": 19
+  }
+}
+```
+
+---
+
+#### Story 10.3: Agent Activity Log Endpoint
+**Points:** 2  
+**Priority:** P2 (Post-Demo)
+
+**Description:**  
+Create API endpoint for agent activity history with AI reasoning.
+
+**Endpoint:**
+```
+GET /v1/agents/:id/activity
+Authorization: Bearer {api_key}
+Query: ?type=transfer|stream_create|limit_check&limit=50&offset=0
+```
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "act-1",
+      "timestamp": "2025-12-12T14:32:00Z",
+      "type": "stream_create",
+      "status": "success",
+      "description": "Created salary stream to Maria Garcia",
+      "details": {
+        "amount": 2000,
+        "currency": "USDC",
+        "recipient": "Maria Garcia",
+        "reference": "stream_abc123"
+      },
+      "reasoning": "Scheduled payroll execution. Within limits."
+    }
+  ],
+  "pagination": {
+    "total": 142,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+**Implementation Notes:**
+- Pull from existing audit_logs table
+- Add reasoning generation for AI agents
+- Filter by action type
+
+---
+
 ## Implementation Schedule
 
 ### Phase 1: Full PoC with Mocks (Weekends 1-2)
@@ -3797,14 +4837,40 @@ Reusable stream-related components.
 
 ---
 
-### Phase 2: Circle Integration (Weekend 3)
+### Phase 1.5: AI Visibility & Demo Polish (Current Sprint)
+
+**Goal:** Make AI-native differentiator visible, polish for investor demos.
+
+#### AI Visibility (Epic 8) — 4-6 hours
+- [x] Story 8.1: Enhanced AI Insights Panel (P0) ✅
+- [x] Story 8.2: Agent Performance Dashboard Card (P0) ✅
+- [x] Story 8.3: Agent Activity Feed (P0) ✅
+- [x] Story 8.4: Transaction Attribution Badges (P0) ✅
+- [ ] Story 8.5: Agent Quick Actions (P1)
+
+#### Demo Polish (Epic 9) — 3-4 hours
+- [x] Story 9.1: Reports Page Implementation (P0) ✅
+- [x] Story 9.2: Streams Page Verification (P0) ✅
+- [ ] Story 9.3: Empty States (P1)
+- [ ] Story 9.4: Loading Skeletons (P1)
+- [ ] Story 9.5: Error States (P1)
+- [ ] Story 9.6: Global Search Enhancement (P1)
+- [ ] Story 9.7: Notifications Center (P2)
+- [ ] Story 9.8: Real-Time Balance Animation (P2)
+
+**Deliverable:** Demo where AI story is visible and compelling.
+
+---
+
+### Phase 2: Circle Integration (Weekend 3+)
 
 **Goal:** Add real Circle sandbox for USDC operations.
 
 - [ ] Create Circle sandbox account
-- [ ] Implement real Circle provider
+- [ ] Implement real Circle provider (replace mock)
 - [ ] Wire up deposits/withdrawals
 - [ ] Test end-to-end USDC flow
+- [ ] Add Circle wallet addresses to accounts
 
 **Deliverable:** "Real" USDC deposits/withdrawals via Circle sandbox.
 
@@ -3815,10 +4881,11 @@ Reusable stream-related components.
 **Goal:** Add on-chain streaming via Superfluid testnet.
 
 - [ ] Set up testnet wallet
-- [ ] Get testnet ETH and tokens
-- [ ] Implement Superfluid provider
-- [ ] Wire up stream creation/management
+- [ ] Get testnet ETH and tokens from faucets
+- [ ] Implement Superfluid provider (replace mock)
+- [ ] Wire up stream creation/management on-chain
 - [ ] Add blockchain explorer links to UI
+- [ ] Show real on-chain transaction hashes
 
 **Deliverable:** Real on-chain streams with transaction hashes.
 
