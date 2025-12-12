@@ -6,15 +6,44 @@ export type Locale = 'en-US' | 'en-EU' | 'es-LATAM';
 
 export interface LocaleConfig {
   locale: Locale;
-  currency: string;
+  intlLocale: string; // Actual Intl locale string
+  defaultFiatCurrency: string;
   dateFormat: Intl.DateTimeFormatOptions;
-  numberFormat: Intl.NumberFormatOptions;
+  numberFormat: {
+    minimumFractionDigits: number;
+    maximumFractionDigits: number;
+  };
 }
+
+// Non-ISO currency symbols (stablecoins, crypto, supertokens)
+const CRYPTO_SYMBOLS: Record<string, string> = {
+  // Stablecoins
+  'USDC': '$',
+  'USDT': '$',
+  'DAI': '$',
+  'BUSD': '$',
+  // Supertokens (Superfluid wrapped tokens)
+  'USDCx': '$',
+  'fUSDCx': '$',
+  'fDAIx': '$',
+  // Crypto
+  'ETH': 'Ξ',
+  'MATIC': 'MATIC ',
+  'BTC': '₿',
+};
+
+// ISO 4217 fiat currency codes
+const FIAT_CURRENCIES = new Set([
+  'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CHF', 'CAD', 'AUD',
+  'MXN', 'BRL', 'ARS', 'COP', 'PEN', 'CLP',
+  'INR', 'KRW', 'SGD', 'HKD', 'TWD', 'THB',
+]);
 
 const localeConfigs: Record<Locale, LocaleConfig> = {
   'en-US': {
     locale: 'en-US',
-    currency: 'USD',
+    intlLocale: 'en-US',
+    defaultFiatCurrency: 'USD',
     dateFormat: {
       year: 'numeric',
       month: 'short',
@@ -27,7 +56,8 @@ const localeConfigs: Record<Locale, LocaleConfig> = {
   },
   'en-EU': {
     locale: 'en-EU',
-    currency: 'EUR',
+    intlLocale: 'en-GB',
+    defaultFiatCurrency: 'EUR',
     dateFormat: {
       day: 'numeric',
       month: 'short',
@@ -40,7 +70,8 @@ const localeConfigs: Record<Locale, LocaleConfig> = {
   },
   'es-LATAM': {
     locale: 'es-LATAM',
-    currency: 'USD', // LATAM uses USD for stablecoins
+    intlLocale: 'es-MX',
+    defaultFiatCurrency: 'USD',
     dateFormat: {
       day: 'numeric',
       month: 'short',
@@ -82,41 +113,59 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
   const config = localeConfigs[locale];
 
+  /**
+   * Format currency - handles both fiat (ISO 4217) and crypto/stablecoins
+   */
   const formatCurrency = (amount: number, currency?: string) => {
-    const localeMap: Record<Locale, string> = {
-      'en-US': 'en-US',
-      'en-EU': 'en-GB', // Use GB for EU English
-      'es-LATAM': 'es-MX', // Use Mexico as default LATAM locale
-    };
+    const curr = currency || config.defaultFiatCurrency;
+    const isCrypto = curr in CRYPTO_SYMBOLS;
+    const isFiat = FIAT_CURRENCIES.has(curr);
 
-    return new Intl.NumberFormat(localeMap[locale], {
-      style: 'currency',
-      currency: currency || config.currency,
+    if (isFiat) {
+      // Use Intl.NumberFormat for fiat currencies
+      return new Intl.NumberFormat(config.intlLocale, {
+        style: 'currency',
+        currency: curr,
+        ...config.numberFormat,
+      }).format(amount);
+    }
+
+    if (isCrypto) {
+      // Format crypto with custom symbol
+      const symbol = CRYPTO_SYMBOLS[curr];
+      const maxDecimals = curr.endsWith('x') ? 6 : 2; // Supertokens get more precision
+      
+      const formatted = new Intl.NumberFormat(config.intlLocale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: maxDecimals,
+      }).format(amount);
+
+      // For dollar-based stablecoins, format like: $1,234.56 USDC
+      if (symbol === '$') {
+        return `${symbol}${formatted} ${curr}`;
+      }
+
+      // For other crypto, just symbol + amount
+      return `${symbol}${formatted}`;
+    }
+
+    // Unknown currency - format as number with currency code
+    const formatted = new Intl.NumberFormat(config.intlLocale, {
       ...config.numberFormat,
     }).format(amount);
+    
+    return `${formatted} ${curr}`;
   };
 
   const formatDate = (date: string | Date, options?: Intl.DateTimeFormatOptions) => {
-    const localeMap: Record<Locale, string> = {
-      'en-US': 'en-US',
-      'en-EU': 'en-GB',
-      'es-LATAM': 'es-MX',
-    };
-
-    return new Intl.DateTimeFormat(localeMap[locale], {
+    return new Intl.DateTimeFormat(config.intlLocale, {
       ...config.dateFormat,
       ...options,
     }).format(new Date(date));
   };
 
   const formatNumber = (value: number, options?: Intl.NumberFormatOptions) => {
-    const localeMap: Record<Locale, string> = {
-      'en-US': 'en-US',
-      'en-EU': 'en-GB',
-      'es-LATAM': 'es-MX',
-    };
-
-    return new Intl.NumberFormat(localeMap[locale], {
+    return new Intl.NumberFormat(config.intlLocale, {
       ...config.numberFormat,
       ...options,
     }).format(value);

@@ -6,12 +6,16 @@ import type { Account, Agent, Transfer, Stream } from '@payos/types';
 // ============================================
 
 export function mapAccountFromDb(row: any): Account {
+  const currency = row.currency || 'USDC';
+  
   return {
     id: row.id,
     tenantId: row.tenant_id,
     type: row.type,
     name: row.name,
     email: row.email || undefined,
+    country: row.country || undefined,
+    currency: currency,
     // Flat verification fields for client compatibility
     verificationTier: row.verification_tier || 0,
     verificationStatus: row.verification_status || 'unverified',
@@ -35,7 +39,7 @@ export function mapAccountFromDb(row: any): Account {
         buffer: parseFloat(row.balance_buffer) || 0,
         streaming: (parseFloat(row.balance_in_streams) || 0) - (parseFloat(row.balance_buffer) || 0),
       },
-      currency: 'USDC',
+      currency: currency,
     },
     agents: {
       count: row.agents_count || 0,

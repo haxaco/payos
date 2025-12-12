@@ -624,6 +624,7 @@ accounts.get('/:id/transactions', async (c) => {
     id: entry.id,
     type: entry.type, // credit or debit
     amount: parseFloat(entry.amount),
+    currency: entry.currency || 'USDC',
     balanceAfter: parseFloat(entry.balance_after),
     referenceType: entry.reference_type,
     referenceId: entry.reference_id,

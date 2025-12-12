@@ -149,7 +149,7 @@ export default function AccountsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                    {formatCurrency(account.balanceTotal || 0, 'USDC')}
+                    {formatCurrency(account.balanceTotal || 0, account.currency || 'USDC')}
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-sm text-gray-500 dark:text-gray-400">

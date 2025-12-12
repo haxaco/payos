@@ -262,19 +262,19 @@ export default function AccountDetailPage() {
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Balance</div>
           <div className="text-2xl font-bold text-gray-900 dark:text-white">
-            {formatCurrencyLocale(account.balanceTotal || 0, 'USDC')}
+            {formatCurrencyLocale(account.balanceTotal || 0, account.currency || 'USDC')}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Available</div>
           <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-            {formatCurrencyLocale(account.balanceAvailable || 0, 'USDC')}
+            {formatCurrencyLocale(account.balanceAvailable || 0, account.currency || 'USDC')}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">In Streams</div>
           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-            {formatCurrencyLocale(account.balanceInStreams || 0, 'USDC')}
+            {formatCurrencyLocale(account.balanceInStreams || 0, account.currency || 'USDC')}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
@@ -330,6 +330,9 @@ export default function AccountDetailPage() {
 
 // Overview Tab Component
 function OverviewTab({ account }: { account: Account }) {
+  const { formatCurrency, formatDate } = useLocale();
+  const currency = account.currency || 'USDC';
+  
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
@@ -349,12 +352,12 @@ function OverviewTab({ account }: { account: Account }) {
           </div>
           <div className="flex justify-between">
             <dt className="text-gray-500 dark:text-gray-400">Currency</dt>
-            <dd className="text-gray-900 dark:text-white">USDC</dd>
+            <dd className="text-gray-900 dark:text-white">{currency}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-gray-500 dark:text-gray-400">Created</dt>
             <dd className="text-gray-900 dark:text-white">
-              {formatDateLocale(account.createdAt)}
+              {formatDate(account.createdAt)}
             </dd>
           </div>
         </dl>
@@ -367,7 +370,7 @@ function OverviewTab({ account }: { account: Account }) {
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-500 dark:text-gray-400">Available</span>
               <span className="text-gray-900 dark:text-white">
-                {formatCurrencyLocale(account.balanceAvailable || 0, 'USDC')}
+                {formatCurrency(account.balanceAvailable || 0, currency)}
               </span>
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -383,7 +386,7 @@ function OverviewTab({ account }: { account: Account }) {
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-500 dark:text-gray-400">In Streams</span>
               <span className="text-gray-900 dark:text-white">
-                {formatCurrencyLocale(account.balanceInStreams || 0, 'USDC')}
+                {formatCurrency(account.balanceInStreams || 0, currency)}
               </span>
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -463,11 +466,11 @@ function TransactionsTab({
                   </td>
                   <td className="px-6 py-4">
                     <span className={tx.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
-                      {tx.type === 'credit' ? '+' : '-'}{formatCurrencyLocale(Math.abs(tx.amount), 'USDC')}
+                      {tx.type === 'credit' ? '+' : '-'}{formatCurrencyLocale(Math.abs(tx.amount), tx.currency || 'USDC')}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-gray-900 dark:text-white">
-                    {tx.balanceAfter ? formatCurrencyLocale(tx.balanceAfter, 'USDC') : '-'}
+                    {tx.balanceAfter ? formatCurrencyLocale(tx.balanceAfter, tx.currency || 'USDC') : '-'}
                   </td>
                   <td className="px-6 py-4 text-gray-500 dark:text-gray-400 text-sm">
                     {formatDateLocale(tx.createdAt)}
@@ -519,6 +522,8 @@ function TransactionsTab({
 
 // Streams Tab Component
 function StreamsTab({ streams }: { streams: Stream[] }) {
+  const { formatCurrency } = useLocale();
+  
   if (streams.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
@@ -542,39 +547,44 @@ function StreamsTab({ streams }: { streams: Stream[] }) {
 
   return (
     <div className="space-y-4">
-      {streams.map((stream) => (
-        <Link
-          key={stream.id}
-          href={`/dashboard/streams/${stream.id}`}
-          className="block bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-gray-900 dark:text-white">
-                {stream.sender.accountName} → {stream.receiver.accountName}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                ${stream.flowRate.perMonth.toLocaleString()}/month
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right">
+      {streams.map((stream) => {
+        // Streams use supertokens (wrapped USDC), display base currency
+        const currency = stream.currency || 'USDCx';
+        
+        return (
+          <Link
+            key={stream.id}
+            href={`/dashboard/streams/${stream.id}`}
+            className="block bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
+          >
+            <div className="flex items-center justify-between">
+              <div>
                 <div className="text-sm font-medium text-gray-900 dark:text-white">
-                  ${stream.streamed.total.toLocaleString()}
+                  {stream.sender.accountName} → {stream.receiver.accountName}
                 </div>
-                <div className="text-xs text-gray-500">streamed</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {formatCurrency(stream.flowRate.perMonth, currency)}/month
+                </div>
               </div>
-              <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${getHealthColor(stream.health)}`}>
-                {stream.health}
-              </span>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    {formatCurrency(stream.streamed.total, currency)}
+                  </div>
+                  <div className="text-xs text-gray-500">streamed</div>
+                </div>
+                <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${getHealthColor(stream.health)}`}>
+                  {stream.health}
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-            <span>Runway: {stream.funding.runway.display}</span>
-            <span>Buffer: ${stream.funding.buffer.toLocaleString()}</span>
-          </div>
-        </Link>
-      ))}
+            <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+              <span>Runway: {stream.funding.runway.display}</span>
+              <span>Buffer: {formatCurrency(stream.funding.buffer, currency)}</span>
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }

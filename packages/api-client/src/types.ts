@@ -35,6 +35,8 @@ export interface Account {
   type: AccountType;
   name: string;
   email?: string;
+  country?: string;
+  currency: string; // 'USDC', 'USDT', etc.
   verificationTier: number;
   verificationStatus: VerificationStatus;
   verificationType?: 'kyc' | 'kyb';
@@ -413,6 +415,7 @@ export interface LedgerEntry {
   id: string;
   type: 'credit' | 'debit';
   amount: number;
+  currency: string; // 'USDC', 'USDT', etc.
   balanceAfter: number;
   referenceType: string | null;
   referenceId: string | null;
