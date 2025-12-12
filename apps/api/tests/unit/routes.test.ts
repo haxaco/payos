@@ -4,15 +4,43 @@ import app from '../../src/app.js';
 // Mock the Supabase client
 vi.mock('../../src/db/client.js', () => ({
   createClient: vi.fn(() => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
+    from: vi.fn((table: string) => {
+      // Return tenant data for auth
+      if (table === 'tenants') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn(() => ({
+                data: {
+                  id: 'aaaaaaaa-0000-0000-0000-000000000001',
+                  name: 'Test Tenant',
+                  status: 'active',
+                },
+                error: null,
+              })),
+            })),
+          })),
+        };
+      }
+      // Default mock for other tables
+      return {
+        select: vi.fn(() => ({
           eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn(() => ({
+                data: null,
+                error: null,
+              })),
+              order: vi.fn(() => ({
+                range: vi.fn(() => ({
+                  data: [],
+                  count: 0,
+                  error: null,
+                })),
+              })),
+            })),
             single: vi.fn(() => ({
-              data: {
-                id: 'aaaaaaaa-0000-0000-0000-000000000001',
-                name: 'Test Tenant',
-              },
+              data: null,
               error: null,
             })),
             order: vi.fn(() => ({
@@ -23,12 +51,14 @@ vi.mock('../../src/db/client.js', () => ({
               })),
             })),
           })),
-          single: vi.fn(() => ({
-            data: {
-              id: 'aaaaaaaa-0000-0000-0000-000000000001',
-              name: 'Test Tenant',
-            },
-            error: null,
+          or: vi.fn(() => ({
+            order: vi.fn(() => ({
+              range: vi.fn(() => ({
+                data: [],
+                count: 0,
+                error: null,
+              })),
+            })),
           })),
           order: vi.fn(() => ({
             range: vi.fn(() => ({
@@ -38,32 +68,16 @@ vi.mock('../../src/db/client.js', () => ({
             })),
           })),
         })),
-        or: vi.fn(() => ({
-          order: vi.fn(() => ({
-            range: vi.fn(() => ({
-              data: [],
-              count: 0,
+        insert: vi.fn(() => ({
+          select: vi.fn(() => ({
+            single: vi.fn(() => ({
+              data: { id: 'new-id' },
               error: null,
             })),
           })),
         })),
-        order: vi.fn(() => ({
-          range: vi.fn(() => ({
-            data: [],
-            count: 0,
-            error: null,
-          })),
-        })),
-      })),
-      insert: vi.fn(() => ({
-        select: vi.fn(() => ({
-          single: vi.fn(() => ({
-            data: { id: 'new-id' },
-            error: null,
-          })),
-        })),
-      })),
-    })),
+      };
+    }),
   })),
 }));
 
