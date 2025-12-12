@@ -571,7 +571,7 @@ accounts.get('/:id/streams', async (c) => {
 });
 
 // ============================================
-// GET /v1/accounts/:id/transactions - Account's transfers
+// GET /v1/accounts/:id/transactions - Account's ledger entries (audit trail)
 // ============================================
 accounts.get('/:id/transactions', async (c) => {
   const ctx = c.get('ctx');
@@ -582,10 +582,10 @@ accounts.get('/:id/transactions', async (c) => {
     throw new ValidationError('Invalid account ID format');
   }
   
-  // Verify account exists
+  // Verify account exists and belongs to tenant
   const { data: account, error: accountError } = await supabase
     .from('accounts')
-    .select('id')
+    .select('id, name')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
     .single();
@@ -597,23 +597,19 @@ accounts.get('/:id/transactions', async (c) => {
   // Parse query params
   const query = c.req.query();
   const { page, limit } = getPaginationParams(query);
-  const status = query.status;
-  const type = query.type;
+  const referenceType = query.referenceType || query.type;
   
-  // Get transfers
+  // Get ledger entries (not transfers - ledger is the source of truth)
   let dbQuery = supabase
-    .from('transfers')
+    .from('ledger_entries')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
-    .or(`from_account_id.eq.${id},to_account_id.eq.${id}`)
+    .eq('account_id', id)
     .order('created_at', { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
   
-  if (status) {
-    dbQuery = dbQuery.eq('status', status);
-  }
-  if (type) {
-    dbQuery = dbQuery.eq('type', type);
+  if (referenceType) {
+    dbQuery = dbQuery.eq('reference_type', referenceType);
   }
   
   const { data, count, error } = await dbQuery;
@@ -623,11 +619,270 @@ accounts.get('/:id/transactions', async (c) => {
     return c.json({ error: 'Failed to fetch transactions' }, 500);
   }
   
-  // Import transfer mapper
-  const { mapTransferFromDb } = await import('../utils/helpers.js');
-  const transfers = (data || []).map(row => mapTransferFromDb(row));
+  // Map ledger entries to transaction format
+  const transactions = (data || []).map(entry => ({
+    id: entry.id,
+    type: entry.type, // credit or debit
+    amount: parseFloat(entry.amount),
+    balanceAfter: parseFloat(entry.balance_after),
+    referenceType: entry.reference_type,
+    referenceId: entry.reference_id,
+    description: entry.description,
+    createdAt: entry.created_at,
+  }));
   
-  return c.json(paginationResponse(transfers, count || 0, { page, limit }));
+  return c.json(paginationResponse(transactions, count || 0, { page, limit }));
+});
+
+// ============================================
+// POST /v1/accounts/:id/verify - Mock KYC/KYB verification
+// ============================================
+const verifyAccountSchema = z.object({
+  tier: z.number().min(0).max(3),
+  verificationData: z.object({
+    documentType: z.string().optional(),
+    documentId: z.string().optional(),
+    notes: z.string().optional(),
+  }).optional(),
+});
+
+accounts.post('/:id/verify', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid account ID format');
+  }
+  
+  // Parse and validate body
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+  
+  const parsed = verifyAccountSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError('Validation failed', parsed.error.flatten());
+  }
+  
+  const { tier, verificationData } = parsed.data;
+  
+  // Get existing account
+  const { data: existing, error: fetchError } = await supabase
+    .from('accounts')
+    .select('id, name, type, verification_tier, verification_status, tenant_id')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (fetchError || !existing) {
+    throw new NotFoundError('Account', id);
+  }
+  
+  // Determine verification type based on account type
+  const verificationType = existing.type === 'business' ? 'kyb' : 'kyc';
+  
+  // Update verification status
+  const { data, error } = await supabase
+    .from('accounts')
+    .update({
+      verification_tier: tier,
+      verification_status: tier > 0 ? 'verified' : 'unverified',
+      verification_type: verificationType,
+      metadata: {
+        ...((existing as any).metadata || {}),
+        verificationData,
+        verifiedAt: tier > 0 ? new Date().toISOString() : null,
+        verifiedBy: ctx.actorId,
+      },
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+  
+  if (error) {
+    console.error('Error verifying account:', error);
+    return c.json({ error: 'Failed to verify account' }, 500);
+  }
+  
+  // Update effective limits for all agents under this account
+  // This triggers the calculate_agent_effective_limits function
+  await supabase
+    .from('agents')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('parent_account_id', id);
+  
+  // Audit log
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'account',
+    entityId: id,
+    action: 'verified',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    changes: {
+      before: { 
+        verification_tier: existing.verification_tier, 
+        verification_status: existing.verification_status 
+      },
+      after: { 
+        verification_tier: tier, 
+        verification_status: tier > 0 ? 'verified' : 'unverified' 
+      },
+    },
+  });
+  
+  return c.json({
+    data: {
+      id: data.id,
+      name: data.name,
+      type: data.type,
+      verificationTier: data.verification_tier,
+      verificationStatus: data.verification_status,
+      verificationType: data.verification_type,
+      message: tier > 0 
+        ? `Account verified at tier ${tier}` 
+        : 'Account verification reset',
+    },
+  });
+});
+
+// ============================================
+// POST /v1/accounts/:id/suspend - Suspend account and cascade to agents
+// ============================================
+accounts.post('/:id/suspend', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid account ID format');
+  }
+  
+  // Get existing account
+  const { data: existing, error: fetchError } = await supabase
+    .from('accounts')
+    .select('id, name, verification_status, tenant_id')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (fetchError || !existing) {
+    throw new NotFoundError('Account', id);
+  }
+  
+  // Update account status
+  const { error: updateError } = await supabase
+    .from('accounts')
+    .update({ verification_status: 'suspended' })
+    .eq('id', id);
+  
+  if (updateError) {
+    console.error('Error suspending account:', updateError);
+    return c.json({ error: 'Failed to suspend account' }, 500);
+  }
+  
+  // CASCADE: Suspend all agents under this account
+  const { data: suspendedAgents, error: agentError } = await supabase
+    .from('agents')
+    .update({ status: 'suspended' })
+    .eq('parent_account_id', id)
+    .eq('status', 'active')
+    .select('id, name');
+  
+  if (agentError) {
+    console.error('Error suspending agents:', agentError);
+  }
+  
+  // Audit log
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'account',
+    entityId: id,
+    action: 'suspended',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: {
+      cascadedAgents: (suspendedAgents || []).map(a => ({ id: a.id, name: a.name })),
+    },
+  });
+  
+  return c.json({
+    data: {
+      accountId: id,
+      status: 'suspended',
+      cascadedAgents: (suspendedAgents || []).length,
+      message: `Account suspended. ${(suspendedAgents || []).length} agent(s) also suspended.`,
+    },
+  });
+});
+
+// ============================================
+// POST /v1/accounts/:id/activate - Reactivate account
+// ============================================
+accounts.post('/:id/activate', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid account ID format');
+  }
+  
+  // Get existing account
+  const { data: existing, error: fetchError } = await supabase
+    .from('accounts')
+    .select('id, name, verification_tier, verification_status, tenant_id')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (fetchError || !existing) {
+    throw new NotFoundError('Account', id);
+  }
+  
+  if (existing.verification_status !== 'suspended') {
+    throw new ValidationError('Account is not suspended');
+  }
+  
+  // Restore status based on verification tier
+  const newStatus = existing.verification_tier > 0 ? 'verified' : 'unverified';
+  
+  const { error: updateError } = await supabase
+    .from('accounts')
+    .update({ verification_status: newStatus })
+    .eq('id', id);
+  
+  if (updateError) {
+    console.error('Error activating account:', updateError);
+    return c.json({ error: 'Failed to activate account' }, 500);
+  }
+  
+  // Note: Agents remain suspended - must be reactivated individually for security
+  
+  // Audit log
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'account',
+    entityId: id,
+    action: 'activated',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+  });
+  
+  return c.json({
+    data: {
+      accountId: id,
+      status: newStatus,
+      message: 'Account reactivated. Note: Agents must be reactivated individually.',
+    },
+  });
 });
 
 export default accounts;

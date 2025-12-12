@@ -26,25 +26,43 @@ export class LimitService {
   constructor(private supabase: SupabaseClient) {}
 
   /**
-   * Get agent with limits
+   * Get agent with limits and parent account info
    */
   private async getAgent(agentId: string) {
-    const { data, error } = await this.supabase
+    // Get agent data
+    const { data: agent, error: agentError } = await this.supabase
       .from('agents')
       .select(`
-        id, name, status, kya_tier,
+        id, name, status, kya_tier, parent_account_id,
+        limit_per_transaction, limit_daily, limit_monthly,
         effective_limit_per_tx, effective_limit_daily, effective_limit_monthly,
+        effective_limits_capped,
         max_active_streams, max_flow_rate_per_stream, max_total_outflow,
         active_streams_count, total_stream_outflow
       `)
       .eq('id', agentId)
       .single();
 
-    if (error || !data) {
+    if (agentError || !agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }
 
-    return data;
+    // Get parent account if exists
+    let parentAccount = null;
+    if (agent.parent_account_id) {
+      const { data: account, error: accountError } = await this.supabase
+        .from('accounts')
+        .select('id, name, verification_tier, verification_status')
+        .eq('id', agent.parent_account_id)
+        .single();
+      
+      if (accountError) {
+        console.error('Failed to get parent account:', accountError);
+      }
+      parentAccount = account;
+    }
+
+    return { ...agent, parentAccount };
   }
 
   /**
@@ -269,27 +287,51 @@ export class LimitService {
   }
 
   /**
-   * Get agent's current usage stats
+   * Get agent's current usage stats with effective limits
    */
   async getUsageStats(agentId: string) {
     const agent = await this.getAgent(agentId);
     const dailyUsage = await this.getDailyUsage(agentId);
     const monthlyUsage = await this.getMonthlyUsage(agentId);
 
+    // Agent's own limits based on KYA tier
+    const agentLimits = {
+      perTransaction: parseFloat(agent.limit_per_transaction) || 0,
+      daily: parseFloat(agent.limit_daily) || 0,
+      monthly: parseFloat(agent.limit_monthly) || 0,
+    };
+
+    // Effective limits (min of agent and parent)
+    const effectiveLimits = {
+      perTransaction: parseFloat(agent.effective_limit_per_tx) || 0,
+      daily: parseFloat(agent.effective_limit_daily) || 0,
+      monthly: parseFloat(agent.effective_limit_monthly) || 0,
+      cappedByParent: agent.effective_limits_capped || false,
+    };
+
+    // Parent account info
+    const parentAccount = agent.parentAccount ? {
+      id: agent.parentAccount.id,
+      name: agent.parentAccount.name,
+      verificationTier: agent.parentAccount.verification_tier,
+      verificationStatus: agent.parentAccount.verification_status,
+    } : null;
+
     return {
       agentId,
       kyaTier: agent.kya_tier,
       status: agent.status,
-      limits: {
-        perTransaction: parseFloat(agent.effective_limit_per_tx) || 0,
-        daily: parseFloat(agent.effective_limit_daily) || 0,
-        monthly: parseFloat(agent.effective_limit_monthly) || 0,
-      },
+      // Agent's base limits from KYA tier
+      limits: agentLimits,
+      // Effective limits (capped by parent if applicable)
+      effectiveLimits,
+      // Parent account info for transparency
+      parentAccount,
       usage: {
         daily: dailyUsage,
         monthly: monthlyUsage,
-        dailyRemaining: Math.max(0, (parseFloat(agent.effective_limit_daily) || 0) - dailyUsage),
-        monthlyRemaining: Math.max(0, (parseFloat(agent.effective_limit_monthly) || 0) - monthlyUsage),
+        dailyRemaining: Math.max(0, effectiveLimits.daily - dailyUsage),
+        monthlyRemaining: Math.max(0, effectiveLimits.monthly - monthlyUsage),
       },
       streams: {
         active: agent.active_streams_count || 0,
