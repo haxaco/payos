@@ -1,5 +1,6 @@
 import { Context, Next } from 'hono';
 import { createClient } from '../db/client.js';
+import { hashApiKey, getKeyPrefix, verifyApiKey } from '../utils/crypto.js';
 
 export interface RequestContext {
   tenantId: string;
@@ -84,11 +85,33 @@ export async function authMiddleware(c: Context, next: Next) {
 
   // Partner API key (pk_test_xxx or pk_live_xxx)
   if (token.startsWith('pk_')) {
-    const { data: tenant, error } = await supabase
+    const keyPrefix = getKeyPrefix(token);
+    const keyHash = hashApiKey(token);
+
+    // First, try the new secure method (prefix + hash)
+    let { data: tenant, error } = await supabase
       .from('tenants')
-      .select('id, name, status')
-      .eq('api_key', token)
+      .select('id, name, status, api_key_hash')
+      .eq('api_key_prefix', keyPrefix)
       .single();
+
+    if (tenant && tenant.api_key_hash) {
+      // Verify using secure hash comparison
+      if (!verifyApiKey(token, tenant.api_key_hash)) {
+        await logAuthAttempt(false, 'api_key', null, null, ip, userAgent, 'Hash mismatch');
+        return c.json({ error: 'Invalid API key' }, 401);
+      }
+    } else {
+      // Fallback to legacy plaintext lookup (for backwards compatibility during migration)
+      const legacyResult = await supabase
+        .from('tenants')
+        .select('id, name, status')
+        .eq('api_key', token)
+        .single();
+      
+      tenant = legacyResult.data;
+      error = legacyResult.error;
+    }
 
     if (error || !tenant) {
       await logAuthAttempt(false, 'api_key', null, null, ip, userAgent, 'Invalid API key');
@@ -114,11 +137,33 @@ export async function authMiddleware(c: Context, next: Next) {
 
   // Agent token (agent_xxx)
   if (token.startsWith('agent_')) {
-    const { data: agent, error } = await supabase
+    const tokenPrefix = getKeyPrefix(token);
+    const tokenHash = hashApiKey(token);
+
+    // First, try the new secure method (prefix + hash)
+    let { data: agent, error } = await supabase
       .from('agents')
-      .select('id, name, tenant_id, status, kya_tier, kya_status')
-      .eq('auth_client_id', token)
+      .select('id, name, tenant_id, status, kya_tier, kya_status, auth_token_hash')
+      .eq('auth_token_prefix', tokenPrefix)
       .single();
+
+    if (agent && agent.auth_token_hash) {
+      // Verify using secure hash comparison
+      if (!verifyApiKey(token, agent.auth_token_hash)) {
+        await logAuthAttempt(false, 'agent', null, null, ip, userAgent, 'Hash mismatch');
+        return c.json({ error: 'Invalid agent token' }, 401);
+      }
+    } else {
+      // Fallback to legacy plaintext lookup (for backwards compatibility during migration)
+      const legacyResult = await supabase
+        .from('agents')
+        .select('id, name, tenant_id, status, kya_tier, kya_status')
+        .eq('auth_client_id', token)
+        .single();
+      
+      agent = legacyResult.data;
+      error = legacyResult.error;
+    }
 
     if (error || !agent) {
       await logAuthAttempt(false, 'agent', null, null, ip, userAgent, 'Invalid agent token');

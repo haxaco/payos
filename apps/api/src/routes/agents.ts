@@ -11,7 +11,7 @@ import {
 } from '../utils/helpers.js';
 import { createLimitService } from '../services/limits.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
-import { generateAgentToken } from '@payos/utils';
+import { generateAgentToken, hashApiKey, getKeyPrefix } from '../utils/crypto.js';
 
 const agents = new Hono();
 
@@ -167,8 +167,10 @@ agents.post('/', async (c) => {
     throw new ValidationError('Only business accounts can have agents');
   }
   
-  // Generate auth credentials
-  const authClientId = generateAgentToken();
+  // Generate auth credentials (plaintext token - only returned once!)
+  const authToken = generateAgentToken();
+  const authTokenHash = hashApiKey(authToken);
+  const authTokenPrefix = getKeyPrefix(authToken);
   
   // Merge permissions with defaults
   const mergedPermissions = {
@@ -180,7 +182,7 @@ agents.post('/', async (c) => {
     treasury: { ...DEFAULT_PERMISSIONS.treasury, ...permissions?.treasury },
   };
   
-  // Create agent
+  // Create agent - store ONLY the hash, never the plaintext token
   const { data, error } = await supabase
     .from('agents')
     .insert({
@@ -192,7 +194,9 @@ agents.post('/', async (c) => {
       kya_tier: 0, // Start unverified
       kya_status: 'unverified',
       auth_type: 'api_key',
-      auth_client_id: authClientId,
+      auth_client_id: authTokenPrefix, // Only store prefix for display
+      auth_token_hash: authTokenHash,  // Secure hash for verification
+      auth_token_prefix: authTokenPrefix, // Indexed for lookup
       permissions: mergedPermissions,
     })
     .select(`
@@ -229,11 +233,13 @@ agents.post('/', async (c) => {
   };
   
   // Include auth credentials in response (only on creation)
+  // WARNING: This is the ONLY time the plaintext token is available!
   return c.json({
     data: agent,
     credentials: {
-      clientId: authClientId,
-      note: 'Save this token - it will not be shown again',
+      token: authToken,
+      prefix: authTokenPrefix,
+      warning: '⚠️ SAVE THIS TOKEN NOW - it will never be shown again!',
     },
   }, 201);
 });
@@ -740,6 +746,82 @@ agents.post('/:id/verify', async (c) => {
   }
   
   return c.json({ data: agent });
+});
+
+// ============================================
+// POST /v1/agents/:id/rotate-token - Rotate agent token
+// ============================================
+agents.post('/:id/rotate-token', async (c) => {
+  const ctx = c.get('ctx');
+  const { id } = c.req.param();
+  const supabase = createClient();
+  
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid agent ID format');
+  }
+  
+  // Get existing agent
+  const { data: existing, error: fetchError } = await supabase
+    .from('agents')
+    .select('id, name, tenant_id, status, auth_token_prefix')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (fetchError || !existing) {
+    throw new NotFoundError('Agent');
+  }
+  
+  // Only users (API key holders) can rotate tokens, not agents themselves
+  if (ctx.actorType !== 'user') {
+    return c.json({ error: 'Only API key holders can rotate agent tokens' }, 403);
+  }
+  
+  // Generate new token
+  const newToken = generateAgentToken();
+  const newTokenHash = hashApiKey(newToken);
+  const newTokenPrefix = getKeyPrefix(newToken);
+  
+  // Update with new token
+  const { error: updateError } = await supabase
+    .from('agents')
+    .update({
+      auth_client_id: newTokenPrefix, // For display only
+      auth_token_hash: newTokenHash,
+      auth_token_prefix: newTokenPrefix,
+    })
+    .eq('id', id);
+  
+  if (updateError) {
+    console.error('Error rotating token:', updateError);
+    return c.json({ error: 'Failed to rotate token' }, 500);
+  }
+  
+  // Audit log
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'agent',
+    entityId: id,
+    action: 'token_rotated',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: {
+      oldPrefix: existing.auth_token_prefix,
+      newPrefix: newTokenPrefix,
+    },
+  });
+  
+  // Return new token (only time it's visible!)
+  return c.json({
+    success: true,
+    credentials: {
+      token: newToken,
+      prefix: newTokenPrefix,
+      warning: '⚠️ SAVE THIS TOKEN NOW - it will never be shown again!',
+    },
+    previousTokenRevoked: true,
+  });
 });
 
 export default agents;
