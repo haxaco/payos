@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { createClient } from '../db/client.js';
-import { calculateStreamedAmount, calculateRunway, getStreamHealth } from '../services/streams.js';
+import { calculateStreamedAmount, calculateRunway, calculateHealth } from '../services/streams.js';
 
 const events = new Hono();
 
@@ -77,7 +77,7 @@ events.get('/streams', async (c) => {
           : parseFloat(stream.streamed_total) || 0;
 
         const runway = calculateRunway(stream, now);
-        const health = getStreamHealth(runway);
+        const health = calculateHealth(runway);
 
         const update = {
           id: stream.id,

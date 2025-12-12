@@ -2,7 +2,7 @@
 // Re-usable UI components based on Shadcn/ui
 
 // Utilities
-export { cn } from './lib/utils';
+export { cn, formatCurrency, formatCompact, formatDate, formatRelativeTime, formatRunway } from './lib/utils';
 
 // Core Components
 export { Button, buttonVariants } from './components/button';

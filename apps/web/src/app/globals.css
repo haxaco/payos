@@ -4,14 +4,17 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    
+    --background: 0 0% 98%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 142.1 76.2% 36.3%;
-    --primary-foreground: 355.7 100% 97.3%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
@@ -22,8 +25,8 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 142.1 76.2% 36.3%;
-    --radius: 0.5rem;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.75rem;
   }
 
   .dark {
@@ -33,8 +36,8 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 142.1 70.6% 45.3%;
-    --primary-foreground: 144.9 80.4% 10%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
@@ -45,7 +48,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 142.4 71.8% 29.2%;
+    --ring: 224.3 76.3% 48%;
   }
 }
 
@@ -53,31 +56,17 @@
   * {
     @apply border-border;
   }
+  
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
-}
 
-/* Stream animation for active streams */
-.stream-active {
-  position: relative;
-  overflow: hidden;
-}
-
-.stream-active::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(34, 197, 94, 0.1),
-    transparent
-  );
-  animation: stream-flow 2s linear infinite;
+  /* Typography defaults */
+  h1 { @apply text-2xl font-semibold; }
+  h2 { @apply text-lg font-semibold; }
+  h3 { @apply text-base font-semibold; }
 }
 
 /* Custom scrollbar */
@@ -87,16 +76,15 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
+  @apply bg-muted;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
+  @apply bg-muted-foreground/30;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  @apply bg-muted-foreground/50;
 }
-
