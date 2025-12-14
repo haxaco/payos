@@ -47,9 +47,10 @@ PayOS is a B2B stablecoin payout operating system for LATAM. This PRD covers the
 12. [Epic 8: AI Visibility & Agent Intelligence](#epic-8-ai-visibility--agent-intelligence)
 13. [Epic 9: Demo Polish & Missing Features](#epic-9-demo-polish--missing-features)
 14. [Epic 10: PSP Table Stakes Features](#epic-10-psp-table-stakes-features)
-15. [Implementation Schedule](#implementation-schedule)
-16. [API Reference](#api-reference)
-17. [Testing & Demo Scenarios](#testing--demo-scenarios)
+15. [Epic 11: Authentication & User Management](#epic-11-authentication--user-management)
+16. [Implementation Schedule](#implementation-schedule)
+17. [API Reference](#api-reference)
+18. [Testing & Demo Scenarios](#testing--demo-scenarios)
 
 ---
 
@@ -5342,6 +5343,692 @@ interface TenantSettings {
 | 10.11 Exports UI | P0 | 1 | | ✅ |
 | 10.12 Tenant Settings API | P1 | 1 | ✅ | |
 | **Total** | | **22** | | |
+
+---
+
+## Epic 11: Authentication & User Management
+
+### Overview
+
+This epic implements proper authentication and user management for PayOS, leveraging Supabase Auth for dashboard login while maintaining API key access for programmatic integrations. Key design decisions:
+
+- **Self-service signup** for new tenants (organizations)
+- **Admin-managed invites** for team members
+- **One user = one tenant** (no multi-tenant users for now)
+- **Full-access API keys** with environment separation (test/live)
+- **Supabase Auth** for dashboard login (email/password, with future SSO support)
+
+### Design Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Tenant creation | Self-service signup | Lower friction for onboarding |
+| Multi-tenant users | No (single tenant per user) | Simplifies permissions, can add later |
+| API key scopes | Full access only | Simpler MVP; granular scopes as TODO |
+| Key expiration | Optional | Security best practice for regulated fintechs |
+| Environment separation | Separate test/live keys | Standard fintech pattern |
+
+### Data Model
+
+```
+┌──────────────┐     ┌──────────────────┐     ┌──────────────────────┐
+│   tenants    │ 1─n │  user_profiles   │     │      api_keys        │
+│──────────────│     │──────────────────│     │──────────────────────│
+│ id           │──┐  │ id (=auth.users) │     │ id                   │
+│ name         │  │  │ tenant_id ───────│──┐  │ tenant_id ───────────│─┐
+│ status       │  │  │ role             │  │  │ created_by_user_id   │ │
+│ settings     │  │  │ name             │  │  │ name                 │ │
+└──────────────┘  │  │ permissions      │  │  │ environment          │ │
+                  │  │ invited_by_id    │  │  │ key_prefix           │ │
+                  │  │ invite_accepted  │  │  │ key_hash             │ │
+                  │  └──────────────────┘  │  │ status               │ │
+                  │           │            │  │ last_used_at         │ │
+                  │           ▼            │  │ expires_at           │ │
+                  │  ┌──────────────────┐  │  └──────────────────────┘ │
+                  │  │   auth.users     │  │                           │
+                  │  │ (Supabase)       │  │                           │
+                  │  │──────────────────│  │                           │
+                  │  │ id               │  │                           │
+                  │  │ email            │  │                           │
+                  │  │ encrypted_pw     │  │                           │
+                  │  └──────────────────┘  │                           │
+                  │                        │                           │
+                  └────────────────────────┴───────────────────────────┘
+```
+
+---
+
+### Story 11.1: User Profiles & API Keys Tables
+
+**Priority:** P0  
+**Estimate:** 2 hours
+
+#### Description
+Create the database tables for user profiles (linking Supabase auth.users to tenants) and API keys (multiple keys per tenant with environment separation).
+
+#### Database Schema
+
+```sql
+-- User profiles: links auth.users to tenants
+CREATE TABLE public.user_profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+  name TEXT,
+  permissions JSONB DEFAULT '{}',
+  invited_by_user_id UUID REFERENCES auth.users(id),
+  invite_token TEXT UNIQUE,
+  invite_expires_at TIMESTAMPTZ,
+  invite_accepted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(tenant_id) -- One tenant per user for now
+);
+
+-- API keys: multiple keys per tenant
+CREATE TABLE public.api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  created_by_user_id UUID REFERENCES auth.users(id),
+  name TEXT NOT NULL,
+  description TEXT,
+  environment TEXT NOT NULL DEFAULT 'test' CHECK (environment IN ('test', 'live')),
+  key_prefix TEXT NOT NULL,              -- First 12 chars for lookup
+  key_hash TEXT NOT NULL,                -- SHA-256 hash
+  -- scopes TEXT[] DEFAULT ARRAY['*'],   -- TODO: Granular scopes
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked')),
+  last_used_at TIMESTAMPTZ,
+  last_used_ip TEXT,
+  expires_at TIMESTAMPTZ,                -- Optional expiration
+  created_at TIMESTAMPTZ DEFAULT now(),
+  revoked_at TIMESTAMPTZ,
+  revoked_by_user_id UUID REFERENCES auth.users(id),
+  revoked_reason TEXT
+);
+
+-- Indexes
+CREATE INDEX idx_user_profiles_tenant ON user_profiles(tenant_id);
+CREATE INDEX idx_api_keys_tenant ON api_keys(tenant_id);
+CREATE INDEX idx_api_keys_prefix ON api_keys(key_prefix) WHERE status = 'active';
+CREATE INDEX idx_api_keys_environment ON api_keys(tenant_id, environment);
+
+-- RLS Policies
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
+
+-- Users can only see their own profile
+CREATE POLICY user_profiles_own ON user_profiles
+  FOR ALL USING (id = auth.uid());
+
+-- API keys visible to users of the same tenant
+CREATE POLICY api_keys_tenant ON api_keys
+  FOR ALL USING (
+    tenant_id IN (SELECT tenant_id FROM user_profiles WHERE id = auth.uid())
+  );
+```
+
+#### Acceptance Criteria
+- [ ] `user_profiles` table created with proper foreign keys
+- [ ] `api_keys` table created with environment separation
+- [ ] RLS policies enforce tenant isolation
+- [ ] Indexes optimized for key lookup
+
+---
+
+### Story 11.2: Self-Service Signup Flow
+
+**Priority:** P0  
+**Estimate:** 3 hours
+
+#### Description
+Implement self-service signup where a new user creates an account and organization in one flow.
+
+#### API Endpoints
+
+```
+POST /v1/auth/signup
+```
+
+**Request:**
+```json
+{
+  "email": "admin@acme.com",
+  "password": "SecureP@ss123",
+  "organizationName": "Acme Fintech",
+  "userName": "John Doe"
+}
+```
+
+**Response:**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "email": "admin@acme.com",
+    "name": "John Doe"
+  },
+  "tenant": {
+    "id": "uuid",
+    "name": "Acme Fintech"
+  },
+  "apiKeys": {
+    "test": {
+      "key": "pk_test_abc123...",  // Shown ONCE
+      "prefix": "pk_test_abc1"
+    },
+    "live": {
+      "key": "pk_live_xyz789...",  // Shown ONCE
+      "prefix": "pk_live_xyz7"
+    }
+  },
+  "session": {
+    "accessToken": "jwt...",
+    "refreshToken": "jwt..."
+  }
+}
+```
+
+#### Flow
+1. Validate email not already registered
+2. Create auth.users via Supabase Auth
+3. Create tenant record
+4. Create user_profiles linking user to tenant (role: owner)
+5. Generate test + live API keys
+6. Create tenant_settings with defaults
+7. Return keys (shown once, user must save)
+8. Send welcome email with getting started guide
+
+#### Acceptance Criteria
+- [ ] User can signup with email/password
+- [ ] Tenant and user_profile created atomically
+- [ ] Test and live API keys generated
+- [ ] Keys shown only once in response
+- [ ] Email confirmation sent
+- [ ] Proper error handling for duplicate emails
+
+---
+
+### Story 11.3: User Login & Session Management
+
+**Priority:** P0  
+**Estimate:** 2 hours
+
+#### Description
+Implement login flow using Supabase Auth, returning tenant context for the dashboard.
+
+#### API Endpoints
+
+```
+POST /v1/auth/login
+```
+
+**Request:**
+```json
+{
+  "email": "admin@acme.com",
+  "password": "SecureP@ss123"
+}
+```
+
+**Response:**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "email": "admin@acme.com",
+    "name": "John Doe",
+    "role": "owner"
+  },
+  "tenant": {
+    "id": "uuid",
+    "name": "Acme Fintech",
+    "status": "active"
+  },
+  "session": {
+    "accessToken": "jwt...",
+    "refreshToken": "jwt...",
+    "expiresAt": "2025-12-15T..."
+  }
+}
+```
+
+```
+POST /v1/auth/logout
+POST /v1/auth/refresh
+POST /v1/auth/forgot-password
+POST /v1/auth/reset-password
+GET  /v1/auth/me
+```
+
+#### Acceptance Criteria
+- [ ] Login returns JWT + tenant context
+- [ ] Logout invalidates session
+- [ ] Token refresh works
+- [ ] Password reset flow works
+- [ ] `/me` endpoint returns current user + tenant
+
+---
+
+### Story 11.4: Team Invite System
+
+**Priority:** P1  
+**Estimate:** 3 hours
+
+#### Description
+Allow admins/owners to invite team members to their organization.
+
+#### API Endpoints
+
+```
+POST /v1/team/invite
+```
+
+**Request:**
+```json
+{
+  "email": "teammate@acme.com",
+  "role": "member",
+  "name": "Jane Smith"
+}
+```
+
+**Response:**
+```json
+{
+  "invite": {
+    "id": "uuid",
+    "email": "teammate@acme.com",
+    "role": "member",
+    "expiresAt": "2025-12-21T...",
+    "inviteUrl": "https://app.payos.dev/invite/abc123..."
+  }
+}
+```
+
+```
+GET  /v1/team                    -- List team members
+GET  /v1/team/invites            -- List pending invites
+POST /v1/team/invites/:id/resend -- Resend invite email
+DELETE /v1/team/invites/:id      -- Cancel invite
+POST /v1/auth/accept-invite      -- Accept invite (creates user)
+PATCH /v1/team/:userId           -- Update member role
+DELETE /v1/team/:userId          -- Remove member
+```
+
+#### Invite Flow
+1. Admin creates invite with email + role
+2. System generates secure invite token
+3. Email sent with invite link
+4. Invitee clicks link → redirected to signup form (password only)
+5. On submit: auth.users created, user_profiles created, invite marked accepted
+6. New user can now login and see tenant data
+
+#### Role Permissions
+
+| Action | Owner | Admin | Member | Viewer |
+|--------|-------|-------|--------|--------|
+| View data | ✅ | ✅ | ✅ | ✅ |
+| Create transfers | ✅ | ✅ | ✅ | ❌ |
+| Manage disputes | ✅ | ✅ | ✅ | ❌ |
+| Create API keys | ✅ | ✅ | ✅ | ❌ |
+| Revoke own keys | ✅ | ✅ | ✅ | ❌ |
+| Revoke others' keys | ✅ | ✅ | ❌ | ❌ |
+| Invite members | ✅ | ✅ | ❌ | ❌ |
+| Change roles | ✅ | ✅* | ❌ | ❌ |
+| Remove members | ✅ | ✅* | ❌ | ❌ |
+| Tenant settings | ✅ | ✅ | ❌ | ❌ |
+| Transfer ownership | ✅ | ❌ | ❌ | ❌ |
+| Delete tenant | ✅ | ❌ | ❌ | ❌ |
+
+*Admin cannot change/remove owner or other admins
+
+#### Acceptance Criteria
+- [ ] Admins can invite users by email
+- [ ] Invite email sent with secure link
+- [ ] Invite expires after 7 days
+- [ ] Invitee can accept and set password
+- [ ] Proper role permissions enforced
+- [ ] Cannot remove last owner
+
+---
+
+### Story 11.5: API Key Management
+
+**Priority:** P0  
+**Estimate:** 3 hours
+
+#### Description
+Implement endpoints for creating, listing, and revoking API keys.
+
+#### API Endpoints
+
+```
+POST /v1/api-keys
+```
+
+**Request:**
+```json
+{
+  "name": "Production Backend",
+  "environment": "live",
+  "description": "Main production API key",
+  "expiresAt": "2026-12-14T00:00:00Z"  // Optional
+}
+```
+
+**Response:**
+```json
+{
+  "apiKey": {
+    "id": "uuid",
+    "name": "Production Backend",
+    "environment": "live",
+    "prefix": "pk_live_abc1",
+    "key": "pk_live_abc123xyz789...",  // Shown ONCE
+    "createdAt": "2025-12-14T...",
+    "expiresAt": "2026-12-14T..."
+  },
+  "warning": "This key will only be shown once. Please save it securely."
+}
+```
+
+```
+GET    /v1/api-keys              -- List all keys (no secrets shown)
+GET    /v1/api-keys/:id          -- Get key details
+DELETE /v1/api-keys/:id          -- Revoke key
+POST   /v1/api-keys/:id/rotate   -- Rotate key (creates new, schedules old for revocation)
+```
+
+#### Key Generation
+- Format: `pk_{env}_{random32chars}`
+- Example: `pk_test_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6`
+- Store: prefix (first 12 chars) + SHA-256 hash
+
+#### Acceptance Criteria
+- [ ] Users can create test and live keys
+- [ ] Key shown only once on creation
+- [ ] List endpoint never shows full key
+- [ ] Revoke immediately invalidates key
+- [ ] Rotate creates new key with grace period
+- [ ] Optional expiration supported
+- [ ] Audit log tracks key operations
+
+---
+
+### Story 11.6: Updated Auth Middleware
+
+**Priority:** P0  
+**Estimate:** 2 hours
+
+#### Description
+Update the auth middleware to support both API key auth (from api_keys table) and JWT auth (from Supabase sessions).
+
+#### Auth Flow
+
+```
+Request comes in
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Check Authorization header          │
+└─────────────────────────────────────┘
+     │
+     ├─── Bearer pk_* ──────► API Key Auth
+     │                              │
+     │                              ▼
+     │                        api_keys table
+     │                        (prefix lookup + hash verify)
+     │                              │
+     │                              ▼
+     │                        Set ctx: tenantId, actorType='api_key'
+     │
+     ├─── Bearer jwt ───────► Supabase Auth
+     │                              │
+     │                              ▼
+     │                        Verify JWT
+     │                              │
+     │                              ▼
+     │                        user_profiles table
+     │                        (get tenant + role)
+     │                              │
+     │                              ▼
+     │                        Set ctx: tenantId, actorType='user', role
+     │
+     └─── Bearer agent_* ───► Agent Auth (existing)
+```
+
+#### Request Context Update
+
+```typescript
+interface RequestContext {
+  tenantId: string;
+  actorType: 'user' | 'agent' | 'api_key';
+  actorId: string;
+  actorName: string;
+  // New fields for user auth
+  userRole?: 'owner' | 'admin' | 'member' | 'viewer';
+  apiKeyId?: string;
+  apiKeyEnvironment?: 'test' | 'live';
+  // Existing
+  kyaTier?: number;
+}
+```
+
+#### Acceptance Criteria
+- [ ] API key auth works via api_keys table
+- [ ] JWT auth works via Supabase + user_profiles
+- [ ] Agent auth continues to work
+- [ ] Backwards compatible with existing pk_* keys during migration
+- [ ] Context includes user role for dashboard authorization
+- [ ] API key last_used_at updated on each request
+
+---
+
+### Story 11.7: Dashboard Auth UI
+
+**Priority:** P1  
+**Estimate:** 4 hours
+
+#### Description
+Implement login, signup, and password reset pages in the dashboard.
+
+#### Pages
+
+1. **Login Page** (`/login`)
+   - Email + password form
+   - "Forgot password?" link
+   - "Create account" link
+   - Error handling (invalid credentials, account locked)
+
+2. **Signup Page** (`/signup`)
+   - Email, password, confirm password
+   - Organization name
+   - Your name
+   - Terms acceptance checkbox
+   - Show API keys after signup (copy to clipboard)
+
+3. **Forgot Password** (`/forgot-password`)
+   - Email input
+   - Success message with instructions
+
+4. **Reset Password** (`/reset-password`)
+   - New password + confirm
+   - Token validation
+
+5. **Accept Invite** (`/invite/:token`)
+   - Shows organization name
+   - Set password form
+   - Already shows email (from invite)
+
+#### Protected Routes
+- All dashboard routes require authentication
+- Redirect to `/login` if not authenticated
+- Store session in localStorage/cookies
+- Auto-refresh token before expiry
+
+#### Acceptance Criteria
+- [ ] Login form with validation
+- [ ] Signup form creates tenant + shows API keys
+- [ ] Password reset flow works
+- [ ] Invite acceptance flow works
+- [ ] Session persists across page refresh
+- [ ] Protected routes redirect to login
+- [ ] Logout clears session
+
+---
+
+### Story 11.8: Settings - Team Management UI
+
+**Priority:** P1  
+**Estimate:** 3 hours
+
+#### Description
+Add team management section to settings page.
+
+#### UI Components
+
+1. **Team Members List**
+   - Name, email, role, joined date
+   - Edit role dropdown (if permitted)
+   - Remove button (if permitted)
+   - "You" badge for current user
+
+2. **Pending Invites**
+   - Email, role, invited by, expires
+   - Resend button
+   - Cancel button
+
+3. **Invite Modal**
+   - Email input
+   - Role selector
+   - Optional name
+   - Send button
+
+#### Acceptance Criteria
+- [ ] List all team members with roles
+- [ ] Invite new members
+- [ ] Change member roles (with permission)
+- [ ] Remove members (with permission)
+- [ ] Cannot remove self or last owner
+- [ ] Pending invites shown separately
+
+---
+
+### Story 11.9: Settings - API Keys Management UI
+
+**Priority:** P1  
+**Estimate:** 3 hours
+
+#### Description
+Add API keys management section to settings page.
+
+#### UI Components
+
+1. **API Keys List**
+   - Tabs: Test / Live
+   - For each key: name, prefix, created date, last used, status
+   - Copy prefix button
+   - Revoke button
+   - Created by user shown
+
+2. **Create Key Modal**
+   - Name input
+   - Environment toggle (test/live)
+   - Optional description
+   - Optional expiration date picker
+   - Create button
+
+3. **Key Created Modal** (shown after creation)
+   - Full key displayed
+   - Copy button
+   - Warning: "This key will only be shown once"
+   - "I've saved this key" button to dismiss
+
+4. **Revoke Confirmation Modal**
+   - Warning about immediate effect
+   - Reason input (optional)
+   - Confirm button
+
+#### Acceptance Criteria
+- [ ] List keys by environment
+- [ ] Create new keys with confirmation
+- [ ] Show key only once after creation
+- [ ] Revoke with confirmation
+- [ ] Show last used timestamp
+- [ ] Show created by user
+
+---
+
+### Story 11.10: Migration - Existing API Keys
+
+**Priority:** P0  
+**Estimate:** 1 hour
+
+#### Description
+Migrate existing tenant.api_key values to the new api_keys table for backwards compatibility.
+
+#### Migration Script
+
+```sql
+-- Migrate existing tenant API keys to api_keys table
+INSERT INTO api_keys (
+  tenant_id,
+  name,
+  environment,
+  key_prefix,
+  key_hash,
+  status,
+  created_at
+)
+SELECT 
+  id AS tenant_id,
+  'Legacy API Key' AS name,
+  CASE 
+    WHEN api_key LIKE 'pk_test_%' THEN 'test'
+    WHEN api_key LIKE 'pk_live_%' THEN 'live'
+    ELSE 'test'
+  END AS environment,
+  api_key_prefix AS key_prefix,
+  api_key_hash AS key_hash,
+  'active' AS status,
+  created_at
+FROM tenants
+WHERE api_key_hash IS NOT NULL;
+```
+
+#### Acceptance Criteria
+- [ ] All existing tenant keys migrated
+- [ ] Auth middleware checks api_keys table first
+- [ ] Falls back to tenant.api_key for unmigrated keys
+- [ ] No downtime during migration
+
+---
+
+### Epic 11 Summary
+
+| Story | Priority | Est (hrs) | API | UI |
+|-------|----------|-----------|-----|-----|
+| 11.1 User Profiles & API Keys Tables | P0 | 2 | ✅ | |
+| 11.2 Self-Service Signup Flow | P0 | 3 | ✅ | |
+| 11.3 User Login & Session Management | P0 | 2 | ✅ | |
+| 11.4 Team Invite System | P1 | 3 | ✅ | |
+| 11.5 API Key Management | P0 | 3 | ✅ | |
+| 11.6 Updated Auth Middleware | P0 | 2 | ✅ | |
+| 11.7 Dashboard Auth UI | P1 | 4 | | ✅ |
+| 11.8 Settings - Team Management UI | P1 | 3 | | ✅ |
+| 11.9 Settings - API Keys Management UI | P1 | 3 | | ✅ |
+| 11.10 Migration - Existing API Keys | P0 | 1 | ✅ | |
+| **Total** | | **26** | | |
+
+### Future TODOs (Out of Scope)
+
+- [ ] **Granular API Key Scopes** - Allow keys with limited permissions (e.g., read-only)
+- [ ] **Multi-Tenant Users** - Allow one user to belong to multiple organizations
+- [ ] **SSO/OAuth** - Google, GitHub, SAML integration via Supabase
+- [ ] **2FA/MFA** - Two-factor authentication for dashboard users
+- [ ] **API Key Rate Limiting** - Per-key rate limits
+- [ ] **API Key IP Allowlist** - Restrict keys to specific IPs
+- [ ] **Audit Log for User Actions** - Track all user dashboard actions
 
 ---
 
