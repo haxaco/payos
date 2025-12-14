@@ -5467,11 +5467,147 @@ CREATE POLICY api_keys_tenant ON api_keys
   );
 ```
 
+#### Implementation Details
+
+**Migration File:** `supabase/migrations/YYYYMMDDHHMMSS_create_user_profiles_and_api_keys.sql`
+
+```sql
+-- ============================================
+-- User Profiles Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS public.user_profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+  name TEXT,
+  permissions JSONB DEFAULT '{}'::jsonb,
+  invited_by_user_id UUID REFERENCES auth.users(id),
+  invite_token TEXT UNIQUE,
+  invite_expires_at TIMESTAMPTZ,
+  invite_accepted_at TIMESTAMPTZ,
+  failed_login_attempts INTEGER DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  last_failed_login_at TIMESTAMPTZ,
+  last_failed_login_ip TEXT,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  CONSTRAINT user_profiles_one_tenant_per_user UNIQUE (id, tenant_id)
+);
+
+-- ============================================
+-- API Keys Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS public.api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  created_by_user_id UUID REFERENCES auth.users(id),
+  name TEXT NOT NULL,
+  description TEXT,
+  environment TEXT NOT NULL DEFAULT 'test' CHECK (environment IN ('test', 'live')),
+  key_prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked')),
+  last_used_at TIMESTAMPTZ,
+  last_used_ip TEXT,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  revoked_by_user_id UUID REFERENCES auth.users(id),
+  revoked_reason TEXT,
+  CONSTRAINT api_keys_unique_prefix UNIQUE (key_prefix)
+);
+
+-- ============================================
+-- Indexes
+-- ============================================
+CREATE INDEX IF NOT EXISTS idx_user_profiles_tenant ON public.user_profiles(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON public.user_profiles(tenant_id, role);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_invite_token ON public.user_profiles(invite_token) WHERE invite_token IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_tenant ON public.api_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON public.api_keys(key_prefix) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_api_keys_environment ON public.api_keys(tenant_id, environment);
+CREATE INDEX IF NOT EXISTS idx_api_keys_created_by ON public.api_keys(created_by_user_id);
+
+-- ============================================
+-- RLS Policies
+-- ============================================
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
+
+-- User profiles: Users can only see their own profile
+DROP POLICY IF EXISTS user_profiles_own ON public.user_profiles;
+CREATE POLICY user_profiles_own ON public.user_profiles
+  FOR ALL
+  USING (id = auth.uid());
+
+-- API keys: Users can see keys for their tenant
+DROP POLICY IF EXISTS api_keys_tenant ON public.api_keys;
+CREATE POLICY api_keys_tenant ON public.api_keys
+  FOR ALL
+  USING (
+    tenant_id IN (
+      SELECT tenant_id FROM public.user_profiles WHERE id = auth.uid()
+    )
+  );
+
+-- ============================================
+-- Updated At Trigger
+-- ============================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_user_profiles_updated_at
+  BEFORE UPDATE ON public.user_profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+```
+
+**Verification Queries:**
+
+```sql
+-- Verify tables exist
+SELECT table_name FROM information_schema.tables 
+WHERE table_schema = 'public' 
+AND table_name IN ('user_profiles', 'api_keys');
+
+-- Verify foreign keys
+SELECT 
+  tc.table_name, 
+  kcu.column_name, 
+  ccu.table_name AS foreign_table_name,
+  ccu.column_name AS foreign_column_name 
+FROM information_schema.table_constraints AS tc 
+JOIN information_schema.key_column_usage AS kcu
+  ON tc.constraint_name = kcu.constraint_name
+JOIN information_schema.constraint_column_usage AS ccu
+  ON ccu.constraint_name = tc.constraint_name
+WHERE tc.constraint_type = 'FOREIGN KEY' 
+AND tc.table_name IN ('user_profiles', 'api_keys');
+
+-- Verify indexes
+SELECT indexname, indexdef FROM pg_indexes 
+WHERE schemaname = 'public' 
+AND tablename IN ('user_profiles', 'api_keys');
+
+-- Verify RLS enabled
+SELECT tablename, rowsecurity FROM pg_tables 
+WHERE schemaname = 'public' 
+AND tablename IN ('user_profiles', 'api_keys');
+```
+
 #### Acceptance Criteria
 - [ ] `user_profiles` table created with proper foreign keys
 - [ ] `api_keys` table created with environment separation
 - [ ] RLS policies enforce tenant isolation
 - [ ] Indexes optimized for key lookup
+- [ ] Migration file created and tested
+- [ ] All constraints verified with test queries
 
 ---
 
@@ -5538,6 +5674,398 @@ POST /v1/auth/signup
 7. Return keys (shown once, user must save)
 8. Send welcome email with getting started guide
 
+#### Implementation Details
+
+**File:** `apps/api/src/routes/auth.ts`
+
+**Zod Schema:**
+```typescript
+import { z } from 'zod';
+
+const signupSchema = z.object({
+  email: z.string().email().min(1).max(255),
+  password: z.string().min(12).max(128),
+  organizationName: z.string().min(1).max(255),
+  userName: z.string().min(1).max(255).optional(),
+});
+```
+
+**Helper Functions (create `apps/api/src/utils/auth.ts`):**
+```typescript
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
+import { createClient } from '../db/client.js';
+
+// Password validation
+const COMMON_PASSWORDS = new Set([
+  'password', 'password123', '12345678', 'qwerty', 'abc123',
+  // Add top 10k from https://github.com/danielmiessler/SecLists
+]);
+
+export function validatePassword(password: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (password.length < 12) {
+    errors.push('Password must be at least 12 characters');
+  }
+  if (password.length > 128) {
+    errors.push('Password must be less than 128 characters');
+  }
+  if (!/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter');
+  }
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter');
+  }
+  if (!/[0-9]/.test(password)) {
+    errors.push('Password must contain at least one number');
+  }
+  
+  // Check against common passwords
+  if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+    errors.push('Password is too common. Please choose a more unique password');
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
+
+// Generate API key
+export function generateApiKey(environment: 'test' | 'live'): string {
+  const random = randomBytes(32).toString('base64url');
+  return `pk_${environment}_${random}`;
+}
+
+// Hash API key (SHA-256)
+export function hashApiKey(key: string): string {
+  return createHash('sha256').update(key).digest('hex');
+}
+
+// Get key prefix (first 12 chars)
+export function getKeyPrefix(key: string): string {
+  return key.substring(0, 12);
+}
+
+// Constant-time comparison
+export function secureCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  
+  if (bufA.length !== bufB.length) {
+    // Still do comparison to maintain constant time
+    timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  
+  return timingSafeEqual(bufA, bufB);
+}
+
+// Rate limiting check
+export async function checkRateLimit(
+  key: string,
+  windowMs: number,
+  maxAttempts: number
+): Promise<{ allowed: boolean; remaining: number; resetAt: Date }> {
+  // Implementation using Redis or in-memory store
+  // For MVP, use simple in-memory Map
+  // TODO: Replace with Redis for production
+  const store = new Map<string, { count: number; resetAt: Date }>();
+  
+  const now = new Date();
+  const record = store.get(key);
+  
+  if (!record || now > record.resetAt) {
+    const resetAt = new Date(now.getTime() + windowMs);
+    store.set(key, { count: 1, resetAt });
+    return { allowed: true, remaining: maxAttempts - 1, resetAt };
+  }
+  
+  if (record.count >= maxAttempts) {
+    return { allowed: false, remaining: 0, resetAt: record.resetAt };
+  }
+  
+  record.count++;
+  return { allowed: true, remaining: maxAttempts - record.count, resetAt: record.resetAt };
+}
+
+// Log security event
+export async function logSecurityEvent(
+  eventType: string,
+  severity: 'info' | 'warning' | 'critical',
+  details: Record<string, any>
+): Promise<void> {
+  const supabase = createClient();
+  await supabase.from('security_events').insert({
+    event_type: eventType,
+    severity,
+    ip_address: details.ip,
+    user_agent: details.userAgent,
+    details: details,
+  });
+}
+```
+
+**Route Handler:**
+```typescript
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { createClient } from '../db/client.js';
+import { createAdminClient } from '../db/admin-client.js'; // Supabase admin client
+import { ValidationError } from '../middleware/error.js';
+import {
+  validatePassword,
+  generateApiKey,
+  hashApiKey,
+  getKeyPrefix,
+  checkRateLimit,
+  logSecurityEvent,
+} from '../utils/auth.js';
+
+const auth = new Hono();
+
+const signupSchema = z.object({
+  email: z.string().email().min(1).max(255),
+  password: z.string().min(12).max(128),
+  organizationName: z.string().min(1).max(255),
+  userName: z.string().min(1).max(255).optional(),
+});
+
+auth.post('/signup', async (c) => {
+  try {
+    // Rate limiting
+    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 
+               c.req.header('x-real-ip') || 
+               'unknown';
+    const rateLimit = await checkRateLimit(`signup:${ip}`, 60 * 60 * 1000, 10);
+    if (!rateLimit.allowed) {
+      await logSecurityEvent('signup_rate_limited', 'warning', { ip });
+      return c.json({
+        error: 'Too many signup attempts. Please try again later.',
+        retryAfter: Math.ceil((rateLimit.resetAt.getTime() - Date.now()) / 1000),
+      }, 429);
+    }
+
+    // Validate request
+    const body = await c.req.json();
+    const validated = signupSchema.parse(body);
+
+    // Validate password
+    const passwordValidation = validatePassword(validated.password);
+    if (!passwordValidation.valid) {
+      return c.json({
+        error: 'Password validation failed',
+        details: passwordValidation.errors,
+      }, 400);
+    }
+
+    const supabase = createClient();
+    const adminSupabase = createAdminClient();
+
+    // Check if email already exists (generic error to prevent enumeration)
+    const { data: existingUser } = await adminSupabase.auth.admin.getUserByEmail(validated.email);
+    if (existingUser?.user) {
+      // Generic error - don't reveal if user exists
+      await new Promise(r => setTimeout(r, 100 + Math.random() * 200)); // Random delay
+      await logSecurityEvent('signup_duplicate_email', 'info', { 
+        ip,
+        userAgent: c.req.header('user-agent'),
+        email: validated.email,
+      });
+      return c.json({
+        error: 'Unable to create account. Please check your information and try again.',
+      }, 400);
+    }
+
+    // Create user in Supabase Auth
+    const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
+      email: validated.email,
+      password: validated.password,
+      email_confirm: true, // Auto-confirm for MVP
+      user_metadata: {
+        name: validated.userName || validated.email.split('@')[0],
+      },
+    });
+
+    if (authError || !authData.user) {
+      await logSecurityEvent('signup_auth_error', 'warning', { 
+        ip,
+        error: authError?.message,
+      });
+      return c.json({
+        error: 'Unable to create account. Please try again.',
+      }, 500);
+    }
+
+    const userId = authData.user.id;
+
+    // Create tenant
+    const { data: tenant, error: tenantError } = await supabase
+      .from('tenants')
+      .insert({
+        name: validated.organizationName,
+        status: 'active',
+      })
+      .select()
+      .single();
+
+    if (tenantError || !tenant) {
+      // Rollback: delete auth user
+      await adminSupabase.auth.admin.deleteUser(userId);
+      return c.json({
+        error: 'Failed to create organization',
+      }, 500);
+    }
+
+    // Create user profile
+    const { error: profileError } = await supabase
+      .from('user_profiles')
+      .insert({
+        id: userId,
+        tenant_id: tenant.id,
+        role: 'owner',
+        name: validated.userName || validated.email.split('@')[0],
+      });
+
+    if (profileError) {
+      // Rollback
+      await supabase.from('tenants').delete().eq('id', tenant.id);
+      await adminSupabase.auth.admin.deleteUser(userId);
+      return c.json({
+        error: 'Failed to create user profile',
+      }, 500);
+    }
+
+    // Create tenant settings
+    await supabase.from('tenant_settings').insert({
+      tenant_id: tenant.id,
+    });
+
+    // Generate API keys
+    const testKey = generateApiKey('test');
+    const liveKey = generateApiKey('live');
+
+    const { error: keysError } = await supabase.from('api_keys').insert([
+      {
+        tenant_id: tenant.id,
+        created_by_user_id: userId,
+        name: 'Default Test Key',
+        environment: 'test',
+        key_prefix: getKeyPrefix(testKey),
+        key_hash: hashApiKey(testKey),
+      },
+      {
+        tenant_id: tenant.id,
+        created_by_user_id: userId,
+        name: 'Default Live Key',
+        environment: 'live',
+        key_prefix: getKeyPrefix(liveKey),
+        key_hash: hashApiKey(liveKey),
+      },
+    ]);
+
+    if (keysError) {
+      // Keys are optional, log but don't fail
+      console.error('Failed to create API keys:', keysError);
+    }
+
+    // Create session
+    const { data: sessionData, error: sessionError } = await adminSupabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email: validated.email,
+    });
+
+    // Log security event
+    await logSecurityEvent('signup_success', 'info', {
+      userId,
+      tenantId: tenant.id,
+      ip,
+      userAgent: c.req.header('user-agent'),
+    });
+
+    // Return response (keys shown only once)
+    return c.json({
+      user: {
+        id: userId,
+        email: validated.email,
+        name: validated.userName || validated.email.split('@')[0],
+      },
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+      },
+      apiKeys: {
+        test: {
+          key: testKey, // Shown only once
+          prefix: getKeyPrefix(testKey),
+        },
+        live: {
+          key: liveKey, // Shown only once
+          prefix: getKeyPrefix(liveKey),
+        },
+      },
+      session: {
+        accessToken: sessionData?.properties?.access_token,
+        refreshToken: sessionData?.properties?.refresh_token,
+      },
+      warning: 'API keys are shown only once. Please save them securely.',
+    }, 201);
+
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({
+        error: 'Validation failed',
+        details: error.errors,
+      }, 400);
+    }
+    throw error;
+  }
+});
+```
+
+**Error Responses:**
+
+| Status | Response |
+|--------|----------|
+| 201 | Success (see above) |
+| 400 | `{ error: "Password validation failed", details: [...] }` |
+| 400 | `{ error: "Unable to create account. Please check your information and try again." }` |
+| 429 | `{ error: "Too many signup attempts...", retryAfter: 3600 }` |
+| 500 | `{ error: "Unable to create account. Please try again." }` |
+
+**Test Cases:**
+
+```typescript
+// Test 1: Successful signup
+POST /v1/auth/signup
+{
+  "email": "test@example.com",
+  "password": "SecureP@ss123456",
+  "organizationName": "Test Org",
+  "userName": "Test User"
+}
+// Expected: 201, returns user, tenant, API keys
+
+// Test 2: Password too short
+POST /v1/auth/signup
+{
+  "email": "test@example.com",
+  "password": "short",
+  "organizationName": "Test Org"
+}
+// Expected: 400, validation error
+
+// Test 3: Duplicate email
+POST /v1/auth/signup
+{
+  "email": "existing@example.com", // Already exists
+  "password": "SecureP@ss123456",
+  "organizationName": "Test Org"
+}
+// Expected: 400, generic error (no enumeration)
+
+// Test 4: Rate limit exceeded
+// Send 11 requests from same IP within 1 hour
+// Expected: 429 on 11th request
+```
+
 #### Acceptance Criteria
 - [ ] User can signup with email/password
 - [ ] Tenant and user_profile created atomically
@@ -5550,6 +6078,7 @@ POST /v1/auth/signup
 - [ ] Generic error if email already exists (no enumeration)
 - [ ] Rate limited: 10 signups/hour per IP
 - [ ] Security event logged: signup_success
+- [ ] All test cases pass
 
 ---
 
@@ -6050,29 +6579,168 @@ WHERE api_key_hash IS NOT NULL;
 #### Description
 Implement core security controls to protect against common authentication attacks. This is a P0 blocker - must be implemented before any auth endpoints go live.
 
+#### Database Schema
+
+**Migration File:** `supabase/migrations/YYYYMMDDHHMMSS_create_security_events.sql`
+
+```sql
+-- Security events table for audit logging
+CREATE TABLE IF NOT EXISTS public.security_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES public.tenants(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+  ip_address TEXT,
+  user_agent TEXT,
+  details JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- Indexes for efficient querying
+CREATE INDEX IF NOT EXISTS idx_security_events_tenant ON public.security_events(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_user ON public.security_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_type ON public.security_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_severity ON public.security_events(severity, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_ip ON public.security_events(ip_address, created_at DESC) WHERE ip_address IS NOT NULL;
+
+-- RLS: Users can only see events for their tenant
+ALTER TABLE public.security_events ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY security_events_tenant ON public.security_events
+  FOR SELECT
+  USING (
+    tenant_id IN (
+      SELECT tenant_id FROM public.user_profiles WHERE id = auth.uid()
+    )
+  );
+```
+
 #### Components
 
 ##### 1. Rate Limiting
 
+**File:** `apps/api/src/utils/rate-limiter.ts`
+
 ```typescript
-// Per-account rate limiting for login
-const loginRateLimiter = {
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxAttempts: 5,           // 5 attempts per window
-  lockoutDuration: 15 * 60, // 15 min lockout after max
-};
+import { createClient } from '../db/client.js';
 
-// Per-IP rate limiting (prevents distributed attacks)
-const ipRateLimiter = {
-  windowMs: 15 * 60 * 1000,
-  maxAttempts: 100,         // 100 attempts per IP
-};
+interface RateLimitConfig {
+  windowMs: number;
+  maxAttempts: number;
+}
 
-// API key creation rate limiting
-const keyCreationLimiter = {
-  windowMs: 24 * 60 * 60 * 1000, // 24 hours
-  maxAttempts: 10,               // 10 keys per day
-};
+interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetAt: Date;
+  retryAfter?: number;
+}
+
+// In-memory store for MVP (replace with Redis for production)
+const rateLimitStore = new Map<string, { count: number; resetAt: Date }>();
+
+export async function checkRateLimit(
+  key: string,
+  config: RateLimitConfig
+): Promise<RateLimitResult> {
+  const now = new Date();
+  const record = rateLimitStore.get(key);
+  
+  // Clean expired entries periodically
+  if (Math.random() < 0.01) { // 1% chance to clean
+    for (const [k, v] of rateLimitStore.entries()) {
+      if (now > v.resetAt) {
+        rateLimitStore.delete(k);
+      }
+    }
+  }
+  
+  if (!record || now > record.resetAt) {
+    // New window or expired
+    const resetAt = new Date(now.getTime() + config.windowMs);
+    rateLimitStore.set(key, { count: 1, resetAt });
+    return {
+      allowed: true,
+      remaining: config.maxAttempts - 1,
+      resetAt,
+    };
+  }
+  
+  if (record.count >= config.maxAttempts) {
+    // Rate limit exceeded
+    const retryAfter = Math.ceil((record.resetAt.getTime() - now.getTime()) / 1000);
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: record.resetAt,
+      retryAfter,
+    };
+  }
+  
+  // Increment counter
+  record.count++;
+  return {
+    allowed: true,
+    remaining: config.maxAttempts - record.count,
+    resetAt: record.resetAt,
+  };
+}
+
+// Predefined rate limiters
+export const RATE_LIMITERS = {
+  login: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    maxAttempts: 5,
+  },
+  signup: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    maxAttempts: 10,
+  },
+  ip: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    maxAttempts: 100,
+  },
+  apiKeyCreation: {
+    windowMs: 24 * 60 * 60 * 1000, // 24 hours
+    maxAttempts: 10,
+  },
+} as const;
+```
+
+**Usage in routes:**
+```typescript
+import { checkRateLimit, RATE_LIMITERS } from '../utils/rate-limiter.js';
+
+// In login route
+const ip = c.req.header('x-forwarded-for')?.split(',')[0] || 'unknown';
+const email = body.email;
+
+// Check per-account rate limit
+const accountLimit = await checkRateLimit(
+  `login:${email}`,
+  RATE_LIMITERS.login
+);
+
+if (!accountLimit.allowed) {
+  return c.json({
+    error: 'Too many login attempts. Please try again later.',
+    retryAfter: accountLimit.retryAfter,
+  }, 429);
+}
+
+// Check per-IP rate limit
+const ipLimit = await checkRateLimit(
+  `login:ip:${ip}`,
+  RATE_LIMITERS.ip
+);
+
+if (!ipLimit.allowed) {
+  return c.json({
+    error: 'Too many requests from this IP. Please try again later.',
+    retryAfter: ipLimit.retryAfter,
+  }, 429);
+}
 ```
 
 ##### 2. Account Lockout
@@ -6506,6 +7174,191 @@ type SecurityEventType =
 
 type SecurityEventSeverity = 'info' | 'warning' | 'critical';
 ```
+
+---
+
+### Epic 11 Implementation Checklist
+
+This checklist ensures all files, dependencies, and configurations are in place before implementation begins.
+
+#### Files to Create
+
+**Database Migrations:**
+- [ ] `supabase/migrations/YYYYMMDDHHMMSS_create_user_profiles_and_api_keys.sql` (Story 11.1)
+- [ ] `supabase/migrations/YYYYMMDDHHMMSS_create_security_events.sql` (Story 11.11)
+- [ ] `supabase/migrations/YYYYMMDDHHMMSS_create_user_sessions.sql` (Story 11.12)
+- [ ] `supabase/migrations/YYYYMMDDHHMMSS_migrate_existing_api_keys.sql` (Story 11.10)
+
+**API Routes:**
+- [ ] `apps/api/src/routes/auth.ts` (Stories 11.2, 11.3)
+- [ ] `apps/api/src/routes/team.ts` (Story 11.4)
+- [ ] `apps/api/src/routes/api-keys.ts` (Story 11.5)
+
+**Utilities:**
+- [ ] `apps/api/src/utils/auth.ts` (password validation, key generation, rate limiting)
+- [ ] `apps/api/src/utils/crypto.ts` (update with secure comparison functions)
+- [ ] `apps/api/src/utils/rate-limiter.ts` (rate limiting implementation)
+
+**Middleware:**
+- [ ] `apps/api/src/middleware/auth.ts` (update for JWT + API keys, Story 11.6)
+- [ ] `apps/api/src/middleware/rate-limit.ts` (rate limiting middleware)
+
+**Services:**
+- [ ] `apps/api/src/services/sessions.ts` (session management, Story 11.12)
+- [ ] `apps/api/src/services/security.ts` (security event logging, Story 11.11)
+
+**Database Admin Client:**
+- [ ] `apps/api/src/db/admin-client.ts` (Supabase admin client for auth operations)
+
+**Tests:**
+- [ ] `apps/api/tests/unit/auth.test.ts`
+- [ ] `apps/api/tests/unit/team.test.ts`
+- [ ] `apps/api/tests/unit/api-keys.test.ts`
+- [ ] `apps/api/tests/integration/auth.test.ts`
+- [ ] `apps/api/tests/integration/security.test.ts`
+
+**UI Components:**
+- [ ] `payos-ui/src/pages/LoginPage.tsx` (Story 11.7)
+- [ ] `payos-ui/src/pages/SignupPage.tsx` (Story 11.7)
+- [ ] `payos-ui/src/pages/ForgotPasswordPage.tsx` (Story 11.7)
+- [ ] `payos-ui/src/pages/ResetPasswordPage.tsx` (Story 11.7)
+- [ ] `payos-ui/src/pages/AcceptInvitePage.tsx` (Story 11.7)
+- [ ] `payos-ui/src/components/settings/TeamManagement.tsx` (Story 11.8)
+- [ ] `payos-ui/src/components/settings/ApiKeysManagement.tsx` (Story 11.9)
+- [ ] `payos-ui/src/hooks/useAuth.ts` (auth context/hook)
+- [ ] `payos-ui/src/utils/api-client.ts` (update with JWT handling)
+
+#### Files to Modify
+
+**API:**
+- [ ] `apps/api/src/app.ts` (register new routes)
+- [ ] `apps/api/src/middleware/auth.ts` (add JWT support, Story 11.6)
+- [ ] `apps/api/src/middleware/error.ts` (add new error types if needed)
+- [ ] `apps/api/src/utils/helpers.ts` (add auth helper functions)
+
+**UI:**
+- [ ] `payos-ui/src/App.tsx` (add auth routes, protected route wrapper)
+- [ ] `payos-ui/src/components/layout/TopBar.tsx` (add user menu, logout)
+- [ ] `payos-ui/src/pages/SettingsPage.tsx` (add team and API keys tabs)
+
+#### Environment Variables Required
+
+**API (.env):**
+```bash
+# Supabase
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key  # For admin operations
+SUPABASE_ANON_KEY=your_anon_key
+
+# JWT
+JWT_SECRET=your_jwt_secret  # For signing JWTs
+JWT_PUBLIC_KEY=your_public_key  # For verifying JWTs (if using RS256)
+
+# Rate Limiting (optional - uses in-memory by default)
+REDIS_URL=redis://localhost:6379  # For production rate limiting
+
+# Email (for invites and notifications)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your_smtp_user
+SMTP_PASS=your_smtp_password
+SMTP_FROM=noreply@payos.dev
+
+# App URLs
+APP_URL=https://app.payos.dev
+API_URL=https://api.payos.dev
+```
+
+**UI (.env):**
+```bash
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_anon_key
+VITE_API_URL=https://api.payos.dev
+```
+
+#### Dependencies to Install
+
+**API:**
+```bash
+cd apps/api
+npm install jsonwebtoken @types/jsonwebtoken
+npm install ioredis  # For production rate limiting (optional)
+npm install nodemailer @types/nodemailer  # For email sending
+npm install @supabase/supabase-js  # Already installed, verify version
+```
+
+**UI:**
+```bash
+cd payos-ui
+npm install @supabase/supabase-js  # For Supabase Auth client
+```
+
+#### Database Setup
+
+1. **Run migrations in order:**
+   ```bash
+   supabase migration up
+   ```
+
+2. **Verify tables created:**
+   ```sql
+   SELECT table_name FROM information_schema.tables 
+   WHERE table_schema = 'public' 
+   AND table_name IN ('user_profiles', 'api_keys', 'security_events', 'user_sessions');
+   ```
+
+3. **Verify RLS policies:**
+   ```sql
+   SELECT tablename, policyname FROM pg_policies 
+   WHERE schemaname = 'public' 
+   AND tablename IN ('user_profiles', 'api_keys');
+   ```
+
+#### Testing Checklist
+
+**Unit Tests:**
+- [ ] Password validation (all rules)
+- [ ] API key generation (format, entropy)
+- [ ] Hash comparison (constant-time)
+- [ ] Rate limiting logic
+- [ ] Token generation
+
+**Integration Tests:**
+- [ ] Signup flow (success, validation errors, rate limit)
+- [ ] Login flow (success, wrong password, account locked)
+- [ ] API key creation and usage
+- [ ] Team invite and acceptance
+- [ ] Session refresh and rotation
+- [ ] Security event logging
+
+**Manual Testing:**
+- [ ] Signup creates tenant + user + keys
+- [ ] Login returns JWT + tenant context
+- [ ] API keys work for API requests
+- [ ] Rate limiting blocks after threshold
+- [ ] Account locks after 5 failures
+- [ ] Invite flow works end-to-end
+- [ ] Security events logged correctly
+
+#### Security Verification
+
+- [ ] No secrets logged (only prefixes)
+- [ ] Constant-time comparison for all secrets
+- [ ] Generic error messages (no enumeration)
+- [ ] Rate limiting active on all auth endpoints
+- [ ] RLS policies prevent cross-tenant access
+- [ ] JWT algorithm explicitly set (no "none")
+- [ ] Refresh tokens rotated on use
+- [ ] Password requirements enforced
+- [ ] API keys never returned after creation
+
+#### Documentation Updates
+
+- [ ] API documentation updated with new endpoints
+- [ ] README updated with setup instructions
+- [ ] Environment variable documentation
+- [ ] Security best practices guide
+- [ ] Deployment checklist
 
 ---
 
