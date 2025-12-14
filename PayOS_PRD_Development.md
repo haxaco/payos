@@ -5541,10 +5541,15 @@ POST /v1/auth/signup
 #### Acceptance Criteria
 - [ ] User can signup with email/password
 - [ ] Tenant and user_profile created atomically
-- [ ] Test and live API keys generated
+- [ ] Test and live API keys generated (256-bit entropy)
 - [ ] Keys shown only once in response
+- [ ] Keys never logged (only prefix)
 - [ ] Email confirmation sent
-- [ ] Proper error handling for duplicate emails
+- [ ] Password validated: min 12 chars, complexity rules
+- [ ] Password checked against common password list
+- [ ] Generic error if email already exists (no enumeration)
+- [ ] Rate limited: 10 signups/hour per IP
+- [ ] Security event logged: signup_success
 
 ---
 
@@ -5602,10 +5607,20 @@ GET  /v1/auth/me
 
 #### Acceptance Criteria
 - [ ] Login returns JWT + tenant context
-- [ ] Logout invalidates session
-- [ ] Token refresh works
+- [ ] Logout invalidates session (revokes refresh token)
+- [ ] Token refresh works with rotation (old token invalidated)
 - [ ] Password reset flow works
 - [ ] `/me` endpoint returns current user + tenant
+- [ ] Rate limited: 5 attempts/15min per account
+- [ ] Account locked after 5 failures (15 min lockout)
+- [ ] Email alert sent on account lockout
+- [ ] Generic error message for all failures (no enumeration)
+- [ ] Random delay (100-300ms) on auth failures
+- [ ] Constant-time password comparison
+- [ ] Access token expires in 15 minutes
+- [ ] Refresh token expires in 7 days
+- [ ] JWT algorithm explicitly RS256 (reject "none")
+- [ ] Security events logged: login_success, login_failure, account_locked
 
 ---
 
@@ -5685,10 +5700,16 @@ DELETE /v1/team/:userId          -- Remove member
 #### Acceptance Criteria
 - [ ] Admins can invite users by email
 - [ ] Invite email sent with secure link
+- [ ] Invite token is 256-bit cryptographic random
 - [ ] Invite expires after 7 days
+- [ ] Invite is single-use (deleted on accept)
 - [ ] Invitee can accept and set password
-- [ ] Proper role permissions enforced
+- [ ] Password validated same as signup (12+ chars, etc.)
+- [ ] Cannot invite with role higher than own role
+- [ ] Role changes logged as security event
 - [ ] Cannot remove last owner
+- [ ] Cannot change role of owner (except transfer)
+- [ ] Security events logged: user_invited, invite_accepted, role_changed, user_removed
 
 ---
 
@@ -5746,12 +5767,18 @@ POST   /v1/api-keys/:id/rotate   -- Rotate key (creates new, schedules old for r
 
 #### Acceptance Criteria
 - [ ] Users can create test and live keys
+- [ ] Keys generated with 256-bit entropy
+- [ ] Keys stored as SHA-256 hash (never plaintext)
 - [ ] Key shown only once on creation
-- [ ] List endpoint never shows full key
+- [ ] Key never logged anywhere (only prefix)
+- [ ] List endpoint never shows full key (only prefix)
 - [ ] Revoke immediately invalidates key
-- [ ] Rotate creates new key with grace period
+- [ ] Rotate creates new key with grace period (24h default)
 - [ ] Optional expiration supported
-- [ ] Audit log tracks key operations
+- [ ] Rate limited: 10 key creations per day
+- [ ] Only admins/owners can revoke others' keys
+- [ ] Members can only revoke their own keys
+- [ ] Security events logged: api_key_created, api_key_revoked, api_key_rotated
 
 ---
 
@@ -5820,7 +5847,13 @@ interface RequestContext {
 - [ ] Agent auth continues to work
 - [ ] Backwards compatible with existing pk_* keys during migration
 - [ ] Context includes user role for dashboard authorization
+- [ ] Constant-time hash comparison for all secrets
 - [ ] API key last_used_at updated on each request
+- [ ] API key last_used_ip tracked
+- [ ] Expired keys rejected with clear error
+- [ ] Revoked keys rejected with clear error
+- [ ] Full key never logged (only prefix)
+- [ ] Security event logged on new IP for key
 
 ---
 
@@ -5869,11 +5902,16 @@ Implement login, signup, and password reset pages in the dashboard.
 #### Acceptance Criteria
 - [ ] Login form with validation
 - [ ] Signup form creates tenant + shows API keys
+- [ ] API keys displayed with copy button and warning
 - [ ] Password reset flow works
 - [ ] Invite acceptance flow works
-- [ ] Session persists across page refresh
+- [ ] Session persists across page refresh (secure storage)
+- [ ] Tokens stored in HttpOnly cookies (not localStorage for JWTs)
 - [ ] Protected routes redirect to login
-- [ ] Logout clears session
+- [ ] Logout clears session and revokes refresh token
+- [ ] Show lockout message when account locked
+- [ ] Password strength indicator on forms
+- [ ] CSRF protection on all forms
 
 ---
 
@@ -6004,6 +6042,334 @@ WHERE api_key_hash IS NOT NULL;
 
 ---
 
+### Story 11.11: Security Infrastructure
+
+**Priority:** P0  
+**Estimate:** 4 hours
+
+#### Description
+Implement core security controls to protect against common authentication attacks. This is a P0 blocker - must be implemented before any auth endpoints go live.
+
+#### Components
+
+##### 1. Rate Limiting
+
+```typescript
+// Per-account rate limiting for login
+const loginRateLimiter = {
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  maxAttempts: 5,           // 5 attempts per window
+  lockoutDuration: 15 * 60, // 15 min lockout after max
+};
+
+// Per-IP rate limiting (prevents distributed attacks)
+const ipRateLimiter = {
+  windowMs: 15 * 60 * 1000,
+  maxAttempts: 100,         // 100 attempts per IP
+};
+
+// API key creation rate limiting
+const keyCreationLimiter = {
+  windowMs: 24 * 60 * 60 * 1000, // 24 hours
+  maxAttempts: 10,               // 10 keys per day
+};
+```
+
+##### 2. Account Lockout
+
+```sql
+-- Add to user_profiles
+ALTER TABLE user_profiles ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;
+ALTER TABLE user_profiles ADD COLUMN locked_until TIMESTAMPTZ;
+ALTER TABLE user_profiles ADD COLUMN last_failed_login_at TIMESTAMPTZ;
+ALTER TABLE user_profiles ADD COLUMN last_failed_login_ip TEXT;
+```
+
+##### 3. Security Event Logging
+
+```sql
+CREATE TABLE public.security_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES tenants(id),
+  user_id UUID REFERENCES auth.users(id),
+  event_type TEXT NOT NULL,  -- login_success, login_failure, account_locked, etc.
+  severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+  ip_address TEXT,
+  user_agent TEXT,
+  details JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_security_events_tenant ON security_events(tenant_id, created_at DESC);
+CREATE INDEX idx_security_events_type ON security_events(event_type, created_at DESC);
+CREATE INDEX idx_security_events_severity ON security_events(severity, created_at DESC);
+```
+
+##### 4. Constant-Time Comparisons
+
+```typescript
+import { timingSafeEqual, createHash } from 'crypto';
+
+export function secureCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  
+  if (bufA.length !== bufB.length) {
+    // Compare against self to maintain constant time
+    timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  
+  return timingSafeEqual(bufA, bufB);
+}
+
+export function verifyApiKeySecure(plainKey: string, storedHash: string): boolean {
+  const inputHash = createHash('sha256').update(plainKey).digest('hex');
+  return secureCompare(inputHash, storedHash);
+}
+```
+
+##### 5. Generic Error Responses
+
+```typescript
+// WRONG - reveals user existence
+if (!user) return { error: 'User not found' };
+if (!validPassword) return { error: 'Invalid password' };
+
+// RIGHT - same message for all auth failures
+const AUTH_FAILURE_MESSAGE = 'Invalid credentials';
+const RATE_LIMIT_MESSAGE = 'Too many attempts. Please try again later.';
+
+// Add random delay to prevent timing attacks
+async function authFailureResponse() {
+  await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
+  return { error: AUTH_FAILURE_MESSAGE };
+}
+```
+
+##### 6. Password Requirements
+
+```typescript
+const PASSWORD_REQUIREMENTS = {
+  minLength: 12,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumber: true,
+  requireSpecial: false,  // Controversial - length > complexity
+  maxLength: 128,
+  commonPasswordCheck: true, // Check against top 10k passwords
+};
+
+function validatePassword(password: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (password.length < PASSWORD_REQUIREMENTS.minLength) {
+    errors.push(`Password must be at least ${PASSWORD_REQUIREMENTS.minLength} characters`);
+  }
+  // ... other checks
+  
+  return { valid: errors.length === 0, errors };
+}
+```
+
+##### 7. Secure Token Generation
+
+```typescript
+import { randomBytes } from 'crypto';
+
+// API Keys: 256 bits of entropy
+export function generateApiKey(environment: 'test' | 'live'): string {
+  const random = randomBytes(32).toString('base64url');
+  return `pk_${environment}_${random}`;
+}
+
+// Invite tokens: 256 bits
+export function generateInviteToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+// Refresh tokens: 256 bits
+export function generateRefreshToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+```
+
+##### 8. Request Logging (Secrets Redacted)
+
+```typescript
+function redactSensitiveData(data: any): any {
+  const sensitiveKeys = ['password', 'apiKey', 'key', 'token', 'secret', 'authorization'];
+  
+  if (typeof data === 'string') {
+    // Redact API keys in strings
+    return data.replace(/pk_(test|live)_[a-zA-Z0-9_-]+/g, 'pk_$1_[REDACTED]');
+  }
+  
+  if (typeof data === 'object' && data !== null) {
+    const redacted = { ...data };
+    for (const key of Object.keys(redacted)) {
+      if (sensitiveKeys.some(s => key.toLowerCase().includes(s))) {
+        redacted[key] = '[REDACTED]';
+      } else {
+        redacted[key] = redactSensitiveData(redacted[key]);
+      }
+    }
+    return redacted;
+  }
+  
+  return data;
+}
+```
+
+#### Acceptance Criteria
+- [ ] Rate limiting on login (5 attempts/15 min per account)
+- [ ] Rate limiting on signup (10/hour per IP)
+- [ ] Rate limiting on API key creation (10/day per tenant)
+- [ ] Account lockout after 5 failed attempts (15 min)
+- [ ] Email alert sent on account lockout
+- [ ] Security events logged to security_events table
+- [ ] Constant-time comparison for all secrets
+- [ ] Generic error messages (no user enumeration)
+- [ ] Random delay on auth failures (100-300ms)
+- [ ] Password minimum 12 characters
+- [ ] Check passwords against common password list
+- [ ] 256-bit entropy for all tokens
+- [ ] Sensitive data redacted from all logs
+- [ ] API key prefix shown in logs, never full key
+
+---
+
+### Story 11.12: Session Security
+
+**Priority:** P0  
+**Estimate:** 2 hours
+
+#### Description
+Implement secure session management with refresh token rotation and anomaly detection.
+
+#### Components
+
+##### 1. Refresh Token Rotation
+
+```typescript
+async function refreshSession(refreshToken: string, clientInfo: ClientInfo) {
+  const session = await validateRefreshToken(refreshToken);
+  if (!session) {
+    await logSecurityEvent('invalid_refresh_token', { token: refreshToken.slice(0, 8) });
+    throw new AuthError('Invalid refresh token');
+  }
+  
+  // Detect token reuse (potential theft)
+  if (session.used) {
+    // Token was already used - possible theft!
+    await revokeAllUserSessions(session.userId);
+    await logSecurityEvent('refresh_token_reuse', { 
+      userId: session.userId,
+      severity: 'critical'
+    });
+    await sendSecurityAlert(session.userId, 'All sessions revoked due to suspicious activity');
+    throw new AuthError('Session invalidated');
+  }
+  
+  // Mark token as used
+  await markRefreshTokenUsed(refreshToken);
+  
+  // Issue new tokens
+  const newAccessToken = generateAccessToken(session.userId, { expiresIn: '15m' });
+  const newRefreshToken = await createRefreshToken(session.userId, clientInfo);
+  
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+}
+```
+
+##### 2. Session Storage
+
+```sql
+CREATE TABLE public.user_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  refresh_token_hash TEXT NOT NULL,
+  device_fingerprint TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  is_used BOOLEAN DEFAULT false,  -- For rotation detection
+  created_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  last_activity_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_user_sessions_user ON user_sessions(user_id) WHERE revoked_at IS NULL;
+CREATE INDEX idx_user_sessions_token ON user_sessions(refresh_token_hash) WHERE revoked_at IS NULL;
+```
+
+##### 3. JWT Configuration
+
+```typescript
+const JWT_CONFIG = {
+  accessToken: {
+    expiresIn: '15m',           // Short-lived
+    algorithm: 'RS256',          // Asymmetric - can verify without secret
+  },
+  refreshToken: {
+    expiresIn: '7d',            // Longer-lived, but rotated
+    algorithm: 'HS256',          // Symmetric - only server can create
+  },
+};
+
+// CRITICAL: Explicitly set algorithm to prevent "none" attack
+function verifyAccessToken(token: string) {
+  return jwt.verify(token, PUBLIC_KEY, { 
+    algorithms: ['RS256'],      // ONLY accept RS256
+    issuer: 'payos',
+    audience: 'payos-dashboard',
+  });
+}
+```
+
+##### 4. Anomaly Detection
+
+```typescript
+interface SessionAnomaly {
+  type: 'new_ip' | 'new_device' | 'impossible_travel' | 'unusual_time';
+  severity: 'low' | 'medium' | 'high';
+  action: 'log' | 'step_up' | 'block';
+}
+
+async function detectAnomalies(userId: string, clientInfo: ClientInfo): Promise<SessionAnomaly[]> {
+  const anomalies: SessionAnomaly[] = [];
+  const recentSessions = await getRecentSessions(userId, 30); // Last 30 days
+  
+  // New IP address
+  const knownIps = new Set(recentSessions.map(s => s.ip_address));
+  if (!knownIps.has(clientInfo.ip)) {
+    anomalies.push({ type: 'new_ip', severity: 'low', action: 'log' });
+  }
+  
+  // Impossible travel (login from far location within short time)
+  const lastSession = recentSessions[0];
+  if (lastSession && isImpossibleTravel(lastSession, clientInfo)) {
+    anomalies.push({ type: 'impossible_travel', severity: 'high', action: 'block' });
+  }
+  
+  return anomalies;
+}
+```
+
+#### Acceptance Criteria
+- [ ] Access tokens expire in 15 minutes
+- [ ] Refresh tokens expire in 7 days
+- [ ] Refresh tokens rotated on each use
+- [ ] Token reuse triggers session revocation + alert
+- [ ] Sessions stored in database with metadata
+- [ ] JWT algorithm explicitly set (no "none" attack)
+- [ ] New IP/device logged as security event
+- [ ] User can view active sessions
+- [ ] User can revoke individual sessions
+- [ ] "Logout all devices" functionality
+
+---
+
 ### Epic 11 Summary
 
 | Story | Priority | Est (hrs) | API | UI |
@@ -6018,7 +6384,130 @@ WHERE api_key_hash IS NOT NULL;
 | 11.8 Settings - Team Management UI | P1 | 3 | | ✅ |
 | 11.9 Settings - API Keys Management UI | P1 | 3 | | ✅ |
 | 11.10 Migration - Existing API Keys | P0 | 1 | ✅ | |
-| **Total** | | **26** | | |
+| 11.11 Security Infrastructure | P0 | 4 | ✅ | |
+| 11.12 Session Security | P0 | 2 | ✅ | |
+| **Total** | | **32** | | |
+
+---
+
+### Security Requirements Matrix
+
+All authentication-related stories MUST implement these controls:
+
+#### Authentication Security
+
+| Requirement | Stories | Priority |
+|-------------|---------|----------|
+| Rate limit login attempts (5/15min per account) | 11.3, 11.11 | P0 |
+| Rate limit by IP (100/15min) | 11.2, 11.3, 11.11 | P0 |
+| Account lockout after 5 failures | 11.3, 11.11 | P0 |
+| Email alert on account lockout | 11.3, 11.11 | P0 |
+| Generic error messages (no enumeration) | 11.2, 11.3, 11.4 | P0 |
+| Constant-time secret comparison | 11.3, 11.5, 11.6 | P0 |
+| Random delay on auth failures (100-300ms) | 11.3, 11.11 | P0 |
+| Password min 12 chars with complexity | 11.2, 11.3 | P0 |
+| Check against common passwords | 11.2, 11.3 | P1 |
+
+#### API Key Security
+
+| Requirement | Stories | Priority |
+|-------------|---------|----------|
+| 256-bit random key generation | 11.2, 11.5 | P0 |
+| SHA-256 hash storage (never plaintext) | 11.1, 11.5 | P0 |
+| Constant-time hash verification | 11.6, 11.11 | P0 |
+| Never log full keys (prefix only) | 11.5, 11.6, 11.11 | P0 |
+| Track last_used_at and last_used_ip | 11.1, 11.6 | P1 |
+| Rate limit key creation (10/day) | 11.5, 11.11 | P1 |
+| Key shown only once on creation | 11.2, 11.5, 11.9 | P0 |
+
+#### Session Security
+
+| Requirement | Stories | Priority |
+|-------------|---------|----------|
+| Short access token expiry (15 min) | 11.3, 11.12 | P0 |
+| Refresh token rotation on use | 11.3, 11.12 | P0 |
+| Token reuse detection + session revocation | 11.12 | P0 |
+| Explicit JWT algorithm (reject "none") | 11.3, 11.6, 11.12 | P0 |
+| Secure HttpOnly cookies for web | 11.7 | P0 |
+| Session stored with device/IP metadata | 11.12 | P1 |
+
+#### Invite Security
+
+| Requirement | Stories | Priority |
+|-------------|---------|----------|
+| 256-bit cryptographic tokens | 11.4, 11.11 | P0 |
+| 7-day expiration | 11.4 | P0 |
+| Single-use tokens | 11.4 | P0 |
+| Cannot invite as higher role than self | 11.4 | P0 |
+| Email verification before dashboard access | 11.2, 11.4 | P1 |
+
+#### Authorization Security
+
+| Requirement | Stories | Priority |
+|-------------|---------|----------|
+| Tenant isolation via RLS | 11.1 | P0 |
+| Role checks server-side only | 11.4, 11.6 | P0 |
+| Block removal of last owner | 11.4, 11.8 | P0 |
+| Audit log all role changes | 11.4 | P0 |
+| Audit log all key operations | 11.5 | P0 |
+
+#### Monitoring & Alerting
+
+| Requirement | Stories | Priority |
+|-------------|---------|----------|
+| Log all auth failures | 11.11 | P0 |
+| Log all security events to dedicated table | 11.11 | P0 |
+| Alert on account lockout | 11.11 | P0 |
+| Alert on token reuse | 11.12 | P0 |
+| Alert on impossible travel | 11.12 | P2 |
+| Redact secrets from all logs | 11.11 | P0 |
+
+---
+
+### Security Event Types
+
+```typescript
+type SecurityEventType = 
+  // Authentication
+  | 'login_success'
+  | 'login_failure'
+  | 'login_rate_limited'
+  | 'account_locked'
+  | 'account_unlocked'
+  | 'password_changed'
+  | 'password_reset_requested'
+  | 'password_reset_completed'
+  
+  // Sessions
+  | 'session_created'
+  | 'session_refreshed'
+  | 'session_revoked'
+  | 'refresh_token_reuse'        // CRITICAL
+  | 'all_sessions_revoked'
+  
+  // API Keys
+  | 'api_key_created'
+  | 'api_key_revoked'
+  | 'api_key_rotated'
+  | 'api_key_used_from_new_ip'
+  
+  // Team
+  | 'user_invited'
+  | 'user_invite_accepted'
+  | 'user_role_changed'
+  | 'user_removed'
+  | 'ownership_transferred'
+  
+  // Anomalies
+  | 'new_ip_detected'
+  | 'new_device_detected'
+  | 'impossible_travel'
+  | 'unusual_activity';
+
+type SecurityEventSeverity = 'info' | 'warning' | 'critical';
+```
+
+---
 
 ### Future TODOs (Out of Scope)
 
