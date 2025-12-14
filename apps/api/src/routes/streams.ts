@@ -60,20 +60,17 @@ streams.get('/', async (c) => {
     .from('streams')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
-    .order('created_at', { ascending: false })
-    .range((page - 1) * limit, page * limit - 1);
+    .order('created_at', { ascending: false });
   
   if (status) {
     dbQuery = dbQuery.eq('status', status);
   }
-  if (health) {
-    dbQuery = dbQuery.eq('health', health);
-  }
+  // Note: health filter is applied AFTER real-time calculation
   if (category) {
     dbQuery = dbQuery.eq('category', category);
   }
   
-  const { data, count, error } = await dbQuery;
+  const { data, error } = await dbQuery;
   
   if (error) {
     console.error('Error fetching streams:', error);
@@ -81,7 +78,7 @@ streams.get('/', async (c) => {
   }
   
   // Calculate real-time state for each stream
-  const streams = (data || []).map(row => {
+  let streams = (data || []).map(row => {
     const stream = mapStreamFromDb(row);
     
     // Update with real-time calculation for active streams
@@ -113,7 +110,16 @@ streams.get('/', async (c) => {
     return stream;
   });
   
-  return c.json(paginationResponse(streams, count || 0, { page, limit }));
+  // Apply health filter AFTER real-time calculation (since health changes dynamically)
+  if (health) {
+    streams = streams.filter(s => s.health === health);
+  }
+  
+  // Apply pagination after filtering
+  const total = streams.length;
+  const paginatedStreams = streams.slice((page - 1) * limit, page * limit);
+  
+  return c.json(paginationResponse(paginatedStreams, total, { page, limit }));
 });
 
 // ============================================

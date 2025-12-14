@@ -1,14 +1,33 @@
-import { describe, it, expect } from 'vitest';
-import { TEST_API_KEY, TEST_AGENT_TOKEN, TEST_ACCOUNTS, TEST_AGENTS } from '../setup.js';
+import { describe, it, expect, afterAll } from 'vitest';
+import { TEST_API_KEY, TEST_ACCOUNTS, TEST_AGENTS } from '../setup.js';
 
 const BASE_URL = process.env.API_URL || 'http://localhost:4000';
 const skipIntegration = !process.env.INTEGRATION;
+
+// Track created resources for cleanup
+const createdAgentIds: string[] = [];
 
 describe.skipIf(skipIntegration)('Agents API Integration', () => {
   const headers = {
     'Authorization': `Bearer ${TEST_API_KEY}`,
     'Content-Type': 'application/json',
   };
+
+  // Cleanup after all tests
+  afterAll(async () => {
+    // Delete all created agents
+    for (const agentId of createdAgentIds) {
+      try {
+        await fetch(`${BASE_URL}/v1/agents/${agentId}`, {
+          method: 'DELETE',
+          headers,
+        });
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+    createdAgentIds.length = 0;
+  });
 
   describe('GET /v1/agents', () => {
     it('returns a list of agents', async () => {
@@ -55,7 +74,7 @@ describe.skipIf(skipIntegration)('Agents API Integration', () => {
   });
 
   describe('POST /v1/agents', () => {
-    it('creates a new agent', async () => {
+    it('creates a new agent with token credentials', async () => {
       const response = await fetch(`${BASE_URL}/v1/agents`, {
         method: 'POST',
         headers,
@@ -71,8 +90,16 @@ describe.skipIf(skipIntegration)('Agents API Integration', () => {
       expect(data.data).toHaveProperty('id');
       expect(data.data.status).toBe('active');
       expect(data.data.kya.tier).toBe(0); // New agents start unverified
+      
+      // Updated expectation: new format uses token + prefix instead of clientId
       expect(data).toHaveProperty('credentials');
-      expect(data.credentials).toHaveProperty('clientId');
+      expect(data.credentials).toHaveProperty('token');
+      expect(data.credentials).toHaveProperty('prefix');
+      expect(data.credentials).toHaveProperty('warning');
+      expect(data.credentials.token).toMatch(/^agent_/); // Token starts with agent_
+
+      // Track for cleanup
+      createdAgentIds.push(data.data.id);
     });
 
     it('requires business account parent', async () => {
@@ -120,6 +147,7 @@ describe.skipIf(skipIntegration)('Agents API Integration', () => {
       });
       const createData = await createResponse.json();
       const agentId = createData.data.id;
+      createdAgentIds.push(agentId);
 
       // Verify it
       const response = await fetch(`${BASE_URL}/v1/agents/${agentId}/verify`, {
@@ -148,6 +176,7 @@ describe.skipIf(skipIntegration)('Agents API Integration', () => {
       });
       const createData = await createResponse.json();
       const agentId = createData.data.id;
+      createdAgentIds.push(agentId);
 
       const response = await fetch(`${BASE_URL}/v1/agents/${agentId}/suspend`, {
         method: 'POST',
@@ -173,6 +202,7 @@ describe.skipIf(skipIntegration)('Agents API Integration', () => {
       });
       const createData = await createResponse.json();
       const agentId = createData.data.id;
+      createdAgentIds.push(agentId);
 
       await fetch(`${BASE_URL}/v1/agents/${agentId}/suspend`, {
         method: 'POST',
@@ -192,17 +222,46 @@ describe.skipIf(skipIntegration)('Agents API Integration', () => {
 });
 
 describe.skipIf(skipIntegration)('Agent Authentication', () => {
-  const agentHeaders = {
-    'Authorization': `Bearer ${TEST_AGENT_TOKEN}`,
+  const headers = {
+    'Authorization': `Bearer ${TEST_API_KEY}`,
     'Content-Type': 'application/json',
   };
 
-  it('allows agent token authentication', async () => {
-    const response = await fetch(`${BASE_URL}/v1/accounts`, { headers: agentHeaders });
-    const data = await response.json();
+  let testAgentToken: string;
+  let testAgentId: string;
 
-    expect(response.status).toBe(200);
-    expect(data).toHaveProperty('data');
+  // Create a fresh agent with a known token for authentication tests
+  it('allows agent token authentication', async () => {
+    // Create a new agent to get a fresh token
+    const createResponse = await fetch(`${BASE_URL}/v1/agents`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        parentAccountId: TEST_ACCOUNTS.techcorp,
+        name: `Auth Test Agent ${Date.now()}`,
+        description: 'Agent for authentication testing',
+      }),
+    });
+    const createData = await createResponse.json();
+    
+    expect(createResponse.status).toBe(201);
+    expect(createData.credentials).toHaveProperty('token');
+    
+    testAgentToken = createData.credentials.token;
+    testAgentId = createData.data.id;
+    createdAgentIds.push(testAgentId);
+
+    // Now authenticate with the fresh token
+    const authResponse = await fetch(`${BASE_URL}/v1/accounts`, {
+      headers: {
+        'Authorization': `Bearer ${testAgentToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const authData = await authResponse.json();
+
+    expect(authResponse.status).toBe(200);
+    expect(authData).toHaveProperty('data');
   });
 
   it('rejects invalid tokens', async () => {
@@ -225,4 +284,3 @@ describe.skipIf(skipIntegration)('Agent Authentication', () => {
     expect(data).toHaveProperty('error');
   });
 });
-

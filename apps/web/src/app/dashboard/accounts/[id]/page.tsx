@@ -549,7 +549,7 @@ function StreamsTab({ streams }: { streams: Stream[] }) {
     <div className="space-y-4">
       {streams.map((stream) => {
         // Streams use supertokens (wrapped USDC), display base currency
-        const currency = stream.currency || 'USDCx';
+        const currency = stream.flowRate?.currency || 'USDCx';
         
         return (
           <Link

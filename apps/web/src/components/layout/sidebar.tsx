@@ -23,6 +23,8 @@ import {
   ScrollText,
   Layers,
   UserCheck,
+  Calendar,
+  RotateCcw,
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 
@@ -30,6 +32,8 @@ const mainNav = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
   { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
+  { href: '/dashboard/schedules', label: 'Schedules', icon: Calendar },
+  { href: '/dashboard/refunds', label: 'Refunds', icon: RotateCcw },
   { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
   { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: 23 },
   { href: '/dashboard/treasury', label: 'Treasury', icon: Wallet },

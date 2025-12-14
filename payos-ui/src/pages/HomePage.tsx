@@ -26,13 +26,20 @@ const recentActivity = [
 export function HomePage() {
   const navigate = useNavigate();
   
+  // Get current date formatted
+  const currentDate = new Date().toLocaleDateString('en-US', { 
+    month: 'long', 
+    day: 'numeric', 
+    year: 'numeric' 
+  });
+  
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-gray-900 dark:text-white mb-2">Home</h1>
-          <p className="text-gray-600 dark:text-gray-400">December 6, 2025</p>
+          <p className="text-gray-600 dark:text-gray-400">{currentDate}</p>
         </div>
       </div>
 

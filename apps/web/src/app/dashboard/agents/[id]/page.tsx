@@ -313,7 +313,7 @@ export default function AgentDetailPage() {
           </div>
         </div>
         <Link
-          href={`/dashboard/accounts/${agent.parentAccountId}`}
+          href={`/dashboard/accounts/${agent.parentAccount.id}`}
           className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 hover:shadow-lg transition-shadow"
         >
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Parent Account</div>

@@ -3,7 +3,7 @@ import {
   ChevronRight, User, Building2, CreditCard, Wallet,
   ArrowDownLeft, ArrowUpRight, Sparkles, Edit2, MoreHorizontal,
   Ban, CheckCircle, Clock, Mail, Phone, MapPin, Zap, Play, Copy, Eye, Pause, X,
-  AlertTriangle, AlertCircle, Bot, Plus, Activity, DollarSign
+  AlertTriangle, AlertCircle, Bot, Plus, Activity, DollarSign, Landmark, Trash2, Star
 } from 'lucide-react';
 import { mockAccounts } from '../data/mockAccounts';
 import { Page } from '../App';
@@ -43,6 +43,8 @@ export function AccountDetailPage({ accountId = 'acc_person_001', onNavigate }: 
 
 function PersonAccountDetail({ account, onNavigate }: any) {
   const [activeTab, setActiveTab] = useState('overview');
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentModalType, setPaymentModalType] = useState<'transaction' | 'stream'>('transaction');
   
   // Mock recent transactions for this account
   const recentTransactions = [
@@ -118,7 +120,13 @@ function PersonAccountDetail({ account, onNavigate }: any) {
             <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium">
               Edit
             </button>
-            <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium">
+            <button 
+              onClick={() => {
+                setPaymentModalType('transaction');
+                setPaymentModalOpen(true);
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
+            >
               Send Funds
             </button>
             <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium">
@@ -187,12 +195,12 @@ function PersonAccountDetail({ account, onNavigate }: any) {
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex gap-6">
-          {['Overview', 'Transactions', 'Streams', 'Agents', 'Relationships', 'Documents', 'Logs'].map(tab => (
+          {['Overview', 'Transactions', 'Payment Methods', 'Streams', 'Agents', 'Relationships', 'Documents', 'Logs'].map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab.toLowerCase())}
+              onClick={() => setActiveTab(tab.toLowerCase().replace(' ', '-'))}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.toLowerCase()
+                activeTab === tab.toLowerCase().replace(' ', '-')
                   ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
               }`}
@@ -366,6 +374,10 @@ function PersonAccountDetail({ account, onNavigate }: any) {
         </div>
       )}
       
+      {activeTab === 'payment-methods' && (
+        <PaymentMethodsTab accountId={account.id} accountName={`${account.firstName} ${account.lastName}`} />
+      )}
+      
       {activeTab === 'streams' && (
         <div className="space-y-6">
           {/* Active Stream Card — THE HERO ELEMENT */}
@@ -518,6 +530,18 @@ function PersonAccountDetail({ account, onNavigate }: any) {
           </p>
         </div>
       )}
+      
+      {/* New Payment Modal */}
+      <NewPaymentModal 
+        isOpen={paymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        defaultType={paymentModalType}
+        fromAccount={{
+          id: account.id,
+          name: `${account.firstName} ${account.lastName}`,
+          type: 'person'
+        }}
+      />
     </div>
   );
 }
@@ -602,7 +626,13 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
           </div>
           
           <div className="mt-6 flex gap-2">
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+            <button 
+              onClick={() => {
+                setPaymentModalType('transaction');
+                setPaymentModalOpen(true);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
               Create Payout
             </button>
             <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium">
@@ -754,12 +784,12 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex gap-6">
-          {['Overview', 'Contractors', 'Streams', 'Agents', 'Owners', 'Documents', 'Logs'].map(tab => (
+          {['Overview', 'Contractors', 'Payment Methods', 'Streams', 'Agents', 'Owners', 'Documents', 'Logs'].map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab.toLowerCase())}
+              onClick={() => setActiveTab(tab.toLowerCase().replace(' ', '-'))}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.toLowerCase()
+                activeTab === tab.toLowerCase().replace(' ', '-')
                   ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
               }`}
@@ -924,6 +954,10 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
             Full contractor management view with bulk actions.
           </p>
         </div>
+      )}
+      
+      {activeTab === 'payment-methods' && (
+        <PaymentMethodsTab accountId={account.id} accountName={account.businessName} />
       )}
       
       {activeTab === 'streams' && (
@@ -1192,7 +1226,500 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
         isOpen={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}
         defaultType={paymentModalType}
+        fromAccount={{
+          id: account.id,
+          name: account.businessName || account.legalName,
+          type: 'business'
+        }}
       />
+    </div>
+  );
+}
+
+// ============================================
+// PAYMENT METHODS TAB (Story 10.9)
+// ============================================
+
+interface PaymentMethodsTabProps {
+  accountId: string;
+  accountName: string;
+}
+
+function PaymentMethodsTab({ accountId, accountName }: PaymentMethodsTabProps) {
+  const [showAddModal, setShowAddModal] = useState(false);
+  
+  // Mock payment methods data
+  const paymentMethods = [
+    {
+      id: 'pm_001',
+      type: 'bank_account',
+      label: 'Primary Checking',
+      bankName: 'Wells Fargo',
+      bankAccountLastFour: '4521',
+      bankRoutingLastFour: '6789',
+      bankCountry: 'USA',
+      bankCurrency: 'USD',
+      isDefault: true,
+      isVerified: true,
+      verifiedAt: '2025-11-15',
+      createdAt: '2025-11-10',
+    },
+    {
+      id: 'pm_002',
+      type: 'wallet',
+      label: 'USDC Wallet',
+      walletNetwork: 'base',
+      walletAddress: '0x1234...abcd',
+      isDefault: false,
+      isVerified: true,
+      verifiedAt: '2025-11-20',
+      createdAt: '2025-11-18',
+    },
+    {
+      id: 'pm_003',
+      type: 'bank_account',
+      label: 'Savings Account',
+      bankName: 'Chase',
+      bankAccountLastFour: '8765',
+      bankRoutingLastFour: '1234',
+      bankCountry: 'USA',
+      bankCurrency: 'USD',
+      isDefault: false,
+      isVerified: false,
+      verifiedAt: null,
+      createdAt: '2025-12-01',
+    },
+  ];
+  
+  const handleSetDefault = (methodId: string) => {
+    console.log('Set default:', methodId);
+  };
+  
+  const handleDelete = (methodId: string) => {
+    console.log('Delete:', methodId);
+  };
+  
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Methods</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Manage saved bank accounts and wallets for {accountName}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+        >
+          <Plus className="w-4 h-4" />
+          Add Payment Method
+        </button>
+      </div>
+      
+      {/* Payment Methods List */}
+      <div className="grid gap-4">
+        {paymentMethods.map((method) => (
+          <div
+            key={method.id}
+            className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-4">
+                {/* Icon */}
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  method.type === 'bank_account'
+                    ? 'bg-blue-100 dark:bg-blue-900/50'
+                    : 'bg-purple-100 dark:bg-purple-900/50'
+                }`}>
+                  {method.type === 'bank_account' ? (
+                    <Landmark className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  ) : (
+                    <Wallet className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                  )}
+                </div>
+                
+                {/* Details */}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-gray-900 dark:text-white">
+                      {method.label}
+                    </h4>
+                    {method.isDefault && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-full text-xs font-medium">
+                        <Star className="w-3 h-3" />
+                        Default
+                      </span>
+                    )}
+                    {method.isVerified ? (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
+                        <CheckCircle className="w-3 h-3" />
+                        Verified
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-full text-xs font-medium">
+                        <Clock className="w-3 h-3" />
+                        Pending
+                      </span>
+                    )}
+                  </div>
+                  
+                  {method.type === 'bank_account' && (
+                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      <span className="font-medium">{method.bankName}</span>
+                      <span className="mx-2">·</span>
+                      <span>Account ending in {method.bankAccountLastFour}</span>
+                      <span className="mx-2">·</span>
+                      <span>{method.bankCurrency}</span>
+                    </div>
+                  )}
+                  
+                  {method.type === 'wallet' && (
+                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      <span className="capitalize font-medium">{method.walletNetwork}</span>
+                      <span className="mx-2">·</span>
+                      <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                        {method.walletAddress}
+                      </code>
+                    </div>
+                  )}
+                  
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    Added {formatDate(method.createdAt)}
+                    {method.verifiedAt && ` · Verified ${formatDate(method.verifiedAt)}`}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Actions */}
+              <div className="flex items-center gap-2">
+                {!method.isDefault && method.isVerified && (
+                  <button
+                    onClick={() => handleSetDefault(method.id)}
+                    className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    Set Default
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDelete(method.id)}
+                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Empty State */}
+      {paymentMethods.length === 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+          <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Wallet className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            No Payment Methods
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400 mb-4">
+            Add a bank account or wallet to enable payouts and transfers.
+          </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+          >
+            Add Payment Method
+          </button>
+        </div>
+      )}
+      
+      {/* Add Payment Method Modal */}
+      {showAddModal && (
+        <AddPaymentMethodModal
+          accountId={accountId}
+          onClose={() => setShowAddModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// ADD PAYMENT METHOD MODAL
+// ============================================
+
+interface AddPaymentMethodModalProps {
+  accountId: string;
+  onClose: () => void;
+}
+
+function AddPaymentMethodModal({ accountId, onClose }: AddPaymentMethodModalProps) {
+  const [methodType, setMethodType] = useState<'bank_account' | 'wallet' | null>(null);
+  const [label, setLabel] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
+  
+  // Bank account fields
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [routingNumber, setRoutingNumber] = useState('');
+  const [accountHolder, setAccountHolder] = useState('');
+  
+  // Wallet fields
+  const [walletNetwork, setWalletNetwork] = useState('base');
+  const [walletAddress, setWalletAddress] = useState('');
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('Add payment method:', {
+      methodType,
+      label,
+      isDefault,
+      bankName,
+      accountNumber,
+      routingNumber,
+      accountHolder,
+      walletNetwork,
+      walletAddress,
+    });
+    onClose();
+  };
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Add Payment Method
+            </h2>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Type Selection */}
+          {!methodType && (
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => setMethodType('bank_account')}
+                className="p-6 border-2 border-gray-200 dark:border-gray-600 rounded-xl hover:border-blue-500 dark:hover:border-blue-400 transition-colors text-left"
+              >
+                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-xl flex items-center justify-center mb-3">
+                  <Landmark className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h3 className="font-semibold text-gray-900 dark:text-white">Bank Account</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Add a US bank account for ACH transfers
+                </p>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setMethodType('wallet')}
+                className="p-6 border-2 border-gray-200 dark:border-gray-600 rounded-xl hover:border-purple-500 dark:hover:border-purple-400 transition-colors text-left"
+              >
+                <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/50 rounded-xl flex items-center justify-center mb-3">
+                  <Wallet className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <h3 className="font-semibold text-gray-900 dark:text-white">Crypto Wallet</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Add a wallet address for USDC transfers
+                </p>
+              </button>
+            </div>
+          )}
+          
+          {/* Bank Account Form */}
+          {methodType === 'bank_account' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setMethodType(null)}
+                  className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  ← Back
+                </button>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">Bank Account</span>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Label
+                </label>
+                <input
+                  type="text"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="e.g., Primary Checking"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Bank Name
+                </label>
+                <input
+                  type="text"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  placeholder="e.g., Wells Fargo"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Account Number
+                </label>
+                <input
+                  type="text"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  placeholder="Enter account number"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Routing Number
+                </label>
+                <input
+                  type="text"
+                  value={routingNumber}
+                  onChange={(e) => setRoutingNumber(e.target.value)}
+                  placeholder="9 digits"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Account Holder Name
+                </label>
+                <input
+                  type="text"
+                  value={accountHolder}
+                  onChange={(e) => setAccountHolder(e.target.value)}
+                  placeholder="Name as it appears on the account"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isDefault}
+                  onChange={(e) => setIsDefault(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Set as default payment method
+                </span>
+              </label>
+            </div>
+          )}
+          
+          {/* Wallet Form */}
+          {methodType === 'wallet' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setMethodType(null)}
+                  className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  ← Back
+                </button>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">Crypto Wallet</span>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Label
+                </label>
+                <input
+                  type="text"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="e.g., My USDC Wallet"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Network
+                </label>
+                <select
+                  value={walletNetwork}
+                  onChange={(e) => setWalletNetwork(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="base">Base</option>
+                  <option value="polygon">Polygon</option>
+                  <option value="ethereum">Ethereum</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Wallet Address
+                </label>
+                <input
+                  type="text"
+                  value={walletAddress}
+                  onChange={(e) => setWalletAddress(e.target.value)}
+                  placeholder="0x..."
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isDefault}
+                  onChange={(e) => setIsDefault(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Set as default payment method
+                </span>
+              </label>
+            </div>
+          )}
+          
+          {/* Submit Button */}
+          {methodType && (
+            <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Add Payment Method
+              </button>
+            </div>
+          )}
+        </form>
+      </div>
     </div>
   );
 }

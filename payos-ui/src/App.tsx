@@ -23,6 +23,7 @@ import { WebhooksPage } from './pages/WebhooksPage';
 import { RequestLogsPage } from './pages/RequestLogsPage';
 import { AgentVerificationTiersPage } from './pages/AgentVerificationTiersPage';
 import { ReportsPage } from './pages/ReportsPage';
+import { DisputesPage } from './pages/DisputesPage';
 
 function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="/cards/:id" element={<DashboardLayout><CardDetailPage /></DashboardLayout>} />
         <Route path="/compliance" element={<DashboardLayout><CompliancePage /></DashboardLayout>} />
         <Route path="/compliance/:id" element={<DashboardLayout><ComplianceFlagDetailPage /></DashboardLayout>} />
+        <Route path="/disputes" element={<DashboardLayout><DisputesPage /></DashboardLayout>} />
         <Route path="/treasury" element={<DashboardLayout><TreasuryPage /></DashboardLayout>} />
         <Route path="/agents" element={<DashboardLayout><AgentsPage /></DashboardLayout>} />
         <Route path="/agents/:id" element={<DashboardLayout><AgentDetailPage /></DashboardLayout>} />

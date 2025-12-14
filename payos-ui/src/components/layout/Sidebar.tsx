@@ -14,7 +14,8 @@ import {
   Key,
   Webhook,
   Activity,
-  FileText
+  FileText,
+  Scale
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,6 +29,7 @@ const mainNav = [
   { href: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { href: '/cards', label: 'Cards', icon: CreditCard },
   { href: '/compliance', label: 'Compliance', icon: Shield, badge: '23' },
+  { href: '/disputes', label: 'Disputes', icon: Scale, badge: '3' },
   { href: '/treasury', label: 'Treasury', icon: Wallet },
   { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/reports', label: 'Reports', icon: FileText },

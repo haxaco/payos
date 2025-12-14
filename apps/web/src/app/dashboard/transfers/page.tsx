@@ -25,6 +25,8 @@ import type { Transfer } from '@payos/api-client';
 import { InitiatedByBadgeCompact } from '@/components/transactions/initiated-by-badge';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { TransactionsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
+import { RefundModal } from '@/components/transfers/refund-modal';
+import { ExportModal } from '@/components/transfers/export-modal';
 
 export default function TransfersPage() {
   const api = useApiClient();
@@ -36,7 +38,9 @@ export default function TransfersPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [initiatedByFilter, setInitiatedByFilter] = useState<string>('all');
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null);
+  const [refundTransfer, setRefundTransfer] = useState<Transfer | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -165,28 +169,33 @@ export default function TransfersPage() {
               <ChevronDown className="h-4 w-4" />
             </button>
             {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg z-10">
+              <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg z-10">
+                <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+                  <span className="text-xs font-medium text-gray-500 uppercase">Quick Export</span>
+                </div>
                 <button
-                  onClick={() => exportData('csv')}
+                  onClick={() => { exportData('csv'); setShowExportMenu(false); }}
                   className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2"
                 >
                   <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
                   Export as CSV
                 </button>
                 <button
-                  onClick={() => exportData('json')}
+                  onClick={() => { exportData('json'); setShowExportMenu(false); }}
                   className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2"
                 >
                   <FileJson className="h-4 w-4 text-blue-500" />
                   Export as JSON
                 </button>
-                <button
-                  onClick={() => exportData('pdf')}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2"
-                >
-                  <FileText className="h-4 w-4 text-red-500" />
-                  Export as PDF
-                </button>
+                <div className="border-t border-gray-100 dark:border-gray-800 mt-1 pt-1">
+                  <button
+                    onClick={() => { setShowExportModal(true); setShowExportMenu(false); }}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2 text-blue-600"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Advanced Export (Accounting)
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -478,16 +487,49 @@ export default function TransfersPage() {
               </dl>
 
               {/* Actions */}
-              {selectedTransfer.status === 'pending' && (
-                <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
-                  <button className="w-full px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors">
+              <div className="pt-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
+                {selectedTransfer.status === 'completed' && (
+                  <button 
+                    onClick={() => {
+                      setRefundTransfer(selectedTransfer);
+                      setSelectedTransfer(null);
+                    }}
+                    className="w-full px-4 py-2 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900 text-amber-700 dark:text-amber-300 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    <ArrowLeftRight className="h-4 w-4" />
+                    Issue Refund
+                  </button>
+                )}
+                {selectedTransfer.status === 'pending' && (
+                  <button className="w-full px-4 py-2 bg-red-100 hover:bg-red-200 dark:bg-red-950 dark:hover:bg-red-900 text-red-700 dark:text-red-300 rounded-lg transition-colors">
                     Cancel Transfer
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Refund Modal */}
+      {refundTransfer && (
+        <RefundModal
+          transfer={refundTransfer}
+          onClose={() => setRefundTransfer(null)}
+          onSuccess={async () => {
+            setRefundTransfer(null);
+            // Refresh transfers
+            if (api) {
+              const response = await api.transfers.list({ limit: 100 });
+              setTransfers(response.data || []);
+            }
+          }}
+        />
+      )}
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <ExportModal onClose={() => setShowExportModal(false)} />
       )}
     </div>
   );

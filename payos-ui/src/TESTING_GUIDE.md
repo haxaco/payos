@@ -307,8 +307,8 @@ EXPIRES
 Use this to verify all features are working:
 
 ### Phase 1: Streaming Features
-- [ ] Health badge colors correct (green/amber/red/gray)
-- [ ] Runway column shows time remaining
+- [x] Health badge colors correct (green/amber/red/gray) (Verified on TechCorp Streams)
+- [x] Runway column shows time remaining
 - [ ] Runway text color matches health state
 - [ ] Top Up button color changes (red/amber/gray)
 - [ ] Critical banner shows for Sofia's stream

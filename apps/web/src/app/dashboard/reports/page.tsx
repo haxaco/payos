@@ -42,7 +42,7 @@ interface Report {
   id: string;
   name: string;
   type: string;
-  format: string;
+  format?: string;
   status: string;
   rowCount?: number;
   summary?: Record<string, any>;
@@ -116,7 +116,7 @@ export default function ReportsPage() {
       }
       
       const result = await api.reports.create(input);
-      toast.success(`Report generated successfully! ${result.rowCount || 0} rows.`);
+      toast.success(`Report generated successfully!`);
       setShowGenerateModal(false);
       fetchReports();
     } catch (error: any) {

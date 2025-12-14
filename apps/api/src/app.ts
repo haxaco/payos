@@ -18,6 +18,11 @@ import streamsRouter from './routes/streams.js';
 import quotesRouter from './routes/quotes.js';
 import reportsRouter from './routes/reports.js';
 import eventsRouter from './routes/events.js';
+import refundsRouter from './routes/refunds.js';
+import scheduledTransfersRouter from './routes/scheduled-transfers.js';
+import exportsRouter from './routes/exports.js';
+import paymentMethodsRouter from './routes/payment-methods.js';
+import disputesRouter from './routes/disputes.js';
 
 const app = new Hono();
 
@@ -103,6 +108,11 @@ v1.route('/streams', streamsRouter);
 v1.route('/quotes', quotesRouter);
 v1.route('/reports', reportsRouter);
 v1.route('/events', eventsRouter);
+v1.route('/refunds', refundsRouter);
+v1.route('/scheduled-transfers', scheduledTransfersRouter);
+v1.route('/exports', exportsRouter);
+v1.route('/disputes', disputesRouter);
+v1.route('/', paymentMethodsRouter); // Payment methods routes handle their own paths
 
 app.route('/v1', v1);
 

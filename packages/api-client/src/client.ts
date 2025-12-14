@@ -28,6 +28,18 @@ import type {
   AuditLogsParams,
   LedgerEntry,
   PaginationParams,
+  // New types for Phase 2
+  Refund,
+  CreateRefundInput,
+  RefundsListParams,
+  ScheduledTransfer,
+  CreateScheduledTransferInput,
+  ScheduledTransfersListParams,
+  TransactionExport,
+  GenerateExportInput,
+  PaymentMethod,
+  CreatePaymentMethodInput,
+  PaymentMethodsListParams,
 } from './types';
 
 export interface PayOSClientConfig {
@@ -118,8 +130,8 @@ export class PayOSClient {
     return data;
   }
 
-  private get<T>(endpoint: string, params?: Record<string, string | number | boolean | undefined>) {
-    return this.request<T>(endpoint, { params });
+  private get<T>(endpoint: string, params?: Record<string, string | number | boolean | undefined> | object) {
+    return this.request<T>(endpoint, { params: params as Record<string, string | number | boolean | undefined> | undefined });
   }
 
   private post<T>(endpoint: string, body?: unknown, options?: { idempotencyKey?: string }) {
@@ -452,6 +464,146 @@ export class PayOSClient {
      */
     getAuditLogs: (params?: AuditLogsParams) =>
       this.get<PaginatedResponse<AuditLogEntry>>('/reports/audit-logs', params),
+  };
+
+  // ============================================
+  // Refunds API
+  // ============================================
+
+  refunds = {
+    /**
+     * List all refunds
+     */
+    list: (params?: RefundsListParams) =>
+      this.get<PaginatedResponse<Refund>>('/refunds', params),
+
+    /**
+     * Get a single refund
+     */
+    get: (id: string) =>
+      this.get<{ data: Refund }>(`/refunds/${id}`).then(r => r.data),
+
+    /**
+     * Create a refund
+     */
+    create: (input: CreateRefundInput, idempotencyKey?: string) =>
+      this.post<{ data: Refund }>('/refunds', input, { idempotencyKey }).then(r => r.data),
+  };
+
+  // ============================================
+  // Scheduled Transfers API
+  // ============================================
+
+  scheduledTransfers = {
+    /**
+     * List all scheduled transfers
+     */
+    list: (params?: ScheduledTransfersListParams) =>
+      this.get<PaginatedResponse<ScheduledTransfer>>('/scheduled-transfers', params),
+
+    /**
+     * Get a single scheduled transfer with execution history
+     */
+    get: (id: string) =>
+      this.get<{ data: ScheduledTransfer }>(`/scheduled-transfers/${id}`).then(r => r.data),
+
+    /**
+     * Create a scheduled transfer
+     */
+    create: (input: CreateScheduledTransferInput) =>
+      this.post<{ data: ScheduledTransfer }>('/scheduled-transfers', input).then(r => r.data),
+
+    /**
+     * Pause a scheduled transfer
+     */
+    pause: (id: string) =>
+      this.post<{ data: ScheduledTransfer }>(`/scheduled-transfers/${id}/pause`).then(r => r.data),
+
+    /**
+     * Resume a paused scheduled transfer
+     */
+    resume: (id: string) =>
+      this.post<{ data: ScheduledTransfer }>(`/scheduled-transfers/${id}/resume`).then(r => r.data),
+
+    /**
+     * Cancel a scheduled transfer
+     */
+    cancel: (id: string) =>
+      this.post<{ data: ScheduledTransfer }>(`/scheduled-transfers/${id}/cancel`).then(r => r.data),
+
+    /**
+     * Execute a scheduled transfer immediately (demo only)
+     */
+    executeNow: (id: string) =>
+      this.post<{ data: ScheduledTransfer; message: string }>(`/scheduled-transfers/${id}/execute-now`),
+  };
+
+  // ============================================
+  // Exports API
+  // ============================================
+
+  exports = {
+    /**
+     * Generate a transaction export
+     */
+    generate: (params: GenerateExportInput) =>
+      this.get<{ data: TransactionExport }>('/exports/transactions', params as unknown as Record<string, string>).then(r => r.data),
+
+    /**
+     * Get export status
+     */
+    getStatus: (id: string) =>
+      this.get<{ data: TransactionExport }>(`/exports/${id}`).then(r => r.data),
+
+    /**
+     * Download export file
+     */
+    download: async (id: string): Promise<Blob> => {
+      const url = new URL(`/v1/exports/${id}/download`, this.config.baseUrl);
+      const response = await fetch(url.toString(), {
+        headers: { 'Authorization': `Bearer ${this.config.apiKey}` },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to download export');
+      }
+      return response.blob();
+    },
+  };
+
+  // ============================================
+  // Payment Methods API
+  // ============================================
+
+  paymentMethods = {
+    /**
+     * List payment methods for an account
+     */
+    list: (accountId: string, params?: PaymentMethodsListParams) =>
+      this.get<{ data: PaymentMethod[] }>(`/accounts/${accountId}/payment-methods`, params).then(r => r.data),
+
+    /**
+     * Get a single payment method
+     */
+    get: (id: string) =>
+      this.get<{ data: PaymentMethod }>(`/payment-methods/${id}`).then(r => r.data),
+
+    /**
+     * Create a payment method for an account
+     */
+    create: (accountId: string, input: CreatePaymentMethodInput) =>
+      this.post<{ data: PaymentMethod }>(`/accounts/${accountId}/payment-methods`, input).then(r => r.data),
+
+    /**
+     * Update a payment method
+     */
+    update: (id: string, input: Partial<{ label: string; isDefault: boolean }>) =>
+      this.patch<{ data: PaymentMethod }>(`/payment-methods/${id}`, input).then(r => r.data),
+
+    /**
+     * Delete a payment method
+     */
+    delete: (id: string) =>
+      this.delete<{ success: boolean }>(`/payment-methods/${id}`),
   };
 }
 

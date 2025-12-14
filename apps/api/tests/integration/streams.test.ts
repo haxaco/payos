@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { TEST_API_KEY, TEST_ACCOUNTS } from '../setup.js';
 
 const BASE_URL = process.env.API_URL || 'http://localhost:4000';
 const skipIntegration = !process.env.INTEGRATION;
+
+// Track created streams for cleanup
+const createdStreamIds: string[] = [];
 
 describe.skipIf(skipIntegration)('Streams API Integration', () => {
   const headers = {
@@ -10,7 +13,21 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
     'Content-Type': 'application/json',
   };
 
-  let testStreamId: string;
+  // Cleanup after all tests - cancel created streams
+  afterAll(async () => {
+    for (const streamId of createdStreamIds) {
+      try {
+        await fetch(`${BASE_URL}/v1/streams/${streamId}/cancel`, {
+          method: 'POST',
+          headers,
+        });
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+    console.log(`[Cleanup] Cancelled ${createdStreamIds.length} test streams`);
+    createdStreamIds.length = 0;
+  });
 
   describe('GET /v1/streams', () => {
     it('returns a list of streams', async () => {
@@ -28,7 +45,10 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
-      expect(data.data.every((s: any) => s.status === 'active')).toBe(true);
+      // Only check if there are results
+      if (data.data.length > 0) {
+        expect(data.data.every((s: any) => s.status === 'active')).toBe(true);
+      }
     });
 
     it('filters by health', async () => {
@@ -36,7 +56,19 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
-      expect(data.data.every((s: any) => s.health === 'healthy')).toBe(true);
+      
+      // More robust check: if results are returned, verify they match the filter
+      // If no healthy streams exist, that's also valid (empty array)
+      if (data.data.length > 0) {
+        // Check that all returned streams have health = 'healthy'
+        const allHealthy = data.data.every((s: any) => s.health === 'healthy');
+        if (!allHealthy) {
+          // Log which streams don't match for debugging
+          const unhealthyStreams = data.data.filter((s: any) => s.health !== 'healthy');
+          console.log('Warning: Filter returned non-healthy streams:', unhealthyStreams.map((s: any) => ({ id: s.id, health: s.health })));
+        }
+        expect(allHealthy).toBe(true);
+      }
     });
   });
 
@@ -49,7 +81,7 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
           senderAccountId: TEST_ACCOUNTS.techcorp,
           receiverAccountId: TEST_ACCOUNTS.ana,
           flowRatePerMonth: 500,
-          description: 'Integration test stream',
+          description: `Integration test stream ${Date.now()}`,
         }),
       });
       const data = await response.json();
@@ -61,7 +93,8 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
       expect(data.data).toHaveProperty('funding');
       expect(data.data).toHaveProperty('health');
 
-      testStreamId = data.data.id;
+      // Track for cleanup
+      createdStreamIds.push(data.data.id);
     });
 
     it('validates required fields', async () => {
@@ -132,11 +165,12 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
           senderAccountId: TEST_ACCOUNTS.acme,
           receiverAccountId: TEST_ACCOUNTS.pedro,
           flowRatePerMonth: 200,
-          description: 'Stream to pause',
+          description: `Stream to pause ${Date.now()}`,
         }),
       });
       const createData = await createResponse.json();
       const streamId = createData.data.id;
+      createdStreamIds.push(streamId);
 
       const response = await fetch(`${BASE_URL}/v1/streams/${streamId}/pause`, {
         method: 'POST',
@@ -160,11 +194,12 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
           senderAccountId: TEST_ACCOUNTS.acme,
           receiverAccountId: TEST_ACCOUNTS.sofia,
           flowRatePerMonth: 300,
-          description: 'Stream to resume',
+          description: `Stream to resume ${Date.now()}`,
         }),
       });
       const createData = await createResponse.json();
       const streamId = createData.data.id;
+      createdStreamIds.push(streamId);
 
       await fetch(`${BASE_URL}/v1/streams/${streamId}/pause`, {
         method: 'POST',
@@ -201,6 +236,7 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
       expect(response.status).toBe(200);
       expect(Array.isArray(data.data)).toBe(true);
       if (data.data.length > 0) {
+        // Event has 'type' not 'eventType' in API response
         expect(data.data[0]).toHaveProperty('type');
         expect(data.data[0]).toHaveProperty('actor');
         expect(data.data[0]).toHaveProperty('createdAt');
@@ -208,4 +244,3 @@ describe.skipIf(skipIntegration)('Streams API Integration', () => {
     });
   });
 });
-

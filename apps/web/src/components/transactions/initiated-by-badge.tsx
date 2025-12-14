@@ -5,7 +5,7 @@ import { Bot, User } from 'lucide-react';
 
 interface InitiatedByBadgeProps {
   initiatedBy: {
-    type: 'user' | 'agent';
+    type: 'user' | 'agent' | 'system';
     id: string;
     name: string;
   };

@@ -392,11 +392,11 @@ export default function StreamDetailPage() {
                 {new Date(stream.startedAt).toLocaleString()}
               </dd>
             </div>
-            {stream.endDate && (
+            {stream.cancelledAt && (
               <div className="flex justify-between">
-                <dt className="text-gray-500 dark:text-gray-400">End Date</dt>
+                <dt className="text-gray-500 dark:text-gray-400">Cancelled</dt>
                 <dd className="text-gray-900 dark:text-white">
-                  {new Date(stream.endDate).toLocaleString()}
+                  {new Date(stream.cancelledAt).toLocaleString()}
                 </dd>
               </div>
             )}
@@ -445,19 +445,19 @@ export default function StreamDetailPage() {
             {events.map((event) => (
               <div key={event.id} className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
                 <div className={`w-2 h-2 rounded-full mt-2 ${
-                  event.type === 'created' ? 'bg-blue-500' :
-                  event.type === 'started' ? 'bg-emerald-500' :
-                  event.type === 'paused' ? 'bg-yellow-500' :
-                  event.type === 'resumed' ? 'bg-emerald-500' :
-                  event.type === 'cancelled' ? 'bg-red-500' :
-                  event.type === 'topped_up' ? 'bg-blue-500' :
-                  event.type === 'withdrawn' ? 'bg-orange-500' :
+                  event.eventType === 'created' ? 'bg-blue-500' :
+                  event.eventType === 'started' ? 'bg-emerald-500' :
+                  event.eventType === 'paused' ? 'bg-yellow-500' :
+                  event.eventType === 'resumed' ? 'bg-emerald-500' :
+                  event.eventType === 'cancelled' ? 'bg-red-500' :
+                  event.eventType === 'topped_up' ? 'bg-blue-500' :
+                  event.eventType === 'withdrawn' ? 'bg-orange-500' :
                   'bg-gray-500'
                 }`} />
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-gray-900 dark:text-white capitalize">
-                      {event.type.replace('_', ' ')}
+                      {event.eventType.replace('_', ' ')}
                     </span>
                     <span className="text-sm text-gray-500 dark:text-gray-400">
                       {new Date(event.createdAt).toLocaleString()}

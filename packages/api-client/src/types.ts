@@ -423,3 +423,183 @@ export interface LedgerEntry {
   createdAt: string;
 }
 
+// ============================================
+// Refund Types
+// ============================================
+
+export type RefundStatus = 'pending' | 'completed' | 'failed';
+export type RefundReason = 'duplicate_payment' | 'service_not_rendered' | 'customer_request' | 'error' | 'other';
+
+export interface Refund {
+  id: string;
+  tenantId: string;
+  originalTransferId: string;
+  status: RefundStatus;
+  amount: number;
+  currency: string;
+  reason: RefundReason;
+  reasonDetails?: string;
+  fromAccountId: string;
+  toAccountId: string;
+  idempotencyKey?: string;
+  createdAt: string;
+  completedAt?: string;
+  failedAt?: string;
+  failureReason?: string;
+}
+
+export interface CreateRefundInput {
+  originalTransferId: string;
+  amount?: number; // Optional for full refund
+  reason: RefundReason;
+  reasonDetails?: string;
+}
+
+export interface RefundsListParams extends PaginationParams {
+  status?: RefundStatus;
+  originalTransferId?: string;
+  accountId?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
+// ============================================
+// Scheduled Transfer Types
+// ============================================
+
+export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export type ScheduleFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
+
+export interface ScheduledTransfer {
+  id: string;
+  tenantId: string;
+  fromAccountId: string;
+  toAccountId?: string;
+  toPaymentMethodId?: string;
+  amount: number;
+  currency: string;
+  description?: string;
+  frequency: ScheduleFrequency;
+  intervalValue: number;
+  dayOfMonth?: number;
+  dayOfWeek?: number;
+  timezone: string;
+  startDate: string;
+  endDate?: string;
+  maxOccurrences?: number;
+  status: ScheduleStatus;
+  occurrencesCompleted: number;
+  nextExecution?: string;
+  lastExecution?: string;
+  createdAt: string;
+  updatedAt: string;
+  executions?: Transfer[]; // Populated on single GET
+}
+
+export interface CreateScheduledTransferInput {
+  fromAccountId: string;
+  toAccountId?: string;
+  toPaymentMethodId?: string;
+  amount: number;
+  currency?: string;
+  description?: string;
+  frequency: ScheduleFrequency;
+  intervalValue?: number;
+  dayOfMonth?: number;
+  dayOfWeek?: number;
+  timezone?: string;
+  startDate: string;
+  endDate?: string;
+  maxOccurrences?: number;
+}
+
+export interface ScheduledTransfersListParams extends PaginationParams {
+  status?: ScheduleStatus;
+  fromAccountId?: string;
+  toAccountId?: string;
+}
+
+// ============================================
+// Transaction Export Types
+// ============================================
+
+export type ExportFormat = 'quickbooks' | 'quickbooks4' | 'xero' | 'netsuite' | 'payos';
+export type DateFormatType = 'US' | 'UK';
+export type ExportStatus = 'processing' | 'ready' | 'failed';
+
+export interface TransactionExport {
+  exportId: string;
+  status: ExportStatus;
+  format: ExportFormat;
+  recordCount: number;
+  downloadUrl?: string;
+  expiresAt?: string;
+}
+
+export interface GenerateExportInput {
+  startDate: string;
+  endDate: string;
+  format: ExportFormat;
+  dateFormat?: DateFormatType;
+  includeRefunds?: boolean;
+  includeStreams?: boolean;
+  includeFees?: boolean;
+  accountId?: string;
+  corridor?: string;
+  currency?: string;
+}
+
+// ============================================
+// Payment Method Types
+// ============================================
+
+export type PaymentMethodType = 'bank_account' | 'wallet' | 'card';
+export type WalletNetwork = 'base' | 'polygon' | 'ethereum';
+
+export interface PaymentMethod {
+  id: string;
+  tenantId: string;
+  accountId: string;
+  type: PaymentMethodType;
+  label?: string;
+  isDefault: boolean;
+  isVerified: boolean;
+  // Bank account fields
+  bankCountry?: string;
+  bankCurrency?: string;
+  bankAccountLastFour?: string;
+  bankRoutingLastFour?: string;
+  bankName?: string;
+  bankAccountHolder?: string;
+  // Wallet fields
+  walletNetwork?: WalletNetwork;
+  walletAddress?: string;
+  // Card fields
+  cardId?: string;
+  cardLastFour?: string;
+  createdAt: string;
+  verifiedAt?: string;
+}
+
+export interface CreatePaymentMethodInput {
+  type: PaymentMethodType;
+  label?: string;
+  isDefault?: boolean;
+  // Bank account fields
+  bankCountry?: string;
+  bankCurrency?: string;
+  bankAccountLastFour?: string;
+  bankRoutingLastFour?: string;
+  bankName?: string;
+  bankAccountHolder?: string;
+  // Wallet fields
+  walletNetwork?: WalletNetwork;
+  walletAddress?: string;
+}
+
+export interface PaymentMethodsListParams extends PaginationParams {
+  type?: PaymentMethodType;
+  isDefault?: boolean;
+  isVerified?: boolean;
+}
+

@@ -1,13 +1,18 @@
 import { useState } from 'react';
-import { X, ArrowUpRight, Zap, Calendar, Shield, Eye, EyeOff } from 'lucide-react';
+import { X, ArrowUpRight, Zap, Calendar, Shield, Eye, EyeOff, Lock } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   defaultType?: 'transaction' | 'stream';
+  fromAccount?: {
+    id: string;
+    name: string;
+    type: 'person' | 'business';
+  };
 }
 
-export function NewPaymentModal({ isOpen, onClose, defaultType = 'transaction' }: Props) {
+export function NewPaymentModal({ isOpen, onClose, defaultType = 'transaction', fromAccount }: Props) {
   const [paymentType, setPaymentType] = useState<'transaction' | 'stream'>(defaultType);
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
@@ -43,10 +48,34 @@ export function NewPaymentModal({ isOpen, onClose, defaultType = 'transaction' }
         </div>
         
         <div className="p-6 space-y-6">
+          {/* From Account (Locked) */}
+          {fromAccount && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                From Account
+              </label>
+              <div className="relative">
+                <div className="w-full px-4 py-3 bg-gray-100 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-900 dark:text-white font-medium">{fromAccount.name}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">({fromAccount.id})</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                    <Lock className="w-4 h-4" />
+                    <span className="text-xs">Locked</span>
+                  </div>
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Payments originate from this account. Multi-account selection coming soon.
+              </p>
+            </div>
+          )}
+          
           {/* Recipient */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Recipient
+              To Account
             </label>
             <input 
               type="text"

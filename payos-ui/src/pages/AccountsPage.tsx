@@ -168,6 +168,9 @@ export function AccountsPage() {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Status
                 </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Created
+                </th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Balance
                 </th>
@@ -232,6 +235,15 @@ export function AccountsPage() {
                   </td>
                   <td className="px-4 py-4">
                     {getStatusBadge(account.status)}
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      {new Date(account.createdAt).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric' 
+                      })}
+                    </p>
                   </td>
                   <td className="px-4 py-4 text-right">
                     <p className="font-medium text-gray-900 dark:text-white font-mono">

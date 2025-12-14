@@ -373,6 +373,161 @@ async function generateFinancialSummaryReport(
 }
 
 // ============================================
+// GET /v1/reports/summary - Get period summary (Story 10.6)
+// ============================================
+reports.get('/summary', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  
+  const query = c.req.query();
+  const period = query.period || 'month'; // day, week, month, custom
+  const startDate = query.startDate;
+  const endDate = query.endDate;
+  
+  // Calculate date range
+  let dateFrom: Date;
+  let dateTo: Date = new Date();
+  
+  switch (period) {
+    case 'day':
+      dateFrom = new Date();
+      dateFrom.setHours(0, 0, 0, 0);
+      break;
+    case 'week':
+      dateFrom = new Date();
+      dateFrom.setDate(dateFrom.getDate() - 7);
+      break;
+    case 'month':
+      dateFrom = new Date();
+      dateFrom.setMonth(dateFrom.getMonth() - 1);
+      break;
+    case 'custom':
+      if (!startDate || !endDate) {
+        throw new ValidationError('Custom period requires startDate and endDate');
+      }
+      dateFrom = new Date(startDate);
+      dateTo = new Date(endDate);
+      break;
+    default:
+      dateFrom = new Date();
+      dateFrom.setMonth(dateFrom.getMonth() - 1);
+  }
+  
+  // Get transfers in period
+  const { data: transfers, error: transfersError } = await supabase
+    .from('transfers')
+    .select('type, status, amount, fee_amount, from_account_id, to_account_id, corridor')
+    .eq('tenant_id', ctx.tenantId)
+    .gte('created_at', dateFrom.toISOString())
+    .lte('created_at', dateTo.toISOString());
+  
+  if (transfersError) {
+    console.error('Error fetching transfers:', transfersError);
+    return c.json({ error: 'Failed to fetch summary' }, 500);
+  }
+  
+  // Get refunds in period
+  const { data: refunds, error: refundsError } = await supabase
+    .from('refunds')
+    .select('amount, status')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('status', 'completed')
+    .gte('created_at', dateFrom.toISOString())
+    .lte('created_at', dateTo.toISOString());
+  
+  if (refundsError) {
+    console.error('Error fetching refunds:', refundsError);
+  }
+  
+  // Get active streams
+  const { data: streams, error: streamsError } = await supabase
+    .from('streams')
+    .select('status, flow_rate_per_month, total_streamed')
+    .eq('tenant_id', ctx.tenantId);
+  
+  if (streamsError) {
+    console.error('Error fetching streams:', streamsError);
+  }
+  
+  // Get accounts for type breakdown
+  const { data: accounts, error: accountsError } = await supabase
+    .from('accounts')
+    .select('id, type')
+    .eq('tenant_id', ctx.tenantId);
+  
+  if (accountsError) {
+    console.error('Error fetching accounts:', accountsError);
+  }
+  
+  // Calculate totals
+  const transferRows = transfers || [];
+  const refundRows = refunds || [];
+  const streamRows = streams || [];
+  const accountRows = accounts || [];
+  
+  const completedTransfers = transferRows.filter(t => t.status === 'completed');
+  const transfersOut = completedTransfers.filter(t => t.type === 'external' || t.type === 'payout');
+  const transfersIn = completedTransfers.filter(t => t.type === 'funding' || t.type === 'deposit');
+  
+  const totalTransfersOut = transfersOut.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+  const totalTransfersIn = transfersIn.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+  const totalRefunds = refundRows.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+  const totalFees = completedTransfers.reduce((sum, t) => sum + parseFloat(t.fee_amount || 0), 0);
+  
+  const activeStreams = streamRows.filter(s => s.status === 'active');
+  const totalStreamFlowed = activeStreams.reduce((sum, s) => sum + parseFloat(s.total_streamed), 0);
+  
+  // Calculate by corridor
+  const byCorridor = completedTransfers.reduce((acc: Record<string, { volume: number; count: number }>, t) => {
+    const corridor = t.corridor || 'unknown';
+    if (!acc[corridor]) {
+      acc[corridor] = { volume: 0, count: 0 };
+    }
+    acc[corridor].volume += parseFloat(t.amount);
+    acc[corridor].count += 1;
+    return acc;
+  }, {});
+  
+  // Calculate by account type
+  const accountTypeMap = accountRows.reduce((acc: Record<string, string>, a) => {
+    acc[a.id] = a.type;
+    return acc;
+  }, {});
+  
+  const byAccountType = completedTransfers.reduce((acc: Record<string, number>, t) => {
+    const accountType = accountTypeMap[t.from_account_id] || 'unknown';
+    acc[accountType] = (acc[accountType] || 0) + parseFloat(t.amount);
+    return acc;
+  }, {});
+  
+  return c.json({
+    data: {
+      period: {
+        start: dateFrom.toISOString().split('T')[0],
+        end: dateTo.toISOString().split('T')[0],
+      },
+      totals: {
+        transfersOut: totalTransfersOut,
+        transfersIn: totalTransfersIn,
+        refundsIssued: totalRefunds,
+        feesPaid: totalFees,
+        streamsActive: activeStreams.length,
+        streamsTotalFlowed: totalStreamFlowed,
+      },
+      byCorridor: Object.entries(byCorridor).map(([corridor, data]) => ({
+        corridor,
+        volume: data.volume,
+        count: data.count,
+      })),
+      byAccountType: Object.entries(byAccountType).map(([type, volume]) => ({
+        type,
+        volume,
+      })),
+    },
+  });
+});
+
+// ============================================
 // GET /v1/audit-logs - Get audit logs (MUST BE BEFORE /:id)
 // ============================================
 reports.get('/audit-logs', async (c) => {
