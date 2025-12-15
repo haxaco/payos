@@ -1,8 +1,31 @@
 # PayOS UI Testing Guide
 
-**Version:** 1.0  
-**Date:** December 14, 2025  
+**Version:** 2.0  
+**Date:** December 15, 2025  
 **Purpose:** Comprehensive UI testing instructions for automated testing (Gemini)
+
+---
+
+## 🎯 PRIORITY TESTING - Mock-to-API Migration Complete!
+
+**IMPORTANT:** The following pages have been migrated from mock data to real API data. Test these FIRST:
+
+✅ **Story 12.3 - Accounts (COMPLETE)**
+✅ **Story 12.4 - Transactions/Transfers (COMPLETE)**
+✅ **Story 12.5 - Cards/Payment Methods (COMPLETE)**
+
+### Test Data Available (Acme Corporation Tenant):
+- **7 Accounts**: Maria Garcia, Carlos Martinez, Ana Silva, Juan Perez, Sofia Rodriguez, TechCorp Inc, StartupXYZ
+- **5 Transfers**: Various statuses (completed, pending, failed)
+- **4 Payment Methods**: Cards ending in 4521, 2847, 8834, 9182
+- **3 Agents**: Maria's assistant, TechCorp ops bot, Sofia's manager
+- **2 Streams**: Active payment streams
+
+### Expected Behavior:
+- **Loading States**: Spinner should show while fetching data
+- **Error States**: Red error box with retry button if API fails
+- **Empty States**: User-friendly message when no data exists
+- **Real Data**: All data should come from the database, not hardcoded
 
 ---
 
@@ -11,7 +34,7 @@
 PayOS is a B2B stablecoin payout operating system. This guide covers all user flows for testing the dashboard UI.
 
 ### Application URL
-- **Development:** http://localhost:5173
+- **Development:** http://localhost:3001 (updated port)
 - **API:** http://localhost:4000
 
 ### Test User Context
@@ -1308,6 +1331,390 @@ These flows are primarily API-level for now (the UI does not yet expose full org
   - All three auth types (API key, JWT, agent) work correctly.
   - Missing or malformed tokens are rejected with appropriate errors.
   - Security events are logged for all auth attempts.
+
+---
+
+## 🎯 PRIORITY UI FLOWS - Mock-to-API Migration Testing
+
+### Flow 36: Accounts Page - Real API Data (Story 12.3) 🆕
+
+- **Goal**: Verify that the Accounts page displays real data from the API with proper loading and error states.
+- **Pre-requisite**: API server running on port 4000, UI server on port 3001.
+- **Steps**:
+  1. Navigate to `http://localhost:3001/accounts`
+  2. **Verify Loading State**:
+     - Spinner or skeleton rows should appear briefly
+  3. **Verify Data Display**:
+     - Should show **7 accounts** (not hardcoded mock data)
+     - Account names: Maria Garcia, Carlos Martinez, Ana Silva, Juan Perez, Sofia Rodriguez, TechCorp Inc, StartupXYZ
+     - Each account shows: name, email, type (person/business), verification status
+  4. **Verify Stats**:
+     - Total Accounts: 7
+     - Active: (count of active accounts)
+     - Person/Business breakdown should match real data
+  5. **Verify Search**: Type "Maria" - should filter to Maria Garcia only
+  6. **Verify Sorting**: Click column headers - data should re-sort
+  7. **Click any account** - should navigate to account detail page
+
+- **Expected Result**:
+  - ✅ Real data from database (not mock data)
+  - ✅ Loading spinner shows during fetch
+  - ✅ All 7 accounts visible
+  - ✅ Navigation to detail pages works
+  - ✅ Search and filters functional
+
+- **Error Testing**:
+  1. Stop the API server (`kill` port 4000 process)
+  2. Refresh the page
+  3. **Verify**: Red error banner with message "Failed to load accounts"
+  4. **Verify**: Retry button visible
+  5. Restart API, click retry
+  6. **Verify**: Data loads successfully
+
+---
+
+### Flow 37: Account Detail Page - Real API Data (Story 12.3) 🆕
+
+- **Goal**: Verify account detail pages load real data and handle navigation correctly.
+- **Pre-requisite**: On Accounts page with 7 accounts visible.
+- **Steps**:
+  1. Click on **"Maria Garcia"** account
+  2. **Verify URL**: Should be `/accounts/{uuid}` (real UUID, not hardcoded)
+  3. **Verify Breadcrumb**: "Accounts > Maria Garcia" (clickable)
+  4. **Verify Account Details**:
+     - Name: Maria Garcia
+     - Email: maria.garcia@example.com
+     - Type: Person
+     - Currency: USDC
+     - Verification: Tier 2, Verified
+     - Balance: $0 (or real balance)
+  5. **Verify Tabs**: Overview, Transactions, Agents, Streams
+  6. Click **Transactions** tab - should show transactions for this account
+  7. Click **Back to Accounts** - should return to list
+  8. Test with different account (TechCorp Inc - business account)
+  9. **Verify**: Business account shows different fields (company info, etc.)
+
+- **Expected Result**:
+  - ✅ Real data for each account
+  - ✅ URLs use real UUIDs
+  - ✅ Person vs Business accounts render correctly
+  - ✅ Tabs and navigation work
+  - ✅ Breadcrumbs functional
+
+- **Error Testing**:
+  1. Navigate to `/accounts/invalid-uuid-12345`
+  2. **Verify**: "Account not found" message
+  3. **Verify**: Back button visible
+
+---
+
+### Flow 38: Transactions Page - Real API Data (Story 12.4) 🆕
+
+- **Goal**: Verify Transactions page displays real transfers from the API.
+- **Pre-requisite**: API server running, 5 transfers seeded in database.
+- **Steps**:
+  1. Navigate to `http://localhost:3001/transactions`
+  2. **Verify Loading State**:
+     - Skeleton rows appear during load
+  3. **Verify Data Display**:
+     - Should show **5 transfers** (not mock data)
+     - Each row shows: From account, To account, Amount, Status, Type, Date
+     - Status badges: Completed (green), Pending (yellow), Failed (red)
+  4. **Verify Stats/AI Insights**:
+     - Should show real counts (e.g., "5 transfers analyzed")
+     - Status breakdown matches table data
+  5. **Verify Status Filter**:
+     - Click "Completed" filter - shows only completed transfers
+     - Click "Pending" filter - shows only pending transfers
+     - Click "Failed" filter - shows only failed transfers
+     - Click "All" - shows all 5 transfers
+  6. **Verify Row Click**:
+     - Click any transaction row
+     - Should navigate to transaction detail page with correct ID
+
+- **Expected Result**:
+  - ✅ 5 real transfers from database
+  - ✅ Correct from/to account names
+  - ✅ Real amounts and statuses
+  - ✅ Filters work correctly
+  - ✅ Navigation to detail works
+
+- **Error Testing**:
+  1. Stop API server
+  2. Refresh page
+  3. **Verify**: Error banner with "Failed to load transfers"
+  4. **Verify**: Retry button works
+
+---
+
+### Flow 39: Transaction Detail Page - Real API Data (Story 12.4) 🆕
+
+- **Goal**: Verify transaction detail pages show complete transfer information.
+- **Pre-requisite**: On Transactions page with 5 transfers visible.
+- **Steps**:
+  1. Click on any **completed transfer** (green status)
+  2. **Verify URL**: `/transactions/{uuid}` (real UUID)
+  3. **Verify Breadcrumb**: "Transactions > Transfer {ID}"
+  4. **Verify Transaction Flow**:
+     - From account name and avatar
+     - Arrow indicator
+     - To account name and avatar
+     - Amount displayed prominently
+  5. **Verify Details Section**:
+     - Transfer ID (real UUID)
+     - Status badge (Completed/Pending/Failed)
+     - Description
+     - Amount
+     - Created date
+  6. **Verify Status-Specific UI**:
+     - **Completed**: Green checkmark, no banner
+     - **Pending**: Yellow banner "Transfer in progress"
+     - **Failed**: Red banner "Transfer failed"
+  7. Click **Back to Transactions** - return to list
+  8. Test with **pending transfer** - verify pending UI
+  9. Test with **failed transfer** - verify failed UI
+
+- **Expected Result**:
+  - ✅ All transfer details accurate
+  - ✅ From/To account names correct
+  - ✅ Status banners show for pending/failed
+  - ✅ Real timestamps and amounts
+  - ✅ Navigation works
+
+- **Error Testing**:
+  1. Navigate to `/transactions/invalid-uuid-99999`
+  2. **Verify**: "Transaction not found" message
+
+---
+
+### Flow 40: Cards Page - Real API Data (Story 12.5) 🆕
+
+- **Goal**: Verify Cards page displays real payment methods from the API.
+- **Pre-requisite**: API server running, 4 payment methods seeded.
+- **Steps**:
+  1. Navigate to `http://localhost:3001/cards`
+  2. **Verify Loading State**:
+     - Skeleton rows during fetch
+  3. **Verify Data Display**:
+     - Should show **4 cards** (not mock data)
+     - Card numbers: •••• 4521, •••• 2847, •••• 8834, •••• 9182
+     - Cardholders: Maria Garcia, Carlos Martinez, TechCorp Inc, Ana Silva
+     - Labels: Visa ****4521, Mastercard ****2847, etc.
+  4. **Verify Stats**:
+     - Total: 4
+     - Active/Verified: (based on real data)
+     - Default: (count of default cards)
+  5. **Verify Status Badges**:
+     - "Verified" badge (green) for verified cards
+     - "Unverified" badge (gray) for unverified
+     - "Default" badge (blue) for default payment methods
+  6. **Verify Security**:
+     - **Only last 4 digits shown** (no full PAN)
+     - No CVV visible
+  7. Click any card row - should navigate to card detail
+
+- **Expected Result**:
+  - ✅ 4 real payment methods from database
+  - ✅ Correct last 4 digits
+  - ✅ Cardholder names accurate
+  - ✅ Status badges correct
+  - ✅ **Security compliant** (no full PAN)
+
+- **Error Testing**:
+  1. Stop API server
+  2. Refresh page
+  3. **Verify**: Error banner "Failed to load payment methods"
+  4. **Verify**: Retry button works
+
+---
+
+### Flow 41: Card Detail Page - Real API Data (Story 12.5) 🆕
+
+- **Goal**: Verify card detail pages show payment method information securely.
+- **Pre-requisite**: On Cards page with 4 cards visible.
+- **Steps**:
+  1. Click on **Visa ****4521** (Maria Garcia's card)
+  2. **Verify URL**: `/cards/{uuid}` (real payment method ID)
+  3. **Verify Breadcrumb**: "Cards > •••• 4521" or label name
+  4. **Verify Card Visual**:
+     - PayOS branding
+     - Card type: card
+     - Last 4 digits: 4521
+     - **Security message**: "Full card number hidden for security"
+  5. **Verify Details**:
+     - Cardholder: Maria Garcia
+     - Status: Verified/Unverified
+     - Default: Yes/No
+     - Created date
+  6. **Verify Security**:
+     - ❌ NO full PAN visible
+     - ❌ NO CVV visible
+     - ✅ Only last 4 digits shown
+     - ✅ "Eye" icon for PAN is disabled with security tooltip
+  7. **Verify Card Activity Section**:
+     - Shows "No card activity yet" (transactions not linked to payment methods yet)
+  8. Click **Back to Cards** - return to list
+  9. Test with different cards (Mastercard ****2847, etc.)
+
+- **Expected Result**:
+  - ✅ All payment method details accurate
+  - ✅ **SECURITY**: No full PAN or CVV exposed
+  - ✅ Last 4 digits correct for each card
+  - ✅ Cardholder names match database
+  - ✅ Status and default flags accurate
+
+- **Error Testing**:
+  1. Navigate to `/cards/invalid-uuid-12345`
+  2. **Verify**: "Card not found" message
+
+---
+
+### Flow 42: Empty State Testing 🆕
+
+- **Goal**: Verify empty states display correctly when no data exists.
+- **Pre-requisite**: Ability to test with a tenant that has no data.
+- **Steps**:
+  1. **Accounts Empty State**:
+     - If all accounts deleted or fresh tenant
+     - Navigate to `/accounts`
+     - **Verify**: Empty state message "No accounts found"
+     - **Verify**: CTA button "Create Account" visible
+  2. **Transactions Empty State**:
+     - Navigate to `/transactions`
+     - **Verify**: "No transfers found" message
+     - **Verify**: Suggestion to create a transfer
+  3. **Cards Empty State**:
+     - Navigate to `/cards`
+     - **Verify**: "No cards found" message
+     - **Verify**: "Issue your first card" suggestion
+
+- **Expected Result**:
+  - ✅ User-friendly empty states (not just blank pages)
+  - ✅ Clear messaging about what's missing
+  - ✅ CTAs to create first item
+
+---
+
+### Flow 43: Loading States Testing 🆕
+
+- **Goal**: Verify loading states appear correctly during data fetching.
+- **Pre-requisite**: Ability to simulate slow network or add artificial delay.
+- **Steps**:
+  1. **Accounts Loading**:
+     - Navigate to `/accounts`
+     - During load: **Verify** spinner or skeleton rows visible
+     - After load: **Verify** real data appears, loading state disappears
+  2. **Transactions Loading**:
+     - Navigate to `/transactions`
+     - **Verify**: Skeleton rows with animated pulse effect
+     - **Verify**: 4-5 skeleton rows as placeholders
+  3. **Cards Loading**:
+     - Navigate to `/cards`
+     - **Verify**: Loading indicators in table
+  4. **Detail Pages Loading**:
+     - Navigate to any detail page (account, transaction, card)
+     - **Verify**: Centered spinner while fetching single item
+     - **Verify**: Page content appears after load
+
+- **Expected Result**:
+  - ✅ Loading states visible during fetch
+  - ✅ No "flash of empty content"
+  - ✅ Smooth transition to loaded state
+  - ✅ Professional UX (skeletons match final layout)
+
+---
+
+### Flow 44: End-to-End User Journey 🆕
+
+- **Goal**: Test complete user flow across all migrated pages.
+- **Pre-requisite**: Fresh browser session, all servers running.
+- **Steps**:
+  1. **Start**: Navigate to `http://localhost:3001/accounts`
+  2. **View Accounts**: See 7 accounts, verify real data
+  3. **Select Account**: Click "Maria Garcia"
+  4. **View Details**: See Maria's account details
+  5. **View Transactions**: Click Transactions tab
+  6. **Navigate to Transaction**: Click a transaction from Maria's account
+  7. **View Transaction**: See complete transfer details
+  8. **Back to Transactions**: Use breadcrumb or back button
+  9. **View All Transactions**: Navigate to `/transactions` from sidebar
+  10. **View Cards**: Navigate to `/cards` from sidebar
+  11. **View Card**: Click Maria's Visa ****4521
+  12. **Verify Security**: Confirm no full PAN visible
+  13. **Return Home**: Use navigation
+
+- **Expected Result**:
+  - ✅ All pages load real data
+  - ✅ Navigation flows smoothly
+  - ✅ No 404 errors
+  - ✅ No console errors
+  - ✅ Consistent UX across all pages
+
+---
+
+### Flow 45: API Integration Verification 🆕
+
+- **Goal**: Verify UI is correctly calling the API endpoints.
+- **Pre-requisite**: Browser DevTools open (Network tab).
+- **Steps**:
+  1. Navigate to `/accounts`
+  2. **Network Tab**: Verify `GET http://localhost:4000/v1/accounts` called
+  3. **Response**: 200 OK, JSON with 7 accounts
+  4. Navigate to `/transactions`
+  5. **Network Tab**: Verify `GET http://localhost:4000/v1/transfers` called
+  6. **Response**: 200 OK, JSON with 5 transfers
+  7. Navigate to `/cards`
+  8. **Network Tab**: Verify `GET http://localhost:4000/v1/payment-methods?type=card` called
+  9. **Response**: 200 OK, JSON with 4 payment methods
+  10. Navigate to `/accounts/{id}`
+  11. **Network Tab**: Verify `GET http://localhost:4000/v1/accounts/{id}` called
+  12. Check all requests include:
+      - `Authorization: Bearer {token}` header
+      - Proper tenant isolation (only data for current tenant)
+
+- **Expected Result**:
+  - ✅ All API calls use correct endpoints
+  - ✅ Auth headers present
+  - ✅ Responses contain real data (not mock)
+  - ✅ No 404 or 500 errors
+  - ✅ Tenant isolation working
+
+---
+
+## 📝 Testing Summary Checklist
+
+After completing all priority flows, verify:
+
+### Core Functionality ✅
+- [ ] Accounts page displays 7 real accounts
+- [ ] Account detail pages load correctly
+- [ ] Transactions page displays 5 real transfers
+- [ ] Transaction detail pages show complete info
+- [ ] Cards page displays 4 real payment methods
+- [ ] Card detail pages load correctly
+
+### UI States ✅
+- [ ] Loading states appear and disappear correctly
+- [ ] Error states show with retry buttons
+- [ ] Empty states have clear messaging
+- [ ] Success states display real data
+
+### Security ✅
+- [ ] Cards: Only last 4 digits visible (no full PAN)
+- [ ] Cards: No CVV exposed
+- [ ] Auth: All API calls include Authorization header
+- [ ] Tenant: Data isolation working (only tenant's data shown)
+
+### Navigation ✅
+- [ ] All detail pages accessible from list views
+- [ ] Breadcrumbs work correctly
+- [ ] Back buttons functional
+- [ ] No 404 errors on valid routes
+
+### Performance ✅
+- [ ] Pages load within 2 seconds
+- [ ] No unnecessary API calls (check Network tab)
+- [ ] Smooth transitions between pages
 
 ---
 
