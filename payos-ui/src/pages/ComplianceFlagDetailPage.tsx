@@ -1,18 +1,15 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronRight, AlertTriangle, ArrowRight, Sparkles, Copy, 
   CheckCircle, XCircle, User, Building2
 } from 'lucide-react';
 import { mockFlags, getCountryFlag } from '../data/mockFlags';
-import { Page } from '../App';
 
-interface Props {
-  flagId: string;
-  onNavigate: (page: Page) => void;
-}
-
-export function ComplianceFlagDetailPage({ flagId, onNavigate }: Props) {
-  const flag = mockFlags.find(f => f.id === flagId);
+export function ComplianceFlagDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const flag = mockFlags.find(f => f.id === id);
   const [notes, setNotes] = useState('');
   const [flagStatus, setFlagStatus] = useState(flag?.status || 'pending_review');
   const [toast, setToast] = useState<string | null>(null);
@@ -77,7 +74,7 @@ export function ComplianceFlagDetailPage({ flagId, onNavigate }: Props) {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
         <button 
-          onClick={() => onNavigate('compliance')}
+          onClick={() => navigate('/compliance')}
           className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
         >
           Compliance

@@ -15,8 +15,10 @@ import {
   Plus,
   Trash2
 } from 'lucide-react';
+import { TeamManagement } from '../components/settings/TeamManagement';
+import { ApiKeysManagement } from '../components/settings/ApiKeysManagement';
 
-type SettingsTab = 'account' | 'platform' | 'payouts' | 'team';
+type SettingsTab = 'account' | 'platform' | 'payouts' | 'team' | 'api-keys';
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('account');
@@ -24,9 +26,10 @@ export function SettingsPage() {
 
   const tabs = [
     { id: 'account' as SettingsTab, label: 'Account', icon: User },
-    { id: 'platform' as SettingsTab, label: 'Platform Config', icon: Key },
-    { id: 'payouts' as SettingsTab, label: 'Payout Settings', icon: DollarSign },
+    { id: 'platform' as SettingsTab, label: 'Platform Config', icon: Shield },
+    { id: 'api-keys' as SettingsTab, label: 'API Keys', icon: Key },
     { id: 'team' as SettingsTab, label: 'Team & Permissions', icon: Users },
+    { id: 'payouts' as SettingsTab, label: 'Payout Settings', icon: DollarSign },
   ];
 
   return (
@@ -70,8 +73,9 @@ export function SettingsPage() {
         <div className="space-y-6">
           {activeTab === 'account' && <AccountSettings />}
           {activeTab === 'platform' && <PlatformConfig showApiKey={showApiKey} setShowApiKey={setShowApiKey} />}
+          {activeTab === 'api-keys' && <ApiKeysManagement />}
+          {activeTab === 'team' && <TeamManagement />}
           {activeTab === 'payouts' && <PayoutSettings />}
-          {activeTab === 'team' && <TeamSettings />}
         </div>
       </div>
     </div>
@@ -477,138 +481,3 @@ function PayoutSettings() {
   );
 }
 
-function TeamSettings() {
-  const teamMembers = [
-    { name: 'John Smith', email: 'john@acmefintech.com', role: 'Partner Admin', status: 'Active' },
-    { name: 'Sarah Johnson', email: 'sarah@acmefintech.com', role: 'Finance Manager', status: 'Active' },
-    { name: 'Mike Chen', email: 'mike@acmefintech.com', role: 'Compliance Officer', status: 'Active' },
-    { name: 'Emily Davis', email: 'emily@acmefintech.com', role: 'Operations', status: 'Invited' },
-  ];
-
-  return (
-    <>
-      {/* Team Members */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Users className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-            <h2 className="text-gray-900 dark:text-white">Team Members</h2>
-          </div>
-          <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-            <Plus className="w-4 h-4" />
-            Invite Member
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-800">
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Name</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Email</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Role</th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Status</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teamMembers.map((member, index) => (
-                <tr key={index} className="border-b border-gray-200 dark:border-gray-800 last:border-0">
-                  <td className="py-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs font-medium">
-                        {member.name.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <span className="font-medium text-gray-900 dark:text-white">{member.name}</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4 text-gray-600 dark:text-gray-400">{member.email}</td>
-                  <td className="py-4 px-4">
-                    <span className="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded">
-                      {member.role}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4">
-                    <span className={`px-2 py-1 text-xs font-medium rounded ${
-                      member.status === 'Active' 
-                        ? 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400'
-                        : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
-                    }`}>
-                      {member.status}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex items-center justify-end gap-2">
-                      <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                        <span className="text-sm text-blue-600 dark:text-blue-400">Edit</span>
-                      </button>
-                      {member.role !== 'Partner Admin' && (
-                        <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                          <Trash2 className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Roles & Permissions */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Shield className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          <h2 className="text-gray-900 dark:text-white">Roles & Permissions</h2>
-        </div>
-
-        <div className="space-y-4">
-          {[
-            { 
-              role: 'Partner Admin', 
-              description: 'Full access to all platform features and settings',
-              permissions: ['Manage team', 'Configure platform', 'View all data', 'API access']
-            },
-            { 
-              role: 'Finance Manager', 
-              description: 'Manage payouts, transactions, and financial reporting',
-              permissions: ['View transactions', 'Process payouts', 'Generate reports']
-            },
-            { 
-              role: 'Compliance Officer', 
-              description: 'Review compliance flags and manage risk settings',
-              permissions: ['View compliance', 'Review flags', 'Update rules']
-            },
-            { 
-              role: 'Operations', 
-              description: 'View-only access to dashboards and reports',
-              permissions: ['View dashboards', 'Generate reports']
-            },
-          ].map((role, index) => (
-            <div key={index} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div className="font-medium text-gray-900 dark:text-white mb-1">{role.role}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">{role.description}</div>
-                </div>
-                {index > 0 && (
-                  <button className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                    Edit
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {role.permissions.map((permission, pIndex) => (
-                  <span key={pIndex} className="px-2 py-1 text-xs font-medium bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded">
-                    {permission}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}

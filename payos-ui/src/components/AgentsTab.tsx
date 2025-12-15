@@ -1,13 +1,14 @@
 import { Bot, Plus, AlertTriangle, Clock, Activity, DollarSign } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { mockAgents } from '../data/mockAgents';
 import { Account } from '../types/account';
 
 interface Props {
   account: Account;
-  onNavigate?: (page: string, id?: string) => void;
 }
 
-export function AgentsTab({ account, onNavigate }: Props) {
+export function AgentsTab({ account }: Props) {
+  const navigate = useNavigate();
   // Get agents registered to this account
   const accountAgents = mockAgents.filter(agent => 
     agent.parentAccount.id === account.id
@@ -185,7 +186,7 @@ export function AgentsTab({ account, onNavigate }: Props) {
               {/* Actions */}
               <div className="flex gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button 
-                  onClick={() => onNavigate?.('agent-detail', agent.id)}
+                  onClick={() => navigate(`/agents/${agent.id}`)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
                 >
                   View Details

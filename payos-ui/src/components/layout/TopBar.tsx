@@ -1,11 +1,14 @@
-import { Search, Bell, Moon, Sun, Menu, ChevronDown, Box, Rocket } from 'lucide-react';
+import { Search, Bell, Moon, Sun, Menu, ChevronDown, Box, Rocket, LogOut, User, Settings } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useAuth } from '../../hooks/useAuth';
+import { Link } from 'react-router-dom';
 
 interface TopBarProps {
   onToggleSidebar: () => void;
 }
 
 export function TopBar({ onToggleSidebar }: TopBarProps) {
+  const { user, organization, logout } = useAuth();
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' ||
@@ -15,6 +18,7 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
   });
   const [environment, setEnvironment] = useState<'sandbox' | 'production'>('sandbox');
   const [envMenuOpen, setEnvMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const toggleDarkMode = () => {
     const newValue = !isDark;
@@ -190,15 +194,78 @@ export function TopBar({ onToggleSidebar }: TopBarProps) {
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white dark:ring-gray-900"></span>
         </button>
 
-        {/* Profile (Desktop) */}
-        <div className="hidden md:flex items-center gap-3 ml-2 pl-2 border-l border-gray-200 dark:border-gray-700">
-          <div className="text-right">
-            <div className="text-sm font-semibold text-gray-900 dark:text-white">John Smith</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">Admin</div>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold">
-            JS
-          </div>
+        {/* Profile Menu */}
+        <div className="relative ml-2 pl-2 border-l border-gray-200 dark:border-gray-700">
+          <button
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className="hidden md:flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg px-2 py-1 transition-colors"
+          >
+            <div className="text-right">
+              <div className="text-sm font-semibold text-gray-900 dark:text-white">{user?.name || 'User'}</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user?.role || 'Member'}</div>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-semibold">
+              {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+            </div>
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          </button>
+
+          {userMenuOpen && (
+            <>
+              <div 
+                className="fixed inset-0 z-40" 
+                onClick={() => setUserMenuOpen(false)} 
+              />
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
+                {/* User Info */}
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-base font-semibold">
+                      {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">{user?.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
+                    </div>
+                  </div>
+                  <div className="text-xs">
+                    <span className="text-gray-500 dark:text-gray-400">Organization: </span>
+                    <span className="text-gray-900 dark:text-white font-medium">{organization?.name}</span>
+                  </div>
+                </div>
+
+                {/* Menu Items */}
+                <div className="p-2">
+                  <Link
+                    to="/settings"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span className="text-sm font-medium">Settings</span>
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      logout();
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span className="text-sm font-medium">Logout</span>
+                  </button>
+                </div>
+
+                {/* Footer */}
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Role: <span className="font-medium capitalize">{user?.role}</span>
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -42,6 +42,66 @@ const updatePaymentMethodSchema = z.object({
 });
 
 // ============================================
+// GET /payment-methods - List all payment methods for tenant
+// ============================================
+paymentMethods.get('/', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  
+  const typeFilter = c.req.query('type'); // Optional filter: card, bank_account, wallet
+  const { page, limit, offset } = getPaginationParams(c);
+  const safeOffset = offset || 0; // Ensure offset is never undefined
+
+  let query = supabase
+    .from('payment_methods')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range(safeOffset, safeOffset + limit - 1);
+
+  if (typeFilter) {
+    query = query.eq('type', typeFilter);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch payment methods: ${error.message}`);
+  }
+
+  return c.json({
+    payment_methods: data || [],
+    pagination: paginationResponse(page, limit, count || 0),
+  });
+});
+
+// ============================================
+// GET /payment-methods/:id - Get single payment method
+// ============================================
+paymentMethods.get('/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const id = c.req.param('id');
+
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid payment method ID');
+  }
+
+  const { data, error } = await supabase
+    .from('payment_methods')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (error || !data) {
+    throw new NotFoundError('Payment method not found');
+  }
+
+  return c.json(data);
+});
+
+// ============================================
 // GET /v1/accounts/:accountId/payment-methods - List payment methods
 // ============================================
 paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {

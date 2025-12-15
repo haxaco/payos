@@ -1,41 +1,117 @@
-import { Page } from '../App';
-import { ArrowLeft, Sparkles, Copy, AlertTriangle, CheckCircle, XCircle, FileText } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Sparkles, Copy, AlertTriangle, CheckCircle, XCircle, FileText, Loader2 } from 'lucide-react';
+import { useTransfer } from '../hooks/api';
 
-interface TransactionDetailPageProps {
-  onNavigate: (page: Page) => void;
-}
+export function TransactionDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  
+  // Fetch transfer from API
+  const { data: transfer, loading, error } = useTransfer(id);
 
-export function TransactionDetailPage({ onNavigate }: TransactionDetailPageProps) {
+  if (loading) {
+    return (
+      <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
+        <button 
+          onClick={() => navigate('/transactions')}
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors group"
+        >
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-sm font-medium">Back to Transactions</span>
+        </button>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
+        <button 
+          onClick={() => navigate('/transactions')}
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors group"
+        >
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-sm font-medium">Back to Transactions</span>
+        </button>
+        <div className="flex flex-col items-center justify-center h-64 gap-4">
+          <AlertTriangle className="w-12 h-12 text-red-500" />
+          <p className="text-gray-500 dark:text-gray-400">Failed to load transfer</p>
+          <p className="text-sm text-gray-400">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!transfer) {
+    return (
+      <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
+        <button 
+          onClick={() => navigate('/transactions')}
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors group"
+        >
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-sm font-medium">Back to Transactions</span>
+        </button>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-gray-500 dark:text-gray-400">Transaction not found</p>
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
       <button 
-        onClick={() => onNavigate('transactions')}
+        onClick={() => navigate('/transactions')}
         className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors group"
       >
         <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-        <span className="text-sm font-medium">Transactions / txn_1a2b3c4d</span>
+        <span className="text-sm font-medium">Transactions / {id}</span>
       </button>
 
-      {/* Flag Banner */}
-      <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg px-6 py-4">
-        <div className="flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
-          <span className="text-sm font-semibold text-red-900 dark:text-red-200">🚩 FLAGGED — Pending Review</span>
+      {/* Status Banner */}
+      {transfer.status === 'pending' && (
+        <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded-lg px-6 py-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            <span className="text-sm font-semibold text-yellow-900 dark:text-yellow-200">⏳ PENDING — Awaiting Processing</span>
+          </div>
         </div>
-      </div>
+      )}
+      {transfer.status === 'failed' && (
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg px-6 py-4">
+          <div className="flex items-center gap-3">
+            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <span className="text-sm font-semibold text-red-900 dark:text-red-200">✗ FAILED — Transfer did not complete</span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left - AI Analysis */}
         <div className="lg:col-span-2 space-y-6">
           {/* Transaction Flow */}
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-6 text-center">
-            <div className="text-4xl font-bold text-gray-900 dark:text-white mb-4">$2,200.00</div>
+            <div className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+              ${transfer.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
             <div className="space-y-2">
-              <div className="text-sm text-gray-600 dark:text-gray-400">StartupXYZ</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">{transfer.from_account_name || 'Unknown'}</div>
               <div className="text-2xl">↓</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Juan Perez</div>
-              <div className="text-lg mt-3">🇺🇸 → 🇲🇽</div>
-              <div className="text-xs text-gray-500">Dec 5, 2025 · 13:58 UTC</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">{transfer.to_account_name || 'Unknown'}</div>
+              <div className="text-lg mt-3 capitalize">{transfer.type.replace('_', ' ')}</div>
+              <div className="text-xs text-gray-500">
+                {new Date(transfer.created_at).toLocaleString('en-US', { 
+                  month: 'short', 
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </div>
             </div>
           </div>
 
@@ -130,21 +206,37 @@ export function TransactionDetailPage({ onNavigate }: TransactionDetailPageProps
             <div className="space-y-4">
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">From</div>
-                <div className="font-semibold text-gray-900 dark:text-white">StartupXYZ</div>
-                <div className="text-xs text-gray-500">Business · 🇺🇸 USA</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{transfer.from_account_name || 'Unknown'}</div>
+                <div className="text-xs text-gray-500">{transfer.currency}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">To</div>
-                <div className="font-semibold text-gray-900 dark:text-white">Juan Perez</div>
-                <div className="text-xs text-gray-500">Person · 🇲🇽 Mexico</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{transfer.to_account_name || 'Unknown'}</div>
+                <div className="text-xs text-gray-500">{transfer.currency}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Status</div>
+                <div className="font-semibold text-gray-900 dark:text-white capitalize">
+                  {transfer.status === 'completed' && <span className="text-green-600 dark:text-green-400">✓ Completed</span>}
+                  {transfer.status === 'pending' && <span className="text-amber-600 dark:text-amber-400">⏳ Pending</span>}
+                  {transfer.status === 'processing' && <span className="text-blue-600 dark:text-blue-400">⚡ Processing</span>}
+                  {transfer.status === 'failed' && <span className="text-red-600 dark:text-red-400">✗ Failed</span>}
+                  {transfer.status === 'cancelled' && <span className="text-gray-600 dark:text-gray-400">⊘ Cancelled</span>}
+                </div>
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Reference ID</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-xs font-mono text-gray-900 dark:text-white">txn_1a2b3c4d5e6f</code>
+                  <code className="text-xs font-mono text-gray-900 dark:text-white break-all">{transfer.id}</code>
                   <button className="p-1"><Copy className="w-3 h-3 text-gray-400" /></button>
                 </div>
               </div>
+              {transfer.description && (
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Description</div>
+                  <div className="text-sm text-gray-900 dark:text-white">{transfer.description}</div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -3,6 +3,12 @@ import { useState } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopBar } from './components/layout/TopBar';
 import { AIAssistant } from './components/layout/AIAssistant';
+import { AuthProvider, ProtectedRoute } from './hooks/useAuth';
+import { LoginPage } from './pages/LoginPage';
+import { SignupPage } from './pages/SignupPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { HomePage } from './pages/HomePage';
 import { AccountsPage } from './pages/AccountsPage';
 import { AccountDetailPage } from './pages/AccountDetailPage';
@@ -67,30 +73,42 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<DashboardLayout><HomePage /></DashboardLayout>} />
-        <Route path="/accounts" element={<DashboardLayout><AccountsPage /></DashboardLayout>} />
-        <Route path="/accounts/:id" element={<DashboardLayout><AccountDetailPage /></DashboardLayout>} />
-        <Route path="/transactions" element={<DashboardLayout><TransactionsPage /></DashboardLayout>} />
-        <Route path="/transactions/:id" element={<DashboardLayout><TransactionDetailPage /></DashboardLayout>} />
-        <Route path="/cards" element={<DashboardLayout><CardsPage /></DashboardLayout>} />
-        <Route path="/cards/:id" element={<DashboardLayout><CardDetailPage /></DashboardLayout>} />
-        <Route path="/compliance" element={<DashboardLayout><CompliancePage /></DashboardLayout>} />
-        <Route path="/compliance/:id" element={<DashboardLayout><ComplianceFlagDetailPage /></DashboardLayout>} />
-        <Route path="/disputes" element={<DashboardLayout><DisputesPage /></DashboardLayout>} />
-        <Route path="/treasury" element={<DashboardLayout><TreasuryPage /></DashboardLayout>} />
-        <Route path="/agents" element={<DashboardLayout><AgentsPage /></DashboardLayout>} />
-        <Route path="/agents/:id" element={<DashboardLayout><AgentDetailPage /></DashboardLayout>} />
-        <Route path="/reports" element={<DashboardLayout><ReportsPage /></DashboardLayout>} />
-        <Route path="/api-keys" element={<DashboardLayout><APIKeysPage /></DashboardLayout>} />
-        <Route path="/webhooks" element={<DashboardLayout><WebhooksPage /></DashboardLayout>} />
-        <Route path="/request-logs" element={<DashboardLayout><RequestLogsPage /></DashboardLayout>} />
-        <Route path="/templates" element={<DashboardLayout><TemplatesPage /></DashboardLayout>} />
-        <Route path="/verification-tiers" element={<DashboardLayout><VerificationTiersPage /></DashboardLayout>} />
-        <Route path="/agent-verification-tiers" element={<DashboardLayout><AgentVerificationTiersPage /></DashboardLayout>} />
-        <Route path="/settings" element={<DashboardLayout><SettingsPage /></DashboardLayout>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
+
+          {/* Protected dashboard routes */}
+          <Route path="/" element={<ProtectedRoute><DashboardLayout><HomePage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/accounts" element={<ProtectedRoute><DashboardLayout><AccountsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/accounts/:id" element={<ProtectedRoute><DashboardLayout><AccountDetailPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/transactions" element={<ProtectedRoute><DashboardLayout><TransactionsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/transactions/:id" element={<ProtectedRoute><DashboardLayout><TransactionDetailPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/cards" element={<ProtectedRoute><DashboardLayout><CardsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/cards/:id" element={<ProtectedRoute><DashboardLayout><CardDetailPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/compliance" element={<ProtectedRoute><DashboardLayout><CompliancePage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/compliance/:id" element={<ProtectedRoute><DashboardLayout><ComplianceFlagDetailPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/disputes" element={<ProtectedRoute><DashboardLayout><DisputesPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/treasury" element={<ProtectedRoute><DashboardLayout><TreasuryPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/agents" element={<ProtectedRoute><DashboardLayout><AgentsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/agents/:id" element={<ProtectedRoute><DashboardLayout><AgentDetailPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><DashboardLayout><ReportsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/api-keys" element={<ProtectedRoute><DashboardLayout><APIKeysPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/webhooks" element={<ProtectedRoute><DashboardLayout><WebhooksPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/request-logs" element={<ProtectedRoute><DashboardLayout><RequestLogsPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/templates" element={<ProtectedRoute><DashboardLayout><TemplatesPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/verification-tiers" element={<ProtectedRoute><DashboardLayout><VerificationTiersPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/agent-verification-tiers" element={<ProtectedRoute><DashboardLayout><AgentVerificationTiersPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><DashboardLayout><SettingsPage /></DashboardLayout></ProtectedRoute>} />
+          
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

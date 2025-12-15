@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Page } from '../App';
+import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, Bot, Zap, Shield, Wallet, Settings,
   CheckCircle, PauseCircle, Copy, 
@@ -9,13 +9,10 @@ import {
 import { mockAgents } from '../data/mockAgents';
 import { AISparkleButton } from '../components/ui/AISparkleButton';
 
-interface Props {
-  agentId?: string;
-  onNavigate: (page: Page, id?: string) => void;
-}
-
-export function AgentDetailPage({ agentId, onNavigate }: Props) {
-  const agent = mockAgents.find(a => a.id === agentId);
+export function AgentDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const agent = mockAgents.find(a => a.id === id);
   const [activeTab, setActiveTab] = useState('overview');
   
   if (!agent) {
@@ -23,7 +20,7 @@ export function AgentDetailPage({ agentId, onNavigate }: Props) {
       <div className="p-8">
         <div className="flex flex-col items-center justify-center h-64">
           <p className="text-gray-500 dark:text-gray-400">Agent not found</p>
-          <button onClick={() => onNavigate('agents')} className="mt-4 text-violet-600 hover:underline">
+          <button onClick={() => navigate('/agents')} className="mt-4 text-violet-600 hover:underline">
             ← Back to Agents
           </button>
         </div>
@@ -56,7 +53,7 @@ export function AgentDetailPage({ agentId, onNavigate }: Props) {
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Back Button */}
       <button 
-        onClick={() => onNavigate('agents')}
+        onClick={() => navigate('/agents')}
         className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
       >
         <ChevronLeft className="w-4 h-4" />

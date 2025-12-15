@@ -1,14 +1,11 @@
-import { Page } from '../App';
+import { useNavigate } from 'react-router-dom';
 import { StatCard } from '../components/ui/StatCard';
 import { Badge } from '../components/ui/Badge';
 import { AlertTriangle, Sparkles } from 'lucide-react';
 import { mockFlags } from '../data/mockFlags';
 
-interface CompliancePageProps {
-  onNavigate: (page: Page) => void;
-}
-
-export function CompliancePage({ onNavigate }: CompliancePageProps) {
+export function CompliancePage() {
+  const navigate = useNavigate();
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
       <div>
@@ -36,7 +33,7 @@ export function CompliancePage({ onNavigate }: CompliancePageProps) {
               3 high-risk flags require immediate review. 2 appear to be structuring attempts. 1 is new corridor.
             </p>
             <button 
-              onClick={() => onNavigate('transaction-detail')}
+              onClick={() => navigate('/transactions/txn_1a2b')}
               className="px-4 py-2 bg-violet-600 text-white text-sm font-semibold rounded-lg hover:bg-violet-700 transition-colors"
             >
               Review High Risk First
@@ -71,7 +68,7 @@ export function CompliancePage({ onNavigate }: CompliancePageProps) {
               return (
                 <tr 
                   key={flag.id}
-                  onClick={() => onNavigate('compliance-flag-detail')}
+                  onClick={() => navigate(`/compliance/${flag.id}`)}
                   className="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors"
                 >
                   <td className="px-4 py-4">

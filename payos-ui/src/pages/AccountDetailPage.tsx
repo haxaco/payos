@@ -1,12 +1,12 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronRight, User, Building2, CreditCard, Wallet,
   ArrowDownLeft, ArrowUpRight, Sparkles, Edit2, MoreHorizontal,
   Ban, CheckCircle, Clock, Mail, Phone, MapPin, Zap, Play, Copy, Eye, Pause, X,
-  AlertTriangle, AlertCircle, Bot, Plus, Activity, DollarSign, Landmark, Trash2, Star
+  AlertTriangle, AlertCircle, Bot, Plus, Activity, DollarSign, Landmark, Trash2, Star, Loader2
 } from 'lucide-react';
-import { mockAccounts } from '../data/mockAccounts';
-import { Page } from '../App';
+import { useAccount } from '../hooks/api';
 import { AISparkleButton } from '../components/ui/AISparkleButton';
 import { mariaStreams, techcorpStreams } from '../data/mockStreams';
 import { NewPaymentModal } from '../components/NewPaymentModal';
@@ -14,34 +14,64 @@ import { mockAgents } from '../data/mockAgents';
 import { AgentsTab } from '../components/AgentsTab';
 import { DocumentsTab } from '../components/DocumentsTab';
 
-interface Props {
-  accountId?: string;
-  onNavigate: (page: Page, id?: string) => void;
-}
-
-export function AccountDetailPage({ accountId = 'acc_person_001', onNavigate }: Props) {
-  const account = mockAccounts.find(a => a.id === accountId);
+export function AccountDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  
+  // Fetch account from API
+  const { data: account, loading, error } = useAccount(id);
+  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertCircle className="w-12 h-12 text-red-500" />
+        <p className="text-gray-500 dark:text-gray-400">Failed to load account</p>
+        <p className="text-sm text-gray-400">{error.message}</p>
+        <button 
+          onClick={() => navigate('/accounts')}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Back to Accounts
+        </button>
+      </div>
+    );
+  }
   
   if (!account) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <User className="w-12 h-12 text-gray-400" />
         <p className="text-gray-500 dark:text-gray-400">Account not found</p>
+        <button 
+          onClick={() => navigate('/accounts')}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Back to Accounts
+        </button>
       </div>
     );
   }
   
   if (account.type === 'person') {
-    return <PersonAccountDetail account={account} onNavigate={onNavigate} />;
+    return <PersonAccountDetail account={account} navigate={navigate} />;
   }
   
-  return <BusinessAccountDetail account={account} onNavigate={onNavigate} />;
+  return <BusinessAccountDetail account={account} navigate={navigate} />;
 }
 
 // ============================================
 // PERSON ACCOUNT DETAIL
 // ============================================
 
-function PersonAccountDetail({ account, onNavigate }: any) {
+function PersonAccountDetail({ account, navigate }: any) {
   const [activeTab, setActiveTab] = useState('overview');
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentModalType, setPaymentModalType] = useState<'transaction' | 'stream'>('transaction');
@@ -59,7 +89,7 @@ function PersonAccountDetail({ account, onNavigate }: any) {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
         <button 
-          onClick={() => onNavigate('accounts')}
+          onClick={() => navigate('/accounts')}
           className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
         >
           Accounts
@@ -183,7 +213,7 @@ function PersonAccountDetail({ account, onNavigate }: any) {
               <p className="text-lg font-semibold text-gray-900 dark:text-white">$847.20</p>
             </div>
             <button 
-              onClick={() => onNavigate('card-detail')}
+              onClick={() => navigate(`/cards/${account.cards?.[0]?.id || 'card_001'}`)}
               className="mt-4 w-full text-sm text-blue-600 dark:text-blue-400 hover:underline text-left"
             >
               Manage Card →
@@ -310,7 +340,7 @@ function PersonAccountDetail({ account, onNavigate }: any) {
                     <div 
                       key={rel.id}
                       className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                      onClick={() => onNavigate('account-detail')}
+                      onClick={() => navigate(`/accounts/${rel.id}`)}
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -364,12 +394,62 @@ function PersonAccountDetail({ account, onNavigate }: any) {
       {activeTab === 'transactions' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Transaction History</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Full transaction history for this account. Use filters to narrow results.
+              All transactions for this account
             </p>
           </div>
-          <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-            Transaction list component (reuse from TransactionsPage)
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amount</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {recentTransactions.map((txn) => (
+                  <tr 
+                    key={txn.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
+                    onClick={() => navigate(`/transactions/${txn.id}`)}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                      {new Date(txn.date).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                      {txn.type === 'credit' ? txn.from : txn.to}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {txn.type === 'credit' ? (
+                        <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                          <ArrowDownLeft className="w-4 h-4" />
+                          Credit
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+                          <ArrowUpRight className="w-4 h-4" />
+                          Debit
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium">
+                      <span className={txn.type === 'credit' ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}>
+                        {txn.type === 'credit' ? '+' : '-'}${txn.amount.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 capitalize">
+                        {txn.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -508,7 +588,7 @@ function PersonAccountDetail({ account, onNavigate }: any) {
       )}
       
       {activeTab === 'agents' && (
-        <AgentsTab account={account} onNavigate={onNavigate} />
+        <AgentsTab account={account} />
       )}
       
       {activeTab === 'relationships' && (
@@ -550,7 +630,7 @@ function PersonAccountDetail({ account, onNavigate }: any) {
 // BUSINESS ACCOUNT DETAIL
 // ============================================
 
-function BusinessAccountDetail({ account, onNavigate }: any) {
+function BusinessAccountDetail({ account, navigate }: any) {
   const [activeTab, setActiveTab] = useState('overview');
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentModalType, setPaymentModalType] = useState<'transaction' | 'stream'>('transaction');
@@ -571,12 +651,21 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
     contractorCount: 12
   };
   
+  // Mock recent transactions for business account
+  const businessTransactions = [
+    { id: 'txn_101', type: 'debit', to: 'Maria Garcia (ARG)', amount: 2000, date: '2025-12-05', status: 'completed' },
+    { id: 'txn_102', type: 'debit', to: 'Ana Souza (BRA)', amount: 2500, date: '2025-12-05', status: 'completed' },
+    { id: 'txn_103', type: 'credit', from: 'Client Payment - Invoice #1234', amount: 15000, date: '2025-12-03', status: 'completed' },
+    { id: 'txn_104', type: 'debit', to: 'Juan Perez (MEX)', amount: 1800, date: '2025-12-01', status: 'completed' },
+    { id: 'txn_105', type: 'credit', from: 'Client Payment - Invoice #1230', amount: 12000, date: '2025-11-28', status: 'completed' },
+  ];
+  
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
         <button 
-          onClick={() => onNavigate('accounts')}
+          onClick={() => navigate('/accounts')}
           className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
         >
           Accounts
@@ -867,7 +956,7 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
                     <tr 
                       key={c.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
-                      onClick={() => onNavigate('account-detail')}
+                      onClick={() => navigate(`/accounts/${c.id}`)}
                     >
                       <td className="px-6 py-3">
                         <div className="flex items-center gap-2">
@@ -1162,12 +1251,64 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
       )}
       
       {activeTab === 'transactions' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Full transaction history for this business account. Use filters to narrow results.
-          </p>
-          <div className="text-center text-gray-400 dark:text-gray-500 py-8">
-            Transaction list component (reuse from TransactionsPage)
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Transaction History</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              All transactions for this business account
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amount</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {businessTransactions.map((txn) => (
+                  <tr 
+                    key={txn.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
+                    onClick={() => navigate(`/transactions/${txn.id}`)}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                      {new Date(txn.date).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                      {txn.type === 'credit' ? txn.from : txn.to}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {txn.type === 'credit' ? (
+                        <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                          <ArrowDownLeft className="w-4 h-4" />
+                          Credit
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+                          <ArrowUpRight className="w-4 h-4" />
+                          Debit
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium">
+                      <span className={txn.type === 'credit' ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}>
+                        {txn.type === 'credit' ? '+' : '-'}${txn.amount.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 capitalize">
+                        {txn.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -1181,7 +1322,7 @@ function BusinessAccountDetail({ account, onNavigate }: any) {
       )}
       
       {activeTab === 'agents' && (
-        <AgentsTab account={account} onNavigate={onNavigate} />
+        <AgentsTab account={account} />
       )}
       
       {activeTab === 'owners' && (

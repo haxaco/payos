@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Page } from '../App';
+import { useNavigate } from 'react-router-dom';
 import { 
   Bot, Plus, Search, MoreHorizontal,
   Zap, Shield, Wallet, Settings, CheckCircle,
@@ -8,10 +8,6 @@ import {
 import { mockAgents } from '../data/mockAgents';
 import { Agent } from '../types/agent';
 import { AISparkleButton } from '../components/ui/AISparkleButton';
-
-interface Props {
-  onNavigate: (page: Page, id?: string) => void;
-}
 
 const agentTypeConfig = {
   payment: { icon: Zap, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/50', label: 'Payment' },
@@ -33,7 +29,8 @@ const kyaTierConfig = {
   3: { label: 'T3', fullLabel: 'T3 Trusted', color: 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300' }
 };
 
-export function AgentsPage({ onNavigate }: Props) {
+export function AgentsPage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   
@@ -201,7 +198,7 @@ export function AgentsPage({ onNavigate }: Props) {
               return (
                 <tr 
                   key={agent.id}
-                  onClick={() => onNavigate('agent-detail', agent.id)}
+                  onClick={() => navigate(`/agents/${agent.id}`)}
                   className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
                 >
                   <td className="px-6 py-4">

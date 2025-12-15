@@ -2,10 +2,10 @@
 
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
-import { Search, Filter, Plus, Download, User, Building2, ChevronDown } from 'lucide-react';
+import { Search, Filter, Plus, Download, User, Building2, ChevronDown, AlertCircle } from 'lucide-react';
 import { useState, useMemo } from 'react';
-import { mockAccounts } from '../data/mockAccounts';
-import { Account } from '../types/account';
+import { useAccounts } from '../hooks/api';
+import type { Account } from '../types/api';
 
 export function AccountsPage() {
   const navigate = useNavigate();
@@ -13,10 +13,18 @@ export function AccountsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'person' | 'business'>('all');
   const [showAddMenu, setShowAddMenu] = useState(false);
 
+  // Fetch accounts from API with type filter
+  const filters = useMemo(() => ({
+    type: activeTab !== 'all' ? activeTab : undefined,
+    limit: 100, // Fetch up to 100 accounts
+  }), [activeTab]);
+
+  const { data, loading, error, refetch } = useAccounts(filters);
+  const accounts = data?.accounts || [];
+
   const filteredAccounts = useMemo(() => {
-    if (activeTab === 'all') return mockAccounts;
-    return mockAccounts.filter(a => a.type === activeTab);
-  }, [activeTab]);
+    return accounts;
+  }, [accounts]);
 
   const toggleSelect = (id: string) => {
     setSelectedAccounts(prev => 
@@ -30,27 +38,33 @@ export function AccountsPage() {
     );
   };
 
-  const getStatusBadge = (status: Account['status']) => {
+  const getVerificationBadge = (status: string) => {
     const styles = {
-      active: 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400',
-      pending_verification: 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400',
+      verified: 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400',
+      pending: 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400',
+      unverified: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400',
       suspended: 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400',
-      closed: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
     };
     
     const labels = {
-      active: 'Active',
-      pending_verification: 'Pending KYC',
+      verified: 'Verified',
+      pending: 'Pending',
+      unverified: 'Unverified',
       suspended: 'Suspended',
-      closed: 'Closed'
     };
 
     return (
-      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${styles[status]}`}>
-        {labels[status]}
+      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${styles[status as keyof typeof styles] || styles.unverified}`}>
+        {labels[status as keyof typeof labels] || status}
       </span>
     );
   };
+
+  // Get all accounts for tab counts (fetch separately without filters)
+  const { data: allAccountsData } = useAccounts({ limit: 1000 });
+  const allAccounts = allAccountsData?.accounts || [];
+  const personCount = allAccounts.filter(a => a.type === 'person').length;
+  const businessCount = allAccounts.filter(a => a.type === 'business').length;
 
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -60,12 +74,29 @@ export function AccountsPage() {
         <p className="text-gray-600 dark:text-gray-400">Manage all account holders</p>
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Failed to load accounts</h3>
+            <p className="text-sm text-red-700 dark:text-red-400 mt-1">{error.message}</p>
+            <button 
+              onClick={() => refetch()}
+              className="mt-3 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Type Filter Tabs */}
       <div className="flex gap-2">
         {[
-          { key: 'all' as const, label: 'All', count: mockAccounts.length },
-          { key: 'person' as const, label: 'Persons', count: mockAccounts.filter(a => a.type === 'person').length },
-          { key: 'business' as const, label: 'Businesses', count: mockAccounts.filter(a => a.type === 'business').length },
+          { key: 'all' as const, label: 'All', count: allAccounts.length },
+          { key: 'person' as const, label: 'Persons', count: personCount },
+          { key: 'business' as const, label: 'Businesses', count: businessCount },
         ].map(tab => (
           <button 
             key={tab.key}
@@ -177,86 +208,120 @@ export function AccountsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {filteredAccounts.map(account => (
-                <tr 
-                  key={account.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
-                  onClick={() => navigate(`/accounts/${account.id}`)}
-                >
-                  <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
-                    <input 
-                      type="checkbox"
-                      checked={selectedAccounts.includes(account.id)}
-                      onChange={() => toggleSelect(account.id)}
-                      className="rounded border-gray-300 dark:border-gray-600"
-                    />
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      {/* Icon based on type */}
-                      {account.type === 'person' ? (
-                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                          <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              {loading ? (
+                // Loading skeleton rows
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-4"><div className="h-4 w-4 bg-gray-200 dark:bg-gray-700 rounded"></div></td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                        <div className="space-y-2">
+                          <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                          <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
                         </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center">
-                          <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                        </div>
-                      )}
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {account.type === 'person' 
-                            ? `${account.firstName} ${account.lastName}`
-                            : account.businessName
-                          }
-                        </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{account.email}</p>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
-                      ${account.type === 'person' 
-                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                        : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
-                      }`}
-                    >
-                      {account.type === 'person' ? (
-                        <><User className="w-3 h-3" /> Person</>
-                      ) : (
-                        <><Building2 className="w-3 h-3" /> Business</>
-                      )}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="text-sm text-gray-600 dark:text-gray-300 font-mono">
-                      T{account.verificationTier}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    {getStatusBadge(account.status)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      {new Date(account.createdAt).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        year: 'numeric' 
-                      })}
+                    </td>
+                    <td className="px-4 py-4"><div className="h-6 w-20 bg-gray-200 dark:bg-gray-700 rounded-full"></div></td>
+                    <td className="px-4 py-4"><div className="h-4 w-8 bg-gray-200 dark:bg-gray-700 rounded"></div></td>
+                    <td className="px-4 py-4"><div className="h-6 w-20 bg-gray-200 dark:bg-gray-700 rounded-full"></div></td>
+                    <td className="px-4 py-4"><div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div></td>
+                    <td className="px-4 py-4 text-right"><div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded ml-auto"></div></td>
+                  </tr>
+                ))
+              ) : filteredAccounts.length === 0 ? (
+                // Empty state
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center">
+                    <User className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 dark:text-gray-400 font-medium">No accounts found</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                      {activeTab !== 'all' 
+                        ? `No ${activeTab} accounts exist yet.`
+                        : 'Get started by creating your first account.'
+                      }
                     </p>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <p className="font-medium text-gray-900 dark:text-white font-mono">
-                      ${(account.balance.usd + account.balance.usdc).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </p>
-                    {account.balance.usdc > 0 && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        incl. {account.balance.usdc.toLocaleString()} USDC
-                      </p>
-                    )}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredAccounts.map(account => (
+                  <tr 
+                    key={account.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/accounts/${account.id}`)}
+                  >
+                    <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox"
+                        checked={selectedAccounts.includes(account.id)}
+                        onChange={() => toggleSelect(account.id)}
+                        className="rounded border-gray-300 dark:border-gray-600"
+                      />
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        {/* Icon based on type */}
+                        {account.type === 'person' ? (
+                          <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                            <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                          </div>
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center">
+                            <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {account.name}
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{account.email || 'No email'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
+                        ${account.type === 'person' 
+                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                          : 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                        }`}
+                      >
+                        {account.type === 'person' ? (
+                          <><User className="w-3 h-3" /> Person</>
+                        ) : (
+                          <><Building2 className="w-3 h-3" /> Business</>
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="text-sm text-gray-600 dark:text-gray-300 font-mono">
+                        T{account.verification_tier}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      {getVerificationBadge(account.verification_status)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        {new Date(account.created_at).toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric', 
+                          year: 'numeric' 
+                        })}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <p className="font-medium text-gray-900 dark:text-white font-mono">
+                        ${account.balance_total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      {account.balance_available !== account.balance_total && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          ${account.balance_available.toLocaleString(undefined, { maximumFractionDigits: 2 })} available
+                        </p>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

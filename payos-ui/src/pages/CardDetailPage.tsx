@@ -1,81 +1,74 @@
 import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronRight, CreditCard, Eye, EyeOff, Copy, Snowflake, 
-  Trash2, ShoppingBag
+  Trash2, ShoppingBag, Loader2, AlertCircle
 } from 'lucide-react';
-import { Page } from '../App';
+import { usePaymentMethod } from '../hooks/api';
 
-interface CardData {
-  id: string;
-  accountId: string;
-  accountName: string;
-  accountType: 'person' | 'business';
-  panMasked: string;
-  panFull: string;
-  expiry: string;
-  cvv: string;
-  type: 'virtual' | 'physical';
-  status: 'active' | 'frozen' | 'cancelled';
-  limits: {
-    daily: number;
-    monthly: number;
-    perTransaction: number;
-  };
-  spent: {
-    daily: number;
-    monthly: number;
-  };
-  createdAt: string;
-  transactions: Array<{
-    id: string;
-    date: string;
-    merchant: string;
-    category: string;
-    amount: number;
-    status: 'completed' | 'pending' | 'declined';
-  }>;
-}
-
-const mockCard: CardData = {
-  id: 'card_001',
-  accountId: 'acc_person_001',
-  accountName: 'Maria Garcia',
-  accountType: 'person',
-  panMasked: '•••• •••• •••• 4521',
-  panFull: '4532 1234 5678 4521',
-  expiry: '12/27',
-  cvv: '847',
-  type: 'virtual',
-  status: 'active',
-  limits: {
-    daily: 500,
-    monthly: 5000,
-    perTransaction: 200
-  },
-  spent: {
-    daily: 127.50,
-    monthly: 847.20
-  },
-  createdAt: '2025-11-15T10:00:00Z',
-  transactions: [
-    { id: 'txn_c01', date: '2025-12-05', merchant: 'Supermercado Dia', category: 'Groceries', amount: 45.20, status: 'completed' },
-    { id: 'txn_c02', date: '2025-12-04', merchant: 'MercadoLibre', category: 'Retail', amount: 127.80, status: 'completed' },
-    { id: 'txn_c03', date: '2025-12-03', merchant: 'Uber', category: 'Transport', amount: 12.50, status: 'completed' },
-    { id: 'txn_c04', date: '2025-12-02', merchant: 'Shell Gas Station', category: 'Gas', amount: 35.00, status: 'declined' },
-    { id: 'txn_c05', date: '2025-12-01', merchant: 'Netflix', category: 'Entertainment', amount: 15.99, status: 'completed' }
-  ]
-};
-
-interface Props {
-  cardId: string;
-  onNavigate: (page: Page) => void;
-}
-
-export function CardDetailPage({ cardId, onNavigate }: Props) {
-  const card = mockCard; // In real app, fetch by cardId
+export function CardDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  
+  // Fetch payment method from API
+  const { data: paymentMethod, loading, error } = usePaymentMethod(id);
+  
   const [showPan, setShowPan] = useState(false);
   const [showCvv, setShowCvv] = useState(false);
-  const [isFrozen, setIsFrozen] = useState(card.status === 'frozen');
+  const [isFrozen, setIsFrozen] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
+        <button 
+          onClick={() => navigate('/cards')}
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors group"
+        >
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          <span className="text-sm font-medium">Back to Cards</span>
+        </button>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
+        <button 
+          onClick={() => navigate('/cards')}
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors group"
+        >
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          <span className="text-sm font-medium">Back to Cards</span>
+        </button>
+        <div className="flex flex-col items-center justify-center h-64 gap-4">
+          <AlertCircle className="w-12 h-12 text-red-500" />
+          <p className="text-gray-500 dark:text-gray-400">Failed to load payment method</p>
+          <p className="text-sm text-gray-400">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!paymentMethod) {
+    return (
+      <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
+        <button 
+          onClick={() => navigate('/cards')}
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors group"
+        >
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          <span className="text-sm font-medium">Back to Cards</span>
+        </button>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-gray-500 dark:text-gray-400">Card not found</p>
+        </div>
+      </div>
+    );
+  }
   
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -86,13 +79,15 @@ export function CardDetailPage({ cardId, onNavigate }: Props) {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
         <button 
-          onClick={() => onNavigate('cards')}
+          onClick={() => navigate('/cards')}
           className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
         >
           Cards
         </button>
         <ChevronRight className="w-4 h-4 text-gray-400" />
-        <span className="text-gray-900 dark:text-white font-medium">{card.panMasked.slice(-8)}</span>
+        <span className="text-gray-900 dark:text-white font-medium">
+          {paymentMethod.label || `•••• ${paymentMethod.bank_account_last_four}`}
+        </span>
       </div>
       
       <div className="grid grid-cols-3 gap-6">
@@ -110,53 +105,40 @@ export function CardDetailPage({ cardId, onNavigate }: Props) {
               {/* Logo */}
               <div className="flex items-center justify-between mb-12">
                 <span className="text-xl font-bold">PayOS</span>
-                <span className="text-sm opacity-75 uppercase">{card.type}</span>
+                <span className="text-sm opacity-75 uppercase">{paymentMethod.type}</span>
               </div>
               
               {/* Card Number */}
               <div className="mb-6">
                 <div className="flex items-center gap-3">
                   <span className="text-2xl font-mono tracking-wider">
-                    {showPan ? card.panFull : card.panMasked}
+                    •••• •••• •••• {paymentMethod.bank_account_last_four || '****'}
                   </span>
                   <button 
                     onClick={() => setShowPan(!showPan)}
                     className="p-1 hover:bg-white/10 rounded"
+                    disabled
+                    title="Full PAN not available via API for security"
                   >
-                    {showPan ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                  <button 
-                    onClick={() => copyToClipboard(card.panFull)}
-                    className="p-1 hover:bg-white/10 rounded"
-                  >
-                    <Copy className="w-5 h-5" />
+                    <Eye className="w-5 h-5 opacity-50" />
                   </button>
                 </div>
+                <p className="text-xs opacity-60 mt-2">Full card number hidden for security</p>
               </div>
               
               {/* Details Row */}
               <div className="flex items-end justify-between">
                 <div>
                   <p className="text-xs opacity-75 mb-1">Card Holder</p>
-                  <p className="font-medium uppercase">{card.accountName}</p>
+                  <p className="font-medium uppercase">{paymentMethod.bank_account_holder || 'Unknown'}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs opacity-75 mb-1">Expires</p>
-                  <p className="font-medium">{card.expiry}</p>
+                  <p className="text-xs opacity-75 mb-1">Status</p>
+                  <p className="font-medium">{paymentMethod.is_verified ? 'Verified' : 'Unverified'}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs opacity-75 mb-1">CVV</p>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium font-mono">
-                      {showCvv ? card.cvv : '•••'}
-                    </span>
-                    <button 
-                      onClick={() => setShowCvv(!showCvv)}
-                      className="p-1 hover:bg-white/10 rounded"
-                    >
-                      {showCvv ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <p className="text-xs opacity-75 mb-1">Default</p>
+                  <p className="font-medium">{paymentMethod.is_default ? 'Yes' : 'No'}</p>
                 </div>
               </div>
             </div>
@@ -181,40 +163,12 @@ export function CardDetailPage({ cardId, onNavigate }: Props) {
               </button>
             </div>
             
-            <div className="divide-y divide-gray-100 dark:divide-gray-700">
-              {card.transactions.map(txn => (
-                <div key={txn.id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-900/30">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      txn.status === 'declined' 
-                        ? 'bg-red-100 dark:bg-red-900/50' 
-                        : 'bg-gray-100 dark:bg-gray-700'
-                    }`}>
-                      <ShoppingBag className={`w-5 h-5 ${
-                        txn.status === 'declined'
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-gray-600 dark:text-gray-400'
-                      }`} />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">{txn.merchant}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{txn.category} · {txn.date}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={`font-medium ${
-                      txn.status === 'declined' 
-                        ? 'text-red-600 dark:text-red-400 line-through' 
-                        : 'text-gray-900 dark:text-white'
-                    }`}>
-                      -${txn.amount.toFixed(2)}
-                    </p>
-                    {txn.status === 'declined' && (
-                      <p className="text-xs text-red-600 dark:text-red-400">Declined</p>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="px-6 py-12 text-center">
+              <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-600 dark:text-gray-400 font-medium">No card activity yet</p>
+              <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                Transactions made with this card will appear here.
+              </p>
             </div>
           </div>
         </div>
@@ -307,7 +261,7 @@ export function CardDetailPage({ cardId, onNavigate }: Props) {
               </div>
             </div>
             <button 
-              onClick={() => onNavigate('account-detail')}
+              onClick={() => navigate(`/accounts/${card.accountId}`)}
               className="mt-4 w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
             >
               View Account →

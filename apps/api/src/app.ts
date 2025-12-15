@@ -10,6 +10,10 @@ import { rateLimiter, authRateLimiter } from './middleware/rate-limit.js';
 import { requestId, securityHeaders } from './middleware/security.js';
 
 // Import routes
+import authRouter from './routes/auth.js';
+import organizationRouter from './routes/organization.js';
+import organizationTeamRouter from './routes/organization-team.js';
+import apiKeysRouter from './routes/api-keys.js';
 import accountsRouter from './routes/accounts.js';
 import agentsRouter from './routes/agents.js';
 import transfersRouter from './routes/transfers.js';
@@ -84,6 +88,16 @@ app.get('/ready', (c) =>
   })
 );
 
+// Organization routes (JWT-based auth inside route handlers)
+app.route('/v1/organization', organizationRouter);
+app.route('/v1/organization/team', organizationTeamRouter);
+
+// API keys routes (JWT-based auth inside route handlers)
+app.route('/v1/api-keys', apiKeysRouter);
+
+// Auth routes (public - no auth middleware)
+app.route('/v1/auth', authRouter);
+
 // ============================================
 // API v1 ROUTES (auth required)
 // ============================================
@@ -112,7 +126,8 @@ v1.route('/refunds', refundsRouter);
 v1.route('/scheduled-transfers', scheduledTransfersRouter);
 v1.route('/exports', exportsRouter);
 v1.route('/disputes', disputesRouter);
-v1.route('/', paymentMethodsRouter); // Payment methods routes handle their own paths
+v1.route('/payment-methods', paymentMethodsRouter);
+v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods routes
 
 app.route('/v1', v1);
 
