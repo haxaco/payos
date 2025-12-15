@@ -209,13 +209,13 @@ export function CardDetailPage() {
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-600 dark:text-gray-300">Daily</span>
                   <span className="text-gray-900 dark:text-white">
-                    ${card.spent.daily.toFixed(2)} / ${card.limits.daily}
+                    N/A
                   </span>
                 </div>
                 <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                   <div 
-                    className="h-full bg-blue-600 rounded-full"
-                    style={{ width: `${(card.spent.daily / card.limits.daily) * 100}%` }}
+                    className="h-full bg-gray-300 rounded-full"
+                    style={{ width: '0%' }}
                   />
                 </div>
               </div>
@@ -224,20 +224,20 @@ export function CardDetailPage() {
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-600 dark:text-gray-300">Monthly</span>
                   <span className="text-gray-900 dark:text-white">
-                    ${card.spent.monthly.toFixed(2)} / ${card.limits.monthly.toLocaleString()}
+                    N/A
                   </span>
                 </div>
                 <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                   <div 
-                    className="h-full bg-blue-600 rounded-full"
-                    style={{ width: `${(card.spent.monthly / card.limits.monthly) * 100}%` }}
+                    className="h-full bg-gray-300 rounded-full"
+                    style={{ width: '0%' }}
                   />
                 </div>
               </div>
               
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600 dark:text-gray-300">Per Transaction</span>
-                <span className="text-gray-900 dark:text-white">${card.limits.perTransaction}</span>
+                <span className="text-gray-900 dark:text-white">N/A</span>
               </div>
               
               <button className="w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
@@ -247,26 +247,30 @@ export function CardDetailPage() {
           </div>
           
           {/* Account Info */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Linked Account</h3>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                <CreditCard className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          {paymentMethod.account_id && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Linked Account</h3>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                  <CreditCard className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white">
+                    {paymentMethod.bank_account_holder || 'Account'}
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Payment Method
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-medium text-gray-900 dark:text-white">{card.accountName}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {card.accountType === 'person' ? 'Person' : 'Business'} Account
-                </p>
-              </div>
+              <button 
+                onClick={() => navigate(`/accounts/${paymentMethod.account_id}`)}
+                className="mt-4 w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View Account →
+              </button>
             </div>
-            <button 
-              onClick={() => navigate(`/accounts/${card.accountId}`)}
-              className="mt-4 w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              View Account →
-            </button>
-          </div>
+          )}
           
           {/* Danger Zone */}
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-red-200 dark:border-red-900">
