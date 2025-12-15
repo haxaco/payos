@@ -20,7 +20,7 @@ export function AccountsPage() {
   }), [activeTab]);
 
   const { data, loading, error, refetch } = useAccounts(filters);
-  const accounts = data?.accounts || [];
+  const accounts = data?.data || [];
 
   const filteredAccounts = useMemo(() => {
     return accounts;

@@ -12,7 +12,7 @@ export function TransactionsPage() {
     limit: 100,
   });
   
-  const transfers = data?.transfers || [];
+  const transfers = data?.data || [];
 
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">

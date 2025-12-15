@@ -1,7 +1,7 @@
 # PayOS Bug Report & Known Issues
 
-**Date:** 2025-12-15
-**Status:** ✅ All P1 Issues Resolved
+**Date:** 2025-12-14
+**Status:** ✅ All Critical Blockers Resolved
 
 This document tracks bugs found during UI testing.
 
@@ -12,11 +12,53 @@ This document tracks bugs found during UI testing.
 *   **Description:** Dropdown UI doesn't always appear over content, but search input correctly filters full page lists.
 *   **Action:** Polish z-index or dropdown positioning in future sprint.
 
+### 10. API/UI Data Structure Mismatch (Critical)
+*   **Priority:** Critical (P0) - Blocks Integration Testing
+*   **Description:** All List Views (Accounts, Transactions, Cards) are empty despite data existing in the DB.
+*   **Root Cause:** API response format changed to standard `{ data: [...], pagination: ... }`, but UI components and hooks still expect legacy format `{ accounts: [...] }`.
+*   **Impact:** `useApi` hook successfully fetches data, but child components see `undefined` and render empty states.
+*   **Fix Required:** Update `src/types/api.ts` and component mapping logic to read from `.data`.
+
 ### 2. AI Assistant Context Awareness
 *   **Priority:** Medium (P2)
 *   **Description:** AI responds to generic queries but lacks deep context (e.g., "Show high risk accounts").
 *   **Action:** Connect AI Service to Compliance API.
 
+### 3. Account Detail Routing Error
+*   **Priority:** High (P1)
+*   **Description:** Clicking any account in the list opens "Maria Garcia" (or hardcoded data) regardless of the ID in the URL.
+*   **Root Cause:** `AccountDetailPage.tsx` likely ignores the `id` from `useParams` and defaults to a hardcoded prop or mock item.
+
+### 4. Account Transactions Tab Empty
+*   **Priority:** High (P1)
+*   **Description:** "Transactions" tab in Account Detail is a placeholder or empty.
+*   **Root Cause:** Component implementation is incomplete (mock data not mapped).
+
+### 5. Cards Detail View Unresponsive
+*   **Priority:** High (P1)
+*   **Description:** Clicking a row in `/cards` does nothing.
+*   **Root Cause:** `CardsPage.tsx` uses `onNavigate` prop but is not connected to a router outlet.
+
+### 6. Compliance Detail View Render Issue
+*   **Priority:** High (P1)
+*   **Description:** Clicking a flag updates URL but re-renders the list view.
+*   **Root Cause:** `CompliancePage.tsx` likely handling click incorrectly or Route definition in `App.tsx` has specificity issues.
+
+### 7. Transaction Detail View Render Issue
+*   **Priority:** High (P1)
+*   **Description:** Clicking a transaction updates URL but re-renders list view.
+*   **Root Cause:** `TransactionsPage.tsx` click handler issue.
+
+### 8. Agent Detail View Render Issue
+*   **Priority:** High (P1)
+*   **Description:** Clicking an agent updates URL but re-renders list view.
+*   **Root Cause:** `AgentsPage.tsx` click handler issue.
+
+### 9. Breadcrumb Navigation Failure
+*   **Priority:** Medium (P2)
+*   **Description:** Clicking the "Accounts" link in the breadcrumb trail (top left) does not navigate back to the Accounts list.
+*   **Root Cause:** Component uses `onNavigate('accounts')` but the parent `AccountDetailPage` does not receive this prop, nor is it connected to the Router.
+    *   *Correction:* Initially thought to be working (likely tested sidebar link by mistake), but user report and re-verification confirmed failure.
 
 ---
 
@@ -37,51 +79,3 @@ This document tracks bugs found during UI testing.
 ### ✅ Fixed: Dispute Detail Slide-over
 *   **Original Issue:** Hard to click.
 *   **Fix Verification:** Click reliability improved.
-
-### ✅ Fixed: Account Detail Routing Error
-*   **Original Issue:** Clicking any account opened hardcoded "Maria Garcia" data regardless of URL.
-*   **Root Cause:** `AccountDetailPage.tsx` was using props instead of `useParams()` from React Router.
-*   **Fix Verification:** Updated all detail pages to use `useParams()` and `useNavigate()` hooks. Now correctly reads ID from URL and displays the right account.
-
-### ✅ Fixed: Account Transactions Tab Empty
-*   **Original Issue:** Transactions tab showed placeholder text instead of data.
-*   **Root Cause:** Component was incomplete with just a TODO comment.
-*   **Fix Verification:** Added full transaction tables for both person and business accounts with mock data, showing date, description, type (credit/debit), amount, and status. Transactions are clickable and navigate to detail pages.
-
-### ✅ Fixed: Cards Detail View Unresponsive
-*   **Original Issue:** Clicking cards didn't navigate to detail page.
-*   **Root Cause:** Both `CardDetailPage.tsx` (detail page) and `CardsPage.tsx` (list page) were using props instead of React Router hooks.
-*   **Fix Verification:** 
-    - Updated detail page to use `useParams()` and `useNavigate()`
-    - **Updated list page to navigate on row click: `navigate(\`/cards/${card.id}\`)`**
-    - Card rows now clickable and navigate to detail page correctly
-
-### ✅ Fixed: Compliance Detail View Render Issue
-*   **Original Issue:** Clicking a flag updated URL but re-rendered list view.
-*   **Root Cause:** Both `ComplianceFlagDetailPage.tsx` (detail page) and `CompliancePage.tsx` (list page) were using props instead of React Router hooks.
-*   **Fix Verification:**
-    - Updated detail page to use `useParams()` and `useNavigate()`
-    - **Updated list page to navigate on row click: `navigate(\`/compliance/${flag.id}\`)`**
-    - Compliance flags now clickable and navigate to detail page correctly
-
-### ✅ Fixed: Transaction Detail View Render Issue
-*   **Original Issue:** Clicking a transaction updated URL but re-rendered list view.
-*   **Root Cause:** Both `TransactionDetailPage.tsx` (detail page) and `TransactionsPage.tsx` (list page) were using props instead of React Router hooks.
-*   **Fix Verification:**
-    - Updated detail page to use `useParams()` and `useNavigate()`
-    - **Updated list page to navigate on row click: `navigate(\`/transactions/${tx.id}\`)`**
-    - Made all transactions clickable (not just flagged ones)
-    - Transactions now clickable and navigate to detail page correctly
-
-### ✅ Fixed: Agent Detail View Render Issue
-*   **Original Issue:** Clicking an agent updated URL but re-rendered list view.
-*   **Root Cause:** Both `AgentDetailPage.tsx` (detail page) and `AgentsPage.tsx` (list page) were using props instead of React Router hooks.
-*   **Fix Verification:**
-    - Updated detail page to use `useParams()` and `useNavigate()`
-    - **Updated list page to navigate on row click: `navigate(\`/agents/${agent.id}\`)`**
-    - Agent rows now clickable and navigate to detail page correctly
-
-### ✅ Fixed: Breadcrumb Navigation Failure
-*   **Original Issue:** Breadcrumb links didn't navigate back to list pages.
-*   **Root Cause:** Components were using `onNavigate()` prop callbacks instead of React Router's `navigate()`.
-*   **Fix Verification:** All breadcrumb links updated to use `navigate('/path')`. Back navigation now works correctly across all detail pages.

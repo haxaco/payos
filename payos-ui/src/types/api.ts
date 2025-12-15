@@ -47,8 +47,13 @@ export interface Account {
 }
 
 export interface AccountsResponse {
-  accounts: Account[];
-  total?: number;
+  data: Account[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 // ============================================
@@ -84,8 +89,13 @@ export interface Transfer {
 }
 
 export interface TransfersResponse {
-  transfers: Transfer[];
-  total?: number;
+  data: Transfer[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 // ============================================
@@ -120,7 +130,13 @@ export interface PaymentMethod {
 
 export interface PaymentMethodsResponse {
   payment_methods: PaymentMethod[];
-  total?: number;
+  pagination: {
+    data: number;
+    pagination: {
+      total: number;
+      totalPages: number | null;
+    };
+  };
 }
 
 // ============================================
@@ -155,8 +171,13 @@ export interface Agent {
 }
 
 export interface AgentsResponse {
-  agents: Agent[];
-  total?: number;
+  data: Agent[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 // ============================================
@@ -202,8 +223,13 @@ export interface Stream {
 }
 
 export interface StreamsResponse {
-  streams: Stream[];
-  total?: number;
+  data: Stream[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 // ============================================
