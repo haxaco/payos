@@ -687,11 +687,8 @@ function BusinessAccountDetail({ account, navigate }: any) {
               <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
                 {account.businessName}
               </h1>
-              <p className="text-gray-500 dark:text-gray-400">{account.legalName}</p>
-              <p className="text-gray-500 dark:text-gray-400">{account.email}</p>
-              <p className="text-gray-500 dark:text-gray-400">
-                {account.industry} · {getCountryName(account.country)}
-              </p>
+              <p className="text-gray-500 dark:text-gray-400">{account.name}</p>
+              <p className="text-gray-500 dark:text-gray-400">{account.email || 'No email'}</p>
               
               <div className="mt-3 flex items-center gap-4 text-sm">
                 <div>
@@ -1303,7 +1300,7 @@ function BusinessAccountDetail({ account, navigate }: any) {
         defaultType={paymentModalType}
         fromAccount={{
           id: account.id,
-          name: account.businessName || account.legalName,
+          name: account.name,
           type: 'business'
         }}
       />
