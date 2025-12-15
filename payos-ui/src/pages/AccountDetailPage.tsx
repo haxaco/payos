@@ -96,7 +96,7 @@ function PersonAccountDetail({ account, navigate }: any) {
         </button>
         <ChevronRight className="w-4 h-4 text-gray-400" />
         <span className="text-gray-900 dark:text-white font-medium">
-          {account.firstName} {account.lastName}
+          {account.name}
         </span>
       </div>
       
@@ -110,7 +110,7 @@ function PersonAccountDetail({ account, navigate }: any) {
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {account.firstName} {account.lastName}
+                {account.name}
               </h1>
               <div className="mt-2 space-y-1 text-sm text-gray-500 dark:text-gray-400">
                 <div className="flex items-center gap-2">
@@ -140,7 +140,6 @@ function PersonAccountDetail({ account, navigate }: any) {
               </div>
               
               <div className="mt-4 flex items-center gap-3">
-                <StatusBadge status={account.status} />
                 <VerificationBadge tier={account.verificationTier} type="person" />
               </div>
             </div>
@@ -160,7 +159,7 @@ function PersonAccountDetail({ account, navigate }: any) {
               Send Funds
             </button>
             <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium">
-              {account.status === 'active' ? 'Suspend' : 'Activate'}
+              Suspend
             </button>
             <button className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
               <MoreHorizontal className="w-5 h-5" />
@@ -175,22 +174,22 @@ function PersonAccountDetail({ account, navigate }: any) {
               <Wallet className="w-4 h-4 text-gray-400" />
               <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Balance</h3>
             </div>
-            <AISparkleButton context={`treasury balance for ${account.firstName} ${account.lastName}`} />
+            <AISparkleButton context={`treasury balance for ${account.name}`} />
           </div>
           <p className="text-3xl font-semibold text-gray-900 dark:text-white">
-            ${(account.balance.usd + account.balance.usdc).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${(account.balance?.total || account.balanceTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">USD</span>
+              <span className="text-gray-500 dark:text-gray-400">{account.currency || 'USDC'}</span>
               <span className="text-gray-900 dark:text-white font-medium">
-                ${account.balance.usd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ${(account.balance?.total || account.balanceTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">USDC</span>
+              <span className="text-gray-500 dark:text-gray-400">Available</span>
               <span className="text-gray-900 dark:text-white font-medium">
-                ${account.balance.usdc.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ${(account.balance?.available || account.balanceAvailable || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -253,7 +252,7 @@ function PersonAccountDetail({ account, navigate }: any) {
                   <Sparkles className="w-5 h-5 text-violet-600 dark:text-violet-400" />
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">AI Summary</h3>
                 </div>
-                <AISparkleButton context={`full analysis of ${account.firstName} ${account.lastName}`} label="Deep dive" />
+                <AISparkleButton context={`full analysis of ${account.name}`} label="Deep dive" />
               </div>
               <p className="text-gray-700 dark:text-gray-300">
                 This contractor shows typical payment patterns: regular monthly income from a single employer (TechCorp Inc), 
@@ -455,7 +454,7 @@ function PersonAccountDetail({ account, navigate }: any) {
       )}
       
       {activeTab === 'payment-methods' && (
-        <PaymentMethodsTab accountId={account.id} accountName={`${account.firstName} ${account.lastName}`} />
+        <PaymentMethodsTab accountId={account.id} accountName={`${account.name}`} />
       )}
       
       {activeTab === 'streams' && (
@@ -618,7 +617,7 @@ function PersonAccountDetail({ account, navigate }: any) {
         defaultType={paymentModalType}
         fromAccount={{
           id: account.id,
-          name: `${account.firstName} ${account.lastName}`,
+          name: `${account.name}`,
           type: 'person'
         }}
       />
@@ -708,7 +707,6 @@ function BusinessAccountDetail({ account, navigate }: any) {
               </div>
               
               <div className="mt-4 flex items-center gap-3">
-                <StatusBadge status={account.status} />
                 <VerificationBadge tier={account.verificationTier} type="business" />
               </div>
             </div>
@@ -746,96 +744,32 @@ function BusinessAccountDetail({ account, navigate }: any) {
             <AISparkleButton context={`treasury balance for ${account.businessName}`} />
           </div>
           <p className="text-3xl font-semibold text-gray-900 dark:text-white">
-            ${(account.balance.usd + account.balance.usdc).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${(account.balance?.total || account.balanceTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
           
-          {/* Visual Breakdown Bar */}
-          {account.balance.breakdown && (
-            <div className="mt-4 mb-3">
-              <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden flex">
-                <div 
-                  className="bg-blue-500 h-full" 
-                  style={{ width: `${(account.balance.breakdown.available / (account.balance.usd + account.balance.usdc)) * 100}%` }}
-                  title="Available"
-                />
-                <div 
-                  className="bg-green-500 h-full" 
-                  style={{ width: `${(account.balance.breakdown.inStreams.total / (account.balance.usd + account.balance.usdc)) * 100}%` }}
-                  title="In Streams"
-                />
-              </div>
-            </div>
-          )}
-          
           {/* Balance Breakdown */}
-          {account.balance.breakdown ? (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span className="text-gray-600 dark:text-gray-300">Available</span>
-                </div>
-                <span className="font-medium text-gray-900 dark:text-white">
-                  ${account.balance.breakdown.available.toLocaleString()}
-                </span>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500" />
-                  <span className="text-gray-600 dark:text-gray-300">In Streams</span>
-                  <Zap className="w-3 h-3 text-green-500" />
-                </div>
-                <span className="font-medium text-gray-900 dark:text-white">
-                  ${account.balance.breakdown.inStreams.total.toLocaleString()}
-                </span>
-              </div>
-              
-              {/* Expandable Stream Details */}
-              <div className="pl-4 border-l-2 border-green-200 dark:border-green-800 space-y-1.5 text-xs pt-1">
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Buffer held</span>
-                  <span className="text-gray-700 dark:text-gray-300">
-                    ${account.balance.breakdown.inStreams.buffer.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Streaming out</span>
-                  <span className="text-gray-700 dark:text-gray-300">
-                    ${account.balance.breakdown.inStreams.streaming.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-              
-              {/* Net Flow */}
-              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600 dark:text-gray-300">Net Flow</span>
-                  <span className="font-medium text-red-600 dark:text-red-400">
-                    ${account.balance.breakdown.netFlow.perMonth.toLocaleString()}/mo
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {techcorpStreams.filter(s => s.status === 'active').length} outgoing streams
-                </p>
-              </div>
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500 dark:text-gray-400">{account.currency || 'USDC'}</span>
+              <span className="text-gray-900 dark:text-white font-medium">
+                ${(account.balance?.total || account.balanceTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </span>
             </div>
-          ) : (
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">USD</span>
-                <span className="text-gray-900 dark:text-white font-medium">
-                  ${account.balance.usd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">USDC</span>
-                <span className="text-gray-900 dark:text-white font-medium">
-                  ${account.balance.usdc.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </span>
-              </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500 dark:text-gray-400">Available</span>
+              <span className="text-gray-900 dark:text-white font-medium">
+                ${(account.balance?.available || account.balanceAvailable || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </span>
             </div>
-          )}
+            {account.balanceInStreams > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">In Streams</span>
+                <span className="text-gray-900 dark:text-white font-medium">
+                  ${account.balanceInStreams.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+          </div>
           
           <button className="mt-4 w-full py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium transition-colors">
             Fund Account

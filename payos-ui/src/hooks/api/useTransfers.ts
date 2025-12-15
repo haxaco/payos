@@ -18,8 +18,14 @@ export function useTransfers(filters: TransferFilters = {}): ApiResponse<Transfe
 export function useTransfer(transferId: string | undefined, options?: { skip?: boolean }): ApiResponse<Transfer> {
   const endpoint = transferId ? `/v1/transfers/${transferId}` : '';
   
-  return useApi<Transfer>(endpoint, {
+  const response = useApi<{ data: Transfer }>(endpoint, {
     skip: !transferId || options?.skip,
   });
+  
+  // Unwrap the data field from API response
+  return {
+    ...response,
+    data: response.data?.data || null,
+  };
 }
 

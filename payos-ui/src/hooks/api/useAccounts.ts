@@ -18,8 +18,14 @@ export function useAccounts(filters: AccountFilters = {}): ApiResponse<AccountsR
 export function useAccount(accountId: string | undefined, options?: { skip?: boolean }): ApiResponse<Account> {
   const endpoint = accountId ? `/v1/accounts/${accountId}` : '';
   
-  return useApi<Account>(endpoint, {
+  const response = useApi<{ data: Account }>(endpoint, {
     skip: !accountId || options?.skip,
   });
+  
+  // Unwrap the data field from API response
+  return {
+    ...response,
+    data: response.data?.data || null,
+  };
 }
 
