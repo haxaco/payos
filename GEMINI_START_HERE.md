@@ -131,8 +131,28 @@ Submit a test report with:
 
 **Can't access the application?**
 - Check if servers are running: `lsof -i :3001` and `lsof -i :4000`
+- **⚠️ IMPORTANT**: Make sure API has `.env` file (see setup below)
 - Start UI: `cd payos-ui && pnpm dev`
 - Start API: `cd apps/api && pnpm dev`
+
+**API Server Setup (Required!):**
+The API server needs environment variables. The `.env` file has been created for you at:
+```
+/Users/haxaco/Dev/PayOS/apps/api/.env
+```
+
+If you get "Missing Supabase environment variables" error:
+```bash
+# Verify .env exists
+ls -la /Users/haxaco/Dev/PayOS/apps/api/.env
+
+# If missing, see apps/api/SETUP.md for full setup instructions
+```
+
+**Credentials for Testing:**
+- **Supabase URL**: `https://lgsreshwntpdrthfgwos.supabase.co`
+- **Test User**: `haxaco@gmail.com` / `Market425!`
+- **API Key (Acme Corp)**: `pk_test_GkRuyZ375fL5YLB6dtdztzQqpGPikXAadLaXGNp-5Kk`
 
 **No data showing?**
 - Verify database seeded: Check `apps/api/scripts/seed-database.ts`
