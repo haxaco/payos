@@ -294,15 +294,15 @@ export function AccountsPage() {
                     </td>
                     <td className="px-4 py-4">
                       <span className="text-sm text-gray-600 dark:text-gray-300 font-mono">
-                        T{account.verification_tier}
+                        T{account.verificationTier}
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      {getVerificationBadge(account.verification_status)}
+                      {getVerificationBadge(account.verificationStatus)}
                     </td>
                     <td className="px-4 py-4">
                       <p className="text-sm text-gray-600 dark:text-gray-300">
-                        {new Date(account.created_at).toLocaleDateString('en-US', { 
+                        {new Date(account.createdAt).toLocaleDateString('en-US', { 
                           month: 'short', 
                           day: 'numeric', 
                           year: 'numeric' 
@@ -311,11 +311,11 @@ export function AccountsPage() {
                     </td>
                     <td className="px-4 py-4 text-right">
                       <p className="font-medium text-gray-900 dark:text-white font-mono">
-                        ${account.balance_total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${account.balanceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
-                      {account.balance_available !== account.balance_total && (
+                      {account.balanceAvailable !== account.balanceTotal && (
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          ${account.balance_available.toLocaleString(undefined, { maximumFractionDigits: 2 })} available
+                          ${account.balanceAvailable.toLocaleString(undefined, { maximumFractionDigits: 2 })} available
                         </p>
                       )}
                     </td>

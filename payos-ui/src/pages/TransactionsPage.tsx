@@ -144,7 +144,7 @@ export function TransactionsPage() {
                       {transfer.id.substring(0, 8)}...
                     </div>
                     <div className="text-xs text-gray-400">
-                      {new Date(transfer.created_at).toLocaleDateString('en-US', { 
+                      {new Date(transfer.createdAt).toLocaleDateString('en-US', { 
                         month: 'short', 
                         day: 'numeric',
                         hour: '2-digit',
@@ -157,7 +157,7 @@ export function TransactionsPage() {
                   </td>
                   <td className="px-4 py-4">
                     <div className="text-sm text-gray-900 dark:text-white">
-                      {transfer.from_account_name || 'Unknown'} → {transfer.to_account_name || 'Unknown'}
+                      {transfer.from?.accountName || 'Unknown'} → {transfer.to?.accountName || 'Unknown'}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
                       {transfer.currency}

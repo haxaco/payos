@@ -26,24 +26,46 @@ export type StreamStatus = 'active' | 'paused' | 'cancelled';
 
 export interface Account {
   id: string;
-  tenant_id: string;
+  tenantId: string;
   type: AccountType;
   name: string;
   email: string | null;
+  currency: string;
   
   // Verification
-  verification_tier: number;
-  verification_status: VerificationStatus;
-  verification_type: VerificationType | null;
+  verificationTier: number;
+  verificationStatus: VerificationStatus;
+  verificationType: VerificationType | null;
+  verification?: {
+    tier: number;
+    status: VerificationStatus;
+    type: VerificationType | null;
+  };
   
   // Balances
-  balance_total: number;
-  balance_available: number;
-  balance_in_streams: number;
-  balance_buffer: number;
+  balanceTotal: number;
+  balanceAvailable: number;
+  balanceInStreams: number;
+  balanceBuffer: number;
+  balance?: {
+    total: number;
+    available: number;
+    inStreams: {
+      total: number;
+      buffer: number;
+      streaming: number;
+    };
+    currency: string;
+  };
   
-  created_at: string;
-  updated_at: string;
+  // Agents
+  agents?: {
+    count: number;
+    active: number;
+  };
+  
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AccountsResponse {
@@ -62,30 +84,37 @@ export interface AccountsResponse {
 
 export interface Transfer {
   id: string;
-  tenant_id: string;
+  tenantId: string;
   type: TransferType;
   status: TransferStatus;
   
-  // Parties
-  from_account_id: string | null;
-  from_account_name: string | null;
-  to_account_id: string | null;
-  to_account_name: string | null;
+  // Parties (nested objects)
+  from: {
+    accountId: string;
+    accountName: string;
+  };
+  to: {
+    accountId: string;
+    accountName: string;
+  };
   
-  // Attribution
-  initiated_by_type: 'user' | 'agent';
-  initiated_by_id: string;
-  initiated_by_name: string | null;
+  // Attribution (nested object)
+  initiatedBy: {
+    type: 'user' | 'agent';
+    id: string;
+    name: string;
+  };
   
   // Amount
   amount: number;
   currency: string;
+  fees?: number;
   
   // Additional info
-  description: string | null;
+  description?: string | null;
   
-  created_at: string;
-  updated_at: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
 }
 
 export interface TransfersResponse {

@@ -99,12 +99,12 @@ export function TransactionDetailPage() {
               ${transfer.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="space-y-2">
-              <div className="text-sm text-gray-600 dark:text-gray-400">{transfer.from_account_name || 'Unknown'}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">{transfer.from?.accountName || 'Unknown'}</div>
               <div className="text-2xl">↓</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">{transfer.to_account_name || 'Unknown'}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">{transfer.to?.accountName || 'Unknown'}</div>
               <div className="text-lg mt-3 capitalize">{transfer.type.replace('_', ' ')}</div>
               <div className="text-xs text-gray-500">
-                {new Date(transfer.created_at).toLocaleString('en-US', { 
+                {new Date(transfer.createdAt).toLocaleString('en-US', { 
                   month: 'short', 
                   day: 'numeric',
                   year: 'numeric',
@@ -206,12 +206,12 @@ export function TransactionDetailPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">From</div>
-                <div className="font-semibold text-gray-900 dark:text-white">{transfer.from_account_name || 'Unknown'}</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{transfer.from?.accountName || 'Unknown'}</div>
                 <div className="text-xs text-gray-500">{transfer.currency}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">To</div>
-                <div className="font-semibold text-gray-900 dark:text-white">{transfer.to_account_name || 'Unknown'}</div>
+                <div className="font-semibold text-gray-900 dark:text-white">{transfer.to?.accountName || 'Unknown'}</div>
                 <div className="text-xs text-gray-500">{transfer.currency}</div>
               </div>
               <div>
