@@ -12,12 +12,6 @@ This document tracks bugs found during UI testing.
 *   **Description:** Dropdown UI doesn't always appear over content, but search input correctly filters full page lists.
 *   **Action:** Polish z-index or dropdown positioning in future sprint.
 
-### 10. API/UI Data Structure Mismatch (Critical)
-*   **Priority:** Critical (P0) - Blocks Integration Testing
-*   **Description:** All List Views (Accounts, Transactions, Cards) are empty despite data existing in the DB.
-*   **Root Cause:** API response format changed to standard `{ data: [...], pagination: ... }`, but UI components and hooks still expect legacy format `{ accounts: [...] }`.
-*   **Impact:** `useApi` hook successfully fetches data, but child components see `undefined` and render empty states.
-*   **Fix Required:** Update `src/types/api.ts` and component mapping logic to read from `.data`.
 
 ### 2. AI Assistant Context Awareness
 *   **Priority:** Medium (P2)
@@ -63,6 +57,16 @@ This document tracks bugs found during UI testing.
 ---
 
 ## 🏁 Resolved / Closed Issues (Archive)
+
+### ✅ Fixed: Bug #10 - API/UI Data Structure Mismatch (Critical P0)
+*   **Original Issue:** All List Views (Accounts, Transactions, Cards) were empty despite data existing in DB.
+*   **Root Cause:** API returned `{ data: [...], pagination: ... }` but UI types expected `{ accounts: [...], total: number }`.
+*   **Fix Applied:** 
+    - Updated all response types in `src/types/api.ts` to match actual API format
+    - Changed `AccountsResponse`, `TransfersResponse`, `AgentsResponse`, `StreamsResponse` to use `data` array
+    - Updated `AccountsPage` and `TransactionsPage` to read from `data?.data` instead of `data?.accounts` / `data?.transfers`
+*   **Fix Verification:** All list views now display real data from database (7 accounts, 5 transfers, 4 cards)
+*   **Date Fixed:** 2025-12-15
 
 ### ✅ Fixed: Missing "New Payment" Entry Point
 *   **Original Issue:** Could not find button to start payment.
