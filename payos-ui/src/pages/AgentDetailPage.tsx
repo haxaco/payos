@@ -2,9 +2,16 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronLeft, Bot, Shield, CheckCircle, PauseCircle, XCircle, 
-  Loader2, AlertCircle, Copy, Activity, TrendingUp
+  Loader2, AlertCircle, Copy, Activity, TrendingUp, Zap, Wallet, Settings
 } from 'lucide-react';
 import { useAgent } from '../hooks/api';
+
+const agentTypeConfig = {
+  payment: { icon: Zap, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/50', label: 'Payment' },
+  treasury: { icon: Wallet, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/50', label: 'Treasury' },
+  compliance: { icon: Shield, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-100 dark:bg-violet-900/50', label: 'Compliance' },
+  custom: { icon: Settings, color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-700', label: 'Custom' }
+};
 
 const kyaTierConfig = {
   0: { label: 'T0 Sandbox', color: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400' },
@@ -82,6 +89,8 @@ export function AgentDetailPage() {
   }
   
   const kyaConf = kyaTierConfig[agent.kya_tier as keyof typeof kyaTierConfig];
+  const typeConf = agentTypeConfig[agent.type];
+  const TypeIcon = typeConf.icon;
   
   const statusConfig = {
     active: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100 dark:bg-green-900/50', label: 'Active' },
@@ -107,8 +116,8 @@ export function AgentDetailPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-xl bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center">
-              <Bot className="w-7 h-7 text-violet-600 dark:text-violet-400" />
+            <div className={`w-14 h-14 rounded-xl ${typeConf.bg} flex items-center justify-center`}>
+              <TypeIcon className={`w-7 h-7 ${typeConf.color}`} />
             </div>
             <div>
               <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
@@ -118,7 +127,12 @@ export function AgentDetailPage() {
                 <p className="text-gray-500 dark:text-gray-400 mt-1">{agent.description}</p>
               )}
               
-              <div className="mt-3 flex items-center gap-3">
+              <div className="mt-3 flex items-center gap-3 flex-wrap">
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${typeConf.bg} ${typeConf.color}`}>
+                  <TypeIcon className="w-3 h-3" />
+                  {typeConf.label}
+                </span>
+                
                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusConf?.bg || 'bg-gray-100'} ${statusConf?.color || 'text-gray-600'}`}>
                   <StatusIcon className="w-3 h-3" />
                   {statusConf?.label || agent.status}
@@ -128,6 +142,13 @@ export function AgentDetailPage() {
                   <Shield className="w-3 h-3" />
                   {kyaConf?.label || `Tier ${agent.kya_tier}`}
                 </span>
+                
+                {agent.x402_enabled && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 rounded-full text-xs font-medium">
+                    <Zap className="w-3 h-3" />
+                    X-402 Enabled
+                  </span>
+                )}
               </div>
             </div>
           </div>

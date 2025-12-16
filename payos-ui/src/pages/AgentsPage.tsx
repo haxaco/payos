@@ -2,11 +2,19 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Bot, Plus, Search, MoreHorizontal,
-  CheckCircle, PauseCircle, XCircle, Loader2, AlertTriangle, Shield
+  CheckCircle, PauseCircle, XCircle, Loader2, AlertTriangle, Shield,
+  Zap, Wallet, Settings
 } from 'lucide-react';
 import { useAgents } from '../hooks/api';
 import type { Agent } from '../types/api';
 import { AISparkleButton } from '../components/ui/AISparkleButton';
+
+const agentTypeConfig = {
+  payment: { icon: Zap, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/50', label: 'Payment' },
+  treasury: { icon: Wallet, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/50', label: 'Treasury' },
+  compliance: { icon: Shield, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-100 dark:bg-violet-900/50', label: 'Compliance' },
+  custom: { icon: Settings, color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-700', label: 'Custom' }
+};
 
 const statusConfig = {
   active: { icon: CheckCircle, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/50', label: 'Active' },
@@ -24,9 +32,15 @@ const kyaTierConfig = {
 export function AgentsPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'payment' | 'treasury' | 'compliance' | 'custom'>('all');
   
-  // Fetch agents from API
-  const { data, loading, error, refetch } = useAgents({ limit: 100 });
+  // Fetch agents from API with type filter
+  const filters = useMemo(() => ({
+    type: typeFilter !== 'all' ? typeFilter : undefined,
+    limit: 100,
+  }), [typeFilter]);
+  
+  const { data, loading, error, refetch } = useAgents(filters);
   const agents = data?.data || [];
   
   // Client-side search filtering
@@ -43,8 +57,9 @@ export function AgentsPage() {
   
   // Calculate stats from real data
   const activeAgents = agents.filter(a => a.status === 'active').length;
-  const verifiedAgents = agents.filter(a => a.kya_status === 'verified').length;
-  const totalStreams = agents.reduce((sum, a) => sum + (a.active_streams_count || 0), 0);
+  const x402EnabledAgents = agents.filter(a => a.x402_enabled).length;
+  const totalVolume = agents.reduce((sum, a) => sum + (a.total_volume || 0), 0);
+  const totalTransactions = agents.reduce((sum, a) => sum + (a.total_transactions || 0), 0);
   
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -96,45 +111,45 @@ export function AgentsPage() {
         
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">KYA Verified</p>
-            <Shield className="w-5 h-5 text-green-500" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">X-402 Enabled</p>
+            <Zap className="w-5 h-5 text-violet-500" />
           </div>
           <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">
-            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : verifiedAgents}
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : x402EnabledAgents}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Verified agents
+            Protocol active
           </p>
         </div>
         
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Active Streams</p>
-            <AISparkleButton context="agent streams" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">Total Volume</p>
+            <AISparkleButton context="agent transaction volume" />
           </div>
           <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">
-            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : totalStreams}
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : `$${(totalVolume / 1000000).toFixed(1)}M`}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Managed streams
+            All-time processed
           </p>
         </div>
         
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">KYA Tiers</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Total Transactions</p>
             <Bot className="w-5 h-5 text-gray-400" />
           </div>
           <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">
-            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : new Set(agents.map(a => a.kya_tier)).size}
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : totalTransactions.toLocaleString()}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Unique tiers
+            Autonomous payments
           </p>
         </div>
       </div>
       
-      {/* Search */}
+      {/* Search & Filters */}
       <div className="flex items-center gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -146,6 +161,22 @@ export function AgentsPage() {
             className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400"
           />
         </div>
+        
+        <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+          {(['all', 'payment', 'treasury', 'compliance'] as const).map(type => (
+            <button
+              key={type}
+              onClick={() => setTypeFilter(type)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                typeFilter === type
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              {type === 'all' ? 'All' : agentTypeConfig[type].label}
+            </button>
+          ))}
+        </div>
       </div>
       
       {/* Agents Table */}
@@ -154,10 +185,10 @@ export function AgentsPage() {
           <thead>
             <tr className="bg-gray-50 dark:bg-gray-900/50">
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Agent</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Type</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">KYA Tier</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">KYA Status</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Limits</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Streams</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">X-402</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Volume</th>
               <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Status</th>
               <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Actions</th>
             </tr>
@@ -190,7 +221,9 @@ export function AgentsPage() {
             
             {/* Agent Rows */}
             {!loading && filteredAgents.map(agent => {
+              const typeConf = agentTypeConfig[agent.type];
               const statusConf = statusConfig[agent.status as keyof typeof statusConfig];
+              const TypeIcon = typeConf.icon;
               const StatusIcon = statusConf?.icon || XCircle;
               const kyaConf = kyaTierConfig[agent.kya_tier as keyof typeof kyaTierConfig];
               
@@ -202,8 +235,8 @@ export function AgentsPage() {
                 >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center">
-                        <Bot className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                      <div className={`w-10 h-10 rounded-xl ${typeConf.bg} flex items-center justify-center`}>
+                        <Bot className={`w-5 h-5 ${typeConf.color}`} />
                       </div>
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">{agent.name}</p>
@@ -216,39 +249,34 @@ export function AgentsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <TypeIcon className={`w-4 h-4 ${typeConf.color}`} />
+                      <span className="text-sm text-gray-600 dark:text-gray-300">{typeConf.label}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
                     <span className={`inline-flex items-center gap-1.5 px-2 py-1 ${kyaConf?.color || 'bg-gray-100 text-gray-600'} rounded-full text-xs font-medium`}>
                       {kyaConf?.label || `T${agent.kya_tier}`}
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
-                      agent.kya_status === 'verified' 
-                        ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
-                        : agent.kya_status === 'pending'
-                        ? 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                    }`}>
-                      {agent.kya_status}
-                    </span>
+                    {agent.x402_enabled ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 rounded-full text-xs font-medium">
+                        <Zap className="w-3 h-3" />
+                        Enabled
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-400 dark:text-gray-500">Disabled</span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div>
-                      <p className="text-sm text-gray-900 dark:text-white">
-                        ${agent.effective_limit_per_tx.toLocaleString()}/tx
+                      <p className="text-gray-900 dark:text-white font-medium">
+                        ${agent.total_volume.toLocaleString()}
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        ${agent.effective_limit_daily.toLocaleString()}/day
+                        {agent.total_transactions.toLocaleString()} txns
                       </p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm">
-                      <span className="text-gray-900 dark:text-white font-medium">
-                        {agent.active_streams_count}
-                      </span>
-                      <span className="text-gray-500 dark:text-gray-400">
-                        /{agent.max_active_streams}
-                      </span>
                     </div>
                   </td>
                   <td className="px-6 py-4">

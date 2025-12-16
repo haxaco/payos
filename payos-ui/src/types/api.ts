@@ -180,6 +180,7 @@ export interface Agent {
   name: string;
   description: string | null;
   status: AgentStatus;
+  type: 'payment' | 'treasury' | 'compliance' | 'custom';
   
   // KYA
   kya_tier: number;
@@ -204,6 +205,13 @@ export interface Agent {
   // Current stream stats
   active_streams_count: number;
   total_stream_outflow: number;
+  
+  // X-402 Protocol
+  x402_enabled: boolean;
+  
+  // Transaction statistics
+  total_volume: number;
+  total_transactions: number;
   
   // Auth token (only prefix is exposed)
   auth_token_prefix: string | null;
@@ -312,6 +320,7 @@ export interface PaymentMethodFilters {
 
 export interface AgentFilters {
   parent_account_id?: string;
+  type?: 'payment' | 'treasury' | 'compliance' | 'custom';
   status?: AgentStatus;
   kya_status?: VerificationStatus;
   min_kya_tier?: number;

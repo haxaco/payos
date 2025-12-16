@@ -240,8 +240,12 @@ async function createAgent(tenantId: string, accountId: string, agent: any) {
       name: agent.name,
       description: agent.description || '',
       status: agent.status || 'active',
+      type: agent.type || 'custom',
       kya_tier: agent.kyaTier || 0,
       kya_status: agent.kyaStatus || 'unverified',
+      x402_enabled: agent.x402Enabled !== undefined ? agent.x402Enabled : true,
+      total_volume: agent.totalVolume || 0,
+      total_transactions: agent.totalTransactions || 0,
       auth_token_prefix: getKeyPrefix(agentToken),
       auth_token_hash: hashApiKey(agentToken),
     })
@@ -529,25 +533,37 @@ async function seedDatabase() {
     await createAgent(acmeTenantId, acmeAccountIds['maria'], {
       name: 'Maria Payment Agent',
       description: 'Handles payment processing for Maria',
+      type: 'payment',
       status: 'active',
       kyaTier: 2,
       kyaStatus: 'verified',
+      x402Enabled: true,
+      totalVolume: 125430.50,
+      totalTransactions: 247,
     });
     
     await createAgent(acmeTenantId, acmeAccountIds['accounting'], {
       name: 'TechCorp Treasury Agent',
       description: 'Manages treasury operations for TechCorp',
+      type: 'treasury',
       status: 'active',
       kyaTier: 2,
       kyaStatus: 'verified',
+      x402Enabled: true,
+      totalVolume: 1857250.00,
+      totalTransactions: 1523,
     });
     
     await createAgent(acmeTenantId, acmeAccountIds['accounting'], {
       name: 'TechCorp Compliance Agent',
       description: 'Monitors compliance for TechCorp transactions',
+      type: 'compliance',
       status: 'paused',
       kyaTier: 1,
       kyaStatus: 'unverified',
+      x402Enabled: false,
+      totalVolume: 0,
+      totalTransactions: 0,
     });
     console.log('');
     
