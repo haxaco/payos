@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   AlertTriangle, Clock, CheckCircle, XCircle, Search, Filter,
   ChevronRight, User, Building2, ArrowUpRight, FileText, MessageSquare,
   Calendar, DollarSign, AlertCircle, MoreHorizontal, X, Send, Upload,
@@ -146,19 +146,19 @@ export function DisputesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedDispute, setSelectedDispute] = useState<typeof mockDisputes[0] | null>(null);
   const [showResolveModal, setShowResolveModal] = useState(false);
-  
+
   // Filter disputes
   const filteredDisputes = mockDisputes.filter(dispute => {
-    const matchesSearch = 
+    const matchesSearch =
       dispute.claimant.accountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dispute.respondent.accountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dispute.id.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     const matchesStatus = statusFilter === 'all' || dispute.status === statusFilter;
-    
+
     return matchesSearch && matchesStatus;
   });
-  
+
   // Stats
   const stats = {
     open: mockDisputes.filter(d => d.status === 'open').length,
@@ -167,7 +167,7 @@ export function DisputesPage() {
     resolved: mockDisputes.filter(d => d.status === 'resolved').length,
     totalAmount: mockDisputes.filter(d => d.status !== 'resolved').reduce((sum, d) => sum + d.amountDisputed, 0),
   };
-  
+
   // Check for due soon disputes
   const dueSoon = mockDisputes.filter(d => {
     if (d.status === 'resolved') return false;
@@ -176,7 +176,7 @@ export function DisputesPage() {
     const daysUntilDue = Math.floor((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     return daysUntilDue <= 7;
   });
-  
+
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -189,7 +189,7 @@ export function DisputesPage() {
         </div>
         <AISparkleButton context="dispute management overview" label="AI Insights" />
       </div>
-      
+
       {/* Due Soon Alert */}
       {dueSoon.length > 0 && (
         <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
@@ -209,52 +209,50 @@ export function DisputesPage() {
           </div>
         </div>
       )}
-      
+
       {/* Stats Cards */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-2">
-            <Clock className="w-4 h-4" />
-            <span className="text-sm font-medium">Open</span>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Open Disputes</p>
+            <Clock className="w-5 h-5 text-amber-500" />
           </div>
-          <p className="text-2xl font-semibold text-gray-900 dark:text-white">{stats.open}</p>
+          <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{stats.open}</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Awaiting response</p>
         </div>
-        
+
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-2">
-            <FileText className="w-4 h-4" />
-            <span className="text-sm font-medium">Under Review</span>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Under Review</p>
+            <FileText className="w-5 h-5 text-blue-500" />
           </div>
-          <p className="text-2xl font-semibold text-gray-900 dark:text-white">{stats.underReview}</p>
+          <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{stats.underReview}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Being investigated</p>
         </div>
-        
+
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-2">
-            <AlertCircle className="w-4 h-4" />
-            <span className="text-sm font-medium">Escalated</span>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Escalated</p>
+            <AlertCircle className="w-5 h-5 text-red-500" />
           </div>
-          <p className="text-2xl font-semibold text-gray-900 dark:text-white">{stats.escalated}</p>
-        </div>
-        
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-2">
-            <CheckCircle className="w-4 h-4" />
-            <span className="text-sm font-medium">Resolved</span>
-          </div>
-          <p className="text-2xl font-semibold text-gray-900 dark:text-white">{stats.resolved}</p>
-        </div>
-        
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 mb-2">
-            <DollarSign className="w-4 h-4" />
-            <span className="text-sm font-medium">At Risk</span>
-          </div>
-          <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-            ${stats.totalAmount.toLocaleString()}
+          <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{stats.escalated}</p>
+          <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+            {stats.resolved} resolved total
           </p>
         </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Amount at Risk</p>
+            <DollarSign className="w-5 h-5 text-gray-400" />
+          </div>
+          <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">
+            ${stats.totalAmount.toLocaleString()}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">In active disputes</p>
+        </div>
       </div>
-      
+
       {/* Filters */}
       <div className="flex items-center gap-4">
         <div className="flex-1 relative">
@@ -267,7 +265,7 @@ export function DisputesPage() {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-        
+
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -280,7 +278,7 @@ export function DisputesPage() {
           <option value="resolved">Resolved</option>
         </select>
       </div>
-      
+
       {/* Disputes Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <table className="w-full">
@@ -316,15 +314,14 @@ export function DisputesPage() {
               const daysUntilDue = Math.floor((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
               const isOverdue = daysUntilDue < 0 && dispute.status !== 'resolved';
               const isDueSoon = daysUntilDue <= 7 && daysUntilDue >= 0 && dispute.status !== 'resolved';
-              
+
               return (
                 <tr
                   key={dispute.id}
                   className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer transition-colors"
                   onClick={() => setSelectedDispute(dispute)}
-                  style={{ minHeight: '64px' }}
                 >
-                  <td className="px-6 py-4" style={{ paddingTop: '16px', paddingBottom: '16px' }}>
+                  <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                         <Scale className="w-5 h-5 text-gray-500 dark:text-gray-400" />
@@ -371,13 +368,12 @@ export function DisputesPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <div className={`text-sm ${
-                      isOverdue 
-                        ? 'text-red-600 dark:text-red-400 font-medium' 
-                        : isDueSoon 
+                    <div className={`text-sm ${isOverdue
+                        ? 'text-red-600 dark:text-red-400 font-medium'
+                        : isDueSoon
                           ? 'text-amber-600 dark:text-amber-400 font-medium'
                           : 'text-gray-600 dark:text-gray-300'
-                    }`}>
+                      }`}>
                       {dispute.status === 'resolved' ? (
                         <span className="text-gray-400">—</span>
                       ) : isOverdue ? (
@@ -406,7 +402,7 @@ export function DisputesPage() {
             })}
           </tbody>
         </table>
-        
+
         {filteredDisputes.length === 0 && (
           <div className="p-12 text-center">
             <Scale className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
@@ -414,14 +410,14 @@ export function DisputesPage() {
               No disputes found
             </h3>
             <p className="text-gray-500 dark:text-gray-400">
-              {searchQuery || statusFilter !== 'all' 
+              {searchQuery || statusFilter !== 'all'
                 ? 'Try adjusting your filters'
                 : 'All disputes have been resolved'}
             </p>
           </div>
         )}
       </div>
-      
+
       {/* Dispute Detail Slide-over */}
       {selectedDispute && (
         <DisputeDetail
@@ -432,7 +428,7 @@ export function DisputesPage() {
           }}
         />
       )}
-      
+
       {/* Resolve Modal */}
       {showResolveModal && selectedDispute && (
         <ResolveDisputeModal
@@ -479,10 +475,10 @@ function StatusBadge({ status }: { status: string }) {
       label: 'Resolved',
     },
   };
-  
+
   const c = config[status] || config.open;
   const Icon = c.icon;
-  
+
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
       <Icon className="w-3 h-3" />
@@ -504,7 +500,7 @@ interface DisputeDetailProps {
 function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
   const navigate = useNavigate();
   const [response, setResponse] = useState('');
-  
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
@@ -531,7 +527,7 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
             </div>
           </div>
         </div>
-        
+
         <div className="p-6 space-y-6">
           {/* Transaction Summary */}
           <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4">
@@ -556,7 +552,7 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
               </button>
             </div>
           </div>
-          
+
           {/* Parties */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
@@ -564,11 +560,10 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
                 Claimant
               </p>
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  dispute.claimant.accountType === 'person'
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${dispute.claimant.accountType === 'person'
                     ? 'bg-blue-100 dark:bg-blue-900/50'
                     : 'bg-purple-100 dark:bg-purple-900/50'
-                }`}>
+                  }`}>
                   {dispute.claimant.accountType === 'person' ? (
                     <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   ) : (
@@ -585,17 +580,16 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                 Respondent
               </p>
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  dispute.respondent.accountType === 'person'
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${dispute.respondent.accountType === 'person'
                     ? 'bg-blue-100 dark:bg-blue-900/50'
                     : 'bg-purple-100 dark:bg-purple-900/50'
-                }`}>
+                  }`}>
                   {dispute.respondent.accountType === 'person' ? (
                     <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   ) : (
@@ -613,7 +607,7 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
               </div>
             </div>
           </div>
-          
+
           {/* Dispute Details */}
           <div>
             <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
@@ -648,17 +642,16 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
               )}
               <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
                 <span className="text-gray-500 dark:text-gray-400">Due Date</span>
-                <span className={`font-medium ${
-                  dispute.status !== 'resolved' && new Date(dispute.dueDate) < new Date()
+                <span className={`font-medium ${dispute.status !== 'resolved' && new Date(dispute.dueDate) < new Date()
                     ? 'text-red-600 dark:text-red-400'
                     : 'text-gray-900 dark:text-white'
-                }`}>
+                  }`}>
                   {dispute.status === 'resolved' ? '—' : new Date(dispute.dueDate).toLocaleDateString()}
                 </span>
               </div>
             </div>
           </div>
-          
+
           {/* Description */}
           <div>
             <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
@@ -668,7 +661,7 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
               {dispute.description}
             </p>
           </div>
-          
+
           {/* Respondent Response (if exists) */}
           {dispute.respondentResponse && (
             <div>
@@ -680,7 +673,7 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
               </p>
             </div>
           )}
-          
+
           {/* Resolution (if resolved) */}
           {dispute.status === 'resolved' && dispute.resolution && (
             <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
@@ -699,7 +692,7 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
               )}
             </div>
           )}
-          
+
           {/* Admin Actions */}
           {dispute.status !== 'resolved' && (
             <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -742,7 +735,7 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
   const [resolutionAmount, setResolutionAmount] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [issueRefund, setIssueRefund] = useState(true);
-  
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     console.log('Resolve dispute:', {
@@ -753,9 +746,9 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
     });
     onResolved();
   };
-  
+
   const needsAmount = resolution === 'partial_refund' || resolution === 'refund_issued';
-  
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -773,7 +766,7 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
             </button>
           </div>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -792,7 +785,7 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
               <option value="no_action">No Action (Dismiss)</option>
             </select>
           </div>
-          
+
           {needsAmount && (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -816,7 +809,7 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
               </p>
             </div>
           )}
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Notes
@@ -829,7 +822,7 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
             />
           </div>
-          
+
           {(resolution === 'refund_issued' || resolution === 'partial_refund') && (
             <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg cursor-pointer">
               <input
@@ -848,7 +841,7 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
               </div>
             </label>
           )}
-          
+
           <div className="flex gap-3 pt-4">
             <button
               type="button"
