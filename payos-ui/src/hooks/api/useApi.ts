@@ -78,7 +78,9 @@ export function useApi<T>(
         }
 
         const result = await response.json();
-        setData(result);
+        // Extract data from response wrapper if it exists
+        const extractedData = result?.data !== undefined ? result.data : result;
+        setData(extractedData);
         setError(null);
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Unknown error occurred');
