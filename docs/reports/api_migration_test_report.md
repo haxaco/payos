@@ -55,15 +55,21 @@ The migration of Accounts, Transactions, and Cards pages to use real API data (S
 
 ## 🐛 Issues Discovered
 
-### 🔴 Critical (Resolved)
-*   **Bug #10: API/UI Data Structure Mismatch**
-    *   *Issue:* API returned `{ data: [] }`, UI expected `{ accounts: [] }`.
-    *   *Status:* **FIXED** (User applied patch).
+    *   *Issues:* Search, Routing, Transactions Tab, Breadcrumbs, Empty States.
+    *   *Status:* **FIXED & VERIFIED**.
+    *   *Verification:*
+        *   **Search:** Filters correctly by name (Bug #11).
+        *   **Routing:** Unique URLs for each account (Bug #3).
+        *   **Tabs:** Transactions tab populated (Bug #4).
+        *   **Breadcrumbs:** Navigate back to list correctly (Bug #9).
 
-### 🟠 High Priority (Open)
-*   **Bug #11: Search Filtering Broken**
-    *   *Issue:* Searching on Accounts page updates tab counts to 0 but **does not filter table rows**.
-    *   *Impact:* Users cannot filter lists or see Empty States.
+### ✅ Detailed View Bug Fixes
+- **Result:** **Verified.**
+- **Details:** Verified fixes for Cards, Transactions, Compliance, and Agents details.
+- **Verification:**
+    *   **Navigation:** Clicking rows now correctly navigates to Detail Pages for all entity types (Bugs #5, #6, #7, #8).
+    *   **Data:** Detail pages load correct data based on UUID (Bug #7).
+    *   **Stability:** No JS errors observed on Card Details (Bug #10).
 
 ---
 

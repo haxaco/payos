@@ -194,6 +194,19 @@ export interface Agent {
   effective_limit_per_tx: number;
   effective_limit_daily: number;
   effective_limit_monthly: number;
+  effective_limits_capped: boolean;
+  
+  // Stream limits
+  max_active_streams: number;
+  max_flow_rate_per_stream: number;
+  max_total_outflow: number;
+  
+  // Current stream stats
+  active_streams_count: number;
+  total_stream_outflow: number;
+  
+  // Auth token (only prefix is exposed)
+  auth_token_prefix: string | null;
   
   created_at: string;
   updated_at: string;
