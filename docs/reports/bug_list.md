@@ -7,12 +7,6 @@ This document tracks bugs found during UI testing.
 
 ## 🟡 Open Issues (Minor / Polish)
 
-### 9. Breadcrumb Navigation Failure
-*   **Priority:** Medium (P2)
-*   **Description:** Clicking the "Accounts" link in the breadcrumb trail (top left) does not navigate back to the Accounts list.
-*   **Root Cause:** Component uses `onNavigate('accounts')` but the parent `AccountDetailPage` does not receive this prop, nor is it connected to the Router.
-*   **Status:** Open - needs refactor to use `useNavigate` hook
-
 ### 2. AI Assistant Context Awareness
 *   **Priority:** Medium (P2)
 *   **Description:** AI responds to generic queries but lacks deep context (e.g., "Show high risk accounts").
@@ -28,6 +22,11 @@ This document tracks bugs found during UI testing.
 ---
 
 ## 🏁 Resolved / Closed Issues (Archive)
+
+### ✅ Fixed: Bug #9 - Breadcrumb Navigation (2025-12-16)
+*   **Original Issue:** Breadcrumb links not navigating back to list pages.
+*   **Fix:** All detail pages (AccountDetailPage, CardDetailPage, ComplianceFlagDetailPage) already using correct navigate() implementation.
+*   **Verification:** Breadcrumb navigation works correctly across all detail pages.
 
 ### ✅ Fixed: Bug #11 - Search Filtering on Accounts Page (2025-12-16)
 *   **Original Issue:** Search input updated tab counts but didn't filter table rows.
