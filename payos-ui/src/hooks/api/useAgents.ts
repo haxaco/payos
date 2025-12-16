@@ -18,8 +18,14 @@ export function useAgents(filters: AgentFilters = {}): ApiResponse<AgentsRespons
 export function useAgent(agentId: string | undefined, options?: { skip?: boolean }): ApiResponse<Agent> {
   const endpoint = agentId ? `/v1/agents/${agentId}` : '';
   
-  return useApi<Agent>(endpoint, {
+  const response = useApi<{ data: Agent }>(endpoint, {
     skip: !agentId || options?.skip,
   });
+  
+  // Unwrap the data field from API response
+  return {
+    ...response,
+    data: response.data?.data || null,
+  };
 }
 

@@ -18,9 +18,15 @@ export function usePaymentMethods(filters: PaymentMethodFilters = {}): ApiRespon
 export function usePaymentMethod(paymentMethodId: string | undefined, options?: { skip?: boolean }): ApiResponse<PaymentMethod> {
   const endpoint = paymentMethodId ? `/v1/payment-methods/${paymentMethodId}` : '';
   
-  return useApi<PaymentMethod>(endpoint, {
+  const response = useApi<{ data: PaymentMethod }>(endpoint, {
     skip: !paymentMethodId || options?.skip,
   });
+  
+  // Unwrap the data field from API response
+  return {
+    ...response,
+    data: response.data?.data || null,
+  };
 }
 
 /**
