@@ -1,7 +1,7 @@
-import { Bot, Plus, AlertTriangle, Clock, Activity, DollarSign } from 'lucide-react';
+import { Bot, Plus, AlertTriangle, Loader2, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { mockAgents } from '../data/mockAgents';
-import { Account } from '../types/account';
+import { useAgents } from '../hooks/api';
+import type { Account } from '../types/api';
 
 interface Props {
   account: Account;
@@ -9,10 +9,13 @@ interface Props {
 
 export function AgentsTab({ account }: Props) {
   const navigate = useNavigate();
-  // Get agents registered to this account
-  const accountAgents = mockAgents.filter(agent => 
-    agent.parentAccount.id === account.id
-  );
+  
+  // Fetch agents for this account from API
+  const { data, loading, error } = useAgents({ 
+    parent_account_id: account.id,
+    limit: 50 
+  });
+  const accountAgents = data?.data || [];
 
   // Get parent account limits based on verification tier
   const getParentLimits = (tier: number) => {
@@ -22,7 +25,7 @@ export function AgentsTab({ account }: Props) {
     return { perTransaction: 0, daily: 0, monthly: 0 };
   };
 
-  const parentLimits = getParentLimits(account.verificationTier);
+  const parentLimits = getParentLimits(account.verification?.tier || 0);
 
   return (
     <div className="space-y-6">
@@ -41,13 +44,13 @@ export function AgentsTab({ account }: Props) {
         
         <p className="text-sm text-gray-500 dark:text-gray-400">
           Agents registered to this account can act on its behalf. Agent limits are capped by account verification level (
-          {account.type === 'business' ? 'KYB' : 'KYC'} T{account.verificationTier}).
+          {account.type === 'business' ? 'KYB' : 'KYC'} T{account.verification?.tier || 0}).
         </p>
         
         {/* Account Limits Reference */}
         <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-            Account Limits ({account.type === 'business' ? 'KYB' : 'KYC'} T{account.verificationTier})
+            Account Limits ({account.type === 'business' ? 'KYB' : 'KYC'} T{account.verification?.tier || 0})
           </p>
           <div className="flex gap-6 text-sm">
             <div>
@@ -66,13 +69,33 @@ export function AgentsTab({ account }: Props) {
         </div>
       </div>
       
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Failed to load agents</h3>
+            <p className="text-sm text-red-700 dark:text-red-400 mt-1">{error.message}</p>
+          </div>
+        </div>
+      )}
+      
+      {/* Loading State */}
+      {loading && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+          <p className="text-gray-500 dark:text-gray-400 mt-2">Loading agents...</p>
+        </div>
+      )}
+      
       {/* Agents List */}
-      {accountAgents.length > 0 ? (
+      {!loading && !error && accountAgents.length > 0 ? (
         <div className="space-y-4">
           {accountAgents.map((agent) => (
             <div 
               key={agent.id}
-              className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+              onClick={() => navigate(`/agents/${agent.id}`)}
+              className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-violet-300 dark:hover:border-violet-700 transition-colors cursor-pointer"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-4">
@@ -80,16 +103,17 @@ export function AgentsTab({ account }: Props) {
                     <Bot className="w-6 h-6 text-violet-600 dark:text-violet-400" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="font-semibold text-gray-900 dark:text-white">{agent.name}</h4>
                       {/* KYA Tier Badge */}
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        agent.kya.tier === 3 ? 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300' :
-                        agent.kya.tier === 2 ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' :
-                        agent.kya.tier === 1 ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' :
+                        agent.kya_tier === 3 ? 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300' :
+                        agent.kya_tier === 2 ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' :
+                        agent.kya_tier === 1 ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' :
                         'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                       }`}>
-                        KYA T{agent.kya.tier}
+                        <Shield className="w-3 h-3 inline mr-1" />
+                        KYA T{agent.kya_tier}
                       </span>
                       {/* Status Badge */}
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -106,122 +130,58 @@ export function AgentsTab({ account }: Props) {
                         {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      {agent.description}
-                    </p>
+                    {agent.description && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        {agent.description}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
               
               {/* Limits Grid */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                {/* Transaction Limits */}
+              <div className="grid grid-cols-3 gap-4">
                 <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Transaction Limits</p>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Per Transaction:</span>
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        ${agent.kya.effectiveLimits.perTransaction.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Monthly:</span>
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        ${agent.kya.effectiveLimits.monthly.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Per Transaction</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    ${agent.effective_limit_per_tx.toLocaleString()}
+                  </p>
+                  {agent.effective_limits_capped && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Capped</p>
+                  )}
                 </div>
                 
-                {/* Stream Limits */}
                 <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Stream Limits</p>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Active Streams:</span>
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        {agent.streamStats.activeStreams} / {agent.limits.maxActiveStreams}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Total Outflow:</span>
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        ${agent.streamStats.totalOutflow.toLocaleString()} / ${agent.limits.maxTotalStreamOutflow.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Daily Limit</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    ${agent.effective_limit_daily.toLocaleString()}
+                  </p>
                 </div>
-              </div>
-              
-              {/* Capped Warning Banner */}
-              {agent.kya.effectiveLimits.cappedByParent && (
-                <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
-                      This agent's KYA T{agent.kya.tier} limits are capped by the account's {account.type === 'business' ? 'KYB' : 'KYC'} T{account.verificationTier} verification.
-                      {' '}<button className="underline hover:no-underline">Upgrade account verification</button>
-                    </p>
-                  </div>
+                
+                <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Active Streams</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {agent.active_streams_count}/{agent.max_active_streams}
+                  </p>
                 </div>
-              )}
-              
-              {/* Stats Row */}
-              <div className="flex items-center gap-6 text-sm text-gray-500 dark:text-gray-400 mb-4">
-                <div className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  Last active: {new Date(agent.stats.lastActive).toLocaleDateString()}
-                </div>
-                <div className="flex items-center gap-1">
-                  <Activity className="w-4 h-4" />
-                  {agent.stats.totalTransactions.toLocaleString()} transactions
-                </div>
-                <div className="flex items-center gap-1">
-                  <DollarSign className="w-4 h-4" />
-                  ${agent.stats.totalVolume.toLocaleString()} volume
-                </div>
-              </div>
-              
-              {/* Actions */}
-              <div className="flex gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button 
-                  onClick={() => navigate(`/agents/${agent.id}`)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                >
-                  View Details
-                </button>
-                <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600">
-                  Manage
-                </button>
-                {agent.status === 'active' ? (
-                  <button className="px-4 py-2 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-lg text-sm font-medium hover:bg-amber-200 dark:hover:bg-amber-900/70">
-                    Suspend
-                  </button>
-                ) : (
-                  <button className="px-4 py-2 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 rounded-lg text-sm font-medium hover:bg-green-200 dark:hover:bg-green-900/70">
-                    Activate
-                  </button>
-                )}
               </div>
             </div>
           ))}
         </div>
-      ) : (
+      ) : !loading && !error ? (
         /* Empty State */
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mx-auto mb-4">
-            <Bot className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="font-semibold text-gray-900 dark:text-white mb-2">No Agents Registered</h3>
-          <p className="text-gray-500 dark:text-gray-400 mb-4">
-            Register an AI agent to automate payments, treasury management, or compliance monitoring.
+          <Bot className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+          <p className="text-gray-600 dark:text-gray-400 font-medium">No agents registered</p>
+          <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+            Register an AI agent to enable autonomous payments
           </p>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+          <button className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
+            <Plus className="w-4 h-4" />
             Register First Agent
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
