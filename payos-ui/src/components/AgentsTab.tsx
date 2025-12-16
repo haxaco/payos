@@ -1,7 +1,14 @@
-import { Bot, Plus, AlertTriangle, Loader2, Shield } from 'lucide-react';
+import { Bot, Plus, AlertTriangle, Loader2, Shield, Zap, Wallet, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAgents } from '../hooks/api';
 import type { Account } from '../types/api';
+
+const agentTypeConfig = {
+  payment: { icon: Zap, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/50', label: 'Payment' },
+  treasury: { icon: Wallet, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/50', label: 'Treasury' },
+  compliance: { icon: Shield, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-100 dark:bg-violet-900/50', label: 'Compliance' },
+  custom: { icon: Settings, color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-700', label: 'Custom' }
+};
 
 interface Props {
   account: Account;
@@ -91,53 +98,68 @@ export function AgentsTab({ account }: Props) {
       {/* Agents List */}
       {!loading && !error && accountAgents.length > 0 ? (
         <div className="space-y-4">
-          {accountAgents.map((agent) => (
-            <div 
-              key={agent.id}
-              onClick={() => navigate(`/agents/${agent.id}`)}
-              className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-violet-300 dark:hover:border-violet-700 transition-colors cursor-pointer"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center flex-shrink-0">
-                    <Bot className="w-6 h-6 text-violet-600 dark:text-violet-400" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="font-semibold text-gray-900 dark:text-white">{agent.name}</h4>
-                      {/* KYA Tier Badge */}
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        agent.kya_tier === 3 ? 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300' :
-                        agent.kya_tier === 2 ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' :
-                        agent.kya_tier === 1 ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' :
-                        'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                      }`}>
-                        <Shield className="w-3 h-3 inline mr-1" />
-                        KYA T{agent.kya_tier}
-                      </span>
-                      {/* Status Badge */}
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                        agent.status === 'active' 
-                          ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
-                          : agent.status === 'paused'
-                            ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
-                            : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          agent.status === 'active' ? 'bg-green-500' :
-                          agent.status === 'paused' ? 'bg-amber-500' : 'bg-red-500'
-                        }`} />
-                        {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
-                      </span>
+          {accountAgents.map((agent) => {
+            const typeConf = agentTypeConfig[agent.type];
+            const TypeIcon = typeConf.icon;
+            
+            return (
+              <div 
+                key={agent.id}
+                onClick={() => navigate(`/agents/${agent.id}`)}
+                className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-violet-300 dark:hover:border-violet-700 transition-colors cursor-pointer"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl ${typeConf.bg} flex items-center justify-center flex-shrink-0`}>
+                      <TypeIcon className={`w-6 h-6 ${typeConf.color}`} />
                     </div>
-                    {agent.description && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        {agent.description}
-                      </p>
-                    )}
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">{agent.name}</h4>
+                        {/* Type Badge */}
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${typeConf.bg} ${typeConf.color}`}>
+                          {typeConf.label}
+                        </span>
+                        {/* KYA Tier Badge */}
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          agent.kya_tier === 3 ? 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300' :
+                          agent.kya_tier === 2 ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' :
+                          agent.kya_tier === 1 ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' :
+                          'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        }`}>
+                          <Shield className="w-3 h-3 inline mr-1" />
+                          KYA T{agent.kya_tier}
+                        </span>
+                        {/* X-402 Badge */}
+                        {agent.x402_enabled && (
+                          <span className="px-2 py-0.5 bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 rounded text-xs font-medium">
+                            <Zap className="w-3 h-3 inline mr-1" />
+                            X-402
+                          </span>
+                        )}
+                        {/* Status Badge */}
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          agent.status === 'active' 
+                            ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
+                            : agent.status === 'paused'
+                              ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
+                              : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            agent.status === 'active' ? 'bg-green-500' :
+                            agent.status === 'paused' ? 'bg-amber-500' : 'bg-red-500'
+                          }`} />
+                          {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
+                        </span>
+                      </div>
+                      {agent.description && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          {agent.description}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
               
               {/* Limits Grid */}
               <div className="grid grid-cols-3 gap-4">
@@ -166,7 +188,8 @@ export function AgentsTab({ account }: Props) {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : !loading && !error ? (
         /* Empty State */
