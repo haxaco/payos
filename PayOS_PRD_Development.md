@@ -1,8 +1,8 @@
 # PayOS PoC — Product Requirements Document (PRD)
 
-**Version:** 1.2  
-**Date:** December 14, 2025  
-**Status:** P1 Features Complete  
+**Version:** 1.3  
+**Date:** December 16, 2025  
+**Status:** P1 Features Complete, Planning Phase 2 Enhancements  
 
 ---
 
@@ -48,9 +48,10 @@ PayOS is a B2B stablecoin payout operating system for LATAM. This PRD covers the
 13. [Epic 9: Demo Polish & Missing Features](#epic-9-demo-polish--missing-features)
 14. [Epic 10: PSP Table Stakes Features](#epic-10-psp-table-stakes-features)
 15. [Epic 11: Authentication & User Management](#epic-11-authentication--user-management)
-16. [Implementation Schedule](#implementation-schedule)
-17. [API Reference](#api-reference)
-18. [Testing & Demo Scenarios](#testing--demo-scenarios)
+16. [Epic 12: Client-Side Caching & Data Management](#epic-12-client-side-caching--data-management)
+17. [Implementation Schedule](#implementation-schedule)
+18. [API Reference](#api-reference)
+19. [Testing & Demo Scenarios](#testing--demo-scenarios)
 
 ---
 
@@ -7374,6 +7375,328 @@ npm install @supabase/supabase-js  # For Supabase Auth client
 
 ---
 
+## Epic 12: Client-Side Caching & Data Management
+
+### Overview
+
+Implement intelligent client-side data caching using React Query (TanStack Query) to improve UI responsiveness and reduce unnecessary API calls. Currently, navigating between list views and detail pages re-fetches data every time, creating a sluggish user experience.
+
+**Strategic Context:**
+- **Client-Side:** React Query for UI caching and optimistic updates
+- **Server-Side:** Redis for API response caching (future consideration)
+- **Goal:** Sub-100ms perceived load times for cached data
+
+### Business Value
+
+- **User Experience:** Instant navigation between views, data feels "already there"
+- **API Cost Reduction:** Fewer redundant API calls, lower infrastructure costs
+- **Scalability:** Better handling of concurrent users with cached data
+- **Developer Experience:** Standard patterns for data fetching, mutations, and cache invalidation
+
+### Technical Approach
+
+**Phase 2: React Query Migration** (Recommended)
+- Replace custom `useApi` hooks with `useQuery` and `useMutation`
+- Automatic background refetching and cache invalidation
+- Optimistic UI updates for instant feedback
+- Built-in retry logic and error handling
+
+### Stories
+
+#### Story 12.1: React Query Infrastructure Setup
+
+**Description:** Install and configure React Query with QueryClientProvider, DevTools, and default options.
+
+**Acceptance Criteria:**
+- [ ] Install `@tanstack/react-query` and `@tanstack/react-query-devtools`
+- [ ] Wrap app with `QueryClientProvider` in `App.tsx`
+- [ ] Configure default options:
+  ```typescript
+  staleTime: 5 * 60 * 1000,      // 5 minutes
+  cacheTime: 30 * 60 * 1000,     // 30 minutes  
+  refetchOnWindowFocus: true,     // Refresh when tab gains focus
+  retry: 2,                        // Retry failed requests twice
+  ```
+- [ ] Add React Query DevTools in development mode
+- [ ] Create `queryClient.ts` with typed query keys
+
+**Technical Notes:**
+```typescript
+// queryClient.ts
+export const queryKeys = {
+  accounts: (filters?: AccountFilters) => ['accounts', filters] as const,
+  account: (id: string) => ['account', id] as const,
+  agents: (filters?: AgentFilters) => ['agents', filters] as const,
+  // ... etc
+};
+```
+
+---
+
+#### Story 12.2: Migrate Account Hooks to React Query
+
+**Description:** Convert `useAccounts` and `useAccount` hooks from custom `useApi` to React Query.
+
+**Acceptance Criteria:**
+- [ ] Replace `useAccounts` with `useQuery`:
+  ```typescript
+  export function useAccounts(filters: AccountFilters = {}) {
+    return useQuery({
+      queryKey: queryKeys.accounts(filters),
+      queryFn: () => fetchAccounts(filters),
+      staleTime: 5 * 60 * 1000,
+    });
+  }
+  ```
+- [ ] Replace `useAccount` with `useQuery`
+- [ ] Update `AccountsPage` to use new hooks (change `data` to `data?.data`)
+- [ ] Update `AccountDetailPage` to use new hooks
+- [ ] Test navigation between list and detail views (should be instant)
+- [ ] Verify cache invalidation on account mutations
+
+**Event-Based Invalidation:**
+```typescript
+// After creating/updating an account
+onSuccess: () => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.accounts() });
+  queryClient.invalidateQueries({ queryKey: queryKeys.account(id) });
+}
+```
+
+---
+
+#### Story 12.3: Migrate Agent Hooks to React Query
+
+**Description:** Convert agent data fetching to use React Query with proper cache invalidation.
+
+**Acceptance Criteria:**
+- [ ] Migrate `useAgents` and `useAgent` hooks
+- [ ] Update `AgentsPage` and `AgentDetailPage` components
+- [ ] Implement cache invalidation after agent mutations
+- [ ] Test type filter changes (should reuse cached data when possible)
+- [ ] Verify X-402 status updates invalidate cache
+
+---
+
+#### Story 12.4: Migrate Transaction/Transfer Hooks
+
+**Description:** Convert transfer and transaction hooks to React Query.
+
+**Acceptance Criteria:**
+- [ ] Migrate `useTransfers` and `useTransfer` hooks
+- [ ] Update `TransactionsPage` and `TransactionDetailPage`
+- [ ] Implement shorter cache time for transactions (2 minutes - more real-time)
+- [ ] Test rapid navigation between transactions
+- [ ] Verify new transactions appear after creation
+
+---
+
+#### Story 12.5: Migrate Payment Methods & Cards
+
+**Description:** Convert payment method hooks to React Query.
+
+**Acceptance Criteria:**
+- [ ] Migrate `usePaymentMethods` and `usePaymentMethod` hooks
+- [ ] Update `CardsPage` and `CardDetailPage`
+- [ ] Implement cache invalidation when adding/removing cards
+- [ ] Test account detail page payment methods tab (should cache)
+
+---
+
+#### Story 12.6: Mutations & Optimistic Updates
+
+**Description:** Implement React Query mutations for create/update/delete operations with optimistic UI updates.
+
+**Acceptance Criteria:**
+- [ ] Create mutation hooks for common operations:
+  ```typescript
+  export function useCreateAccount() {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: createAccount,
+      onMutate: async (newAccount) => {
+        // Optimistic update
+        await queryClient.cancelQueries({ queryKey: queryKeys.accounts() });
+        const previousAccounts = queryClient.getQueryData(queryKeys.accounts());
+        queryClient.setQueryData(queryKeys.accounts(), (old) => ({
+          ...old,
+          data: [...old.data, { ...newAccount, id: 'temp-id' }]
+        }));
+        return { previousAccounts };
+      },
+      onError: (err, newAccount, context) => {
+        // Rollback on error
+        queryClient.setQueryData(queryKeys.accounts(), context.previousAccounts);
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.accounts() });
+      }
+    });
+  }
+  ```
+- [ ] Implement for: accounts, agents, transfers, payment methods
+- [ ] Add loading states to mutation buttons
+- [ ] Test optimistic updates (UI updates instantly, then confirms)
+- [ ] Test rollback on API errors
+
+---
+
+#### Story 12.7: User-Triggered Refresh
+
+**Description:** Add manual refresh capabilities for users who want the latest data.
+
+**Acceptance Criteria:**
+- [ ] Add "Refresh" button to list pages (accounts, agents, transactions)
+- [ ] Implement pull-to-refresh on mobile (if applicable)
+- [ ] Add keyboard shortcut (Cmd/Ctrl + R) for refresh
+- [ ] Show subtle loading indicator during refresh
+- [ ] Display "Last updated X seconds ago" timestamp
+- [ ] Implement `refetch()` from React Query:
+  ```typescript
+  const { data, refetch } = useQuery(...);
+  <button onClick={() => refetch()}>Refresh</button>
+  ```
+
+---
+
+#### Story 12.8: Background Sync & Focus Refresh
+
+**Description:** Configure automatic background data refresh based on user behavior.
+
+**Acceptance Criteria:**
+- [ ] Enable `refetchOnWindowFocus` for critical data:
+  - Account balances (always fresh)
+  - Transaction history (fresh on focus)
+  - Agent status (fresh on focus)
+- [ ] Disable for static data:
+  - Account details (5 min stale time)
+  - Agent details (10 min stale time)
+- [ ] Add visual indicator when data is being refetched in background
+- [ ] Test: Open dashboard, switch tabs, return → should refresh data
+- [ ] Test: Leave dashboard overnight, return → should show fresh data
+
+---
+
+#### Story 12.9: Cache Invalidation Strategy
+
+**Description:** Implement intelligent cache invalidation based on data relationships and events.
+
+**Acceptance Criteria:**
+- [ ] **Event-Based Invalidation Rules:**
+  - Account created → invalidate `accounts` list
+  - Account updated → invalidate `accounts` list + specific `account`
+  - Transfer created → invalidate `transfers` list + related `account` balances
+  - Agent created → invalidate `agents` list + parent `account`
+  - Payment method added → invalidate `payment-methods` + `account`
+- [ ] **Cascading Invalidation:**
+  ```typescript
+  // When account balance changes
+  invalidateQueries(['account', accountId]);
+  invalidateQueries(['accounts']); // List might show balances
+  invalidateQueries(['transfers', { account_id: accountId }]);
+  ```
+- [ ] Document invalidation rules in `docs/caching-strategy.md`
+- [ ] Add helper function `invalidateRelatedQueries(entity, id)`
+
+---
+
+#### Story 12.10: Cache Performance Monitoring
+
+**Description:** Add monitoring and metrics for cache effectiveness.
+
+**Acceptance Criteria:**
+- [ ] Use React Query DevTools to inspect:
+  - Cache hit/miss ratio
+  - Query staleness
+  - Background refetch frequency
+- [ ] Add custom metrics (optional):
+  - Track `cacheHitRate` metric
+  - Track `averageResponseTime` (cached vs uncached)
+- [ ] Document cache configuration in README
+- [ ] Create troubleshooting guide for cache issues
+
+---
+
+### Cache TTL Strategy
+
+| Data Type | Stale Time | Cache Time | Rationale |
+|-----------|------------|------------|-----------|
+| **Account List** | 5 min | 30 min | Changes infrequently, OK to be slightly stale |
+| **Account Detail** | 10 min | 30 min | Static info, rarely changes |
+| **Account Balance** | 30 sec | 5 min | More critical, needs to be fresh |
+| **Transfers** | 2 min | 10 min | Important to show recent transactions |
+| **Agents** | 5 min | 30 min | Moderate update frequency |
+| **Payment Methods** | 10 min | 30 min | Rarely change after creation |
+| **Stats/Analytics** | 1 min | 5 min | Aggregate data, OK with slight delay |
+
+---
+
+### Future Considerations
+
+#### Server-Side Redis Caching
+**Note:** Under evaluation for Phase 3+
+
+**Potential Use Cases:**
+- API response caching (reduce DB load)
+- Rate limiting (distributed counters)
+- Session storage (distributed sessions)
+- Real-time analytics (materialized views)
+
+**Trade-offs:**
+- **Pros:** Reduces database load, faster API responses, distributed caching
+- **Cons:** Added complexity, cache invalidation across servers, additional infrastructure cost
+- **Decision:** Evaluate after monitoring actual database load in production
+
+**Integration Points:**
+```typescript
+// Middleware for Redis caching (future)
+app.use('/v1/accounts', cacheMiddleware({ ttl: 300 }));
+```
+
+---
+
+### Testing Requirements
+
+- [ ] Test cache persistence across navigation
+- [ ] Test cache invalidation after mutations
+- [ ] Test focus-based refresh
+- [ ] Test user-triggered refresh
+- [ ] Test optimistic updates and rollback
+- [ ] Test performance: < 100ms for cached data
+- [ ] Test with slow network (should show cached data first)
+- [ ] Test DevTools show correct cache state
+
+---
+
+### Implementation Checklist
+
+**Setup (Story 12.1)**
+- [ ] Install React Query
+- [ ] Configure QueryClientProvider
+- [ ] Add DevTools
+- [ ] Create query key factory
+
+**Migration (Stories 12.2-12.5)**
+- [ ] Migrate accounts hooks
+- [ ] Migrate agents hooks
+- [ ] Migrate transfers hooks
+- [ ] Migrate payment methods hooks
+- [ ] Update all consuming components
+
+**Advanced Features (Stories 12.6-12.9)**
+- [ ] Implement mutations
+- [ ] Add optimistic updates
+- [ ] Add user-triggered refresh
+- [ ] Configure background sync
+- [ ] Implement invalidation strategy
+
+**Monitoring (Story 12.10)**
+- [ ] Add performance monitoring
+- [ ] Document cache strategy
+- [ ] Create troubleshooting guide
+
+---
+
 ## Implementation Schedule
 
 ### Phase 1: Full PoC with Mocks (Weekends 1-2)
@@ -7619,6 +7942,25 @@ See separate API documentation or the route files for detailed request/response 
 ---
 
 ## Changelog
+
+### Version 1.3 (December 16, 2025)
+
+**New Epic Added:**
+- **Epic 12: Client-Side Caching & Data Management** - Comprehensive plan to migrate to React Query (TanStack Query) for intelligent client-side caching
+  - 10 stories covering infrastructure setup, hook migration, mutations, optimistic updates, and cache invalidation
+  - Event-based and user-triggered refresh strategies
+  - Performance monitoring and troubleshooting guides
+  - Future consideration for Redis server-side caching noted
+
+**Bug Fixes & Improvements:**
+- Fixed agent detail page rendering issues (type icon undefined errors)
+- Fixed API response unwrapping in hooks (broke paginated responses)
+- Added flat fields to `mapAgentFromDb` for UI compatibility
+- Fixed dotenv loading for environment variables in API server
+- Restored agent features: types, X-402 protocol status, transaction statistics
+- All accounts, agents, and transactions now loading correctly
+
+---
 
 ### Version 1.2 (December 14, 2025)
 
