@@ -8294,7 +8294,163 @@ See separate API documentation or the route files for detailed request/response 
 
 ---
 
+## Epic 14: Compliance & Dispute Management APIs
+
+### Overview
+
+Implement missing backend APIs for compliance flag management, complete dispute API integration, and add account relationship tracking. These APIs are required to replace mock data in the UI and enable navigation between related entities (accounts, transactions, disputes, compliance flags).
+
+**Context:** The UI currently uses mock data for compliance flags and has navigation issues due to missing API endpoints and account relationship data.
+
+### Business Value
+
+- **Compliance:** Enable proper AML/fraud monitoring with flag lifecycle management
+- **Data Integrity:** Replace mock data with real database-backed records
+- **Navigation:** Enable seamless navigation between accounts, transactions, and compliance entities
+- **Audit Trail:** Track all compliance actions for regulatory reporting
+
+### Stories
+
+#### Story 14.1: Compliance Flags API ✅
+
+**Description:** Implement full CRUD API for compliance flags with AI analysis storage, assignment, and resolution workflows.
+
+**Status:** ✅ **Complete**
+
+**Acceptance Criteria:**
+- [x] Database migration for `compliance_flags` table
+- [x] GET `/v1/compliance/flags` - List flags with filtering
+- [x] GET `/v1/compliance/flags/:id` - Get single flag details
+- [x] POST `/v1/compliance/flags` - Create new flag
+- [x] PATCH `/v1/compliance/flags/:id` - Update flag
+- [x] POST `/v1/compliance/flags/:id/resolve` - Resolve flag with action
+- [x] POST `/v1/compliance/flags/:id/assign` - Assign flag to user
+- [x] GET `/v1/compliance/stats` - Get compliance statistics
+- [x] React Query hooks for all endpoints
+- [x] CompliancePage integrated with real API
+- [x] Audit logging for all flag actions
+
+**Database Schema:**
+```sql
+CREATE TABLE compliance_flags (
+  id UUID PRIMARY KEY,
+  tenant_id UUID REFERENCES tenants(id),
+  flag_type TEXT CHECK (flag_type IN ('transaction', 'account', 'pattern')),
+  risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
+  status TEXT CHECK (status IN ('open', 'pending_review', 'under_investigation', 
+                                 'resolved', 'dismissed', 'escalated')),
+  account_id UUID REFERENCES accounts(id),
+  transfer_id UUID REFERENCES transfers(id),
+  reason_code TEXT NOT NULL,
+  reasons TEXT[] NOT NULL,
+  description TEXT,
+  ai_analysis JSONB,
+  resolution_action TEXT,
+  resolution_notes TEXT,
+  resolved_by_user_id UUID,
+  resolved_at TIMESTAMPTZ,
+  assigned_to_user_id UUID,
+  reviewed_by_user_id UUID,
+  review_notes TEXT,
+  reviewed_at TIMESTAMPTZ,
+  due_date TIMESTAMPTZ,
+  escalated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Filter Parameters:**
+- `status` - Filter by flag status
+- `risk_level` - Filter by risk level
+- `flag_type` - Filter by flag type
+- `account_id` - Filter by account
+- `transfer_id` - Filter by transfer
+- `assigned_to` - Filter by assigned user
+- `from_date` / `to_date` - Date range filtering
+- `search` - Full-text search in description/reason_code
+
+**Points:** 8  
+**Priority:** P1
+
+---
+
+#### Story 14.2: Disputes API Integration
+
+**Description:** Complete disputes API implementation and replace mock data in UI. Verify all endpoints work with real account/transaction references.
+
+**Status:** 🔄 **Pending**
+
+**Acceptance Criteria:**
+- [ ] Verify disputes table has proper foreign keys to accounts/transfers
+- [ ] Seed database with sample disputes linked to real data
+- [ ] Update DisputesPage to use real API instead of mock data
+- [ ] Update DisputeDetailPage to fetch from API
+- [ ] Enable navigation from disputes to transactions/accounts
+- [ ] Test full dispute lifecycle (create → respond → resolve)
+- [ ] Verify auto-escalation logic works
+- [ ] Add React Query hooks if not already present
+
+**Points:** 5  
+**Priority:** P1
+
+---
+
+#### Story 14.3: Account Relationships API
+
+**Description:** Add API endpoints for managing and querying account-to-account relationships (contractors, employers, vendors, customers).
+
+**Status:** 🔄 **Pending**
+
+**Acceptance Criteria:**
+- [ ] Create `account_relationships` table migration
+- [ ] GET `/v1/accounts/:id/related-accounts` - Get all relationships
+- [ ] GET `/v1/accounts/:id/contractors` - Get contractors (for business)
+- [ ] GET `/v1/accounts/:id/employers` - Get employers (for person)
+- [ ] POST `/v1/accounts/:id/relationships` - Create relationship
+- [ ] DELETE `/v1/accounts/:id/relationships/:related_id` - Remove relationship
+- [ ] Update AccountDetailPage to show real contractors
+- [ ] Seed relationships between accounts in seed script
+
+**Database Schema:**
+```sql
+CREATE TABLE account_relationships (
+  id UUID PRIMARY KEY,
+  tenant_id UUID REFERENCES tenants(id),
+  account_id UUID REFERENCES accounts(id),
+  related_account_id UUID REFERENCES accounts(id),
+  relationship_type VARCHAR(50) NOT NULL,
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(tenant_id, account_id, related_account_id, relationship_type)
+);
+```
+
+**Points:** 5  
+**Priority:** P2
+
+---
+
+### Total Estimate
+
+| Story | Points | Priority |
+|-------|--------|----------|
+| 14.1 Compliance Flags API | 8 | P1 ✅ |
+| 14.2 Disputes API Integration | 5 | P1 |
+| 14.3 Account Relationships API | 5 | P2 |
+| **Total** | **18** | |
+
+---
+
 ## Changelog
+
+### Version 1.4 (December 16, 2025)
+
+**New Epics Added:**
+- **Epic 14: Compliance & Dispute Management APIs** - Backend APIs for compliance flags and complete navigation support
+  - Story 14.1: Compliance Flags API ✅ Complete
+  - Story 14.2: Disputes API Integration (Pending)
+  - Story 14.3: Account Relationships API (Pending)
 
 ### Version 1.3 (December 16, 2025)
 
