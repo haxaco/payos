@@ -57,6 +57,7 @@ export function mapAgentFromDb(row: any): Agent {
     name: row.name,
     description: row.description || '',
     status: row.status,
+    type: row.type || 'custom',
     // Flat fields for client compatibility
     kyaTier: row.kya_tier || 0,
     kyaStatus: row.kya_status || 'unverified',
@@ -100,6 +101,10 @@ export function mapAgentFromDb(row: any): Agent {
       type: row.auth_type || 'api_key',
       clientId: row.auth_client_id || undefined,
     },
+    // New flat fields
+    x402_enabled: row.x402_enabled !== null ? row.x402_enabled : true,
+    total_volume: parseFloat(row.total_volume) || 0,
+    total_transactions: row.total_transactions || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

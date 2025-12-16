@@ -75,6 +75,7 @@ agents.get('/', async (c) => {
   const { page, limit } = getPaginationParams(query);
   const search = query.search;
   const status = query.status;
+  const type = query.type;
   const kyaTier = query.kyaTier;
   const parentAccountId = query.parentAccountId;
   
@@ -96,6 +97,9 @@ agents.get('/', async (c) => {
   }
   if (status) {
     dbQuery = dbQuery.eq('status', status);
+  }
+  if (type) {
+    dbQuery = dbQuery.eq('type', type);
   }
   if (kyaTier !== undefined) {
     dbQuery = dbQuery.eq('kya_tier', parseInt(kyaTier));
