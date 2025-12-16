@@ -1,7 +1,7 @@
 # PayOS UI Testing Guide
 
-**Version:** 2.0  
-**Date:** December 15, 2025  
+**Version:** 2.1  
+**Date:** December 16, 2025  
 **Purpose:** Comprehensive UI testing instructions for automated testing (Gemini)
 
 ---
@@ -1681,6 +1681,450 @@ These flows are primarily API-level for now (the UI does not yet expose full org
 
 ---
 
+## 🆕 EPIC 9: DEMO POLISH FEATURES (Stories 9.1-9.5)
+
+### Flow 46: Reports Page - Generate & Download Reports (Story 9.1) 🆕
+
+**Route:** `/reports`
+
+**Goal:** Verify reports can be generated, downloaded, and deleted using real API data.
+
+**Steps:**
+1. Navigate to `/reports`
+2. **Verify Page Elements**:
+   - ✅ Header: "Reports" with "Generate Report" button
+   - ✅ Report Types Grid: 5 cards (Transactions, Streams, Accounts, Agents, Financial Summary)
+   - ✅ Recent Reports section (may be empty on first visit)
+
+3. **Test Report Type Cards**:
+   - Click on "Transaction History" card
+   - **Expected**: Generate modal opens with "transactions" pre-selected
+
+4. **Generate a Report**:
+   - Click "Generate Report" button in header
+   - **Modal appears** with:
+     - Report Type dropdown (5 options)
+     - Date Range inputs (start date, end date)
+     - Format buttons (CSV, JSON, PDF)
+   - Select "Transaction History"
+   - Set date range: Last 30 days (default is already set)
+   - Select format: CSV
+   - Click "Generate" button
+   - **Expected**:
+     - Button shows "Generating..." with spinner
+     - Modal closes on success
+     - New report appears in "Recent Reports" section
+     - Report shows: name, type, format, row count, date range, status "ready"
+
+5. **Test Download**:
+   - Find the newly generated report
+   - Click "Download" button
+   - **Expected**: 
+     - CSV file downloads
+     - File contains transaction data (check file content)
+     - Network tab shows: `GET /v1/reports/{id}/download`
+
+6. **Test Multiple Reports**:
+   - Generate "Accounts Report" (JSON format)
+   - Generate "Streams Report" (CSV format)
+   - **Verify**:
+     - All 3 reports visible in list
+     - Each shows correct type, format, row count
+     - Download buttons work for all
+
+7. **Test Delete**:
+   - Click trash icon on one report
+   - **Expected**: Report removed from list
+   - Network tab shows: `DELETE /v1/reports/{id}`
+
+8. **Test Loading State**:
+   - Refresh page
+   - **Expected**: Spinner shows while fetching reports
+
+9. **Test Empty State** (if no reports exist):
+   - Delete all reports
+   - **Expected**: Empty state with icon, message, "Generate Report" CTA
+
+10. **Test Error Handling**:
+    - Stop API server
+    - Try to generate report
+    - **Expected**: Red error box shows with message
+    - Restart API server
+    - **Verify**: Can generate reports again
+
+**API Endpoints Verified:**
+- `GET /v1/reports` - List reports
+- `POST /v1/reports` - Generate report
+- `GET /v1/reports/:id/download` - Download report
+- `DELETE /v1/reports/:id` - Delete report
+
+**Expected Results:**
+- ✅ Report generation works for all 5 types
+- ✅ All 3 formats (CSV, JSON, PDF) download successfully
+- ✅ Reports show correct metadata (row count, date range)
+- ✅ Delete functionality works
+- ✅ Loading/error/empty states display correctly
+- ✅ No console errors
+
+---
+
+### Flow 47: Streams Page - Real Data Verification (Story 9.2) 🆕
+
+**Route:** `/streams`
+
+**Goal:** Verify streams page displays real data and all features work correctly.
+
+**Steps:**
+1. Navigate to `/streams`
+2. **Verify Page Elements**:
+   - ✅ Header: "Money Streams" with "Create Stream" button
+   - ✅ Stats Row: 4 cards (Total Streams, Monthly Outflow, Total Funded, Total Streamed)
+   - ✅ Search bar and filter buttons (Status, Health)
+   - ✅ Streams table with columns: Stream, Flow Rate, Balance, Health, Status, Category
+
+3. **Verify Stats Cards**:
+   - **Total Streams**: Shows count (e.g., "2")
+   - **Monthly Outflow**: Dollar amount (sum of all active stream flow rates)
+   - **Total Funded**: Total amount funded across all streams
+   - **Total Streamed**: Lifetime total streamed amount
+   - **Check Math**: Verify totals match data in table
+
+4. **Test Search**:
+   - Type in search box (e.g., "Maria")
+   - **Expected**: Table filters to matching streams
+   - Clear search
+   - **Expected**: All streams show again
+
+5. **Test Status Filter**:
+   - Click "Active" button
+   - **Expected**: Only active streams shown
+   - Click "Paused" button
+   - **Expected**: Only paused streams shown (may be empty)
+   - Click "All Status"
+   - **Expected**: All streams show
+
+6. **Test Health Filter**:
+   - Click "Healthy" button
+   - **Expected**: Only healthy streams shown (green badge)
+   - Click "Warning" button
+   - **Expected**: Only warning streams shown (amber badge)
+   - Click "Critical" button
+   - **Expected**: Only critical streams shown (red badge)
+   - Click "All Health"
+   - **Expected**: All streams show
+
+7. **Verify Stream Table Rows**:
+   - Each row should show:
+     - **Stream**: Sender → Receiver names
+     - **Flow Rate**: Per month + per day calculation
+     - **Balance**: Remaining balance + progress bar
+     - **Health Badge**: Colored icon (healthy/warning/critical)
+     - **Status Badge**: Colored icon (active/paused/cancelled)
+     - **Category**: Stream category (e.g., "Payroll", "Subscription")
+   - **Progress Bar**: Visual indicator showing % streamed (purple bar)
+
+8. **Test Row Click** (if detail page exists):
+   - Click on a stream row
+   - **Expected**: Navigates to `/streams/{id}` (detail page may not exist yet)
+   - If 404, that's okay - Story 9.2 only covers list page
+
+9. **Test Loading State**:
+   - Refresh page
+   - **Expected**: Spinner shows while fetching streams
+
+10. **Test Empty State**:
+    - Apply filters that return no results (e.g., status="cancelled")
+    - **Expected**: 
+      - Empty state with icon
+      - Message: "No streams match your filters"
+      - Subtext: "Try adjusting your search or filters"
+
+11. **Test Error Handling**:
+    - Stop API server
+    - Refresh page
+    - **Expected**: Red error box with "Failed to load streams" + retry button
+    - Click "Try again"
+    - Restart API server
+    - **Expected**: Streams load successfully
+
+**API Endpoints Verified:**
+- `GET /v1/streams` - List streams with filters
+
+**Expected Results:**
+- ✅ Real stream data displays (not mock)
+- ✅ Stats calculations are correct
+- ✅ Search and filters work correctly
+- ✅ Health badges show correct colors
+- ✅ Balance progress bars are accurate
+- ✅ Loading/error/empty states work
+- ✅ No console errors
+
+---
+
+### Flow 48: Empty States - Consistency Check (Story 9.3) 🆕
+
+**Goal:** Verify all list pages have proper empty states when no data exists.
+
+**Test Matrix:**
+
+| Page | Route | Empty State Test |
+|------|-------|------------------|
+| **Accounts** | `/accounts` | Delete all accounts → "No accounts yet" with "Create Account" button |
+| **Transactions** | `/transactions` | Apply filter with no results → "No transactions match your filters" |
+| **Cards** | `/cards` | Delete all cards → "No payment methods yet" with "Add Payment Method" button |
+| **Agents** | `/agents` | Apply filter with no results → "No agents match your filters" |
+| **Streams** | `/streams` | Apply filter with no results → "No streams match your filters" |
+| **Reports** | `/reports` | Delete all reports → "No reports generated yet" with "Generate Report" button |
+| **Compliance** | `/compliance` | If no flags → "No compliance flags" |
+| **Disputes** | `/disputes` | If no disputes → "No disputes" |
+
+**Steps for Each Page:**
+1. Navigate to page
+2. Trigger empty state (delete data OR apply filter with no results)
+3. **Verify Empty State Contains**:
+   - ✅ Icon/Emoji (large, centered)
+   - ✅ Title (bold, descriptive)
+   - ✅ Description (helpful subtext)
+   - ✅ CTA Button (optional, for create actions)
+4. Click CTA button (if present)
+5. **Expected**: Opens create modal OR navigates to create page
+
+**Expected Results:**
+- ✅ All list pages have empty states
+- ✅ Consistent design (icon + title + description)
+- ✅ Helpful messaging (not just "No data")
+- ✅ Different messages for "no data" vs "no results" (filters)
+- ✅ Dark mode support (text remains readable)
+
+---
+
+### Flow 49: Loading Skeletons - Visual Consistency (Story 9.4) 🆕
+
+**Goal:** Verify loading skeletons appear and match actual component layouts.
+
+**Test Matrix:**
+
+| Component | Where to Test | Skeleton Type |
+|-----------|---------------|---------------|
+| **Table Skeleton** | Any list page (accounts, transactions, agents) | Multiple rows with pulsing gray bars |
+| **Card Skeleton** | Dashboard stats, agent cards | Rectangle with pulsing sections |
+| **Detail Skeleton** | Account/transaction detail pages | Two-column layout with pulsing bars |
+| **List Page Skeleton** | Streams, reports, cards | Stats + table skeleton |
+
+**Steps:**
+1. **Test Table Skeleton**:
+   - Navigate to `/accounts`
+   - **Observe**: Before data loads, skeleton rows appear
+   - **Verify**:
+     - ✅ Pulsing animation (gray bars fade in/out)
+     - ✅ 5-10 skeleton rows
+     - ✅ Columns match actual table columns
+     - ✅ Smooth transition from skeleton → real data
+
+2. **Test Card Skeleton**:
+   - Navigate to `/agents`
+   - **Observe**: Stats cards show skeleton before data loads
+   - **Verify**:
+     - ✅ 4 card skeletons in grid
+     - ✅ Pulsing animation
+     - ✅ Layout matches actual stat cards
+     - ✅ Dark mode: Gray bars visible on dark background
+
+3. **Test Detail Page Skeleton**:
+   - Navigate to `/accounts/{id}`
+   - **Observe**: Detail page skeleton appears
+   - **Verify**:
+     - ✅ Two-column layout
+     - ✅ Multiple pulsing sections
+     - ✅ Matches actual detail page structure
+
+4. **Test List Page Skeleton**:
+   - Navigate to `/streams`
+   - **Observe**: Full page skeleton (stats + table)
+   - **Verify**:
+     - ✅ Stats row skeleton (4 cards)
+     - ✅ Search bar skeleton
+     - ✅ Filter buttons skeleton
+     - ✅ Table skeleton (header + rows)
+
+5. **Test Slow Network**:
+   - Open DevTools → Network tab
+   - Throttle to "Slow 3G"
+   - Navigate to any list page
+   - **Verify**:
+     - ✅ Skeleton shows immediately (no blank white page)
+     - ✅ Skeleton visible for 2-3 seconds
+     - ✅ Smooth transition to real content
+
+6. **Test Dark Mode**:
+   - Toggle dark mode (if available)
+   - Navigate to any page
+   - **Verify**:
+     - ✅ Skeletons use `bg-gray-700` (visible on dark background)
+     - ✅ Animation still visible
+     - ✅ Contrast is sufficient
+
+**Expected Results:**
+- ✅ Skeletons appear on all loading states
+- ✅ Pulsing animation works smoothly
+- ✅ Layouts match actual components
+- ✅ No "flash of unstyled content" (FOUC)
+- ✅ Dark mode skeletons are visible
+- ✅ Skeletons disappear when data loads
+
+---
+
+### Flow 50: Error States - Comprehensive Error Handling (Story 9.5) 🆕
+
+**Goal:** Verify error states are consistent and retry functionality works.
+
+**Test Scenarios:**
+
+#### **Scenario 1: Network Error**
+1. Stop API server (`pkill -f "pnpm dev"` in api directory)
+2. Navigate to `/accounts`
+3. **Expected**:
+   - ✅ Red error box appears
+   - ✅ Icon: AlertCircle (red)
+   - ✅ Title: "Failed to load accounts" (or similar)
+   - ✅ Message: Describes error (e.g., "Network request failed")
+   - ✅ Retry button with icon
+4. Click "Try again" button
+5. **Expected**: Attempts to refetch (will fail again since server is down)
+6. Restart API server
+7. Click "Try again" button
+8. **Expected**: Data loads successfully
+
+#### **Scenario 2: API Error (500 Internal Server Error)**
+1. Modify API to return 500 error (temporarily)
+2. Navigate to `/transactions`
+3. **Expected**:
+   - ✅ Red error box appears
+   - ✅ Error message from API shown (if available)
+   - ✅ Retry button present
+4. Fix API
+5. Click "Try again"
+6. **Expected**: Data loads successfully
+
+#### **Scenario 3: Not Found Error (404)**
+1. Navigate to `/accounts/invalid-uuid-12345`
+2. **Expected**:
+   - ✅ Centered empty state OR error message
+   - ✅ Icon: 🔍 (magnifying glass)
+   - ✅ Title: "Account not found"
+   - ✅ Message: "The account you're looking for doesn't exist..."
+   - ✅ "Go back" button
+3. Click "Go back"
+4. **Expected**: Navigates to `/accounts`
+
+#### **Scenario 4: React Error Boundary**
+1. **Trigger**: Force a JavaScript error (e.g., access undefined property)
+2. **Expected**:
+   - ✅ ErrorBoundary catches error
+   - ✅ Fallback UI shows:
+     - Red box with AlertCircle icon
+     - "Something went wrong" heading
+     - Error message displayed
+     - "Try again" button
+3. Click "Try again"
+4. **Expected**: Component resets and attempts to render again
+
+#### **Scenario 5: Validation Error**
+1. Try to create a report with invalid date range (end before start)
+2. **Expected**:
+   - ✅ Validation error appears below field OR in modal
+   - ✅ Red text with error message
+   - ✅ Form submission blocked
+
+#### **Scenario 6: Toast Notifications** (if implemented)
+1. Successfully create/update/delete an item
+2. **Expected**:
+   - ✅ Success toast appears (green)
+   - ✅ Message describes action (e.g., "Report generated successfully")
+   - ✅ Toast auto-dismisses after 3-5 seconds
+
+**Error State Components to Verify:**
+- ✅ `ErrorDisplay` - Generic error with retry
+- ✅ `NetworkErrorDisplay` - Connection-specific error
+- ✅ `NotFoundError` - 404 errors
+- ✅ `ErrorBoundary` - Catches React errors
+
+**Expected Results:**
+- ✅ All errors show user-friendly messages (not technical jargon)
+- ✅ Retry buttons work correctly
+- ✅ Error messages are specific (not just "Error occurred")
+- ✅ Network errors distinguished from API errors
+- ✅ 404 errors show different UI than 500 errors
+- ✅ ErrorBoundary prevents entire app crash
+- ✅ Dark mode: Error boxes remain readable
+
+---
+
+### Flow 51: End-to-End Demo Polish Flow 🆕
+
+**Goal:** Comprehensive test combining all Epic 9 features.
+
+**Steps:**
+1. **Start Fresh**:
+   - Clear browser cache
+   - Restart API server
+   - Navigate to `/`
+
+2. **Test Reports Workflow**:
+   - Go to `/reports`
+   - Generate "Transaction History" report (CSV)
+   - **Verify**: Loading skeleton → Report appears
+   - Download report
+   - **Verify**: CSV file downloads with data
+   - Delete report
+   - **Verify**: Empty state shows (if no other reports)
+
+3. **Test Streams Workflow**:
+   - Go to `/streams`
+   - **Verify**: Loading skeleton → Stats + Table appear
+   - Apply health filter: "Critical"
+   - **Verify**: Empty state OR filtered results
+   - Reset filter to "All Health"
+   - Search for a stream
+   - **Verify**: Results filter correctly
+
+4. **Test Error Recovery**:
+   - Stop API server
+   - Navigate to `/accounts`
+   - **Verify**: Error state shows
+   - Click "Try again" (will fail)
+   - Restart API server
+   - Click "Try again"
+   - **Verify**: Data loads successfully
+
+5. **Test Loading Performance**:
+   - Open DevTools → Network tab
+   - Navigate between pages rapidly:
+     - `/accounts` → `/transactions` → `/cards` → `/agents` → `/streams` → `/reports`
+   - **Verify**:
+     - ✅ Skeletons show immediately (no blank screens)
+     - ✅ No duplicate API calls
+     - ✅ Smooth transitions
+     - ✅ No console errors
+
+6. **Test Dark Mode** (if implemented):
+   - Toggle dark mode
+   - Visit each page
+   - **Verify**:
+     - ✅ Skeletons visible
+     - ✅ Error states readable
+     - ✅ Empty states contrast sufficient
+
+**Expected Results:**
+- ✅ All Epic 9 features working together seamlessly
+- ✅ No conflicts between components
+- ✅ Consistent UX across all pages
+- ✅ Performance is smooth (< 2s load times)
+- ✅ Error handling is robust
+- ✅ No console errors or warnings
+
+---
+
 ## 📝 Testing Summary Checklist
 
 After completing all priority flows, verify:
@@ -1715,6 +2159,13 @@ After completing all priority flows, verify:
 - [ ] Pages load within 2 seconds
 - [ ] No unnecessary API calls (check Network tab)
 - [ ] Smooth transitions between pages
+
+### Epic 9: Demo Polish Features ✅
+- [ ] **Reports (9.1)**: Generate, download, delete reports work
+- [ ] **Streams (9.2)**: Page displays real data with filters and stats
+- [ ] **Empty States (9.3)**: All list pages have consistent empty states
+- [ ] **Loading Skeletons (9.4)**: Skeletons appear and match layouts
+- [ ] **Error States (9.5)**: Errors show with retry, boundary catches crashes
 
 ---
 
