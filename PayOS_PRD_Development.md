@@ -49,9 +49,10 @@ PayOS is a B2B stablecoin payout operating system for LATAM. This PRD covers the
 14. [Epic 10: PSP Table Stakes Features](#epic-10-psp-table-stakes-features)
 15. [Epic 11: Authentication & User Management](#epic-11-authentication--user-management)
 16. [Epic 12: Client-Side Caching & Data Management](#epic-12-client-side-caching--data-management)
-17. [Implementation Schedule](#implementation-schedule)
-18. [API Reference](#api-reference)
-19. [Testing & Demo Scenarios](#testing--demo-scenarios)
+17. [Epic 13: Advanced Authentication & Security Features](#epic-13-advanced-authentication--security-features)
+18. [Implementation Schedule](#implementation-schedule)
+19. [API Reference](#api-reference)
+20. [Testing & Demo Scenarios](#testing--demo-scenarios)
 
 ---
 
@@ -7363,15 +7364,367 @@ npm install @supabase/supabase-js  # For Supabase Auth client
 
 ---
 
-### Future TODOs (Out of Scope)
+## Epic 13: Advanced Authentication & Security Features
 
-- [ ] **Granular API Key Scopes** - Allow keys with limited permissions (e.g., read-only)
-- [ ] **Multi-Tenant Users** - Allow one user to belong to multiple organizations
-- [ ] **SSO/OAuth** - Google, GitHub, SAML integration via Supabase
-- [ ] **2FA/MFA** - Two-factor authentication for dashboard users
-- [ ] **API Key Rate Limiting** - Per-key rate limits
-- [ ] **API Key IP Allowlist** - Restrict keys to specific IPs
-- [ ] **Audit Log for User Actions** - Track all user dashboard actions
+### Overview
+
+This epic extends Epic 11 with advanced security and authentication features that are valuable for enterprise customers and production deployments. These features enhance security posture, improve user experience, and enable enterprise integrations.
+
+**Strategic Context:**
+- **Phase:** Post-MVP, Enterprise-Ready
+- **Priority:** P1-P2 (Nice to have, not blocking)
+- **Target:** Enterprise customers, high-security environments
+- **Dependencies:** Epic 11 must be complete
+
+### Business Value
+
+- **Enterprise Sales:** SSO/OAuth and 2FA are table stakes for enterprise deals
+- **Security Compliance:** Granular scopes and IP allowlists meet security audit requirements
+- **Operational Control:** Per-key rate limiting and audit logs enable better operations
+- **User Experience:** Multi-tenant users reduce friction for consultants/agencies
+
+---
+
+### Story 13.1: Granular API Key Scopes
+
+**Priority:** P1  
+**Estimate:** 4 hours
+
+#### Description
+
+Allow API keys to have limited permissions (scopes) instead of full access. This enables:
+- Read-only keys for monitoring/reporting
+- Write-only keys for specific operations
+- Scoped keys for third-party integrations
+
+#### Acceptance Criteria
+
+- [ ] Add `scopes` column to `api_keys` table (TEXT[] array)
+- [ ] Define scope constants:
+  ```typescript
+  export const API_KEY_SCOPES = {
+    READ_ACCOUNTS: 'accounts:read',
+    WRITE_ACCOUNTS: 'accounts:write',
+    READ_TRANSFERS: 'transfers:read',
+    CREATE_TRANSFERS: 'transfers:create',
+    READ_AGENTS: 'agents:read',
+    WRITE_AGENTS: 'agents:write',
+    READ_STREAMS: 'streams:read',
+    CREATE_STREAMS: 'streams:create',
+    // ... etc
+  } as const;
+  ```
+- [ ] Update API key creation to accept `scopes` array
+- [ ] Update auth middleware to check scopes before allowing requests
+- [ ] Add scope validation helper:
+  ```typescript
+  function hasScope(requiredScope: string, keyScopes: string[]): boolean {
+    return keyScopes.includes('*') || keyScopes.includes(requiredScope);
+  }
+  ```
+- [ ] Update API key management UI to show/edit scopes
+- [ ] Default new keys to `['*']` (full access) for backwards compatibility
+- [ ] Add scope documentation to API reference
+
+#### Technical Notes
+
+- Use PostgreSQL array type: `scopes TEXT[] DEFAULT ARRAY['*']`
+- Scope format: `resource:action` (e.g., `accounts:read`, `transfers:create`)
+- Wildcard `*` means full access (backwards compatible)
+- Scope checking happens in auth middleware before route handler
+
+---
+
+### Story 13.2: Multi-Tenant Users
+
+**Priority:** P2  
+**Estimate:** 6 hours
+
+#### Description
+
+Allow one user to belong to multiple organizations. This enables:
+- Consultants/agencies managing multiple client accounts
+- Users switching between organizations without multiple accounts
+- Organization switching UI in dashboard
+
+#### Acceptance Criteria
+
+- [ ] Remove `UNIQUE(tenant_id)` constraint from `user_profiles`
+- [ ] Update schema to allow multiple `(user_id, tenant_id)` pairs
+- [ ] Add `current_tenant_id` to user session context
+- [ ] Update `GET /v1/auth/me` to return all organizations user belongs to:
+  ```json
+  {
+    "user": { "id": "...", "email": "..." },
+    "organizations": [
+      { "id": "...", "name": "...", "role": "owner" },
+      { "id": "...", "name": "...", "role": "admin" }
+    ],
+    "currentOrganization": { "id": "...", "name": "...", "role": "owner" }
+  }
+  ```
+- [ ] Add `POST /v1/auth/switch-organization` endpoint
+- [ ] Update auth middleware to use `current_tenant_id` from session
+- [ ] Add organization switcher UI component in top bar
+- [ ] Update all API endpoints to use `current_tenant_id` from context
+- [ ] Update RLS policies to allow users to see data from all their organizations
+- [ ] Add organization context to all audit logs
+
+#### Technical Notes
+
+- Store `current_tenant_id` in JWT token or session storage
+- Organization switcher should update session and refresh page
+- RLS policies need to check `tenant_id IN (SELECT tenant_id FROM user_profiles WHERE id = auth.uid())`
+
+---
+
+### Story 13.3: SSO/OAuth Integration
+
+**Priority:** P1  
+**Estimate:** 8 hours
+
+#### Description
+
+Enable single sign-on (SSO) via Google, GitHub, and SAML providers using Supabase Auth's built-in OAuth support.
+
+#### Acceptance Criteria
+
+- [ ] Configure Google OAuth in Supabase dashboard
+- [ ] Configure GitHub OAuth in Supabase dashboard
+- [ ] Add "Sign in with Google" button to login page
+- [ ] Add "Sign in with GitHub" button to login page
+- [ ] Implement OAuth callback handler:
+  ```typescript
+  // POST /v1/auth/oauth/callback
+  // Handles OAuth redirect from provider
+  ```
+- [ ] Link OAuth accounts to existing email accounts (if email matches)
+- [ ] Create user profile automatically on first OAuth login
+- [ ] Add SAML provider configuration (for enterprise)
+- [ ] Update signup page to show OAuth options
+- [ ] Add "Link OAuth account" to user settings
+- [ ] Document OAuth setup in deployment guide
+
+#### Technical Notes
+
+- Supabase Auth supports Google, GitHub, Azure, GitLab, Bitbucket out of the box
+- SAML requires custom configuration and may need Supabase Enterprise
+- OAuth flow: Redirect → Provider → Callback → Create/Update User → Return JWT
+
+---
+
+### Story 13.4: Two-Factor Authentication (2FA/MFA)
+
+**Priority:** P1  
+**Estimate:** 6 hours
+
+#### Description
+
+Add two-factor authentication for dashboard users using TOTP (Time-based One-Time Password) via authenticator apps.
+
+#### Acceptance Criteria
+
+- [ ] Add `mfa_enabled` and `mfa_secret` columns to `user_profiles`
+- [ ] Implement `POST /v1/auth/mfa/setup` endpoint:
+  - Generates QR code for authenticator app
+  - Returns secret and QR code URL
+- [ ] Implement `POST /v1/auth/mfa/verify` endpoint:
+  - Verifies TOTP code during setup
+  - Enables MFA if code is valid
+- [ ] Update login flow to require MFA code if MFA is enabled:
+  ```typescript
+  // POST /v1/auth/login
+  // Returns: { requiresMFA: true, sessionId: "..." }
+  // Then: POST /v1/auth/login/mfa-verify
+  ```
+- [ ] Add MFA setup UI in user settings
+- [ ] Add backup codes generation (10 one-time codes)
+- [ ] Store backup codes hashed in database
+- [ ] Add "Disable MFA" option (requires password confirmation)
+- [ ] Add MFA status indicator in user profile
+- [ ] Log MFA events to `security_events` table
+
+#### Technical Notes
+
+- Use `otplib` or `speakeasy` for TOTP generation/verification
+- QR code format: `otpauth://totp/PayOS:user@example.com?secret=XXX&issuer=PayOS`
+- Backup codes: Generate 10 random 8-digit codes, hash with bcrypt
+- MFA should be optional (opt-in), not required
+
+---
+
+### Story 13.5: Per-Key API Rate Limiting
+
+**Priority:** P2  
+**Estimate:** 4 hours
+
+#### Description
+
+Allow configuring rate limits per API key, enabling different tiers of API access (e.g., free tier: 100 req/min, paid tier: 1000 req/min).
+
+#### Acceptance Criteria
+
+- [ ] Add `rate_limit_per_minute` column to `api_keys` table (INTEGER, nullable)
+- [ ] Update API key creation to accept optional `rateLimit` parameter
+- [ ] Update rate limiter to check per-key limits:
+  ```typescript
+  const keyRateLimit = apiKey.rate_limit_per_minute || DEFAULT_RATE_LIMIT;
+  const result = await checkRateLimit(
+    `api_key:${apiKey.id}`,
+    60 * 1000,
+    keyRateLimit
+  );
+  ```
+- [ ] Add rate limit display in API key management UI
+- [ ] Add rate limit editing in API key settings
+- [ ] Track rate limit violations in `security_events`
+- [ ] Return `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers
+- [ ] Document rate limiting in API reference
+
+#### Technical Notes
+
+- Default to global rate limit if per-key limit not set
+- Store rate limit state in Redis (future) or in-memory Map (current)
+- Rate limit key format: `api_key:${keyId}` for per-key tracking
+
+---
+
+### Story 13.6: API Key IP Allowlist
+
+**Priority:** P2  
+**Estimate:** 3 hours
+
+#### Description
+
+Allow restricting API keys to specific IP addresses or CIDR ranges, enhancing security for server-to-server integrations.
+
+#### Acceptance Criteria
+
+- [ ] Add `allowed_ips` column to `api_keys` table (TEXT[] array, nullable)
+- [ ] Update API key creation to accept `allowedIPs` array:
+  ```typescript
+  allowedIPs: ['192.168.1.1', '10.0.0.0/8', '203.0.113.0/24']
+  ```
+- [ ] Add IP validation helper:
+  ```typescript
+  function isIPAllowed(clientIP: string, allowedIPs: string[]): boolean {
+    if (!allowedIPs || allowedIPs.length === 0) return true; // No restriction
+    return allowedIPs.some(allowed => {
+      if (allowed.includes('/')) {
+        // CIDR range check
+        return isIPInCIDR(clientIP, allowed);
+      }
+      return clientIP === allowed;
+    });
+  }
+  ```
+- [ ] Update auth middleware to check IP allowlist:
+  ```typescript
+  if (apiKey.allowed_ips && !isIPAllowed(clientIP, apiKey.allowed_ips)) {
+    await logSecurityEvent('api_key_ip_blocked', 'warning', { ... });
+    return c.json({ error: 'IP address not allowed' }, 403);
+  }
+  ```
+- [ ] Add IP allowlist editing in API key management UI
+- [ ] Show current client IP in API key details
+- [ ] Log IP block events to `security_events`
+- [ ] Document IP allowlist in API reference
+
+#### Technical Notes
+
+- Support both single IPs (`192.168.1.1`) and CIDR ranges (`10.0.0.0/8`)
+- Use `ipaddr.js` or similar library for CIDR matching
+- Empty array or null means no restriction (backwards compatible)
+
+---
+
+### Story 13.7: Audit Log for User Actions
+
+**Priority:** P1  
+**Estimate:** 5 hours
+
+#### Description
+
+Track all user dashboard actions (not just security events) for compliance and debugging purposes.
+
+#### Acceptance Criteria
+
+- [ ] Create `user_audit_log` table:
+  ```sql
+  CREATE TABLE user_audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id),
+    tenant_id UUID REFERENCES tenants(id),
+    action TEXT NOT NULL, -- 'account.created', 'agent.updated', etc.
+    resource_type TEXT, -- 'account', 'agent', 'transfer', etc.
+    resource_id UUID,
+    details JSONB,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
+  ```
+- [ ] Create audit logging helper:
+  ```typescript
+  export async function logUserAction(
+    userId: string,
+    tenantId: string,
+    action: string,
+    resourceType: string,
+    resourceId: string,
+    details: Record<string, any>,
+    ip: string,
+    userAgent: string
+  ): Promise<void>
+  ```
+- [ ] Add audit logging to all mutation endpoints:
+  - Account create/update/delete
+  - Agent create/update/delete
+  - Transfer create
+  - Stream create/update/delete
+  - API key create/revoke/rotate
+  - Team member invite/remove/role-change
+- [ ] Add audit log viewer UI in settings (admin/owner only)
+- [ ] Add filtering by user, action, resource type, date range
+- [ ] Add export to CSV functionality
+- [ ] Add RLS policy: users can only see audit logs for their tenant
+- [ ] Document audit log retention policy (90 days default)
+
+#### Technical Notes
+
+- Use action naming convention: `resource.action` (e.g., `account.created`, `agent.updated`)
+- Store full request/response details in `details` JSONB field
+- Consider partitioning by `created_at` for large-scale deployments
+
+---
+
+### Epic 13 Summary
+
+| Story | Description | Priority | Est (hrs) |
+|-------|-------------|----------|-----------|
+| 13.1 | Granular API Key Scopes | P1 | 4 |
+| 13.2 | Multi-Tenant Users | P2 | 6 |
+| 13.3 | SSO/OAuth Integration | P1 | 8 |
+| 13.4 | Two-Factor Authentication (2FA/MFA) | P1 | 6 |
+| 13.5 | Per-Key API Rate Limiting | P2 | 4 |
+| 13.6 | API Key IP Allowlist | P2 | 3 |
+| 13.7 | Audit Log for User Actions | P1 | 5 |
+| **Total** | | | **36** |
+
+---
+
+### Implementation Priority
+
+**Phase 1 (Enterprise-Ready):**
+- Story 13.1: Granular API Key Scopes (P1)
+- Story 13.3: SSO/OAuth Integration (P1)
+- Story 13.4: Two-Factor Authentication (P1)
+- Story 13.7: Audit Log for User Actions (P1)
+
+**Phase 2 (Nice to Have):**
+- Story 13.2: Multi-Tenant Users (P2)
+- Story 13.5: Per-Key API Rate Limiting (P2)
+- Story 13.6: API Key IP Allowlist (P2)
 
 ---
 
@@ -7945,12 +8298,18 @@ See separate API documentation or the route files for detailed request/response 
 
 ### Version 1.3 (December 16, 2025)
 
-**New Epic Added:**
+**New Epics Added:**
 - **Epic 12: Client-Side Caching & Data Management** - Comprehensive plan to migrate to React Query (TanStack Query) for intelligent client-side caching
   - 10 stories covering infrastructure setup, hook migration, mutations, optimistic updates, and cache invalidation
   - Event-based and user-triggered refresh strategies
   - Performance monitoring and troubleshooting guides
   - Future consideration for Redis server-side caching noted
+
+- **Epic 13: Advanced Authentication & Security Features** - Enterprise-ready security enhancements
+  - 7 stories covering granular API key scopes, multi-tenant users, SSO/OAuth, 2FA/MFA, per-key rate limiting, IP allowlists, and comprehensive audit logging
+  - Phase 1 (P1): Enterprise-ready features (scopes, SSO, 2FA, audit logs)
+  - Phase 2 (P2): Nice-to-have features (multi-tenant, per-key rate limits, IP allowlists)
+  - Total estimate: 36 hours
 
 **Bug Fixes & Improvements:**
 - Fixed agent detail page rendering issues (type icon undefined errors)
