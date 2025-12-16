@@ -206,12 +206,22 @@ export function TransactionDetailPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">From</div>
-                <div className="font-semibold text-gray-900 dark:text-white">{transfer.from?.accountName || 'Unknown'}</div>
+                <button
+                  onClick={() => navigate(`/accounts/${transfer.from?.accountId}`)}
+                  className="font-semibold text-blue-600 dark:text-blue-400 hover:underline text-left"
+                >
+                  {transfer.from?.accountName || 'Unknown'}
+                </button>
                 <div className="text-xs text-gray-500">{transfer.currency}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">To</div>
-                <div className="font-semibold text-gray-900 dark:text-white">{transfer.to?.accountName || 'Unknown'}</div>
+                <button
+                  onClick={() => navigate(`/accounts/${transfer.to?.accountId}`)}
+                  className="font-semibold text-blue-600 dark:text-blue-400 hover:underline text-left"
+                >
+                  {transfer.to?.accountName || 'Unknown'}
+                </button>
                 <div className="text-xs text-gray-500">{transfer.currency}</div>
               </div>
               <div>

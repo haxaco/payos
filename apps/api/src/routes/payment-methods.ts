@@ -98,7 +98,7 @@ paymentMethods.get('/:id', async (c) => {
     throw new NotFoundError('Payment method not found');
   }
 
-  return c.json(data);
+  return c.json({ data });
 });
 
 // ============================================

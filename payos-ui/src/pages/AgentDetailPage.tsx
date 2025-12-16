@@ -114,18 +114,29 @@ export function AgentDetailPage() {
       
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-4">
             <div className={`w-14 h-14 rounded-xl ${typeConf.bg} flex items-center justify-center`}>
               <TypeIcon className={`w-7 h-7 ${typeConf.color}`} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {agent.name}
-              </h1>
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  {agent.name}
+                </h1>
               {agent.description && (
                 <p className="text-gray-500 dark:text-gray-400 mt-1">{agent.description}</p>
               )}
+              
+              {/* Parent Account Link */}
+              <div className="mt-2">
+                <span className="text-sm text-gray-500 dark:text-gray-400">Belongs to: </span>
+                <button
+                  onClick={() => navigate(`/accounts/${agent.parent_account_id}`)}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                >
+                  View Parent Account →
+                </button>
+              </div>
               
               <div className="mt-3 flex items-center gap-3 flex-wrap">
                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${typeConf.bg} ${typeConf.color}`}>
@@ -141,29 +152,29 @@ export function AgentDetailPage() {
                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${kyaConf?.color || 'bg-gray-100'}`}>
                   <Shield className="w-3 h-3" />
                   {kyaConf?.label || `Tier ${agent.kya_tier}`}
-                </span>
-                
-                {agent.x402_enabled && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 rounded-full text-xs font-medium">
-                    <Zap className="w-3 h-3" />
-                    X-402 Enabled
                   </span>
-                )}
+                  
+                {agent.x402_enabled && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 rounded-full text-xs font-medium">
+                      <Zap className="w-3 h-3" />
+                      X-402 Enabled
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
+            
+            <div className="flex items-center gap-2">
             <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
               {agent.status === 'active' ? 'Pause' : 'Activate'}
-            </button>
+                </button>
             <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
               Settings
-            </button>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      
+        
       {/* Stats Grid */}
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
@@ -187,8 +198,8 @@ export function AgentDetailPage() {
           <p className="text-lg font-semibold text-gray-900 dark:text-white">
             ${agent.effective_limit_daily.toLocaleString()}
           </p>
-        </div>
-        
+      </div>
+      
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
             <Activity className="w-4 h-4" />
@@ -197,8 +208,8 @@ export function AgentDetailPage() {
           <p className="text-lg font-semibold text-gray-900 dark:text-white">
             ${agent.effective_limit_monthly.toLocaleString()}
           </p>
-        </div>
-        
+            </div>
+            
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
             <Activity className="w-4 h-4" />
@@ -235,18 +246,18 @@ export function AgentDetailPage() {
       
       {/* Tab Content */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-6">
           {/* KYA Information */}
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               KYA Information
-            </h3>
+              </h3>
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">KYA Tier</span>
                 <span className="text-gray-900 dark:text-white font-medium">
                   {kyaConf?.label || `Tier ${agent.kya_tier}`}
-                </span>
+                      </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Status</span>
@@ -258,7 +269,7 @@ export function AgentDetailPage() {
                     : 'text-gray-600 dark:text-gray-400'
                 }`}>
                   {agent.kya_status}
-                </span>
+                    </span>
               </div>
               {agent.kya_verified_at && (
                 <div className="flex justify-between">
@@ -310,7 +321,7 @@ export function AgentDetailPage() {
               Authentication Token
             </h3>
             <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-              <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3">
                 <code className="text-sm font-mono text-gray-900 dark:text-white">
                   {agent.auth_token_prefix || 'No token'}•••••••••••••••••••••••••
                 </code>
