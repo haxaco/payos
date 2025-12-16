@@ -30,6 +30,7 @@ import { RequestLogsPage } from './pages/RequestLogsPage';
 import { AgentVerificationTiersPage } from './pages/AgentVerificationTiersPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { DisputesPage } from './pages/DisputesPage';
+import { StreamsPage } from './pages/StreamsPage';
 
 function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -93,6 +94,7 @@ export default function App() {
           <Route path="/compliance" element={<ProtectedRoute><DashboardLayout><CompliancePage /></DashboardLayout></ProtectedRoute>} />
           <Route path="/compliance/:id" element={<ProtectedRoute><DashboardLayout><ComplianceFlagDetailPage /></DashboardLayout></ProtectedRoute>} />
           <Route path="/disputes" element={<ProtectedRoute><DashboardLayout><DisputesPage /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/streams" element={<ProtectedRoute><DashboardLayout><StreamsPage /></DashboardLayout></ProtectedRoute>} />
           <Route path="/treasury" element={<ProtectedRoute><DashboardLayout><TreasuryPage /></DashboardLayout></ProtectedRoute>} />
           <Route path="/agents" element={<ProtectedRoute><DashboardLayout><AgentsPage /></DashboardLayout></ProtectedRoute>} />
           <Route path="/agents/:id" element={<ProtectedRoute><DashboardLayout><AgentDetailPage /></DashboardLayout></ProtectedRoute>} />

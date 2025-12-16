@@ -1,67 +1,27 @@
-import { Users, ArrowLeftRight, CreditCard, Shield, Search } from 'lucide-react';
+import React from 'react';
 
 interface EmptyStateProps {
-  type: 'accounts' | 'transactions' | 'cards' | 'compliance' | 'search';
-  title?: string;
-  description?: string;
-  actionLabel?: string;
-  onAction?: () => void;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
-const configs = {
-  accounts: {
-    icon: Users,
-    title: 'No accounts yet',
-    description: 'Create your first account to start accepting payouts.',
-    actionLabel: 'Add Account'
-  },
-  transactions: {
-    icon: ArrowLeftRight,
-    title: 'No transactions yet',
-    description: 'Transactions will appear here once accounts start sending and receiving funds.',
-    actionLabel: 'Create Payout'
-  },
-  cards: {
-    icon: CreditCard,
-    title: 'No cards issued',
-    description: 'Issue virtual or physical cards to your accounts.',
-    actionLabel: 'Issue Card'
-  },
-  compliance: {
-    icon: Shield,
-    title: 'All clear!',
-    description: 'No compliance flags require your attention. Great job!',
-    actionLabel: undefined
-  },
-  search: {
-    icon: Search,
-    title: 'No results found',
-    description: 'Try adjusting your search or filters.',
-    actionLabel: 'Clear Filters'
-  }
-};
-
-export function EmptyState({ type, title, description, actionLabel, onAction }: EmptyStateProps) {
-  const config = configs[type];
-  const Icon = config.icon;
-  
+export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4">
-      <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
-        <Icon className="w-8 h-8 text-gray-400" />
-      </div>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-        {title || config.title}
-      </h3>
-      <p className="text-gray-500 dark:text-gray-400 text-center max-w-sm mb-6">
-        {description || config.description}
-      </p>
-      {(actionLabel || config.actionLabel) && onAction && (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="text-4xl mb-4 opacity-50">{icon}</div>
+      <h3 className="text-lg font-medium text-gray-900 dark:text-white">{title}</h3>
+      <p className="text-gray-500 dark:text-gray-400 mt-1 max-w-sm">{description}</p>
+      {action && (
         <button
-          onClick={onAction}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+          onClick={action.onClick}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
         >
-          {actionLabel || config.actionLabel}
+          {action.label}
         </button>
       )}
     </div>

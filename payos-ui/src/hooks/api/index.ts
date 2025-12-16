@@ -29,6 +29,7 @@ export { useTransfers, useTransfer } from './useTransfers';
 export { usePaymentMethods, usePaymentMethod, useAccountPaymentMethods } from './usePaymentMethods';
 export { useAgents, useAgent } from './useAgents';
 export { useStreams, useStream, useAccountStreams } from './useStreams';
+export { useReports, useReport, useSummaryReport, generateReport, deleteReport, downloadReport } from './useReports';
 
 // Types
 export type {
