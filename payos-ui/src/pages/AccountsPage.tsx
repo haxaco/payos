@@ -12,6 +12,7 @@ export function AccountsPage() {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'person' | 'business'>('all');
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch accounts from API with type filter
   const filters = useMemo(() => ({
@@ -23,8 +24,15 @@ export function AccountsPage() {
   const accounts = data?.data || [];
 
   const filteredAccounts = useMemo(() => {
-    return accounts;
-  }, [accounts]);
+    if (!searchQuery.trim()) return accounts;
+    
+    const query = searchQuery.toLowerCase();
+    return accounts.filter(account => 
+      account.name?.toLowerCase().includes(query) ||
+      account.email?.toLowerCase().includes(query) ||
+      account.id.toLowerCase().includes(query)
+    );
+  }, [accounts, searchQuery]);
 
   const toggleSelect = (id: string) => {
     setSelectedAccounts(prev => 
@@ -60,11 +68,9 @@ export function AccountsPage() {
     );
   };
 
-  // Get all accounts for tab counts (fetch separately without filters)
-  const { data: allAccountsData } = useAccounts({ limit: 1000 });
-  const allAccounts = allAccountsData?.accounts || [];
-  const personCount = allAccounts.filter(a => a.type === 'person').length;
-  const businessCount = allAccounts.filter(a => a.type === 'business').length;
+  // Calculate filtered counts for tabs
+  const personCount = filteredAccounts.filter(a => a.type === 'person').length;
+  const businessCount = filteredAccounts.filter(a => a.type === 'business').length;
 
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -94,7 +100,7 @@ export function AccountsPage() {
       {/* Type Filter Tabs */}
       <div className="flex gap-2">
         {[
-          { key: 'all' as const, label: 'All', count: allAccounts.length },
+          { key: 'all' as const, label: 'All', count: filteredAccounts.length },
           { key: 'person' as const, label: 'Persons', count: personCount },
           { key: 'business' as const, label: 'Businesses', count: businessCount },
         ].map(tab => (
@@ -119,6 +125,8 @@ export function AccountsPage() {
           <input
             type="text"
             placeholder="Search accounts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>

@@ -12,6 +12,11 @@ This document tracks bugs found during UI testing.
 *   **Description:** Dropdown UI doesn't always appear over content, but search input correctly filters full page lists.
 *   **Action:** Polish z-index or dropdown positioning in future sprint.
 
+### 11. Search Filtering Broken on Accounts Page (New)
+*   **Priority:** High (P1)
+*   **Description:** Typing in the search bar updates the tab counts (e.g. "All · 0") but fails to filter the table rows.
+*   **Steps:** Go to `/accounts`, type "random_text".
+*   **Actual:** Tab counts show 0, but all 7 accounts remain visible. Empty state does not trigger.
 
 ### 2. AI Assistant Context Awareness
 *   **Priority:** Medium (P2)
@@ -58,16 +63,6 @@ This document tracks bugs found during UI testing.
 
 ## 🏁 Resolved / Closed Issues (Archive)
 
-### ✅ Fixed: Bug #10 - API/UI Data Structure Mismatch (Critical P0)
-*   **Original Issue:** All List Views (Accounts, Transactions, Cards) were empty despite data existing in DB.
-*   **Root Cause:** API returned `{ data: [...], pagination: ... }` but UI types expected `{ accounts: [...], total: number }`.
-*   **Fix Applied:** 
-    - Updated all response types in `src/types/api.ts` to match actual API format
-    - Changed `AccountsResponse`, `TransfersResponse`, `AgentsResponse`, `StreamsResponse` to use `data` array
-    - Updated `AccountsPage` and `TransactionsPage` to read from `data?.data` instead of `data?.accounts` / `data?.transfers`
-*   **Fix Verification:** All list views now display real data from database (7 accounts, 5 transfers, 4 cards)
-*   **Date Fixed:** 2025-12-15
-
 ### ✅ Fixed: Missing "New Payment" Entry Point
 *   **Original Issue:** Could not find button to start payment.
 *   **Fix Verification:** "Send Funds" and "Create Payout" buttons confirmed visible and functional in Account Headers.
@@ -83,3 +78,7 @@ This document tracks bugs found during UI testing.
 ### ✅ Fixed: Dispute Detail Slide-over
 *   **Original Issue:** Hard to click.
 *   **Fix Verification:** Click reliability improved.
+
+### ✅ Fixed: API/UI Data Structure Mismatch
+*   **Original Issue:** List views were empty (Accounts, Transactions, Cards).
+*   **Fix Verification:** Verified all lists display correct count and data after type alignment.
