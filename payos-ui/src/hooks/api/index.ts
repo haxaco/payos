@@ -30,6 +30,23 @@ export { usePaymentMethods, usePaymentMethod, useAccountPaymentMethods } from '.
 export { useAgents, useAgent } from './useAgents';
 export { useStreams, useStream, useAccountStreams } from './useStreams';
 export { useReports, useReport, useSummaryReport, generateReport, deleteReport, downloadReport } from './useReports';
+export {
+  useComplianceFlags,
+  useComplianceFlag,
+  useComplianceStats,
+  useCreateComplianceFlag,
+  useUpdateComplianceFlag,
+  useResolveComplianceFlag,
+  useAssignComplianceFlag,
+} from './useCompliance';
+export type {
+  ComplianceFlag,
+  ComplianceFlagFilters,
+  CreateFlagPayload,
+  UpdateFlagPayload,
+  ResolveFlagPayload,
+  ComplianceStats,
+} from './useCompliance';
 
 // Types
 export type {

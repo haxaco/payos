@@ -27,6 +27,7 @@ import scheduledTransfersRouter from './routes/scheduled-transfers.js';
 import exportsRouter from './routes/exports.js';
 import paymentMethodsRouter from './routes/payment-methods.js';
 import disputesRouter from './routes/disputes.js';
+import { compliance as complianceRouter } from './routes/compliance.js';
 
 const app = new Hono();
 
@@ -127,6 +128,7 @@ v1.route('/scheduled-transfers', scheduledTransfersRouter);
 v1.route('/exports', exportsRouter);
 v1.route('/disputes', disputesRouter);
 v1.route('/payment-methods', paymentMethodsRouter);
+v1.route('/compliance', complianceRouter);
 v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods routes
 
 app.route('/v1', v1);
