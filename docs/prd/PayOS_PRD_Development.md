@@ -7027,6 +7027,8 @@ async function detectAnomalies(userId: string, clientInfo: ClientInfo): Promise<
 ```
 
 #### Acceptance Criteria
+
+**Backend (API):**
 - [ ] Access tokens expire in 15 minutes
 - [ ] Refresh tokens expire in 7 days
 - [ ] Refresh tokens rotated on each use
@@ -7038,25 +7040,40 @@ async function detectAnomalies(userId: string, clientInfo: ClientInfo): Promise<
 - [ ] User can revoke individual sessions
 - [ ] "Logout all devices" functionality
 
+**Frontend (UI):**
+- [ ] Automatic JWT token refresh before expiry (prevent mid-session 401 errors)
+- [ ] Token refresh triggered on API 401 responses
+- [ ] Graceful session expiration handling with user notification
+- [ ] Improved error messaging for expired sessions (instead of generic "Not Found")
+- [ ] Token stored securely (HttpOnly cookies or secure localStorage)
+- [ ] Session persistence across page refresh
+
+**Status:** ⚠️ PARTIALLY COMPLETE
+- Basic Supabase Auth session management implemented ✅
+- Frontend token refresh logic NOT YET IMPLEMENTED ❌
+- Session security features (rotation, anomaly detection) NOT YET IMPLEMENTED ❌
+
 ---
 
 ### Epic 11 Summary
 
-| Story | Priority | Est (hrs) | API | UI |
-|-------|----------|-----------|-----|-----|
-| 11.1 User Profiles & API Keys Tables | P0 | 2 | ✅ | |
-| 11.2 Self-Service Signup Flow | P0 | 3 | ✅ | |
-| 11.3 User Login & Session Management | P0 | 2 | ✅ | |
-| 11.4 Team Invite System | P1 | 3 | ✅ | |
-| 11.5 API Key Management | P0 | 3 | ✅ | |
-| 11.6 Updated Auth Middleware | P0 | 2 | ✅ | |
-| 11.7 Dashboard Auth UI | P1 | 4 | | ✅ |
-| 11.8 Settings - Team Management UI | P1 | 3 | | ✅ |
-| 11.9 Settings - API Keys Management UI | P1 | 3 | | ✅ |
-| 11.10 Migration - Existing API Keys | P0 | 1 | ✅ | |
-| 11.11 Security Infrastructure | P0 | 4 | ✅ | |
-| 11.12 Session Security | P0 | 2 | ✅ | |
-| **Total** | | **32** | | |
+| Story | Priority | Est (hrs) | API | UI | Status |
+|-------|----------|-----------|-----|-----|--------|
+| 11.1 User Profiles & API Keys Tables | P0 | 2 | ✅ | | ✅ Complete |
+| 11.2 Self-Service Signup Flow | P0 | 3 | ✅ | | ✅ Complete |
+| 11.3 User Login & Session Management | P0 | 2 | ✅ | | ✅ Complete |
+| 11.4 Team Invite System | P1 | 3 | ✅ | | ✅ Complete |
+| 11.5 API Key Management | P0 | 3 | ✅ | | ✅ Complete |
+| 11.6 Updated Auth Middleware | P0 | 2 | ✅ | | ✅ Complete |
+| 11.7 Dashboard Auth UI | P1 | 4 | | ✅ | ✅ Complete |
+| 11.8 Settings - Team Management UI | P1 | 3 | | ✅ | ✅ Complete |
+| 11.9 Settings - API Keys Management UI | P1 | 3 | | ✅ | ✅ Complete |
+| 11.10 Migration - Existing API Keys | P0 | 1 | ✅ | | ✅ Complete |
+| 11.11 Security Infrastructure | P0 | 4 | ✅ | | ✅ Complete |
+| 11.12 Session Security | P0 | 2 | 🟡 | 🟡 | ⚠️ **PARTIAL** - Frontend token refresh pending |
+| **Total** | | **32** | | | **11/12 Complete** |
+
+**Epic Status:** ⚠️ **INCOMPLETE** - Story 11.12 requires frontend token refresh implementation
 
 ---
 
