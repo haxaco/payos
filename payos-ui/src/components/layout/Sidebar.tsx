@@ -69,9 +69,9 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   
   // Calculate active disputes (not resolved)
   const disputesCount = disputeStats?.data ? 
-    disputeStats.data.open_disputes + 
-    disputeStats.data.under_review + 
-    disputeStats.data.escalated 
+    disputeStats.data.byStatus.open + 
+    disputeStats.data.byStatus.underReview + 
+    disputeStats.data.byStatus.escalated 
     : undefined;
   
   const mainNav = getMainNav(complianceCount, disputesCount);

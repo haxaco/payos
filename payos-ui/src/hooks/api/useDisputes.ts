@@ -45,15 +45,17 @@ function useApiClient() {
 // Types
 // ============================================
 export interface DisputeStats {
-  total_disputes: number;
-  open_disputes: number;
-  under_review: number;
-  escalated: number;
-  resolved: number;
-  total_amount_disputed: number;
-  by_reason: Record<string, number>;
-  by_resolution: Record<string, number>;
-  avg_resolution_days: number;
+  total: number;
+  byStatus: {
+    open: number;
+    underReview: number;
+    escalated: number;
+    resolved: number;
+  };
+  totalAmountDisputed: number;
+  byReason: Record<string, number>;
+  byResolution: Record<string, number>;
+  averageResolutionDays: number;
 }
 
 interface ApiResponse<T> {
