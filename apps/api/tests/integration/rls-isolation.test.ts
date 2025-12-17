@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { generateApiKey, hashApiKey, getKeyPrefix } from '../../src/utils/auth.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -34,12 +35,27 @@ beforeAll(async () => {
     auth: { persistSession: false }
   });
 
-  // Create test tenants
+  // Create test tenants with API keys
+  const testKey1 = generateApiKey('test');
+  const testKey2 = generateApiKey('test');
+  
   const { data: tenants, error: tenantsError } = await serviceClient
     .from('tenants')
     .insert([
-      { name: 'RLS Test Tenant 1', status: 'active' },
-      { name: 'RLS Test Tenant 2', status: 'active' }
+      { 
+        name: 'RLS Test Tenant 1', 
+        status: 'active',
+        api_key: testKey1,
+        api_key_hash: hashApiKey(testKey1),
+        api_key_prefix: getKeyPrefix(testKey1)
+      },
+      { 
+        name: 'RLS Test Tenant 2', 
+        status: 'active',
+        api_key: testKey2,
+        api_key_hash: hashApiKey(testKey2),
+        api_key_prefix: getKeyPrefix(testKey2)
+      }
     ])
     .select();
 
