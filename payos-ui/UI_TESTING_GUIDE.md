@@ -2125,6 +2125,246 @@ These flows are primarily API-level for now (the UI does not yet expose full org
 
 ---
 
+## 🔒 Epic 15: Row-Level Security (RLS) Testing
+
+### Overview
+
+**Purpose:** Verify that tenant data isolation is working correctly at the application level. While RLS is enforced at the database level, we need to verify that the UI and API correctly respect tenant boundaries.
+
+**What We're Testing:**
+- ✅ Users can only see their own tenant's data
+- ✅ Cross-tenant access is blocked
+- ✅ Error handling for unauthorized access
+- ✅ API correctly filters by tenant
+
+**What We CANNOT Test (Database-Level):**
+- ❌ Direct database RLS policies
+- ❌ Service role bypass scenarios
+- ❌ JWT claim manipulation
+
+---
+
+### Test Flow 20: Multi-Tenant Data Isolation
+
+**Priority:** P0 (Critical Security)
+
+**Prerequisites:**
+- Two test users with different tenant IDs
+- Both users have test data (accounts, transactions, etc.)
+
+**Steps:**
+
+1. **Setup Test Users:**
+   - Note: You may need to create test users manually or use existing seed data
+   - User A: Should belong to Tenant A (e.g., "Acme Corporation")
+   - User B: Should belong to Tenant B (e.g., "TechCorp Inc")
+
+2. **Test Account Isolation:**
+   - Log in as User A
+   - Navigate to `/accounts`
+   - Note the account names and IDs visible
+   - Log out
+   - Log in as User B
+   - Navigate to `/accounts`
+   - **Verify:**
+     - ✅ Different accounts are shown
+     - ✅ No accounts from User A's tenant are visible
+     - ✅ Account count may be different
+
+3. **Test Transaction Isolation:**
+   - As User A: Navigate to `/transactions`
+   - Note transaction IDs and amounts
+   - Log out
+   - As User B: Navigate to `/transactions`
+   - **Verify:**
+     - ✅ Different transactions are shown
+     - ✅ No transactions from User A's tenant are visible
+
+4. **Test Payment Methods Isolation:**
+   - As User A: Navigate to an account detail page → Payment Methods tab
+   - Note payment method IDs
+   - Log out
+   - As User B: Navigate to an account detail page → Payment Methods tab
+   - **Verify:**
+     - ✅ Different payment methods are shown
+     - ✅ Cannot access User A's payment methods
+
+5. **Test Direct ID Access (Cross-Tenant):**
+   - As User A: Get an account ID from the accounts list
+   - Copy the account ID from the URL (e.g., `/accounts/{id}`)
+   - Log out
+   - Log in as User B
+   - Try to access User A's account directly: Navigate to `/accounts/{user-a-account-id}`
+   - **Verify:**
+     - ✅ Returns 404 or "Account not found"
+     - ✅ OR shows error message
+     - ✅ Does NOT show User A's account data
+
+6. **Test Disputes Isolation:**
+   - As User A: Navigate to `/disputes`
+   - Note dispute IDs
+   - Log out
+   - As User B: Navigate to `/disputes`
+   - **Verify:**
+     - ✅ Different disputes are shown
+     - ✅ Cannot access User A's disputes
+
+7. **Test Compliance Flags Isolation:**
+   - As User A: Navigate to `/compliance`
+   - Note flag IDs
+   - Log out
+   - As User B: Navigate to `/compliance`
+   - **Verify:**
+     - ✅ Different compliance flags are shown
+     - ✅ Cannot access User A's flags
+
+8. **Test Agents Isolation:**
+   - As User A: Navigate to `/agents`
+   - Note agent IDs
+   - Log out
+   - As User B: Navigate to `/agents`
+   - **Verify:**
+     - ✅ Different agents are shown
+     - ✅ Cannot access User A's agents
+
+**Expected Results:**
+- ✅ Complete data isolation between tenants
+- ✅ No cross-tenant data leakage
+- ✅ Proper error handling for unauthorized access
+- ✅ All list views show only tenant's own data
+
+**If Issues Found:**
+- Report immediately as **P0 security issue**
+- Include:
+  - Which data was leaked
+  - Steps to reproduce
+  - Screenshots showing cross-tenant data
+
+---
+
+### Test Flow 21: API-Level Tenant Isolation
+
+**Priority:** P0 (Critical Security)
+
+**Prerequisites:**
+- Two API keys from different tenants (if available)
+- OR use browser DevTools to inspect API calls
+
+**Steps:**
+
+1. **Monitor API Calls:**
+   - Open DevTools → Network tab
+   - Filter by "Fetch/XHR"
+
+2. **Test Accounts API:**
+   - As User A: Navigate to `/accounts`
+   - In Network tab, find the API call to `/v1/accounts`
+   - Check the response - note account IDs
+   - Log out
+   - As User B: Navigate to `/accounts`
+   - Check the API response
+   - **Verify:**
+     - ✅ Different account IDs in responses
+     - ✅ No overlap between responses
+
+3. **Test Transactions API:**
+   - As User A: Navigate to `/transactions`
+   - Check API response for `/v1/transfers` or similar
+   - Log out
+   - As User B: Navigate to `/transactions`
+   - Check API response
+   - **Verify:**
+     - ✅ Different transaction IDs
+     - ✅ No cross-tenant transactions
+
+4. **Test Direct API Access:**
+   - As User A: Get an account ID from the UI
+   - In DevTools Console, try:
+     ```javascript
+     fetch('/v1/accounts/{user-a-account-id}', {
+       headers: { 'Authorization': 'Bearer {user-b-token}' }
+     })
+     ```
+   - **Verify:**
+     - ✅ Returns 404 or 403 error
+     - ✅ Does NOT return account data
+
+**Expected Results:**
+- ✅ API responses are tenant-scoped
+- ✅ Direct ID access is blocked
+- ✅ Proper HTTP error codes (404/403) for unauthorized access
+
+---
+
+### Test Flow 22: Error Handling for Unauthorized Access
+
+**Priority:** P1
+
+**Steps:**
+
+1. **Test 404 Handling:**
+   - Log in as User A
+   - Try to access a non-existent account: `/accounts/00000000-0000-0000-0000-000000000000`
+   - **Verify:**
+     - ✅ Shows "Account not found" or similar message
+     - ✅ Does NOT show error stack trace
+     - ✅ User can navigate back
+
+2. **Test Cross-Tenant Access:**
+   - Log in as User A
+   - Get a valid account ID from User A's tenant
+   - Log out
+   - Log in as User B
+   - Try to access User A's account ID
+   - **Verify:**
+     - ✅ Shows "Account not found" or "Access denied"
+     - ✅ Does NOT reveal that account exists
+     - ✅ Generic error message (no information leakage)
+
+3. **Test Invalid IDs:**
+   - Try accessing with malformed UUIDs
+   - Try accessing with random strings
+   - **Verify:**
+     - ✅ Proper validation error
+     - ✅ No crashes or stack traces
+
+**Expected Results:**
+- ✅ Generic error messages (no information leakage)
+- ✅ No stack traces exposed to users
+- ✅ Graceful error handling
+- ✅ Users can recover from errors
+
+---
+
+### RLS Testing Checklist
+
+After completing RLS test flows, verify:
+
+**Data Isolation ✅**
+- [ ] User A cannot see User B's accounts
+- [ ] User A cannot see User B's transactions
+- [ ] User A cannot see User B's payment methods
+- [ ] User A cannot see User B's disputes
+- [ ] User A cannot see User B's compliance flags
+- [ ] User A cannot see User B's agents
+
+**Access Control ✅**
+- [ ] Direct ID access blocked (404/403)
+- [ ] API responses are tenant-scoped
+- [ ] No cross-tenant data in API responses
+
+**Error Handling ✅**
+- [ ] Generic error messages (no info leakage)
+- [ ] No stack traces exposed
+- [ ] Users can recover from errors
+
+**Security ✅**
+- [ ] No tenant ID in URLs or client-side code
+- [ ] JWT tokens properly scoped
+- [ ] API keys properly isolated
+
+---
+
 ## 📝 Testing Summary Checklist
 
 After completing all priority flows, verify:

@@ -14,7 +14,8 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "INTEGRATION=true vitest run tests/integration",
     "test:coverage": "vitest run --coverage",
-    "seed:db": "tsx scripts/seed-database.ts"
+    "seed:db": "tsx scripts/seed-database.ts",
+    "check:rls": "tsx scripts/check-rls-in-migrations.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

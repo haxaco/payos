@@ -1,0 +1,41 @@
+name: RLS Coverage Check
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/supabase/migrations/**/*.sql'
+      - 'apps/api/scripts/check-rls-in-migrations.ts'
+      - '.github/workflows/rls-check.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/api/supabase/migrations/**/*.sql'
+
+jobs:
+  check-rls:
+    name: Check RLS Coverage in Migrations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check RLS Coverage in Migration Files
+        run: |
+          cd apps/api
+          pnpm exec tsx scripts/check-rls-in-migrations.ts

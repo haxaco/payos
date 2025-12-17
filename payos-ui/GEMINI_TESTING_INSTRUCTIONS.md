@@ -72,6 +72,14 @@ The database migrations for the new features have already been applied:
 
 ## Key Features to Test
 
+### Security Testing (P0 - Critical)
+1. **Row-Level Security (RLS) - Epic 15** 🔒
+   - **Test Flow 20:** Multi-Tenant Data Isolation
+   - **Test Flow 21:** API-Level Tenant Isolation
+   - **Test Flow 22:** Error Handling for Unauthorized Access
+   - See `UI_TESTING_GUIDE.md` for detailed RLS test procedures
+   - **Critical:** Verify no cross-tenant data leakage
+
 ### New Features (P1 Stories)
 1. **Disputes Page** (`/disputes`)
    - Queue with status badges
