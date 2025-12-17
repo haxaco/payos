@@ -1,14 +1,12 @@
 import { Hono } from 'hono';
-import { createClient } from '../lib/supabase.js';
+import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { NotFoundError, ValidationError } from '../middleware/errors.js';
-import { logAudit } from '../services/audit.js';
-import { isValidUUID } from '../utils/validation.js';
+import { NotFoundError, ValidationError } from '../middleware/error.js';
+import { logAudit, isValidUUID } from '../utils/helpers.js';
 
 const compliance = new Hono();
 
-// Apply auth middleware to all routes
-compliance.use('/*', authMiddleware({ requireTenant: true }));
+// Note: Auth middleware is applied globally in app.ts for all /v1 routes
 
 // ============================================
 // Interfaces
