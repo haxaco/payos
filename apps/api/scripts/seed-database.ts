@@ -289,6 +289,45 @@ async function createStream(tenantId: string, stream: any) {
   return data.id;
 }
 
+async function createComplianceFlag(tenantId: string, flag: any) {
+  const { data: existing } = await supabase
+    .from('compliance_flags')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('flag_type', flag.flagType)
+    .eq('account_id', flag.accountId || null)
+    .eq('transfer_id', flag.transferId || null)
+    .maybeSingle();
+  
+  if (existing) return existing.id;
+  
+  // Calculate due date
+  const daysToAdd = ['high', 'critical'].includes(flag.riskLevel) ? 7 : 14;
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + daysToAdd);
+  
+  const { data, error } = await supabase
+    .from('compliance_flags')
+    .insert({
+      tenant_id: tenantId,
+      flag_type: flag.flagType,
+      risk_level: flag.riskLevel,
+      status: flag.status || 'open',
+      account_id: flag.accountId,
+      transfer_id: flag.transferId,
+      reason_code: flag.reasonCode,
+      reasons: flag.reasons,
+      description: flag.description,
+      ai_analysis: flag.aiAnalysis || {},
+      due_date: dueDate.toISOString(),
+    })
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data.id;
+}
+
 // ============================================
 // Seed Data Definitions
 // ============================================
@@ -594,6 +633,170 @@ async function seedDatabase() {
     console.log('');
     
     // ============================================
+    // 7. Create Compliance Flags
+    // ============================================
+    console.log('7️⃣  Creating compliance flags...');
+    
+    // Get some transfer IDs for flagging
+    const { data: recentTransfers } = await supabase
+      .from('transfers')
+      .select('id, from_account_id, to_account_id, amount')
+      .eq('tenant_id', acmeTenantId)
+      .limit(3);
+    
+    if (recentTransfers && recentTransfers.length > 0) {
+      // Flag 1: High risk transaction (velocity check)
+      await createComplianceFlag(acmeTenantId, {
+        flagType: 'transaction',
+        riskLevel: 'high',
+        status: 'open',
+        transferId: recentTransfers[0].id,
+        reasonCode: 'velocity_check',
+        reasons: [
+          'High transaction velocity detected',
+          'New account relationship',
+          'Amount above typical threshold',
+        ],
+        description: 'Account showing unusual velocity patterns with multiple new recipients in short timeframe.',
+        aiAnalysis: {
+          risk_score: 78,
+          risk_explanation: 'This transaction pattern matches characteristics of both legitimate business scaling and potential structuring. The velocity of new recipient additions warrants manual review.',
+          pattern_matches: [
+            { description: 'Legitimate business scaling', percentage: 65 },
+            { description: 'Potential structuring activity', percentage: 15 },
+          ],
+          suggested_actions: [
+            { action: 'Verify business relationship documentation', completed: false },
+            { action: 'Review account holder communication history', completed: false },
+            { action: 'Check for similar patterns in network', completed: false },
+          ],
+          confidence_level: 82,
+        },
+      });
+      console.log('  ✓ Flag: High risk - Velocity check');
+      
+      // Flag 2: Medium risk transaction (amount threshold)
+      if (recentTransfers.length > 1) {
+        await createComplianceFlag(acmeTenantId, {
+          flagType: 'transaction',
+          riskLevel: 'medium',
+          status: 'pending_review',
+          transferId: recentTransfers[1].id,
+          reasonCode: 'amount_threshold',
+          reasons: [
+            'Amount just below reporting threshold',
+            'First transaction in this corridor',
+          ],
+          description: 'Transaction amount is just below $2,500 monitoring threshold, which may indicate structuring.',
+          aiAnalysis: {
+            risk_score: 62,
+            risk_explanation: 'While amount-based structuring is a concern, this could also be legitimate first-time payment. Customer profile suggests regular contractor payments.',
+            pattern_matches: [
+              { description: 'Legitimate contractor payment', percentage: 70 },
+              { description: 'Structuring attempts', percentage: 10 },
+            ],
+            suggested_actions: [
+              { action: 'Request invoice or contract', completed: true },
+              { action: 'Monitor for repeated similar amounts', completed: false },
+            ],
+            confidence_level: 75,
+          },
+        });
+        console.log('  ✓ Flag: Medium risk - Amount threshold');
+      }
+    }
+    
+    // Flag 3: Account-level flag (new account with immediate high activity)
+    await createComplianceFlag(acmeTenantId, {
+      flagType: 'account',
+      riskLevel: 'medium',
+      status: 'under_investigation',
+      accountId: acmeAccountIds['finance'],
+      reasonCode: 'new_account_velocity',
+      reasons: [
+        'Account created recently with immediate high activity',
+        'KYC verification tier below activity level',
+      ],
+      description: 'New account showing high transaction volume relative to verification tier.',
+      aiAnalysis: {
+        risk_score: 58,
+        risk_explanation: 'New business accounts often show rapid activity, but verification tier should match activity level for AML compliance.',
+        pattern_matches: [
+          { description: 'Normal business onboarding', percentage: 75 },
+          { description: 'Shell company activity', percentage: 5 },
+        ],
+        suggested_actions: [
+          { action: 'Request KYB documentation', completed: true },
+          { action: 'Verify business registration', completed: true },
+          { action: 'Upgrade to Tier 2 KYB', completed: false },
+        ],
+        confidence_level: 88,
+      },
+    });
+    console.log('  ✓ Flag: Medium risk - New account velocity');
+    
+    // Flag 4: Low risk pattern (monitoring)
+    await createComplianceFlag(acmeTenantId, {
+      flagType: 'pattern',
+      riskLevel: 'low',
+      status: 'open',
+      reasonCode: 'new_corridor_monitoring',
+      reasons: [
+        'First transaction in new geographic corridor',
+        'Standard monitoring for new routes',
+      ],
+      description: 'Monitoring flag for first-time transactions in new geographic corridors.',
+      aiAnalysis: {
+        risk_score: 25,
+        risk_explanation: 'Standard compliance monitoring for new corridor. No immediate concerns detected.',
+        pattern_matches: [
+          { description: 'Business expansion', percentage: 85 },
+          { description: 'Sanctions risk', percentage: 2 },
+        ],
+        suggested_actions: [
+          { action: 'Monitor transaction patterns for 30 days', completed: false },
+        ],
+        confidence_level: 92,
+      },
+    });
+    console.log('  ✓ Flag: Low risk - New corridor monitoring');
+    
+    // Flag 5: Critical risk (escalated)
+    if (recentTransfers && recentTransfers.length > 2) {
+      await createComplianceFlag(acmeTenantId, {
+        flagType: 'transaction',
+        riskLevel: 'critical',
+        status: 'escalated',
+        transferId: recentTransfers[2].id,
+        reasonCode: 'sanctions_potential_match',
+        reasons: [
+          'Name similarity to sanctions list entry',
+          'Geographic risk indicators present',
+          'Requires senior compliance review',
+        ],
+        description: 'Potential sanctions match requires immediate senior compliance review and possible account freeze.',
+        aiAnalysis: {
+          risk_score: 92,
+          risk_explanation: 'High-confidence potential match to OFAC sanctions list. Immediate review required before processing.',
+          pattern_matches: [
+            { description: 'False positive name match', percentage: 45 },
+            { description: 'Sanctions list match', percentage: 40 },
+          ],
+          suggested_actions: [
+            { action: 'Freeze transaction immediately', completed: true },
+            { action: 'Escalate to senior compliance officer', completed: true },
+            { action: 'Run enhanced due diligence', completed: false },
+            { action: 'File SAR if confirmed', completed: false },
+          ],
+          confidence_level: 88,
+        },
+      });
+      console.log('  ✓ Flag: Critical risk - Potential sanctions match (ESCALATED)');
+    }
+    
+    console.log('');
+    
+    // ============================================
     // Summary
     // ============================================
     console.log('✅ Database seeding completed successfully!\n');
@@ -605,6 +808,7 @@ async function seedDatabase() {
     console.log(`   Payment Methods: 4`);
     console.log(`   Agents: 3`);
     console.log(`   Streams: 2`);
+    console.log(`   Compliance Flags: 5`);
     console.log('');
     
     console.log('🔑 To test the API, use one of these tenant API keys shown above.');
