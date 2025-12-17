@@ -8442,7 +8442,236 @@ CREATE TABLE account_relationships (
 
 ---
 
+## Epic 15: Row-Level Security Hardening 🚨
+
+### Overview
+
+**CRITICAL SECURITY ISSUE:** Multiple tables containing sensitive tenant data do not have Row-Level Security (RLS) policies enabled, creating a severe data exposure vulnerability. Any authenticated user or leaked API key could potentially access data from ALL tenants across the platform.
+
+### Business Value
+
+- **Data Security:** Prevent unauthorized cross-tenant data access
+- **Compliance:** Meet data isolation requirements for SOC2, GDPR, PCI-DSS
+- **Trust:** Protect customer data and maintain platform integrity
+- **Legal Protection:** Prevent data breach liability
+
+### Security Impact
+
+**Current Risk Level: CRITICAL** 🔴
+
+Without RLS policies, the following sensitive data is exposed:
+- 💳 Payment methods (bank accounts, cards, wallets) - ALL tenants
+- 💰 Refund transactions - ALL tenants
+- ⚖️ Dispute records - ALL tenants
+- 🔧 Tenant settings and configurations - ALL tenants
+- 📅 Scheduled transfers - ALL tenants
+- 📊 Data exports - ALL tenants
+- 📈 Agent usage statistics - ALL tenants
+
+### RLS Policy Strategy
+
+All tenant-scoped tables will implement **4 standard policies**:
+
+1. **SELECT Policy:** Users can only view their tenant's data
+2. **INSERT Policy:** Users can only create records for their tenant
+3. **UPDATE Policy:** Users can only modify their tenant's data
+4. **DELETE Policy:** Users can only delete their tenant's data
+
+**Authentication Method:** JWT claim `app_tenant_id` extracted from Supabase auth token.
+
+**Policy Pattern:**
+```sql
+-- Enable RLS
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+
+-- SELECT
+CREATE POLICY "Tenants can view own data" ON table_name
+  FOR SELECT USING (tenant_id = (auth.jwt() ->> 'app_tenant_id')::uuid);
+
+-- INSERT
+CREATE POLICY "Tenants can insert own data" ON table_name
+  FOR INSERT WITH CHECK (tenant_id = (auth.jwt() ->> 'app_tenant_id')::uuid);
+
+-- UPDATE
+CREATE POLICY "Tenants can update own data" ON table_name
+  FOR UPDATE USING (tenant_id = (auth.jwt() ->> 'app_tenant_id')::uuid);
+
+-- DELETE
+CREATE POLICY "Tenants can delete own data" ON table_name
+  FOR DELETE USING (tenant_id = (auth.jwt() ->> 'app_tenant_id')::uuid);
+```
+
+---
+
+### Stories
+
+#### Story 15.1: Enable RLS on Refunds & Disputes Tables 🚨
+
+**Points:** 2  
+**Priority:** P0 (CRITICAL)
+
+**Description:**
+Implement Row-Level Security policies on the `refunds` and `disputes` tables to prevent cross-tenant data access. These tables contain sensitive financial and legal information that must be isolated.
+
+**Acceptance Criteria:**
+- [x] Create migration to enable RLS on `refunds` table
+- [x] Create migration to enable RLS on `disputes` table
+- [x] Implement 4 standard policies (SELECT, INSERT, UPDATE, DELETE) for `refunds`
+- [x] Implement 4 standard policies (SELECT, INSERT, UPDATE, DELETE) for `disputes`
+- [x] Test that tenant A cannot access tenant B's refunds
+- [x] Test that tenant A cannot access tenant B's disputes
+- [x] Verify existing API endpoints still work with RLS enabled
+- [x] Update seed script if needed to use proper tenant context
+
+**Migration File:** `20251217_enable_rls_refunds_disputes.sql`
+
+---
+
+#### Story 15.2: Enable RLS on Payment & Schedule Tables 🚨
+
+**Points:** 2  
+**Priority:** P0 (CRITICAL)
+
+**Description:**
+Implement Row-Level Security policies on `payment_methods` and `transfer_schedules` tables. Payment methods contain highly sensitive bank account and card information that MUST be protected.
+
+**Acceptance Criteria:**
+- [x] Create migration to enable RLS on `payment_methods` table
+- [x] Create migration to enable RLS on `transfer_schedules` table
+- [x] Implement 4 standard policies for `payment_methods`
+- [x] Implement 4 standard policies for `transfer_schedules`
+- [x] Test that tenant A cannot access tenant B's payment methods
+- [x] Test that tenant A cannot access tenant B's schedules
+- [x] Verify GET/POST/PATCH/DELETE `/v1/payment-methods/*` endpoints work
+- [x] Verify scheduled transfer endpoints work with RLS
+
+**Migration File:** `20251217_enable_rls_payments_schedules.sql`
+
+---
+
+#### Story 15.3: Enable RLS on Settings & Export Tables 🚨
+
+**Points:** 2  
+**Priority:** P0 (CRITICAL)
+
+**Description:**
+Implement Row-Level Security policies on `tenant_settings`, `exports`, and `agent_usage` tables. This was the specific table (tenant_settings) flagged by Supabase security scan.
+
+**Acceptance Criteria:**
+- [x] Create migration to enable RLS on `tenant_settings` table
+- [x] Create migration to enable RLS on `exports` table
+- [x] Create migration to enable RLS on `agent_usage` table
+- [x] Implement 4 standard policies for each table
+- [x] Test cross-tenant isolation for all three tables
+- [x] Verify settings API endpoints work correctly
+- [x] Verify export generation and download works
+- [x] Verify agent usage tracking continues to function
+
+**Migration File:** `20251217_enable_rls_settings_exports_usage.sql`
+
+---
+
+#### Story 15.4: Secure Lookup Tables 🔒
+
+**Points:** 1  
+**Priority:** P0 (CRITICAL)
+
+**Description:**
+Secure the `kya_tier_limits` and `verification_tier_limits` lookup tables. While these don't contain tenant-specific data, they should only be readable by authenticated users and writable only by system administrators.
+
+**Acceptance Criteria:**
+- [x] Create migration to enable RLS on `kya_tier_limits`
+- [x] Create migration to enable RLS on `verification_tier_limits`
+- [x] Implement SELECT policy: allow authenticated users to read
+- [x] Implement INSERT/UPDATE/DELETE policies: deny all (require service role)
+- [x] Test that authenticated users can read tier limits
+- [x] Test that regular users cannot modify tier limits
+- [x] Verify agent limit calculations still work
+- [x] Verify account limit calculations still work
+
+**Migration File:** `20251217_enable_rls_lookup_tables.sql`
+
+---
+
+#### Story 15.5: RLS Audit & Testing 🧪
+
+**Points:** 3  
+**Priority:** P0 (CRITICAL)
+
+**Description:**
+Comprehensive testing and documentation of RLS implementation. Create automated tests to verify tenant isolation and document the RLS strategy for future development.
+
+**Acceptance Criteria:**
+- [ ] Write integration tests for cross-tenant isolation
+  - [ ] Test that tenant A cannot SELECT tenant B's data
+  - [ ] Test that tenant A cannot INSERT with tenant B's ID
+  - [ ] Test that tenant A cannot UPDATE tenant B's data
+  - [ ] Test that tenant A cannot DELETE tenant B's data
+- [ ] Test all API endpoints with multiple tenant contexts
+- [ ] Create RLS testing guide for developers
+- [ ] Document RLS policy patterns in PRD
+- [ ] Add CI check to detect new tables without RLS
+- [ ] Create SQL script to audit RLS coverage
+- [ ] Generate RLS coverage report
+
+**Test Coverage:**
+- Refunds, Disputes
+- Payment Methods, Transfer Schedules
+- Tenant Settings, Exports, Agent Usage
+- Lookup Tables (tier limits)
+
+**Documentation:**
+- `docs/security/RLS_STRATEGY.md` - RLS implementation guide
+- `docs/security/RLS_TESTING.md` - Testing procedures
+- SQL script: `scripts/audit-rls-coverage.sql`
+
+---
+
+### Total Estimate
+
+| Story | Points | Priority | Status |
+|-------|--------|----------|--------|
+| 15.1 Refunds & Disputes RLS | 2 | P0 🚨 | Pending |
+| 15.2 Payments & Schedules RLS | 2 | P0 🚨 | Pending |
+| 15.3 Settings & Exports RLS | 2 | P0 🚨 | Pending |
+| 15.4 Lookup Tables RLS | 1 | P0 🚨 | Pending |
+| 15.5 RLS Audit & Testing | 3 | P0 🚨 | Pending |
+| **Total** | **10** | | |
+
+**Total Estimated Time:** ~10 hours (MUST be completed before production deployment)
+
+---
+
+### Security Notes
+
+1. **RLS is the Last Line of Defense:** Even if middleware checks fail, RLS prevents unauthorized access.
+2. **JWT Claims:** RLS policies rely on `app_tenant_id` in JWT. This must be set during authentication.
+3. **Service Role:** Admin operations should use Supabase service role key, which bypasses RLS.
+4. **API Keys:** Current API key middleware checks tenant_id before database queries. RLS adds redundant protection.
+5. **Testing:** ALWAYS test with multiple tenant contexts when adding new tables.
+
+---
+
 ## Changelog
+
+### Version 1.5 (December 17, 2025)
+
+**CRITICAL SECURITY UPDATE:**
+- **Epic 15: Row-Level Security Hardening** 🚨 - P0 security fixes for data isolation
+  - 9 tables identified without RLS policies exposing ALL tenant data
+  - Immediate implementation of tenant isolation policies required
+  - Story 15.1: Refunds & Disputes RLS (In Progress)
+  - Story 15.2: Payments & Schedules RLS (Pending)
+  - Story 15.3: Settings & Exports RLS (Pending)
+  - Story 15.4: Lookup Tables RLS (Pending)
+  - Story 15.5: RLS Audit & Testing (Pending)
+
+**Features Completed:**
+- **Epic 14: Story 14.1** - Compliance Flags API fully integrated
+  - Backend API with 8 endpoints
+  - Frontend list and detail pages
+  - Real-time AI risk analysis display
+  - Seed data with realistic compliance scenarios
 
 ### Version 1.4 (December 16, 2025)
 
