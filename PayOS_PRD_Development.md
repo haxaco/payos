@@ -8663,11 +8663,16 @@ Comprehensive testing and documentation of RLS implementation. Create automated 
 
 ---
 
-## Epic 16: Database Function Security Hardening 🔒
+## Epic 16: Database Function Security & Performance Hardening 🔒⚡
 
 ### Overview
 
-**Security Issue:** Supabase security linter has identified 13 security warnings related to database functions and authentication configuration. These issues need to be addressed to prevent potential SQL injection vulnerabilities and enhance password security.
+**Security & Performance Issues:** Supabase security linter has identified **46 warnings** across security and performance categories:
+- **13 security warnings:** Database function search_path issues and authentication configuration
+- **33 performance warnings:** RLS policy optimization issues (auth.jwt() re-evaluation)
+- **1 performance warning:** Duplicate index on documents table
+
+These issues need to be addressed to prevent SQL injection vulnerabilities, enhance password security, and improve query performance at scale.
 
 ### Business Value
 
@@ -8861,7 +8866,186 @@ Enable Supabase Auth's leaked password protection feature, which checks password
 
 ---
 
+#### Story 16.6: Optimize RLS Policies - Settings & Lookup Tables ⚡
+
+**Points:** 1  
+**Priority:** P1
+
+**Description:**
+Optimize RLS policies for `tenant_settings` and lookup tables (`kya_tier_limits`, `verification_tier_limits`) to prevent unnecessary re-evaluation of `auth.jwt()` for each row. This improves query performance at scale.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `tenant_settings` RLS policies (4 policies)
+  - Replace `auth.jwt() ->> 'app_tenant_id'` with `(select auth.jwt() ->> 'app_tenant_id')`
+- [ ] Create migration to update `kya_tier_limits` RLS policy (1 policy)
+  - Replace `auth.role()` with `(select auth.role())`
+- [ ] Create migration to update `verification_tier_limits` RLS policy (1 policy)
+  - Replace `auth.role()` with `(select auth.role())`
+- [ ] Verify all policies still work correctly
+- [ ] Test query performance improvement with EXPLAIN ANALYZE
+- [ ] Document performance impact
+
+**Policies to Fix:**
+- `tenant_settings`: 4 policies (SELECT, INSERT, UPDATE, DELETE)
+- `kya_tier_limits`: 1 policy (SELECT)
+- `verification_tier_limits`: 1 policy (SELECT)
+
+**Performance Impact:** 
+- Reduces `auth.jwt()` calls from N (per row) to 1 (per query)
+- Significant improvement for queries returning many rows
+
+**Migration Pattern:**
+```sql
+-- Before (re-evaluates for each row):
+USING (tenant_id = (auth.jwt() ->> 'app_tenant_id')::uuid)
+
+-- After (evaluates once per query):
+USING (tenant_id = ((select auth.jwt() ->> 'app_tenant_id'))::uuid)
+```
+
+---
+
+#### Story 16.7: Optimize RLS Policies - Financial Tables ⚡
+
+**Points:** 3  
+**Priority:** P1
+
+**Description:**
+Optimize RLS policies for financial tables (`refunds`, `disputes`, `payment_methods`, `transfer_schedules`) to improve query performance. These tables are frequently queried and benefit significantly from RLS optimization.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `refunds` RLS policies (4 policies)
+- [ ] Create migration to update `disputes` RLS policies (4 policies)
+- [ ] Create migration to update `payment_methods` RLS policies (4 policies)
+- [ ] Create migration to update `transfer_schedules` RLS policies (4 policies)
+- [ ] Replace all `auth.jwt() ->> 'app_tenant_id'` with `(select auth.jwt() ->> 'app_tenant_id')`
+- [ ] Verify all policies still work correctly
+- [ ] Test query performance with EXPLAIN ANALYZE
+- [ ] Benchmark before/after performance
+
+**Policies to Fix:**
+- `refunds`: 4 policies (SELECT, INSERT, UPDATE, DELETE)
+- `disputes`: 4 policies (SELECT, INSERT, UPDATE, DELETE)
+- `payment_methods`: 4 policies (SELECT, INSERT, UPDATE, DELETE)
+- `transfer_schedules`: 4 policies (SELECT, INSERT, UPDATE, DELETE)
+
+**Total:** 16 policies
+
+**Performance Impact:** HIGH - These tables are queried frequently
+
+---
+
+#### Story 16.8: Optimize RLS Policies - Configuration & Analytics ⚡
+
+**Points:** 2  
+**Priority:** P1
+
+**Description:**
+Optimize RLS policies for configuration and analytics tables (`exports`, `agent_usage`) to improve query performance, especially for bulk operations and reporting.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `exports` RLS policies (4 policies)
+- [ ] Create migration to update `agent_usage` RLS policies (4 policies)
+- [ ] Replace all `auth.jwt() ->> 'app_tenant_id'` with `(select auth.jwt() ->> 'app_tenant_id')`
+- [ ] Verify all policies still work correctly
+- [ ] Test export generation performance
+- [ ] Test agent usage aggregation queries
+- [ ] Document performance improvements
+
+**Policies to Fix:**
+- `exports`: 4 policies (SELECT, INSERT, UPDATE, DELETE)
+- `agent_usage`: 4 policies (SELECT, INSERT, UPDATE, DELETE)
+
+**Total:** 8 policies
+
+**Performance Impact:** MEDIUM - Important for reporting and analytics
+
+---
+
+#### Story 16.9: Optimize RLS Policies - Core Platform ⚡
+
+**Points:** 2  
+**Priority:** P1
+
+**Description:**
+Optimize RLS policies for core platform tables (`security_events`, `compliance_flags`, `user_profiles`, `team_invites`, `api_keys`) to improve overall system performance.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `security_events` RLS policy (1 policy)
+- [ ] Create migration to update `compliance_flags` RLS policy (1 policy)
+- [ ] Create migration to update `user_profiles` RLS policy (1 policy)
+- [ ] Create migration to update `team_invites` RLS policy (1 policy)
+- [ ] Create migration to update `api_keys` RLS policy (1 policy)
+- [ ] Replace all `auth.jwt()` calls with `(select auth.jwt())`
+- [ ] Verify all policies still work correctly
+- [ ] Test authentication and authorization flows
+- [ ] Document performance improvements
+
+**Policies to Fix:**
+- `security_events`: 1 policy
+- `compliance_flags`: 1 policy
+- `user_profiles`: 1 policy
+- `team_invites`: 1 policy
+- `api_keys`: 1 policy
+
+**Total:** 5 policies
+
+**Performance Impact:** MEDIUM - Important for authentication and security operations
+
+---
+
+#### Story 16.10: Remove Duplicate Indexes ⚡
+
+**Points:** 1  
+**Priority:** P1
+
+**Description:**
+Remove duplicate indexes on the `documents` table to reduce storage overhead and improve write performance. The table currently has two identical indexes that serve the same purpose.
+
+**Acceptance Criteria:**
+- [ ] Identify duplicate indexes on `documents` table
+  - `idx_documents_tenant_type`
+  - `idx_documents_type`
+- [ ] Analyze which index is more useful (likely the one with `tenant_id`)
+- [ ] Create migration to drop the redundant index
+- [ ] Verify query performance is maintained
+- [ ] Test that all queries still use the remaining index
+- [ ] Document index optimization
+
+**Duplicate Indexes:**
+- `idx_documents_tenant_type` (likely more useful - includes tenant_id)
+- `idx_documents_type` (redundant if tenant_id is always filtered)
+
+**Action:** Drop `idx_documents_type` if `idx_documents_tenant_type` covers all use cases
+
+**Performance Impact:**
+- Reduces index maintenance overhead
+- Improves INSERT/UPDATE performance
+- Reduces storage usage
+
+---
+
 ### Total Estimate
+
+| Story | Points | Priority | Status |
+|-------|--------|----------|--------|
+| 16.1 Utility Functions Search Path | 2 | P1 | Pending |
+| 16.2 Account Operations Search Path | 2 | P1 | Pending |
+| 16.3 Stream Operations Search Path | 2 | P1 | Pending |
+| 16.4 Agent Operations Search Path | 2 | P1 | Pending |
+| 16.5 Leaked Password Protection | 1 | P1 | Pending |
+| 16.6 Optimize RLS - Settings & Lookup | 1 | P1 | Pending |
+| 16.7 Optimize RLS - Financial Tables | 3 | P1 | Pending |
+| 16.8 Optimize RLS - Config & Analytics | 2 | P1 | Pending |
+| 16.9 Optimize RLS - Core Platform | 2 | P1 | Pending |
+| 16.10 Remove Duplicate Indexes | 1 | P1 | Pending |
+| **Total** | **18** | | **0/18 Complete** |
+
+**Total Estimated Time:** ~18 hours
+
+**Breakdown:**
+- Security fixes (Stories 16.1-16.5): ~9 hours
+- Performance optimizations (Stories 16.6-16.10): ~9 hours
 
 | Story | Points | Priority | Status |
 |-------|--------|----------|--------|
@@ -8888,24 +9072,56 @@ Enable Supabase Auth's leaked password protection feature, which checks password
 
 5. **Backward Compatibility:** Function signature changes should maintain backward compatibility where possible.
 
+### Performance Notes
+
+1. **RLS Init Plan Optimization:** Wrapping `auth.jwt()` calls in `(select ...)` moves the evaluation to the query initialization phase, preventing re-evaluation for each row. This can improve query performance by 10-100x for large result sets.
+
+2. **Performance Impact:** 
+   - **Before:** `auth.jwt()` called N times (once per row)
+   - **After:** `auth.jwt()` called 1 time (once per query)
+   - **Benefit:** Significant for queries returning 100+ rows
+
+3. **Testing:** Use `EXPLAIN ANALYZE` to verify performance improvements and ensure query plans are optimized.
+
+4. **Duplicate Indexes:** Removing duplicate indexes reduces:
+   - Storage overhead
+   - Index maintenance time during INSERT/UPDATE
+   - Write performance degradation
+
+5. **Index Selection:** When removing duplicate indexes, keep the more specific index (e.g., `idx_documents_tenant_type` over `idx_documents_type` if tenant_id is always filtered).
+
 ---
 
 ## Changelog
 
 ### Version 1.6 (December 17, 2025)
 
-**NEW SECURITY EPIC ADDED:**
-- **Epic 16: Database Function Security Hardening** 🔒 - P1 security improvements
-  - 13 Supabase security linter warnings identified
-  - 12 database functions need search_path fixes
-  - 1 authentication setting (leaked password protection)
-  - **Stories:**
-    - Story 16.1: Fix Utility Functions Search Path (2 pts) - Pending
-    - Story 16.2: Fix Account Operations Search Path (2 pts) - Pending
-    - Story 16.3: Fix Stream Operations Search Path (2 pts) - Pending
-    - Story 16.4: Fix Agent Operations Search Path (2 pts) - Pending
-    - Story 16.5: Enable Leaked Password Protection (1 pt) - Pending
-  - Total: 9 points, ~9 hours estimated
+**NEW SECURITY & PERFORMANCE EPIC ADDED:**
+- **Epic 16: Database Function Security & Performance Hardening** 🔒⚡ - P1 improvements
+  - **46 Supabase linter warnings identified:**
+    - 13 security warnings (function search_path, password protection)
+    - 33 performance warnings (RLS policy optimization)
+    - 1 performance warning (duplicate indexes)
+  - **Security Issues:**
+    - 12 database functions need search_path fixes
+    - 1 authentication setting (leaked password protection)
+  - **Performance Issues:**
+    - 33 RLS policies need optimization (auth.jwt() re-evaluation)
+    - 1 duplicate index to remove
+  - **Stories (18 points total):**
+    - Security (9 pts):
+      - Story 16.1: Fix Utility Functions Search Path (2 pts) - Pending
+      - Story 16.2: Fix Account Operations Search Path (2 pts) - Pending
+      - Story 16.3: Fix Stream Operations Search Path (2 pts) - Pending
+      - Story 16.4: Fix Agent Operations Search Path (2 pts) - Pending
+      - Story 16.5: Enable Leaked Password Protection (1 pt) - Pending
+    - Performance (9 pts):
+      - Story 16.6: Optimize RLS - Settings & Lookup (1 pt) - Pending
+      - Story 16.7: Optimize RLS - Financial Tables (3 pts) - Pending
+      - Story 16.8: Optimize RLS - Config & Analytics (2 pts) - Pending
+      - Story 16.9: Optimize RLS - Core Platform (2 pts) - Pending
+      - Story 16.10: Remove Duplicate Indexes (1 pt) - Pending
+  - Total: 18 points, ~18 hours estimated
 
 ### Version 1.5 (December 17, 2025)
 
