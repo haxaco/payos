@@ -1,6 +1,57 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useApi, buildQueryString } from './useApi';
-import type { ApiResponse, PaginatedResponse } from './useApi';
+import { buildQueryString } from './useApi';
+import { useAuth } from '../useAuth';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+// Helper to make authenticated API calls
+function useApiClient() {
+  const { accessToken } = useAuth();
+
+  const makeRequest = async <T,>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> => {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `API Error: ${response.status}`);
+    }
+
+    return response.json();
+  };
+
+  return {
+    get: <T,>(endpoint: string) => makeRequest<T>(endpoint, { method: 'GET' }),
+    post: <T,>(endpoint: string, body?: any) =>
+      makeRequest<T>(endpoint, { method: 'POST', body: JSON.stringify(body) }),
+    patch: <T,>(endpoint: string, body?: any) =>
+      makeRequest<T>(endpoint, { method: 'PATCH', body: JSON.stringify(body) }),
+    del: <T,>(endpoint: string) => makeRequest<T>(endpoint, { method: 'DELETE' }),
+  };
+}
+
+export interface ApiResponse<T> {
+  data: T;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+    totalPages: number;
+  };
+}
 
 // ============================================
 // Types
@@ -155,14 +206,13 @@ const COMPLIANCE_QUERY_KEYS = {
  * Hook to fetch list of compliance flags
  */
 export function useComplianceFlags(filters: ComplianceFlagFilters = {}) {
-  const { get } = useApi();
+  const apiClient = useApiClient();
   const queryString = buildQueryString(filters);
   
   return useQuery<PaginatedResponse<ComplianceFlag>, Error>({
     queryKey: COMPLIANCE_QUERY_KEYS.list(filters),
     queryFn: async () => {
-      const response = await get<PaginatedResponse<ComplianceFlag>>(`/v1/compliance/flags${queryString}`);
-      return response.data;
+      return apiClient.get<PaginatedResponse<ComplianceFlag>>(`/v1/compliance/flags${queryString}`);
     },
     staleTime: 30 * 1000, // 30 seconds
     keepPreviousData: true,
@@ -173,14 +223,13 @@ export function useComplianceFlags(filters: ComplianceFlagFilters = {}) {
  * Hook to fetch a single compliance flag
  */
 export function useComplianceFlag(id?: string) {
-  const { get } = useApi();
+  const apiClient = useApiClient();
   
   return useQuery<ApiResponse<ComplianceFlag>, Error>({
     queryKey: COMPLIANCE_QUERY_KEYS.detail(id || ''),
     queryFn: async () => {
       if (!id) throw new Error('Flag ID is required');
-      const response = await get<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}`);
-      return response.data;
+      return apiClient.get<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}`);
     },
     enabled: !!id,
     staleTime: 30 * 1000, // 30 seconds
@@ -191,13 +240,12 @@ export function useComplianceFlag(id?: string) {
  * Hook to fetch compliance statistics
  */
 export function useComplianceStats() {
-  const { get } = useApi();
+  const apiClient = useApiClient();
   
   return useQuery<ApiResponse<ComplianceStats>, Error>({
     queryKey: COMPLIANCE_QUERY_KEYS.stats(),
     queryFn: async () => {
-      const response = await get<ApiResponse<ComplianceStats>>('/v1/compliance/stats');
-      return response.data;
+      return apiClient.get<ApiResponse<ComplianceStats>>('/v1/compliance/stats');
     },
     staleTime: 60 * 1000, // 1 minute
   });
@@ -207,13 +255,12 @@ export function useComplianceStats() {
  * Mutation to create a new compliance flag
  */
 export function useCreateComplianceFlag() {
-  const { post } = useApi();
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
   
   return useMutation<ApiResponse<ComplianceFlag>, Error, CreateFlagPayload>({
     mutationFn: async (payload) => {
-      const response = await post<ApiResponse<ComplianceFlag>>('/v1/compliance/flags', payload);
-      return response.data;
+      return apiClient.post<ApiResponse<ComplianceFlag>>('/v1/compliance/flags', payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: COMPLIANCE_QUERY_KEYS.lists() });
@@ -226,13 +273,12 @@ export function useCreateComplianceFlag() {
  * Mutation to update a compliance flag
  */
 export function useUpdateComplianceFlag() {
-  const { patch } = useApi();
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
   
   return useMutation<ApiResponse<ComplianceFlag>, Error, { id: string; payload: UpdateFlagPayload }>({
     mutationFn: async ({ id, payload }) => {
-      const response = await patch<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}`, payload);
-      return response.data;
+      return apiClient.patch<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}`, payload);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: COMPLIANCE_QUERY_KEYS.lists() });
@@ -246,13 +292,12 @@ export function useUpdateComplianceFlag() {
  * Mutation to resolve a compliance flag
  */
 export function useResolveComplianceFlag() {
-  const { post } = useApi();
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
   
   return useMutation<ApiResponse<ComplianceFlag>, Error, { id: string; payload: ResolveFlagPayload }>({
     mutationFn: async ({ id, payload }) => {
-      const response = await post<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}/resolve`, payload);
-      return response.data;
+      return apiClient.post<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}/resolve`, payload);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: COMPLIANCE_QUERY_KEYS.lists() });
@@ -266,13 +311,12 @@ export function useResolveComplianceFlag() {
  * Mutation to assign a compliance flag to a user
  */
 export function useAssignComplianceFlag() {
-  const { post } = useApi();
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
   
   return useMutation<ApiResponse<ComplianceFlag>, Error, { id: string; user_id: string }>({
     mutationFn: async ({ id, user_id }) => {
-      const response = await post<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}/assign`, { user_id });
-      return response.data;
+      return apiClient.post<ApiResponse<ComplianceFlag>>(`/v1/compliance/flags/${id}/assign`, { user_id });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: COMPLIANCE_QUERY_KEYS.lists() });
