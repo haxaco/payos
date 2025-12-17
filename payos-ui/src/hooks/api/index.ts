@@ -48,6 +48,13 @@ export type {
   ComplianceStats,
 } from './useCompliance';
 
+export {
+  useDisputeStats,
+} from './useDisputes';
+export type {
+  DisputeStats,
+} from './useDisputes';
+
 // Types
 export type {
   Account,

@@ -17,19 +17,20 @@ import {
   FileText,
   Scale
 } from 'lucide-react';
+import { useComplianceStats, useDisputeStats } from '../../hooks/api';
 
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
 }
 
-const mainNav = [
+const getMainNav = (complianceCount?: number, disputesCount?: number) => [
   { href: '/', label: 'Home', icon: Home },
   { href: '/accounts', label: 'Accounts', icon: Users },
   { href: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { href: '/cards', label: 'Cards', icon: CreditCard },
-  { href: '/compliance', label: 'Compliance', icon: Shield, badge: '23' },
-  { href: '/disputes', label: 'Disputes', icon: Scale, badge: '3' },
+  { href: '/compliance', label: 'Compliance', icon: Shield, badge: complianceCount !== undefined ? complianceCount.toString() : undefined },
+  { href: '/disputes', label: 'Disputes', icon: Scale, badge: disputesCount !== undefined ? disputesCount.toString() : undefined },
   { href: '/treasury', label: 'Treasury', icon: Wallet },
   { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/reports', label: 'Reports', icon: FileText },
@@ -53,6 +54,27 @@ const secondaryNav = [
 
 export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const location = useLocation();
+  
+  // Fetch real-time counts for sidebar badges
+  const { data: complianceStats } = useComplianceStats();
+  const { data: disputeStats } = useDisputeStats();
+  
+  // Calculate active compliance flags (not resolved/dismissed)
+  const complianceCount = complianceStats?.data ? 
+    complianceStats.data.by_status.open + 
+    complianceStats.data.by_status.pending_review + 
+    complianceStats.data.by_status.under_investigation + 
+    complianceStats.data.by_status.escalated 
+    : undefined;
+  
+  // Calculate active disputes (not resolved)
+  const disputesCount = disputeStats?.data ? 
+    disputeStats.data.open_disputes + 
+    disputeStats.data.under_review + 
+    disputeStats.data.escalated 
+    : undefined;
+  
+  const mainNav = getMainNav(complianceCount, disputesCount);
 
   const isActive = (href: string) => {
     if (href === '/') {
