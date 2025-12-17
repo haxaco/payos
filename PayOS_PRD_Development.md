@@ -8663,7 +8663,249 @@ Comprehensive testing and documentation of RLS implementation. Create automated 
 
 ---
 
+## Epic 16: Database Function Security Hardening 🔒
+
+### Overview
+
+**Security Issue:** Supabase security linter has identified 13 security warnings related to database functions and authentication configuration. These issues need to be addressed to prevent potential SQL injection vulnerabilities and enhance password security.
+
+### Business Value
+
+- **Security Hardening:** Prevent SQL injection attacks through function search_path manipulation
+- **Password Security:** Protect user accounts from compromised passwords
+- **Compliance:** Meet security best practices for database functions
+- **Risk Mitigation:** Reduce attack surface and potential data breaches
+
+### Security Impact
+
+**Current Risk Level: MEDIUM** 🟡
+
+Without proper `search_path` configuration, database functions are vulnerable to:
+- **Search Path Injection:** Malicious users could manipulate the search_path to execute unauthorized code
+- **Schema Hijacking:** Attackers could create malicious functions in public schema that override intended behavior
+- **Data Exposure:** Functions could access unintended schemas or tables
+
+Additionally, without leaked password protection:
+- **Account Compromise:** Users can set passwords that are known to be compromised
+- **Credential Stuffing:** Vulnerable to automated attacks using leaked credentials
+
+### Issues Identified
+
+#### 1. Function Search Path Mutable (12 functions)
+Functions without explicit `search_path` setting are vulnerable to search path injection:
+
+**Utility Functions:**
+- `update_compliance_flags_updated_at`
+- `update_team_invites_updated_at`
+- `update_api_keys_updated_at`
+- `update_updated_at_column`
+- `log_audit`
+
+**Account Operations:**
+- `credit_account`
+- `debit_account`
+
+**Stream Operations:**
+- `hold_for_stream`
+- `release_from_stream`
+- `calculate_stream_balance`
+
+**Agent Operations:**
+- `calculate_agent_effective_limits`
+- `record_agent_usage`
+
+#### 2. Leaked Password Protection Disabled
+Supabase Auth's HaveIBeenPwned integration is currently disabled, allowing users to set compromised passwords.
+
+---
+
+### Stories
+
+#### Story 16.1: Fix Function Search Path - Utility Functions 🔒
+
+**Points:** 2  
+**Priority:** P1
+
+**Description:**
+Fix the `search_path` parameter for utility and audit functions to prevent search path injection attacks. These functions are used for timestamp updates and audit logging.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `update_compliance_flags_updated_at` with `SET search_path = ''`
+- [ ] Create migration to update `update_team_invites_updated_at` with `SET search_path = ''`
+- [ ] Create migration to update `update_api_keys_updated_at` with `SET search_path = ''`
+- [ ] Create migration to update `update_updated_at_column` with `SET search_path = ''`
+- [ ] Create migration to update `log_audit` with `SET search_path = ''`
+- [ ] Verify all functions still work correctly after update
+- [ ] Test that functions cannot be hijacked via search_path manipulation
+- [ ] Update function documentation with security notes
+
+**Functions to Fix:**
+- `update_compliance_flags_updated_at`
+- `update_team_invites_updated_at`
+- `update_api_keys_updated_at`
+- `update_updated_at_column`
+- `log_audit`
+
+**Migration Pattern:**
+```sql
+CREATE OR REPLACE FUNCTION public.{function_name}(...)
+RETURNS ...
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  -- function body
+$$;
+```
+
+---
+
+#### Story 16.2: Fix Function Search Path - Account Operations 🔒
+
+**Points:** 2  
+**Priority:** P1
+
+**Description:**
+Fix the `search_path` parameter for account balance operations. These functions handle critical financial transactions and must be protected from search path injection.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `credit_account` with `SET search_path = ''`
+- [ ] Create migration to update `debit_account` with `SET search_path = ''`
+- [ ] Verify account balance operations still work correctly
+- [ ] Test credit/debit operations with proper schema qualification
+- [ ] Ensure ledger entries are created correctly
+- [ ] Test that functions cannot be hijacked via search_path manipulation
+- [ ] Add security notes to function documentation
+
+**Functions to Fix:**
+- `credit_account`
+- `debit_account`
+
+**Security Impact:** HIGH - These functions handle financial transactions
+
+---
+
+#### Story 16.3: Fix Function Search Path - Stream Operations 🔒
+
+**Points:** 2  
+**Priority:** P1
+
+**Description:**
+Fix the `search_path` parameter for stream balance operations. These functions manage payment stream balances and holds.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `hold_for_stream` with `SET search_path = ''`
+- [ ] Create migration to update `release_from_stream` with `SET search_path = ''`
+- [ ] Create migration to update `calculate_stream_balance` with `SET search_path = ''`
+- [ ] Verify stream operations still work correctly
+- [ ] Test hold/release operations with proper schema qualification
+- [ ] Ensure stream balance calculations are accurate
+- [ ] Test that functions cannot be hijacked via search_path manipulation
+- [ ] Add security notes to function documentation
+
+**Functions to Fix:**
+- `hold_for_stream`
+- `release_from_stream`
+- `calculate_stream_balance`
+
+---
+
+#### Story 16.4: Fix Function Search Path - Agent Operations 🔒
+
+**Points:** 2  
+**Priority:** P1
+
+**Description:**
+Fix the `search_path` parameter for agent limit and usage tracking functions. These functions calculate agent limits and record usage statistics.
+
+**Acceptance Criteria:**
+- [ ] Create migration to update `calculate_agent_effective_limits` with `SET search_path = ''`
+- [ ] Create migration to update `record_agent_usage` with `SET search_path = ''`
+- [ ] Verify agent limit calculations still work correctly
+- [ ] Test agent usage recording with proper schema qualification
+- [ ] Ensure limit calculations reference correct tier limits tables
+- [ ] Test that functions cannot be hijacked via search_path manipulation
+- [ ] Add security notes to function documentation
+
+**Functions to Fix:**
+- `calculate_agent_effective_limits`
+- `record_agent_usage`
+
+---
+
+#### Story 16.5: Enable Leaked Password Protection 🔒
+
+**Points:** 1  
+**Priority:** P1
+
+**Description:**
+Enable Supabase Auth's leaked password protection feature, which checks passwords against HaveIBeenPwned.org database to prevent users from using compromised passwords.
+
+**Acceptance Criteria:**
+- [ ] Enable leaked password protection in Supabase Auth settings
+- [ ] Configure protection level (strict or moderate)
+- [ ] Test that users cannot set compromised passwords
+- [ ] Verify error messages are user-friendly
+- [ ] Test password reset flow with leaked password protection
+- [ ] Document the feature in security documentation
+- [ ] Add monitoring for blocked password attempts
+
+**Configuration:**
+- Enable in Supabase Dashboard: Authentication → Password Security
+- Choose protection level:
+  - **Moderate:** Warns but allows (recommended for initial rollout)
+  - **Strict:** Blocks compromised passwords (recommended for production)
+
+**Reference:**
+- [Supabase Password Security Docs](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)
+
+---
+
+### Total Estimate
+
+| Story | Points | Priority | Status |
+|-------|--------|----------|--------|
+| 16.1 Utility Functions Search Path | 2 | P1 | Pending |
+| 16.2 Account Operations Search Path | 2 | P1 | Pending |
+| 16.3 Stream Operations Search Path | 2 | P1 | Pending |
+| 16.4 Agent Operations Search Path | 2 | P1 | Pending |
+| 16.5 Leaked Password Protection | 1 | P1 | Pending |
+| **Total** | **9** | | **0/9 Complete** |
+
+**Total Estimated Time:** ~9 hours
+
+---
+
+### Security Notes
+
+1. **Search Path Injection:** Functions without explicit `search_path` can be vulnerable to schema hijacking attacks. Setting `search_path = ''` forces explicit schema qualification.
+
+2. **Function Qualification:** After fixing search_path, all table/function references must be fully qualified (e.g., `public.accounts` instead of `accounts`).
+
+3. **Testing:** After each migration, verify functions still work correctly and test for search path manipulation attempts.
+
+4. **Leaked Passwords:** HaveIBeenPwned integration adds minimal latency (~100ms) but significantly improves security.
+
+5. **Backward Compatibility:** Function signature changes should maintain backward compatibility where possible.
+
+---
+
 ## Changelog
+
+### Version 1.6 (December 17, 2025)
+
+**NEW SECURITY EPIC ADDED:**
+- **Epic 16: Database Function Security Hardening** 🔒 - P1 security improvements
+  - 13 Supabase security linter warnings identified
+  - 12 database functions need search_path fixes
+  - 1 authentication setting (leaked password protection)
+  - **Stories:**
+    - Story 16.1: Fix Utility Functions Search Path (2 pts) - Pending
+    - Story 16.2: Fix Account Operations Search Path (2 pts) - Pending
+    - Story 16.3: Fix Stream Operations Search Path (2 pts) - Pending
+    - Story 16.4: Fix Agent Operations Search Path (2 pts) - Pending
+    - Story 16.5: Enable Leaked Password Protection (1 pt) - Pending
+  - Total: 9 points, ~9 hours estimated
 
 ### Version 1.5 (December 17, 2025)
 
