@@ -7,6 +7,22 @@ This document tracks bugs found during UI testing.
 
 ## 🟡 Open Issues (Minor / Polish)
 
+### 3. Compliance Detail View Navigation (INVESTIGATING - P1)
+*   **Priority:** High (P1)
+*   **Description:** Gemini reported that navigation to `/compliance/flag_001` fails with "Invalid ID" or "Not Found". Click on list row may be untargetable or mapped to wrong ID.
+*   **Likely Cause:** Session expiration or authentication issue. The API endpoint requires valid JWT token and filters by `tenant_id`. If session expires, API returns 401/404.
+*   **Action:** 
+    - **For Gemini:** Please refresh the page and log in again at `http://localhost:5173/login`. Use any test account you've created.
+    - **For Dev:** Improve error messaging - show "Session expired, please log in" instead of generic "Not Found". Add token refresh logic.
+*   **Status:** Under investigation - awaiting Gemini confirmation after re-login
+*   **Technical Details:**
+    - API endpoint: `GET /v1/compliance/flags/:id` ✅ Implemented correctly
+    - Frontend hook: `useComplianceFlag(id)` ✅ Implemented correctly  
+    - Route: `/compliance/:id` ✅ Mapped correctly in App.tsx
+    - Navigation: `navigate('/compliance/${flag.id}')` ✅ Using correct UUID
+    - Database: 5 compliance flags exist with valid UUIDs ✅
+    - **Issue:** API filters by `ctx.tenantId` (line 149 in compliance.ts), which requires valid authenticated session
+
 ### 2. AI Assistant Context Awareness
 *   **Priority:** Medium (P2)
 *   **Description:** AI responds to generic queries but lacks deep context (e.g., "Show high risk accounts").

@@ -37,6 +37,9 @@ export function ComplianceFlagDetailPage() {
   
   // Error state
   if (error) {
+    const isAuthError = error.message.includes('Session expired') || error.message.includes('log in') || error.message.includes('401');
+    const isNotFound = error.message.includes('not found') || error.message.includes('404');
+    
     return (
       <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
         <button 
@@ -48,8 +51,34 @@ export function ComplianceFlagDetailPage() {
         </button>
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <AlertTriangle className="w-12 h-12 text-red-500" />
-          <p className="text-gray-500 dark:text-gray-400">Failed to load compliance flag</p>
-          <p className="text-sm text-gray-400">{error.message}</p>
+          {isAuthError ? (
+            <>
+              <p className="text-gray-900 dark:text-white font-semibold text-lg">Session Expired</p>
+              <p className="text-gray-500 dark:text-gray-400 text-center max-w-md">
+                Your session has expired. Please refresh the page and log in again to continue.
+              </p>
+              <button 
+                onClick={() => window.location.href = '/login'}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Go to Login
+              </button>
+            </>
+          ) : isNotFound ? (
+            <>
+              <p className="text-gray-900 dark:text-white font-semibold text-lg">Flag Not Found</p>
+              <p className="text-gray-500 dark:text-gray-400 text-center max-w-md">
+                This compliance flag doesn't exist or you don't have permission to view it.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-900 dark:text-white font-semibold text-lg">Failed to Load</p>
+              <p className="text-gray-500 dark:text-gray-400 text-center max-w-md">
+                {error.message}
+              </p>
+            </>
+          )}
         </div>
       </div>
     );

@@ -29,6 +29,70 @@
 
 ---
 
+## ⚠️ Common Issues & Troubleshooting
+
+### Session Management Issues
+
+**Problem:** Navigation to detail pages fails with "Invalid ID", "Not Found", or "Session Expired" errors.
+
+**Causes:**
+1. **Expired JWT Token:** Sessions expire after a period of inactivity (default: 1 hour)
+2. **No Active Session:** You're not logged in or the token was cleared
+3. **Cross-Tenant Access:** Attempting to access data from a different tenant
+
+**Solutions:**
+1. **Refresh the Page:** Press `Cmd/Ctrl + R` to reload
+2. **Re-login:** Navigate to `http://localhost:5173/login` and sign in again
+3. **Check Browser Console:** Look for `401 Unauthorized` or `Session expired` errors
+4. **Clear Local Storage:** If issues persist, open DevTools → Application → Local Storage → Clear All
+5. **Verify Test User:** Ensure you're using the correct test account credentials
+
+**How to Identify Session Issues:**
+- API calls return `401 Unauthorized` status
+- Error messages mention "Session expired" or "Please log in"
+- List pages load but detail pages fail
+- Previously working pages suddenly show errors
+
+**Prevention:**
+- Keep the browser tab active while testing
+- Refresh tokens by making API calls (clicking around) every 15 minutes
+- Use the "Keep me signed in" option (if available)
+
+### Detail Page Navigation Issues
+
+**Problem:** Clicking on list items doesn't navigate to detail pages, or shows "Not Found" errors.
+
+**Checklist:**
+1. ✅ Verify the ID in the URL is a valid UUID (format: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+2. ✅ Check browser console for JavaScript errors
+3. ✅ Confirm the API server is running (`lsof -ti:4000`)
+4. ✅ Test the API endpoint directly using curl or Postman
+5. ✅ Check Network tab in DevTools for failed requests
+6. ✅ Verify RLS policies allow access to the data
+
+**Example Test:**
+```bash
+# Test API endpoint (replace with your token)
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  http://localhost:4000/v1/compliance/flags/5c1a3570-b4ae-4586-a91d-cb29ea71dcad
+```
+
+### API Connection Issues
+
+**Problem:** "Connection Refused" or "Network Error" when making API calls.
+
+**Solutions:**
+1. **Start the API Server:**
+   ```bash
+   cd /Users/haxaco/Dev/PayOS/apps/api
+   pnpm dev
+   ```
+2. **Verify Port:** Ensure API is running on port 4000 (`lsof -ti:4000`)
+3. **Check Environment Variables:** Verify `VITE_API_URL` is set correctly in `.env`
+4. **CORS Issues:** Clear browser cache and restart both servers
+
+---
+
 ## Overview
 
 PayOS is a B2B stablecoin payout operating system. This guide covers all user flows for testing the dashboard UI.
