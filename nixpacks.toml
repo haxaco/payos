@@ -2,7 +2,7 @@
 # This builds the API from the root of the monorepo
 
 [phases.setup]
-nixPkgs = ["nodejs-20_x"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = [
