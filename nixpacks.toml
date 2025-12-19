@@ -1,13 +1,20 @@
+# Nixpacks configuration for PayOS monorepo
+# This builds the API from the root of the monorepo
+
 [phases.setup]
 nixPkgs = ["nodejs-18_x"]
 
 [phases.install]
-cmds = ["npm install -g pnpm@9", "pnpm install --frozen-lockfile"]
+cmds = [
+  "corepack enable",
+  "corepack prepare pnpm@9.14.2 --activate",
+  "pnpm install --frozen-lockfile"
+]
 
 [phases.build]
 cmds = [
   "pnpm --filter @payos/types build",
-  "pnpm --filter @payos/utils build",
+  "pnpm --filter @payos/utils build", 
   "pnpm --filter @payos/api build"
 ]
 
