@@ -34,7 +34,9 @@ Have these ready:
 3. Select **"Deploy from GitHub repo"**
 4. **Authorize Railway** if asked
 5. Select **`haxaco/payos`**
-6. When asked for directory, enter: `apps/api`
+6. **IMPORTANT:** Leave root directory as `/` (repository root)
+   - Don't change it to `apps/api`!
+   - The monorepo needs to build from root
 
 ### 1.2 Add Environment Variables
 

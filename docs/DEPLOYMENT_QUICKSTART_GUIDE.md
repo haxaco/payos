@@ -36,7 +36,9 @@ Both will auto-deploy when you push to GitHub!
 3. **Select "Deploy from GitHub repo"**
 4. **Authorize Railway** to access your GitHub
 5. **Select repository:** `haxaco/payos`
-6. **Select root path:** `/apps/api`
+6. **IMPORTANT: Leave root directory as `/` (repository root)**
+   - The configuration files (`railway.json` and `nixpacks.toml`) at the root handle the monorepo build
+   - Don't change to `apps/api` - this will cause build errors
 
 ### Step 2: Configure Railway Project
 
