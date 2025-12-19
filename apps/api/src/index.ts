@@ -5,7 +5,9 @@ import { getScheduledTransferWorker } from './workers/scheduled-transfers.js';
 
 // Railway uses PORT, fallback to API_PORT for local dev
 const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
-const host = process.env.HOST || process.env.API_HOST || '0.0.0.0';
+// Railway expects 0.0.0.0 (all interfaces), not localhost
+// Only use API_HOST if explicitly set (for local dev)
+const host = process.env.API_HOST || '0.0.0.0';
 const enableScheduledTransfers = process.env.ENABLE_SCHEDULED_TRANSFERS === 'true';
 const mockMode = process.env.MOCK_SCHEDULED_TRANSFERS === 'true' || process.env.NODE_ENV === 'development';
 
@@ -47,12 +49,18 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-serve({
-  fetch: app.fetch,
-  port,
-  hostname: host,
-});
-
-console.log(`✅ Server is listening on ${host}:${port}`);
+try {
+  serve({
+    fetch: app.fetch,
+    port,
+    hostname: host,
+  });
+  
+  console.log(`✅ Server is listening on ${host}:${port}`);
+  console.log(`📍 Railway URL: https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'your-app.railway.app'}`);
+} catch (error) {
+  console.error('❌ Failed to start server:', error);
+  process.exit(1);
+}
 
 

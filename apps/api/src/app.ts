@@ -62,6 +62,7 @@ app.use(
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:3001',
+      'https://payos-web.vercel.app', // Production dashboard
     ],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Request-ID'],
