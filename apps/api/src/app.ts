@@ -8,6 +8,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 import { rateLimiter, authRateLimiter } from './middleware/rate-limit.js';
 import { requestId, securityHeaders } from './middleware/security.js';
+import { createClient } from './db/client.js';
 
 // Import routes
 import authRouter from './routes/auth.js';
@@ -74,14 +75,47 @@ app.use(
 // PUBLIC ROUTES (no auth required)
 // ============================================
 
-// Health check
-app.get('/health', (c) =>
-  c.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: '0.1.0',
-  })
-);
+// Health check - verifies API is running and can connect to database
+app.get('/health', async (c) => {
+  try {
+    const supabase = createClient();
+    
+    // Quick DB connectivity check (just verify we can query)
+    const { error } = await supabase
+      .from('accounts')
+      .select('id')
+      .limit(1);
+    
+    // PGRST116 = no rows found (this is OK, just means empty table)
+    if (error && error.code !== 'PGRST116') {
+      console.error('Health check - DB error:', error);
+      return c.json({
+        status: 'unhealthy',
+        error: 'Database connection failed',
+        timestamp: new Date().toISOString(),
+        version: '0.1.0',
+      }, 503);
+    }
+    
+    return c.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: '0.1.0',
+      checks: {
+        api: 'running',
+        database: 'connected',
+      },
+    });
+  } catch (error: any) {
+    console.error('Health check failed:', error);
+    return c.json({
+      status: 'unhealthy',
+      error: error.message || 'Unknown error',
+      timestamp: new Date().toISOString(),
+      version: '0.1.0',
+    }, 503);
+  }
+});
 
 // Ready check (for k8s readiness probes)
 app.get('/ready', (c) =>
