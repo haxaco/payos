@@ -53,11 +53,13 @@ MOCK_SCHEDULED_TRANSFERS=false
 ## 🌐 **CORS Configuration**
 
 ```bash
-# Update after deploying frontends to Vercel
-CORS_ORIGINS=https://your-main-ui.vercel.app,https://your-dashboard.vercel.app
+# Add your deployed frontend URLs (comma-separated, no spaces)
+CORS_ORIGINS=https://payos-web.vercel.app
 ```
 
-**Default:** `http://localhost:3001` (development)
+**Default:** Includes `http://localhost:*` and `https://payos-web.vercel.app`
+
+**Note:** The app includes sensible defaults, so you only need to set this if you have additional custom domains.
 
 ---
 
@@ -74,9 +76,9 @@ NODE_ENV=production
 API_PORT=4000
 API_HOST=0.0.0.0
 
-# Optional (recommended for now)
+# Optional
 ENABLE_SCHEDULED_TRANSFERS=false  # Disabled until schema is ready
-CORS_ORIGINS=http://localhost:3001  # Update after Vercel deployment
+# CORS_ORIGINS not needed - Vercel URL included by default
 ```
 
 ---
