@@ -27,9 +27,9 @@ Then fill in your Supabase credentials:
 
 ```env
 # Get these from: Supabase Dashboard > Settings > API
-SUPABASE_URL=https://lgsreshwntpdrthfgwos.supabase.co
-SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key  # Required!
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here  # Required!
 
 # API Server
 API_PORT=4000

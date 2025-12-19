@@ -12,8 +12,8 @@ Create a file named `.env` in the `apps/api` directory with the following conten
 # PayOS API Environment Variables
 
 # Supabase Configuration
-SUPABASE_URL=https://lgsreshwntpdrthfgwos.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=[REDACTED-SERVICE-ROLE-KEY]
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
 
 # API Configuration
 PORT=4000
@@ -31,8 +31,8 @@ You can create the `.env` file with this single command:
 cd /Users/haxaco/Dev/PayOS/apps/api
 
 cat > .env << 'EOF'
-SUPABASE_URL=https://lgsreshwntpdrthfgwos.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=[REDACTED-SERVICE-ROLE-KEY]
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
 PORT=4000
 NODE_ENV=development
 DASHBOARD_URL=http://localhost:3001

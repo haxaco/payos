@@ -150,7 +150,7 @@ ls -la /Users/haxaco/Dev/PayOS/apps/api/.env
 ```
 
 **Credentials for Testing:**
-- **Supabase URL**: `https://lgsreshwntpdrthfgwos.supabase.co`
+- **Supabase URL**: `https://your-project.supabase.co`
 - **Test User**: `haxaco@gmail.com` / `Market425!`
 - **API Key (Acme Corp)**: `pk_test_GkRuyZ375fL5YLB6dtdztzQqpGPikXAadLaXGNp-5Kk`
 
