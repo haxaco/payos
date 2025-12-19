@@ -44,3 +44,4 @@ CREATE POLICY "Service role bypass for accounts" ON accounts
   FOR ALL
   USING (auth.jwt() ->> 'role' = 'service_role');
 
+

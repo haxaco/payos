@@ -62,3 +62,4 @@ BEGIN
   RAISE NOTICE '🔒 Only service role can modify lookup tables';
 END $$;
 
+

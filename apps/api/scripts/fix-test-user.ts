@@ -37,17 +37,36 @@ async function fixUser() {
     }
 
     const user = users.find(u => u.email === 'haxaco@gmail.com');
+
+    let userId = user?.id;
+
     if (!user) {
-        console.error('❌ User haxaco@gmail.com not found in Auth. Please sign up or check credentials.');
-        return;
+        console.log('⚠️ User haxaco@gmail.com not found. Creating...');
+        const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
+            email: 'haxaco@gmail.com',
+            password: 'Password123!',
+            email_confirm: true
+        });
+
+        if (createError) {
+            console.error('❌ Failed to create user:', createError);
+            return;
+        }
+
+        console.log('✅ User created successfully!');
+        userId = newUser.user.id;
+    } else {
+        console.log(`✅ Found User: ${user.id} (${user.email})`);
+        userId = user.id;
     }
-    console.log(`✅ Found User: ${user.id} (${user.email})`);
+
+    if (!userId) return;
 
     // 3. Upsert User Profile
     const { error: profileError } = await supabase
         .from('user_profiles')
         .upsert({
-            id: user.id,
+            id: userId,
             tenant_id: tenant.id,
             role: 'owner',
             name: 'Test Admin'

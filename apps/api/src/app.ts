@@ -28,6 +28,7 @@ import exportsRouter from './routes/exports.js';
 import paymentMethodsRouter from './routes/payment-methods.js';
 import disputesRouter from './routes/disputes.js';
 import { compliance as complianceRouter } from './routes/compliance.js';
+import relationshipsRouter from './routes/relationships.js';
 
 const app = new Hono();
 
@@ -59,6 +60,7 @@ app.use(
     origin: process.env.CORS_ORIGINS?.split(',') || [
       'http://localhost:3000',
       'http://localhost:5173',
+      'http://localhost:3001',
     ],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Request-ID'],
@@ -129,6 +131,7 @@ v1.route('/exports', exportsRouter);
 v1.route('/disputes', disputesRouter);
 v1.route('/payment-methods', paymentMethodsRouter);
 v1.route('/compliance', complianceRouter);
+v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods routes
 
 app.route('/v1', v1);

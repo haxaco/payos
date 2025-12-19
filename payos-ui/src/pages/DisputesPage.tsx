@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, Clock, CheckCircle, XCircle, Search, Filter,
@@ -7,122 +7,13 @@ import {
   ExternalLink, Scale
 } from 'lucide-react';
 import { AISparkleButton } from '../components/ui/AISparkleButton';
-
-// Mock disputes data
-const mockDisputes = [
-  {
-    id: 'dsp_001',
-    transferId: 'txn_abc123',
-    status: 'open',
-    reason: 'service_not_received',
-    description: 'I paid for a service that was never delivered. Multiple attempts to contact the vendor have been unsuccessful.',
-    claimant: {
-      accountId: 'acc_person_001',
-      accountName: 'Maria Garcia',
-      accountType: 'person',
-    },
-    respondent: {
-      accountId: 'acc_business_002',
-      accountName: 'Digital Services LLC',
-      accountType: 'business',
-    },
-    amountDisputed: 500.00,
-    requestedResolution: 'full_refund',
-    dueDate: '2025-12-28',
-    createdAt: '2025-11-28',
-    transfer: {
-      amount: 500.00,
-      currency: 'USDC',
-      completedAt: '2025-11-20',
-    },
-  },
-  {
-    id: 'dsp_002',
-    transferId: 'txn_def456',
-    status: 'under_review',
-    reason: 'amount_incorrect',
-    description: 'I was charged $750 instead of the agreed $500. I have the original invoice showing the correct amount.',
-    claimant: {
-      accountId: 'acc_business_001',
-      accountName: 'TechCorp Inc',
-      accountType: 'business',
-    },
-    respondent: {
-      accountId: 'acc_person_002',
-      accountName: 'John Smith Consulting',
-      accountType: 'person',
-    },
-    amountDisputed: 250.00,
-    requestedResolution: 'partial_refund',
-    requestedAmount: 250.00,
-    dueDate: '2025-12-20',
-    createdAt: '2025-11-20',
-    respondentResponse: 'The additional $250 was for rush delivery as agreed via email.',
-    transfer: {
-      amount: 750.00,
-      currency: 'USDC',
-      completedAt: '2025-11-15',
-    },
-  },
-  {
-    id: 'dsp_003',
-    transferId: 'txn_ghi789',
-    status: 'escalated',
-    reason: 'duplicate_charge',
-    description: 'I was charged twice for the same service. Transaction IDs show identical amounts on consecutive days.',
-    claimant: {
-      accountId: 'acc_person_003',
-      accountName: 'Ana Souza',
-      accountType: 'person',
-    },
-    respondent: {
-      accountId: 'acc_business_003',
-      accountName: 'CloudSoft Inc',
-      accountType: 'business',
-    },
-    amountDisputed: 1200.00,
-    requestedResolution: 'full_refund',
-    dueDate: '2025-12-15',
-    createdAt: '2025-11-15',
-    escalatedAt: '2025-12-01',
-    transfer: {
-      amount: 1200.00,
-      currency: 'USDC',
-      completedAt: '2025-11-10',
-    },
-  },
-  {
-    id: 'dsp_004',
-    transferId: 'txn_jkl012',
-    status: 'resolved',
-    reason: 'quality_issue',
-    description: 'The delivered product did not match the description. Quality was far below what was advertised.',
-    claimant: {
-      accountId: 'acc_person_004',
-      accountName: 'Juan Perez',
-      accountType: 'person',
-    },
-    respondent: {
-      accountId: 'acc_business_001',
-      accountName: 'TechCorp Inc',
-      accountType: 'business',
-    },
-    amountDisputed: 350.00,
-    requestedResolution: 'partial_refund',
-    requestedAmount: 175.00,
-    resolution: 'partial_refund',
-    resolutionAmount: 175.00,
-    resolutionNotes: 'Partial refund issued as agreed by both parties.',
-    dueDate: '2025-12-10',
-    resolvedAt: '2025-12-05',
-    createdAt: '2025-11-10',
-    transfer: {
-      amount: 350.00,
-      currency: 'USDC',
-      completedAt: '2025-11-05',
-    },
-  },
-];
+import { 
+  useDisputes, 
+  useDisputeStats, 
+  useResolveDispute,
+  useEscalateDispute,
+  type Dispute 
+} from '../hooks/api/useDisputes';
 
 const reasonLabels: Record<string, string> = {
   service_not_received: 'Service Not Received',
@@ -144,38 +35,81 @@ export function DisputesPage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [selectedDispute, setSelectedDispute] = useState<typeof mockDisputes[0] | null>(null);
+  const [selectedDispute, setSelectedDispute] = useState<Dispute | null>(null);
   const [showResolveModal, setShowResolveModal] = useState(false);
 
-  // Filter disputes
-  const filteredDisputes = mockDisputes.filter(dispute => {
+  // Fetch disputes from API
+  const { data: disputesResponse, isLoading: isLoadingDisputes, error: disputesError } = useDisputes({
+    status: statusFilter !== 'all' ? statusFilter : undefined
+  });
+  
+  // Fetch dispute stats from API
+  const { data: statsResponse, isLoading: isLoadingStats } = useDisputeStats();
+  
+  // Mutations
+  const escalateDispute = useEscalateDispute();
+  
+  const disputes = disputesResponse?.data || [];
+  const statsData = statsResponse?.data;
+
+  // Filter disputes by search query (status already filtered by API)
+  const filteredDisputes = disputes.filter(dispute => {
+    if (!searchQuery) return true;
+    
     const matchesSearch =
-      dispute.claimant.accountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dispute.respondent.accountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      dispute.claimantAccountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      dispute.respondentAccountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       dispute.id.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus = statusFilter === 'all' || dispute.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
-  // Stats
+  // Stats with fallback
   const stats = {
-    open: mockDisputes.filter(d => d.status === 'open').length,
-    underReview: mockDisputes.filter(d => d.status === 'under_review').length,
-    escalated: mockDisputes.filter(d => d.status === 'escalated').length,
-    resolved: mockDisputes.filter(d => d.status === 'resolved').length,
-    totalAmount: mockDisputes.filter(d => d.status !== 'resolved').reduce((sum, d) => sum + d.amountDisputed, 0),
+    open: statsData?.byStatus.open || 0,
+    underReview: statsData?.byStatus.underReview || 0,
+    escalated: statsData?.byStatus.escalated || 0,
+    resolved: statsData?.byStatus.resolved || 0,
+    totalAmount: statsData?.totalAmountDisputed || 0,
   };
 
   // Check for due soon disputes
-  const dueSoon = mockDisputes.filter(d => {
+  const dueSoon = disputes.filter(d => {
     if (d.status === 'resolved') return false;
     const dueDate = new Date(d.dueDate);
     const now = new Date();
     const daysUntilDue = Math.floor((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     return daysUntilDue <= 7;
   });
+
+  // Loading state
+  if (isLoadingDisputes || isLoadingStats) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500 dark:text-gray-400">Loading disputes...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (disputesError) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0" />
+            <div>
+              <h3 className="font-medium text-red-800 dark:text-red-200 mb-1">Failed to load disputes</h3>
+              <p className="text-sm text-red-700 dark:text-red-300">{disputesError.message}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -339,18 +273,32 @@ export function DisputesPage() {
                   <td className="px-6 py-4">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        {dispute.claimant.accountType === 'person' ? (
+                        {dispute.claimantAccountType === 'person' ? (
                           <User className="w-3 h-3 text-gray-400" />
                         ) : (
                           <Building2 className="w-3 h-3 text-gray-400" />
                         )}
-                        <span className="text-sm text-gray-900 dark:text-white">
-                          {dispute.claimant.accountName}
+                        <span 
+                          className="text-sm text-gray-900 dark:text-white cursor-pointer hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/accounts/${dispute.claimantAccountId}`);
+                          }}
+                        >
+                          {dispute.claimantAccountName}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                         <ArrowUpRight className="w-3 h-3" />
-                        <span className="text-sm">{dispute.respondent.accountName}</span>
+                        <span 
+                          className="text-sm cursor-pointer hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/accounts/${dispute.respondentAccountId}`);
+                          }}
+                        >
+                          {dispute.respondentAccountName}
+                        </span>
                       </div>
                     </div>
                   </td>
@@ -359,7 +307,7 @@ export function DisputesPage() {
                       ${dispute.amountDisputed.toLocaleString()}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      of ${dispute.transfer.amount.toLocaleString()}
+                      of ${dispute.transfer?.amount.toLocaleString() || 'N/A'}
                     </p>
                   </td>
                   <td className="px-6 py-4">
@@ -425,6 +373,15 @@ export function DisputesPage() {
           onClose={() => setSelectedDispute(null)}
           onResolve={() => {
             setShowResolveModal(true);
+          }}
+          onEscalate={() => {
+            if (selectedDispute.id) {
+              escalateDispute.mutate(selectedDispute.id, {
+                onSuccess: () => {
+                  setSelectedDispute(null);
+                },
+              });
+            }
           }}
         />
       )}
@@ -492,12 +449,13 @@ function StatusBadge({ status }: { status: string }) {
 // ============================================
 
 interface DisputeDetailProps {
-  dispute: typeof mockDisputes[0];
+  dispute: Dispute;
   onClose: () => void;
   onResolve: () => void;
+  onEscalate?: () => void;
 }
 
-function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
+function DisputeDetail({ dispute, onClose, onResolve, onEscalate }: DisputeDetailProps) {
   const navigate = useNavigate();
   const [response, setResponse] = useState('');
 
@@ -537,10 +495,10 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  ${dispute.transfer.amount.toLocaleString()} {dispute.transfer.currency}
+                  ${dispute.transfer?.amount.toLocaleString() || 'N/A'} {dispute.transfer?.currency || ''}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Completed {new Date(dispute.transfer.completedAt).toLocaleDateString()}
+                  Completed {dispute.transfer?.completedAt ? new Date(dispute.transfer.completedAt).toLocaleDateString() : 'N/A'}
                 </p>
               </div>
               <button
@@ -560,19 +518,22 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
                 Claimant
               </p>
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${dispute.claimant.accountType === 'person'
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${dispute.claimantAccountType === 'person'
                     ? 'bg-blue-100 dark:bg-blue-900/50'
                     : 'bg-purple-100 dark:bg-purple-900/50'
                   }`}>
-                  {dispute.claimant.accountType === 'person' ? (
+                  {dispute.claimantAccountType === 'person' ? (
                     <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   ) : (
                     <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   )}
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    {dispute.claimant.accountName}
+                  <p 
+                    className="font-medium text-gray-900 dark:text-white cursor-pointer hover:underline"
+                    onClick={() => navigate(`/accounts/${dispute.claimantAccountId}`)}
+                  >
+                    {dispute.claimantAccountName}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Filed dispute
@@ -586,19 +547,22 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
                 Respondent
               </p>
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${dispute.respondent.accountType === 'person'
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${dispute.respondentAccountType === 'person'
                     ? 'bg-blue-100 dark:bg-blue-900/50'
                     : 'bg-purple-100 dark:bg-purple-900/50'
                   }`}>
-                  {dispute.respondent.accountType === 'person' ? (
+                  {dispute.respondentAccountType === 'person' ? (
                     <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   ) : (
                     <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   )}
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    {dispute.respondent.accountName}
+                  <p 
+                    className="font-medium text-gray-900 dark:text-white cursor-pointer hover:underline"
+                    onClick={() => navigate(`/accounts/${dispute.respondentAccountId}`)}
+                  >
+                    {dispute.respondentAccountName}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Must respond
@@ -706,8 +670,11 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
                 >
                   Resolve Dispute
                 </button>
-                {dispute.status !== 'escalated' && (
-                  <button className="px-4 py-2 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 font-medium text-sm transition-colors">
+                {dispute.status !== 'escalated' && onEscalate && (
+                  <button 
+                    onClick={onEscalate}
+                    className="px-4 py-2 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 font-medium text-sm transition-colors"
+                  >
                     Escalate
                   </button>
                 )}
@@ -725,7 +692,7 @@ function DisputeDetail({ dispute, onClose, onResolve }: DisputeDetailProps) {
 // ============================================
 
 interface ResolveDisputeModalProps {
-  dispute: typeof mockDisputes[0];
+  dispute: Dispute;
   onClose: () => void;
   onResolved: () => void;
 }
@@ -735,16 +702,30 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
   const [resolutionAmount, setResolutionAmount] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [issueRefund, setIssueRefund] = useState(true);
+  const resolveDispute = useResolveDispute();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Resolve dispute:', {
-      resolution,
-      resolutionAmount,
-      notes,
-      issueRefund,
+    
+    if (!resolution) return;
+    
+    resolveDispute.mutate({
+      id: dispute.id,
+      data: {
+        resolution: resolution as any,
+        resolutionAmount: resolutionAmount ? parseFloat(resolutionAmount) : undefined,
+        resolutionNotes: notes || undefined,
+        issueRefund: (resolution === 'refund_issued' || resolution === 'partial_refund') ? issueRefund : undefined,
+      },
+    }, {
+      onSuccess: () => {
+        onResolved();
+      },
+      onError: (error) => {
+        console.error('Failed to resolve dispute:', error);
+        alert(`Failed to resolve dispute: ${error.message}`);
+      },
     });
-    onResolved();
   };
 
   const needsAmount = resolution === 'partial_refund' || resolution === 'refund_issued';
@@ -852,10 +833,10 @@ function ResolveDisputeModal({ dispute, onClose, onResolved }: ResolveDisputeMod
             </button>
             <button
               type="submit"
-              disabled={!resolution}
+              disabled={!resolution || resolveDispute.isPending}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
             >
-              Resolve Dispute
+              {resolveDispute.isPending ? 'Resolving...' : 'Resolve Dispute'}
             </button>
           </div>
         </form>

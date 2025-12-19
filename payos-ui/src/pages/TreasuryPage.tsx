@@ -1,21 +1,73 @@
 import { Page } from '../App';
-import { AlertTriangle, Sparkles, TrendingDown, DollarSign, ArrowRight, RefreshCw, Send, Zap, CheckCircle, XCircle, Wallet, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { AlertTriangle, Sparkles, TrendingDown, DollarSign, ArrowRight, RefreshCw, Send, Zap, CheckCircle, XCircle, Wallet, ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
+// Chart imports removed - Float projection chart coming in Epic 8
 import { AISparkleButton } from '../components/ui/AISparkleButton';
+import { useTreasurySummary } from '../hooks/api/useDashboard';
 
 interface TreasuryPageProps {
   onNavigate: (page: Page) => void;
 }
 
-const floatData = [
-  { time: 'Now', usdc: 2400, cop: 450, min: 200 },
-  { time: '12h', usdc: 2350, cop: 320, min: 200 },
-  { time: '24h', usdc: 2300, cop: 250, min: 200 },
-  { time: '36h', usdc: 2250, cop: 150, min: 200 },
-  { time: '48h', usdc: 2200, cop: 100, min: 200 },
-];
-
 export function TreasuryPage({ onNavigate }: TreasuryPageProps) {
+  const { data: treasury, isLoading, error } = useTreasurySummary();
+  
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="p-8 flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+  
+  // Error state
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">
+            Failed to load treasury data
+          </h3>
+          <p className="text-sm text-red-800 dark:text-red-300">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Helper functions
+  const healthColor = (status: string) => {
+    switch (status) {
+      case 'healthy': return 'bg-green-600';
+      case 'adequate': return 'bg-green-600';
+      case 'low': return 'bg-red-600';
+      case 'critical': return 'bg-red-600';
+      default: return 'bg-gray-600';
+    }
+  };
+  
+  const healthTextColor = (status: string) => {
+    switch (status) {
+      case 'healthy': return 'text-green-600 dark:text-green-400';
+      case 'adequate': return 'text-green-600 dark:text-green-400';
+      case 'low': return 'text-red-600 dark:text-red-400';
+      case 'critical': return 'text-red-600 dark:text-red-400';
+      default: return 'text-gray-600 dark:text-gray-400';
+    }
+  };
+  
+  const healthBorderColor = (status: string) => {
+    switch (status) {
+      case 'healthy': return 'border-gray-200 dark:border-gray-800';
+      case 'adequate': return 'border-gray-200 dark:border-gray-800';
+      case 'low': return 'border-red-200 dark:border-red-900';
+      case 'critical': return 'border-red-200 dark:border-red-900';
+      default: return 'border-gray-200 dark:border-gray-800';
+    }
+  };
+  
+  // Check if any currency is low/critical
+  const hasCriticalCurrency = treasury?.currencies.some(c => c.health_status === 'low' || c.health_status === 'critical');
+  
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
       <div>
@@ -23,65 +75,61 @@ export function TreasuryPage({ onNavigate }: TreasuryPageProps) {
         <p className="text-gray-600 dark:text-gray-400">Monitor float and manage rebalancing</p>
       </div>
 
-      {/* Alert */}
-      <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-6">
-        <div className="flex items-start gap-4">
-          <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">⚠️ ACTION NEEDED</h3>
-            <p className="text-sm text-red-800 dark:text-red-300 mb-3">
-              COP float projected to deplete in 36 hours
-            </p>
-            <button className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors">
-              View Details
-            </button>
+      {/* Alert - Only show if there's a critical currency */}
+      {hasCriticalCurrency && (
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-6">
+          <div className="flex items-start gap-4">
+            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">⚠️ ACTION NEEDED</h3>
+              <p className="text-sm text-red-800 dark:text-red-300 mb-3">
+                {treasury?.currencies.filter(c => c.health_status === 'low' || c.health_status === 'critical').map(c => c.currency).join(', ')} float is running low
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-400">
+                Consider rebalancing to maintain operational float levels.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Float Cards */}
+      {/* Float Cards - Real Data */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-5">
-          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">USDC</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white mb-3">$2.4M</div>
-          <div className="h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden mb-2">
-            <div className="h-full bg-green-600 rounded-full" style={{ width: '80%' }}></div>
+        {(treasury?.currencies || []).map(curr => (
+          <div key={curr.currency} className={`bg-white dark:bg-gray-900 border ${healthBorderColor(curr.health_status)} rounded-lg p-5`}>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-2">
+              <span>{curr.currency}</span>
+              {(curr.health_status === 'low' || curr.health_status === 'critical') && (
+                <AlertTriangle className="w-3 h-3 text-red-600" />
+              )}
+            </div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+              ${(curr.available_balance / 1000).toFixed(1)}K
+            </div>
+            <div className="h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden mb-2">
+              <div 
+                className={`h-full ${healthColor(curr.health_status)} rounded-full`}
+                style={{ width: `${Math.min(curr.stream_utilization_pct || 0, 100)}%` }}
+              ></div>
+            </div>
+            <div className={`text-xs ${healthTextColor(curr.health_status)} font-semibold capitalize`}>
+              {curr.health_status}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {curr.account_count} {curr.account_count === 1 ? 'account' : 'accounts'}
+            </div>
           </div>
-          <div className="text-xs text-green-600 dark:text-green-400 font-semibold">Healthy</div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-5">
-          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">ARS</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white mb-3">$840K</div>
-          <div className="h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden mb-2">
-            <div className="h-full bg-green-600 rounded-full" style={{ width: '60%' }}></div>
+        ))}
+        
+        {/* If no currencies, show placeholder */}
+        {(!treasury?.currencies || treasury.currencies.length === 0) && (
+          <div className="col-span-4 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 rounded-lg p-8 text-center">
+            <p className="text-gray-500 dark:text-gray-400">No currency balances found</p>
           </div>
-          <div className="text-xs text-green-600 dark:text-green-400 font-semibold">Adequate</div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-900 border border-red-200 dark:border-red-900 rounded-lg p-5">
-          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-2">
-            <span>COP</span>
-            <AlertTriangle className="w-3 h-3 text-red-600" />
-          </div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white mb-3">$45K</div>
-          <div className="h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden mb-2">
-            <div className="h-full bg-red-600 rounded-full" style={{ width: '20%' }}></div>
-          </div>
-          <div className="text-xs text-red-600 dark:text-red-400 font-semibold">Low</div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-5">
-          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">MXN</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white mb-3">$320K</div>
-          <div className="h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden mb-2">
-            <div className="h-full bg-green-600 rounded-full" style={{ width: '50%' }}></div>
-          </div>
-          <div className="text-xs text-green-600 dark:text-green-400 font-semibold">Adequate</div>
-        </div>
+        )}
       </div>
 
-      {/* Float Projection */}
+      {/* Float Projection - TODO: Epic 8 - ML-powered projections */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Float Projection</h3>
@@ -91,28 +139,12 @@ export function TreasuryPage({ onNavigate }: TreasuryPageProps) {
             <button className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md">7D</button>
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={floatData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-200 dark:text-gray-800" vertical={false} />
-            <XAxis 
-              dataKey="time" 
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: 'currentColor', fontSize: 12 }}
-              className="text-gray-600 dark:text-gray-400"
-            />
-            <YAxis 
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: 'currentColor', fontSize: 12 }}
-              className="text-gray-600 dark:text-gray-400"
-              tickFormatter={(value) => `$${value}K`}
-            />
-            <Tooltip />
-            <ReferenceLine y={200} stroke="#dc2626" strokeDasharray="3 3" label="Minimum" />
-            <Line type="monotone" dataKey="cop" stroke="#dc2626" strokeWidth={2} dot={{ fill: '#dc2626' }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="h-[250px] flex items-center justify-center text-gray-500 dark:text-gray-400">
+          <div className="text-center">
+            <p className="text-sm mb-2">Float projection coming soon</p>
+            <p className="text-xs">ML-powered projections will be available in Epic 8</p>
+          </div>
+        </div>
       </div>
 
       {/* AI Recommendation */}
@@ -319,7 +351,7 @@ export function TreasuryPage({ onNavigate }: TreasuryPageProps) {
           </button>
         </div>
         
-        {/* Netflow Visualization */}
+        {/* Netflow Visualization - Real Data */}
         <div className="flex items-center justify-center gap-8 py-6">
           {/* Inflows */}
           <div className="text-center">
@@ -327,8 +359,12 @@ export function TreasuryPage({ onNavigate }: TreasuryPageProps) {
               <ArrowDownLeft className="w-8 h-8 text-green-600 dark:text-green-400" />
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">Inflows</p>
-            <p className="text-lg font-semibold text-green-600 dark:text-green-400">+$12,960/mo</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">3 active streams</p>
+            <p className="text-lg font-semibold text-green-600 dark:text-green-400">
+              +${(treasury?.netflow.total_inflow_per_month || 0).toLocaleString()}/mo
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {treasury?.netflow.inflow_stream_count || 0} active {(treasury?.netflow.inflow_stream_count || 0) === 1 ? 'stream' : 'streams'}
+            </p>
           </div>
           
           <ArrowRight className="w-6 h-6 text-gray-300 dark:text-gray-600" />
@@ -339,7 +375,9 @@ export function TreasuryPage({ onNavigate }: TreasuryPageProps) {
               <Wallet className="w-10 h-10 text-violet-600 dark:text-violet-400" />
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">Treasury</p>
-            <p className="text-xl font-semibold text-gray-900 dark:text-white">$3.6M</p>
+            <p className="text-xl font-semibold text-gray-900 dark:text-white">
+              ${((treasury?.currencies.reduce((sum, c) => sum + c.total_balance, 0) || 0) / 1000000).toFixed(1)}M
+            </p>
             <div className="flex items-center justify-center gap-1 mt-1">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span className="text-xs text-green-600 dark:text-green-400">Streaming</span>
@@ -354,26 +392,32 @@ export function TreasuryPage({ onNavigate }: TreasuryPageProps) {
               <ArrowUpRight className="w-8 h-8 text-blue-600 dark:text-blue-400" />
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">Outflows</p>
-            <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">-$7,776/mo</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">18 contractors</p>
+            <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+              -${(treasury?.netflow.total_outflow_per_month || 0).toLocaleString()}/mo
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {treasury?.netflow.outflow_stream_count || 0} active {(treasury?.netflow.outflow_stream_count || 0) === 1 ? 'stream' : 'streams'}
+            </p>
           </div>
         </div>
         
-        {/* Net Summary */}
-        <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+        {/* Net Summary - Real Data */}
+        <div className={`p-4 ${(treasury?.netflow.net_flow_per_month || 0) >= 0 ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'} border rounded-lg`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-green-700 dark:text-green-300">Net Flow</p>
-              <p className="text-lg font-semibold text-green-800 dark:text-green-200">
-                +$5,184/month
+              <p className={`text-sm ${(treasury?.netflow.net_flow_per_month || 0) >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>Net Flow</p>
+              <p className={`text-lg font-semibold ${(treasury?.netflow.net_flow_per_month || 0) >= 0 ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}`}>
+                {(treasury?.netflow.net_flow_per_month || 0) >= 0 ? '+' : ''}
+                ${Math.abs(treasury?.netflow.net_flow_per_month || 0).toLocaleString()}/month
               </p>
-              <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
-                ≈ $173.12/day • $7.21/hour
+              <p className={`text-xs ${(treasury?.netflow.net_flow_per_month || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} mt-0.5`}>
+                ≈ ${Math.abs(treasury?.netflow.net_flow_per_day || 0).toFixed(2)}/day • 
+                ${Math.abs(treasury?.netflow.net_flow_per_hour || 0).toFixed(2)}/hour
               </p>
             </div>
-            <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              Positive flow
+            <div className={`flex items-center gap-1 text-sm ${(treasury?.netflow.net_flow_per_month || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              <span className={`w-2 h-2 ${(treasury?.netflow.net_flow_per_month || 0) >= 0 ? 'bg-green-500' : 'bg-red-500'} rounded-full animate-pulse`} />
+              {(treasury?.netflow.net_flow_per_month || 0) >= 0 ? 'Positive flow' : 'Negative flow'}
             </div>
           </div>
         </div>

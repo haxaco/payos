@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronRight, User, Building2, CreditCard, Wallet,
@@ -7,6 +7,9 @@ import {
   AlertTriangle, AlertCircle, Bot, Plus, Activity, DollarSign, Landmark, Trash2, Star, Loader2
 } from 'lucide-react';
 import { useAccount } from '../hooks/api';
+import { useAccountContractors, useAccountRelationships } from '../hooks/api/useRelationships';
+import { useAccountPaymentMethods } from '../hooks/api/usePaymentMethods';
+import { useTransfers } from '../hooks/api/useTransfers';
 import { AISparkleButton } from '../components/ui/AISparkleButton';
 import { mariaStreams, techcorpStreams } from '../data/mockStreams';
 import { NewPaymentModal } from '../components/NewPaymentModal';
@@ -76,13 +79,21 @@ function PersonAccountDetail({ account, navigate }: any) {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentModalType, setPaymentModalType] = useState<'transaction' | 'stream'>('transaction');
   
-  // Mock recent transactions for this account
-  const recentTransactions = [
-    { id: 'txn_001', type: 'credit', from: 'TechCorp Inc', amount: 2000, date: '2025-12-05', status: 'completed' },
-    { id: 'txn_002', type: 'debit', to: 'ATM Withdrawal', amount: 200, date: '2025-12-04', status: 'completed' },
-    { id: 'txn_003', type: 'debit', to: 'MercadoLibre', amount: 127.80, date: '2025-12-03', status: 'completed' },
-    { id: 'txn_004', type: 'credit', from: 'TechCorp Inc', amount: 2000, date: '2025-11-05', status: 'completed' },
-  ];
+  // Fetch recent transactions for this account from API
+  const { data: transfersData, loading: transfersLoading } = useTransfers({
+    account_id: account.id,
+    limit: 5,
+  });
+  
+  const recentTransactions = (transfersData?.data || []).map(transfer => ({
+    id: transfer.id,
+    type: transfer.from_account_id === account.id ? 'debit' : 'credit',
+    from: transfer.from_account_name || 'Unknown',
+    to: transfer.to_account_name || 'Unknown',
+    amount: parseFloat(transfer.amount) || 0,
+    date: transfer.created_at,
+    status: transfer.status || 'pending',
+  }));
   
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -591,11 +602,7 @@ function PersonAccountDetail({ account, navigate }: any) {
       )}
       
       {activeTab === 'relationships' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Manage relationships between this account and other accounts.
-          </p>
-        </div>
+        <RelationshipsTab account={account} navigate={navigate} />
       )}
       
       {activeTab === 'documents' && (
@@ -634,12 +641,25 @@ function BusinessAccountDetail({ account, navigate }: any) {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentModalType, setPaymentModalType] = useState<'transaction' | 'stream'>('transaction');
   
-  // Mock contractors for this business
-  const contractors = [
-    { id: 'acc_person_001', name: 'Maria Garcia', country: 'ARG', amount: 2000, frequency: 'monthly', nextPayout: 'Dec 15', status: 'active' },
-    { id: 'acc_person_003', name: 'Ana Souza', country: 'BRA', amount: 2500, frequency: 'monthly', nextPayout: 'Dec 15', status: 'active' },
-    { id: 'acc_person_004', name: 'Juan Perez', country: 'MEX', amount: 1800, frequency: 'monthly', nextPayout: 'Dec 15', status: 'pending' },
-  ];
+  // Fetch contractors from API
+  const { data: contractorsData, isLoading: contractorsLoading } = useAccountContractors(account?.id);
+  const contractors = contractorsData?.data || [];
+  
+  // Fetch recent transactions for this business account from API
+  const { data: transfersData, loading: transfersLoading } = useTransfers({
+    account_id: account.id,
+    limit: 5,
+  });
+  
+  const businessTransactions = (transfersData?.data || []).map(transfer => ({
+    id: transfer.id,
+    type: transfer.from_account_id === account.id ? 'debit' : 'credit',
+    from: transfer.from_account_name || 'Unknown',
+    to: transfer.to_account_name || 'Unknown',
+    amount: parseFloat(transfer.amount) || 0,
+    date: transfer.created_at,
+    status: transfer.status || 'pending',
+  }));
   
   // Mock payout summary
   const payoutSummary = {
@@ -649,15 +669,6 @@ function BusinessAccountDetail({ account, navigate }: any) {
     avgPerContractor: 2041,
     contractorCount: 12
   };
-  
-  // Mock recent transactions for business account
-  const businessTransactions = [
-    { id: 'txn_101', type: 'debit', to: 'Maria Garcia (ARG)', amount: 2000, date: '2025-12-05', status: 'completed' },
-    { id: 'txn_102', type: 'debit', to: 'Ana Souza (BRA)', amount: 2500, date: '2025-12-05', status: 'completed' },
-    { id: 'txn_103', type: 'credit', from: 'Client Payment - Invoice #1234', amount: 15000, date: '2025-12-03', status: 'completed' },
-    { id: 'txn_104', type: 'debit', to: 'Juan Perez (MEX)', amount: 1800, date: '2025-12-01', status: 'completed' },
-    { id: 'txn_105', type: 'credit', from: 'Client Payment - Invoice #1230', amount: 12000, date: '2025-11-28', status: 'completed' },
-  ];
   
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -804,7 +815,7 @@ function BusinessAccountDetail({ account, navigate }: any) {
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex gap-6">
-          {['Overview', 'Contractors', 'Payment Methods', 'Streams', 'Agents', 'Owners', 'Documents', 'Logs'].map(tab => (
+          {['Overview', 'Transactions', 'Contractors', 'Payment Methods', 'Streams', 'Agents', 'Owners', 'Documents', 'Logs'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab.toLowerCase().replace(' ', '-'))}
@@ -876,45 +887,64 @@ function BusinessAccountDetail({ account, navigate }: any) {
                 <thead>
                   <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     <th className="px-6 py-3">Contractor</th>
-                    <th className="px-6 py-3">Country</th>
-                    <th className="px-6 py-3">Amount</th>
-                    <th className="px-6 py-3">Next Payout</th>
+                    <th className="px-6 py-3">Email</th>
+                    <th className="px-6 py-3">Verification</th>
+                    <th className="px-6 py-3">Added</th>
                     <th className="px-6 py-3">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {contractors.map(c => (
-                    <tr 
-                      key={c.id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
-                      onClick={() => navigate(`/accounts/${c.id}`)}
-                    >
-                      <td className="px-6 py-3">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-gray-400" />
-                          <span className="text-gray-900 dark:text-white">{c.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-3 text-gray-600 dark:text-gray-300">
-                        {getCountryFlag(c.country)} {c.country}
-                      </td>
-                      <td className="px-6 py-3 text-gray-900 dark:text-white">
-                        ${c.amount.toLocaleString()}/{c.frequency.slice(0, 2)}
-                      </td>
-                      <td className="px-6 py-3 text-gray-600 dark:text-gray-300">{c.nextPayout}</td>
-                      <td className="px-6 py-3">
-                        <span className={`w-2 h-2 rounded-full inline-block ${
-                          c.status === 'active' ? 'bg-green-500' : 'bg-amber-500'
-                        }`} />
+                  {contractorsLoading ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center">
+                        <Loader2 className="w-6 h-6 text-blue-500 animate-spin mx-auto" />
                       </td>
                     </tr>
-                  ))}
+                  ) : contractors.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center">
+                        <User className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-gray-500 dark:text-gray-400">No contractors found</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    contractors.map(c => (
+                      <tr 
+                        key={c.id}
+                        className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
+                        onClick={() => navigate(`/accounts/${c.accountId}`)}
+                      >
+                        <td className="px-6 py-3">
+                          <div className="flex items-center gap-2">
+                            <User className="w-4 h-4 text-gray-400" />
+                            <span className="text-gray-900 dark:text-white">{c.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-3 text-gray-600 dark:text-gray-300">
+                          {c.email || '—'}
+                        </td>
+                        <td className="px-6 py-3 text-gray-900 dark:text-white">
+                          {c.verificationTier ? `Tier ${c.verificationTier}` : '—'}
+                        </td>
+                        <td className="px-6 py-3 text-gray-600 dark:text-gray-300">
+                          {c.relationshipCreatedAt ? new Date(c.relationshipCreatedAt).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="px-6 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            c.verificationStatus === 'verified' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
+                          }`}>
+                            {c.verificationStatus || 'unverified'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
               
               <div className="px-6 py-3 border-t border-gray-100 dark:border-gray-700">
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Showing 3 of {payoutSummary.contractorCount} contractors
+                  Showing {contractors.length} contractor{contractors.length !== 1 ? 's' : ''}
                 </p>
               </div>
             </div>
@@ -926,7 +956,7 @@ function BusinessAccountDetail({ account, navigate }: any) {
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
               <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Beneficial Owners</h3>
               <div className="space-y-3">
-                {account.beneficialOwners?.map((owner: any, i: number) => (
+                {(account.metadata?.beneficial_owners || account.beneficialOwners || []).map((owner: any, i: number) => (
                   <div key={i} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
@@ -958,7 +988,7 @@ function BusinessAccountDetail({ account, navigate }: any) {
                 <VerificationItem label="Business Registration" status="verified" />
                 <VerificationItem label="Tax ID (EIN)" status="verified" />
                 <VerificationItem label="Beneficial Owners" status={
-                  account.beneficialOwners?.every((o: any) => o.verified) ? 'verified' : 'pending'
+                  (account.metadata?.beneficial_owners || account.beneficialOwners || []).every((o: any) => o.verified) ? 'verified' : 'pending'
                 } />
                 <VerificationItem label="Bank Statement" status={account.verificationTier >= 2 ? 'verified' : 'pending'} />
                 <VerificationItem label="Audited Financials" status={account.verificationTier >= 3 ? 'verified' : 'not_started'} />
@@ -968,11 +998,127 @@ function BusinessAccountDetail({ account, navigate }: any) {
         </div>
       )}
       
+      {activeTab === 'transactions' && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="font-semibold text-gray-900 dark:text-white">All Transactions</h3>
+          </div>
+          
+          {transfersLoading ? (
+            <div className="px-6 py-12 text-center">
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+            </div>
+          ) : businessTransactions.length > 0 ? (
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide border-b border-gray-200 dark:border-gray-700">
+                  <th className="px-6 py-3">Date</th>
+                  <th className="px-6 py-3">Description</th>
+                  <th className="px-6 py-3">Type</th>
+                  <th className="px-6 py-3 text-right">Amount</th>
+                  <th className="px-6 py-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {businessTransactions.map((txn) => (
+                  <tr 
+                    key={txn.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
+                    onClick={() => navigate(`/transactions/${txn.id}`)}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                      {new Date(txn.date).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                      {txn.type === 'credit' ? txn.from : txn.to}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {txn.type === 'credit' ? (
+                        <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                          <ArrowDownLeft className="w-4 h-4" />
+                          Credit
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+                          <ArrowUpRight className="w-4 h-4" />
+                          Debit
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium">
+                      <span className={txn.type === 'credit' ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}>
+                        {txn.type === 'credit' ? '+' : '-'}${txn.amount.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        txn.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                        txn.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
+                        'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
+                      }`}>
+                        {txn.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="px-6 py-12 text-center">
+              <p className="text-gray-500 dark:text-gray-400">No transactions found</p>
+            </div>
+          )}
+        </div>
+      )}
+      
       {activeTab === 'contractors' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Full contractor management view with bulk actions.
-          </p>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900 dark:text-white">All Contractors</h3>
+            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              + Add Contractor
+            </button>
+          </div>
+          
+          {contractorsLoading ? (
+            <div className="py-12 text-center">
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+            </div>
+          ) : contractors.length > 0 ? (
+            <div className="space-y-3">
+              {contractors.map(c => (
+                <div 
+                  key={c.id}
+                  className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer"
+                  onClick={() => navigate(`/accounts/${c.accountId}`)}
+                >
+                  <div className="flex items-center gap-3">
+                    <User className="w-5 h-5 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">{c.name}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{c.email || 'No email'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {c.verificationTier && (
+                      <span className="text-sm text-gray-600 dark:text-gray-300">Tier {c.verificationTier}</span>
+                    )}
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      c.verificationStatus === 'verified' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
+                    }`}>
+                      {c.verificationStatus || 'unverified'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-12 text-center">
+              <User className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500 dark:text-gray-400">No contractors found</p>
+              <p className="text-sm text-gray-400 mt-1">Add contractors to manage payments</p>
+            </div>
+          )}
         </div>
       )}
       
@@ -1320,56 +1466,50 @@ interface PaymentMethodsTabProps {
 function PaymentMethodsTab({ accountId, accountName }: PaymentMethodsTabProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   
-  // Mock payment methods data
-  const paymentMethods = [
-    {
-      id: 'pm_001',
-      type: 'bank_account',
-      label: 'Primary Checking',
-      bankName: 'Wells Fargo',
-      bankAccountLastFour: '4521',
-      bankRoutingLastFour: '6789',
-      bankCountry: 'USA',
-      bankCurrency: 'USD',
-      isDefault: true,
-      isVerified: true,
-      verifiedAt: '2025-11-15',
-      createdAt: '2025-11-10',
-    },
-    {
-      id: 'pm_002',
-      type: 'wallet',
-      label: 'USDC Wallet',
-      walletNetwork: 'base',
-      walletAddress: '0x1234...abcd',
-      isDefault: false,
-      isVerified: true,
-      verifiedAt: '2025-11-20',
-      createdAt: '2025-11-18',
-    },
-    {
-      id: 'pm_003',
-      type: 'bank_account',
-      label: 'Savings Account',
-      bankName: 'Chase',
-      bankAccountLastFour: '8765',
-      bankRoutingLastFour: '1234',
-      bankCountry: 'USA',
-      bankCurrency: 'USD',
-      isDefault: false,
-      isVerified: false,
-      verifiedAt: null,
-      createdAt: '2025-12-01',
-    },
-  ];
+  // Fetch payment methods from API
+  const { data: paymentMethodsData, isLoading, error } = useAccountPaymentMethods(accountId);
+  
+  const paymentMethods = paymentMethodsData?.data || [];
   
   const handleSetDefault = (methodId: string) => {
+    // TODO: Implement set default API call
     console.log('Set default:', methodId);
+    alert('Set as default - API integration coming soon');
   };
   
   const handleDelete = (methodId: string) => {
+    // TODO: Implement delete API call
     console.log('Delete:', methodId);
+    if (confirm('Are you sure you want to delete this payment method?')) {
+      alert('Delete payment method - API integration coming soon');
+    }
   };
+  
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <p className="ml-3 text-gray-600 dark:text-gray-400">Loading payment methods...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">
+            Failed to load payment methods
+          </h3>
+          <p className="text-sm text-red-800 dark:text-red-300">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div className="space-y-6">
@@ -1439,27 +1579,31 @@ function PaymentMethodsTab({ accountId, accountName }: PaymentMethodsTabProps) {
                   
                   {method.type === 'bank_account' && (
                     <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      <span className="font-medium">{method.bankName}</span>
-                      <span className="mx-2">·</span>
-                      <span>Account ending in {method.bankAccountLastFour}</span>
-                      <span className="mx-2">·</span>
-                      <span>{method.bankCurrency}</span>
+                      {method.bank_name && <><span className="font-medium">{method.bank_name}</span><span className="mx-2">·</span></>}
+                      {method.bank_account_last_four && <><span>Account ending in {method.bank_account_last_four}</span><span className="mx-2">·</span></>}
+                      <span>{method.bank_currency || 'USD'}</span>
+                    </div>
+                  )}
+                  
+                  {method.type === 'card' && method.card_last_four && (
+                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      <span>Card ending in {method.card_last_four}</span>
                     </div>
                   )}
                   
                   {method.type === 'wallet' && (
                     <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      <span className="capitalize font-medium">{method.walletNetwork}</span>
-                      <span className="mx-2">·</span>
-                      <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
-                        {method.walletAddress}
-                      </code>
+                      {method.wallet_network && <><span className="capitalize font-medium">{method.wallet_network}</span><span className="mx-2">·</span></>}
+                      {method.wallet_address && (
+                        <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                          {method.wallet_address.slice(0, 6)}...{method.wallet_address.slice(-4)}
+                        </code>
+                      )}
                     </div>
                   )}
                   
                   <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                    Added {formatDate(method.createdAt)}
-                    {method.verifiedAt && ` · Verified ${formatDate(method.verifiedAt)}`}
+                    Added {formatDate(method.created_at)}
                   </p>
                 </div>
               </div>
@@ -1905,4 +2049,143 @@ function formatDate(dateString: string): string {
     day: 'numeric',
     year: 'numeric'
   });
+}
+
+// ============================================
+// RELATIONSHIPS TAB
+// ============================================
+
+function RelationshipsTab({ account, navigate }: any) {
+  const [relationshipFilter, setRelationshipFilter] = useState<string>('all');
+  
+  // Fetch all relationships for this account
+  const { data: relationshipsData, isLoading } = useAccountRelationships(
+    account?.id,
+    relationshipFilter !== 'all' ? { type: relationshipFilter } : undefined
+  );
+  
+  const relationships = relationshipsData?.data || [];
+  
+  const relationshipTypes = [
+    { value: 'all', label: 'All Relationships' },
+    { value: 'contractor', label: 'Contractors' },
+    { value: 'employer', label: 'Employers' },
+    { value: 'vendor', label: 'Vendors' },
+    { value: 'customer', label: 'Customers' },
+    { value: 'partner', label: 'Partners' },
+  ];
+  
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+      {/* Header */}
+      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Account Relationships
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Manage relationships between this account and other accounts
+            </p>
+          </div>
+          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+            <Plus className="w-4 h-4 inline mr-2" />
+            Add Relationship
+          </button>
+        </div>
+        
+        {/* Filter */}
+        <div className="mt-4">
+          <select
+            value={relationshipFilter}
+            onChange={(e) => setRelationshipFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            {relationshipTypes.map(type => (
+              <option key={type.value} value={type.value}>{type.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      
+      {/* Relationships List */}
+      <div className="p-6">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          </div>
+        ) : relationships.length === 0 ? (
+          <div className="text-center py-12">
+            <User className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              No relationships found
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              {relationshipFilter !== 'all'
+                ? `No ${relationshipFilter}s found for this account.`
+                : 'This account has no relationships yet.'}
+            </p>
+            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+              Add First Relationship
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {relationships.map((rel) => (
+              <div
+                key={rel.id}
+                className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                onClick={() => navigate(`/accounts/${rel.relatedAccountId}`)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                      rel.relatedAccountType === 'business'
+                        ? 'bg-purple-100 dark:bg-purple-900/50'
+                        : 'bg-blue-100 dark:bg-blue-900/50'
+                    }`}>
+                      {rel.relatedAccountType === 'business' ? (
+                        <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                      ) : (
+                        <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">
+                        {rel.relatedAccountName}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {rel.relationshipType.charAt(0).toUpperCase() + rel.relationshipType.slice(1)}
+                        {rel.relatedAccountEmail && ` · ${rel.relatedAccountEmail}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Since {new Date(rel.createdAt).toLocaleDateString()}
+                      </p>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        rel.status === 'active'
+                          ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}>
+                        {rel.status}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                  </div>
+                </div>
+                {rel.notes && (
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 ml-13">
+                    {rel.notes}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

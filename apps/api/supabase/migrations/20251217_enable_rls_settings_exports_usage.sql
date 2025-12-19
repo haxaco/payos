@@ -110,3 +110,4 @@ BEGIN
   RAISE NOTICE '🛡️  Supabase security warning has been resolved';
 END $$;
 
+

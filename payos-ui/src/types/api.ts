@@ -153,6 +153,18 @@ export interface PaymentMethod {
   wallet_network: string | null;
   wallet_address: string | null;
   
+  // Card spending limits (Story 0.3)
+  spending_limit_per_transaction?: number | null;
+  spending_limit_daily?: number | null;
+  spending_limit_monthly?: number | null;
+  spending_used_daily?: number;
+  spending_used_monthly?: number;
+  spending_period_start_daily?: string | null; // DATE
+  spending_period_start_monthly?: string | null; // DATE
+  is_frozen?: boolean;
+  frozen_reason?: string | null;
+  frozen_at?: string | null;
+  
   created_at: string;
   updated_at: string;
 }
@@ -181,6 +193,14 @@ export interface Agent {
   description: string | null;
   status: AgentStatus;
   type: 'payment' | 'treasury' | 'compliance' | 'custom';
+  
+  // Parent Account (joined from API)
+  parentAccount?: {
+    id: string;
+    type: string;
+    name: string;
+    verificationTier: number;
+  };
   
   // KYA
   kya_tier: number;

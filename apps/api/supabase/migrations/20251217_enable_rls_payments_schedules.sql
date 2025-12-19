@@ -79,3 +79,4 @@ BEGIN
   RAISE NOTICE '🔒 CRITICAL: Bank account and card data is now protected';
 END $$;
 
+

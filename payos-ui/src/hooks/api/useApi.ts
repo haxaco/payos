@@ -33,7 +33,7 @@ export function useApi<T>(
   endpoint: string,
   options: UseApiOptions = {}
 ): ApiResponse<T> {
-  const { accessToken, logout } = useAuth();
+  const { accessToken, logout, refreshAccessToken } = useAuth();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState<boolean>(!options.skip);
   const [error, setError] = useState<Error | null>(null);
@@ -46,7 +46,7 @@ export function useApi<T>(
   } = options;
 
   const fetchData = useCallback(
-    async (attemptNumber = 0): Promise<void> => {
+    async (attemptNumber = 0, retryWithRefresh = true): Promise<void> => {
       if (!accessToken) {
         setError(new Error('No access token available'));
         setLoading(false);
@@ -66,10 +66,24 @@ export function useApi<T>(
         });
 
         // Handle 401 - Unauthorized (token expired)
-        if (response.status === 401) {
-          console.error('Authentication failed - logging out');
+        if (response.status === 401 && retryWithRefresh) {
+          console.log('Token expired, attempting refresh...');
+          
+          // Try to refresh the token
+          const newToken = await refreshAccessToken();
+          
+          if (newToken) {
+            // Retry the request with new token (only once)
+            return fetchData(attemptNumber, false);
+          } else {
+            // Refresh failed, logout
+            logout();
+            throw new Error('Your session has expired. Please log in again.');
+          }
+        } else if (response.status === 401) {
+          // Already tried refresh, or refresh not available
           logout();
-          throw new Error('Session expired. Please log in again.');
+          throw new Error('Your session has expired. Please log in again.');
         }
 
         if (!response.ok) {
@@ -98,7 +112,7 @@ export function useApi<T>(
         setLoading(false);
       }
     },
-    [accessToken, endpoint, logout, onError, retryAttempts, retryDelay]
+    [accessToken, endpoint, logout, refreshAccessToken, onError, retryAttempts, retryDelay]
   );
 
   useEffect(() => {
@@ -119,7 +133,7 @@ export function useApi<T>(
  * Hook for making POST/PUT/DELETE API calls
  */
 export function useApiMutation<TRequest, TResponse>() {
-  const { accessToken, logout } = useAuth();
+  const { accessToken, logout, refreshAccessToken } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -127,7 +141,8 @@ export function useApiMutation<TRequest, TResponse>() {
     async (
       endpoint: string,
       method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-      body?: TRequest
+      body?: TRequest,
+      retryWithRefresh = true
     ): Promise<TResponse> => {
       if (!accessToken) {
         throw new Error('No access token available');
@@ -146,11 +161,25 @@ export function useApiMutation<TRequest, TResponse>() {
           body: body ? JSON.stringify(body) : undefined,
         });
 
-        // Handle 401 - Unauthorized
-        if (response.status === 401) {
-          console.error('Authentication failed - logging out');
+        // Handle 401 - Unauthorized (token expired)
+        if (response.status === 401 && retryWithRefresh) {
+          console.log('Token expired during mutation, attempting refresh...');
+          
+          // Try to refresh the token
+          const newToken = await refreshAccessToken();
+          
+          if (newToken) {
+            // Retry the request with new token (only once)
+            return mutate(endpoint, method, body, false);
+          } else {
+            // Refresh failed, logout
+            logout();
+            throw new Error('Your session has expired. Please log in again.');
+          }
+        } else if (response.status === 401) {
+          // Already tried refresh
           logout();
-          throw new Error('Session expired. Please log in again.');
+          throw new Error('Your session has expired. Please log in again.');
         }
 
         if (!response.ok) {
@@ -168,7 +197,7 @@ export function useApiMutation<TRequest, TResponse>() {
         setLoading(false);
       }
     },
-    [accessToken, logout]
+    [accessToken, logout, refreshAccessToken]
   );
 
   return {

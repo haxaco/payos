@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ChevronRight, CreditCard, Eye, EyeOff, Copy, Snowflake, 
-  Trash2, ShoppingBag, Loader2, AlertCircle
+  Trash2, ShoppingBag, Loader2, AlertCircle, Ban, RefreshCw
 } from 'lucide-react';
-import { usePaymentMethod } from '../hooks/api';
+import { usePaymentMethod, useCardTransactions } from '../hooks/api';
 
 export function CardDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -13,9 +13,20 @@ export function CardDetailPage() {
   // Fetch payment method from API
   const { data: paymentMethod, loading, error } = usePaymentMethod(id);
   
+  // Fetch card transactions
+  const { data: transactionsData, isLoading: transactionsLoading } = useCardTransactions(id, { limit: 10 });
+  
   const [showPan, setShowPan] = useState(false);
   const [showCvv, setShowCvv] = useState(false);
+  // Use frozen state from API, allow local toggle
   const [isFrozen, setIsFrozen] = useState(false);
+  
+  // Sync frozen state with API data
+  React.useEffect(() => {
+    if (paymentMethod) {
+      setIsFrozen(paymentMethod.is_frozen ?? false);
+    }
+  }, [paymentMethod]);
 
   if (loading) {
     return (
@@ -158,18 +169,87 @@ export function CardDetailPage() {
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <h3 className="font-semibold text-gray-900 dark:text-white">Card Activity</h3>
-              <button className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                View All →
-              </button>
+              {transactionsData?.data && transactionsData.data.length > 0 && (
+                <button className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                  View All ({transactionsData.pagination.total}) →
+                </button>
+              )}
             </div>
             
-            <div className="px-6 py-12 text-center">
-              <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600 dark:text-gray-400 font-medium">No card activity yet</p>
-              <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-                Transactions made with this card will appear here.
-              </p>
-            </div>
+            {transactionsLoading ? (
+              <div className="px-6 py-12 flex justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+              </div>
+            ) : transactionsData?.data && transactionsData.data.length > 0 ? (
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                {transactionsData.data.slice(0, 5).map((tx) => (
+                  <div key={tx.id} className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 flex-1">
+                        {/* Icon based on transaction type */}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          tx.type === 'purchase' ? 'bg-blue-100 dark:bg-blue-900/50' :
+                          tx.type === 'refund' ? 'bg-green-100 dark:bg-green-900/50' :
+                          tx.type === 'decline' ? 'bg-red-100 dark:bg-red-900/50' :
+                          'bg-gray-100 dark:bg-gray-800'
+                        }`}>
+                          {tx.type === 'purchase' ? <ShoppingBag className={`w-5 h-5 ${tx.status === 'completed' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} /> :
+                           tx.type === 'refund' ? <RefreshCw className="w-5 h-5 text-green-600 dark:text-green-400" /> :
+                           tx.type === 'decline' ? <Ban className="w-5 h-5 text-red-600 dark:text-red-400" /> :
+                           <CreditCard className="w-5 h-5 text-gray-400" />
+                          }
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 dark:text-white truncate">
+                            {tx.merchant_name || 'Unknown Merchant'}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(tx.transaction_time).toLocaleDateString()} • {new Date(tx.transaction_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                            {tx.merchant_category && (
+                              <>
+                                <span className="text-xs text-gray-400">•</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{tx.merchant_category}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-right ml-4">
+                        <p className={`font-semibold font-mono ${
+                          tx.type === 'purchase' ? 'text-gray-900 dark:text-white' :
+                          tx.type === 'refund' ? 'text-green-600 dark:text-green-400' :
+                          'text-gray-500 dark:text-gray-400'
+                        }`}>
+                          {tx.type === 'refund' ? '+' : tx.type === 'purchase' ? '-' : ''}${Math.abs(tx.amount).toFixed(2)}
+                        </p>
+                        <p className={`text-xs mt-0.5 ${
+                          tx.status === 'completed' ? 'text-green-600 dark:text-green-400' :
+                          tx.status === 'failed' ? 'text-red-600 dark:text-red-400' :
+                          'text-amber-600 dark:text-amber-400'
+                        }`}>
+                          {tx.status === 'completed' ? '✓ Completed' :
+                           tx.status === 'failed' ? '✗ Declined' :
+                           tx.status === 'pending' ? '⏳ Pending' :
+                           tx.status}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="px-6 py-12 text-center">
+                <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600 dark:text-gray-400 font-medium">No card activity yet</p>
+                <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                  Transactions made with this card will appear here.
+                </p>
+              </div>
+            )}
           </div>
         </div>
         
@@ -205,44 +285,82 @@ export function CardDetailPage() {
                 Spending Limits
               </h4>
               
+              {/* Daily Limit */}
               <div>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-600 dark:text-gray-300">Daily</span>
                   <span className="text-gray-900 dark:text-white">
-                    N/A
+                    {paymentMethod.spending_limit_daily ? (
+                      `$${(paymentMethod.spending_used_daily || 0).toLocaleString()} / $${paymentMethod.spending_limit_daily.toLocaleString()}`
+                    ) : (
+                      'No Limit'
+                    )}
                   </span>
                 </div>
-                <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gray-300 rounded-full"
-                    style={{ width: '0%' }}
-                  />
-                </div>
+                {paymentMethod.spending_limit_daily && (
+                  <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full ${
+                        ((paymentMethod.spending_used_daily || 0) / paymentMethod.spending_limit_daily) > 0.9 
+                          ? 'bg-red-500' 
+                          : ((paymentMethod.spending_used_daily || 0) / paymentMethod.spending_limit_daily) > 0.7 
+                          ? 'bg-amber-500' 
+                          : 'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(((paymentMethod.spending_used_daily || 0) / paymentMethod.spending_limit_daily) * 100, 100)}%` }}
+                    />
+                  </div>
+                )}
               </div>
               
+              {/* Monthly Limit */}
               <div>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-600 dark:text-gray-300">Monthly</span>
                   <span className="text-gray-900 dark:text-white">
-                    N/A
+                    {paymentMethod.spending_limit_monthly ? (
+                      `$${(paymentMethod.spending_used_monthly || 0).toLocaleString()} / $${paymentMethod.spending_limit_monthly.toLocaleString()}`
+                    ) : (
+                      'No Limit'
+                    )}
                   </span>
                 </div>
-                <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gray-300 rounded-full"
-                    style={{ width: '0%' }}
-                  />
-                </div>
+                {paymentMethod.spending_limit_monthly && (
+                  <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full ${
+                        ((paymentMethod.spending_used_monthly || 0) / paymentMethod.spending_limit_monthly) > 0.9 
+                          ? 'bg-red-500' 
+                          : ((paymentMethod.spending_used_monthly || 0) / paymentMethod.spending_limit_monthly) > 0.7 
+                          ? 'bg-amber-500' 
+                          : 'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(((paymentMethod.spending_used_monthly || 0) / paymentMethod.spending_limit_monthly) * 100, 100)}%` }}
+                    />
+                  </div>
+                )}
               </div>
               
+              {/* Per Transaction Limit */}
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600 dark:text-gray-300">Per Transaction</span>
-                <span className="text-gray-900 dark:text-white">N/A</span>
+                <span className="text-gray-900 dark:text-white">
+                  {paymentMethod.spending_limit_per_transaction 
+                    ? `$${paymentMethod.spending_limit_per_transaction.toLocaleString()}` 
+                    : 'No Limit'
+                  }
+                </span>
               </div>
               
               <button className="w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
                 Edit Limits →
               </button>
+              
+              {!paymentMethod.spending_limit_daily && !paymentMethod.spending_limit_monthly && !paymentMethod.spending_limit_per_transaction && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 text-center pt-2">
+                  No spending limits configured. Click "Edit Limits" to add protection.
+                </p>
+              )}
             </div>
           </div>
           

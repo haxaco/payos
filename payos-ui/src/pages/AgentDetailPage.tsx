@@ -134,7 +134,7 @@ export function AgentDetailPage() {
                   onClick={() => navigate(`/accounts/${agent.parent_account_id}`)}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
                 >
-                  View Parent Account →
+                  {agent.parentAccount?.name || 'Unknown Account'}
                 </button>
               </div>
               

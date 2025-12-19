@@ -1,10 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import app from '../../src/app.js';
 
+// Mock crypto functions for API key verification
+vi.mock('../../src/utils/crypto.js', () => ({
+  hashApiKey: vi.fn(() => 'mock-hash'),
+  verifyApiKey: vi.fn(() => true),
+  getKeyPrefix: vi.fn((key: string) => key.split('_').slice(0, 3).join('_')),
+}));
+
 // Mock the Supabase client
 vi.mock('../../src/db/client.js', () => ({
   createClient: vi.fn(() => ({
+    rpc: vi.fn(() => ({
+      data: [],
+      error: null,
+    })),
     from: vi.fn((table: string) => {
+      // Return API key data for auth
+      if (table === 'api_keys') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn(() => ({
+                data: {
+                  id: 'key-aaaaaaaa-0000-0000-0000-000000000001',
+                  tenant_id: 'aaaaaaaa-0000-0000-0000-000000000001',
+                  environment: 'test',
+                  status: 'active',
+                  expires_at: null,
+                  key_hash: 'mock-hash',
+                },
+                error: null,
+              })),
+            })),
+          })),
+          update: vi.fn(() => ({
+            eq: vi.fn(() => Promise.resolve({
+              data: null,
+              error: null,
+            })),
+          })),
+        };
+      }
+      
       // Return tenant data for auth
       if (table === 'tenants') {
         return {
@@ -23,6 +61,26 @@ vi.mock('../../src/db/client.js', () => ({
         };
       }
 
+      // Mock auth_attempts for logging
+      if (table === 'auth_attempts') {
+        return {
+          insert: vi.fn(() => ({
+            data: null,
+            error: null,
+          })),
+        };
+      }
+      
+      // Mock security_events for logging
+      if (table === 'security_events') {
+        return {
+          insert: vi.fn(() => ({
+            data: null,
+            error: null,
+          })),
+        };
+      }
+      
       // Mock transfers for summary
       if (table === 'transfers') {
         return {

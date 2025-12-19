@@ -11,6 +11,9 @@ import { ValidationError, NotFoundError } from '../middleware/error.js';
 
 const paymentMethods = new Hono();
 
+// Nested router for card transactions
+const cardTransactionsRouter = new Hono();
+
 // ============================================
 // VALIDATION SCHEMAS
 // ============================================
@@ -444,6 +447,97 @@ paymentMethods.get('/payment-methods/:id', async (c) => {
   
   return c.json({ data: method });
 });
+
+// ============================================
+// GET /payment-methods/:id/transactions - Get card transactions
+// ============================================
+cardTransactionsRouter.get('/', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const methodId = c.req.param('id');
+  
+  if (!isValidUUID(methodId)) {
+    throw new ValidationError('Invalid payment method ID format');
+  }
+  
+  const { limit, offset } = getPaginationParams(c.req.query(), { defaultLimit: 20, maxLimit: 100 });
+  
+  // Verify payment method exists and belongs to tenant
+  const { data: method, error: methodError } = await supabase
+    .from('payment_methods')
+    .select('id, type')
+    .eq('id', methodId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (methodError || !method) {
+    throw new NotFoundError('Payment method', methodId);
+  }
+  
+  // Get transactions using the database function
+  const { data: transactions, error: txError } = await supabase
+    .rpc('get_card_activity', {
+      p_payment_method_id: methodId,
+      p_limit: limit,
+      p_offset: offset,
+    });
+  
+  if (txError) {
+    console.error('Error fetching card transactions:', txError);
+    return c.json({ error: 'Failed to fetch card transactions' }, 500);
+  }
+  
+  // Get total count for pagination
+  const { count } = await supabase
+    .from('card_transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('payment_method_id', methodId);
+  
+  return c.json(paginationResponse(transactions || [], count || 0, limit, offset));
+});
+
+// ============================================
+// GET /payment-methods/:id/spending-summary - Get spending summary
+// ============================================
+cardTransactionsRouter.get('/spending-summary', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const methodId = c.req.param('id');
+  const days = parseInt(c.req.query('days') || '30', 10);
+  
+  if (!isValidUUID(methodId)) {
+    throw new ValidationError('Invalid payment method ID format');
+  }
+  
+  // Verify payment method exists and belongs to tenant
+  const { data: method, error: methodError } = await supabase
+    .from('payment_methods')
+    .select('id, type')
+    .eq('id', methodId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (methodError || !method) {
+    throw new NotFoundError('Payment method', methodId);
+  }
+  
+  // Get spending summary using the database function
+  const { data: summary, error: summaryError } = await supabase
+    .rpc('get_card_spending_summary', {
+      p_payment_method_id: methodId,
+      p_days: Math.min(Math.max(days, 1), 365), // Clamp between 1 and 365
+    });
+  
+  if (summaryError) {
+    console.error('Error fetching spending summary:', summaryError);
+    return c.json({ error: 'Failed to fetch spending summary' }, 500);
+  }
+  
+  return c.json({ data: summary?.[0] || {} });
+});
+
+// Mount card transactions routes
+paymentMethods.route('/payment-methods/:id/transactions', cardTransactionsRouter);
 
 export default paymentMethods;
 

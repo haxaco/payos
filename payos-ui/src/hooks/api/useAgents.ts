@@ -6,7 +6,21 @@ import { Agent, AgentsResponse, AgentFilters } from '../../types/api';
  * Hook to fetch agents list with optional filters
  */
 export function useAgents(filters: AgentFilters = {}): ApiResponse<AgentsResponse> {
-  const queryString = useMemo(() => buildQueryString(filters), [filters]);
+  // Map snake_case to camelCase for API compatibility
+  const apiFilters = useMemo(() => {
+    const mapped: any = { ...filters };
+    if (filters.parent_account_id) {
+      mapped.parentAccountId = filters.parent_account_id;
+      delete mapped.parent_account_id;
+    }
+    if (filters.kya_tier !== undefined) {
+      mapped.kyaTier = filters.kya_tier;
+      delete mapped.kya_tier;
+    }
+    return mapped;
+  }, [filters]);
+  
+  const queryString = useMemo(() => buildQueryString(apiFilters), [apiFilters]);
   const endpoint = `/v1/agents${queryString}`;
   
   return useApi<AgentsResponse>(endpoint);

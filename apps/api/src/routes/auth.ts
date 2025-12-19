@@ -885,5 +885,192 @@ auth.post('/accept-invite', async (c) => {
   }
 });
 
+// ============================================
+// POST /v1/auth/refresh - Refresh access token
+// ============================================
+auth.post('/refresh', async (c) => {
+  try {
+    const { refreshSession, detectAnomalies } = await import('../services/sessions.js');
+    const { ip, userAgent } = getClientInfo(c);
+
+    // Validate request body
+    const body = await c.req.json();
+    const refreshToken = body.refreshToken;
+
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      return c.json(
+        {
+          error: 'Refresh token is required',
+        },
+        400
+      );
+    }
+
+    // Detect anomalies (async, don't block)
+    // This will log suspicious activity but won't block the refresh
+    const clientInfo = { ip, userAgent };
+    
+    try {
+      // Refresh the session with token rotation
+      const result = await refreshSession(refreshToken, clientInfo);
+
+      return c.json(
+        {
+          session: {
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+            expiresIn: result.expiresIn,
+          },
+        },
+        200
+      );
+    } catch (error: any) {
+      // Check if it's a security breach (token reuse)
+      if (error.message?.includes('security breach')) {
+        return c.json(
+          {
+            error: 'Session invalidated due to suspicious activity. Please log in again.',
+          },
+          401
+        );
+      }
+
+      return c.json(
+        {
+          error: 'Invalid or expired refresh token',
+        },
+        401
+      );
+    }
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    return c.json(
+      {
+        error: 'Failed to refresh token',
+      },
+      500
+    );
+  }
+});
+
+// ============================================
+// GET /v1/auth/sessions - Get active sessions
+// ============================================
+auth.get('/sessions', async (c) => {
+  try {
+    const { getUserSessions } = await import('../services/sessions.js');
+    const userId = c.get('userId');
+
+    if (!userId) {
+      return c.json(
+        {
+          error: 'Unauthorized',
+        },
+        401
+      );
+    }
+
+    const sessions = await getUserSessions(userId);
+
+    // Don't expose sensitive data
+    const sanitizedSessions = sessions.map((s) => ({
+      id: s.id,
+      ipAddress: s.ipAddress,
+      userAgent: s.userAgent,
+      createdAt: s.createdAt,
+      lastActivityAt: s.createdAt, // TODO: Track real last activity
+      isCurrent: false, // TODO: Detect current session
+    }));
+
+    return c.json({ data: sanitizedSessions }, 200);
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    return c.json(
+      {
+        error: 'Failed to get sessions',
+      },
+      500
+    );
+  }
+});
+
+// ============================================
+// DELETE /v1/auth/sessions/:id - Revoke a session
+// ============================================
+auth.delete('/sessions/:id', async (c) => {
+  try {
+    const { revokeSession } = await import('../services/sessions.js');
+    const userId = c.get('userId');
+    const sessionId = c.req.param('id');
+
+    if (!userId) {
+      return c.json(
+        {
+          error: 'Unauthorized',
+        },
+        401
+      );
+    }
+
+    const success = await revokeSession(sessionId, userId);
+
+    if (!success) {
+      return c.json(
+        {
+          error: 'Session not found or already revoked',
+        },
+        404
+      );
+    }
+
+    return c.json({ message: 'Session revoked successfully' }, 200);
+  } catch (error) {
+    console.error('Revoke session error:', error);
+    return c.json(
+      {
+        error: 'Failed to revoke session',
+      },
+      500
+    );
+  }
+});
+
+// ============================================
+// POST /v1/auth/sessions/revoke-all - Revoke all sessions
+// ============================================
+auth.post('/sessions/revoke-all', async (c) => {
+  try {
+    const { revokeAllUserSessions } = await import('../services/sessions.js');
+    const userId = c.get('userId');
+
+    if (!userId) {
+      return c.json(
+        {
+          error: 'Unauthorized',
+        },
+        401
+      );
+    }
+
+    const count = await revokeAllUserSessions(userId);
+
+    return c.json(
+      {
+        message: 'All sessions revoked successfully',
+        revokedCount: count,
+      },
+      200
+    );
+  } catch (error) {
+    console.error('Revoke all sessions error:', error);
+    return c.json(
+      {
+        error: 'Failed to revoke sessions',
+      },
+      500
+    );
+  }
+});
+
 export default auth;
 

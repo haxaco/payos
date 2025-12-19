@@ -30,6 +30,12 @@ export { usePaymentMethods, usePaymentMethod, useAccountPaymentMethods } from '.
 export { useAgents, useAgent } from './useAgents';
 export { useStreams, useStream, useAccountStreams } from './useStreams';
 export { useReports, useReport, useSummaryReport, generateReport, deleteReport, downloadReport } from './useReports';
+export { useDashboardSummary, useTreasurySummary } from './useDashboard';
+export type { DashboardSummary, TreasurySummary } from './useDashboard';
+
+// Card Transactions Hooks
+export { useCardTransactions, useCardSpendingSummary } from './useCardTransactions';
+export type { CardTransaction, CardSpendingSummary } from './useCardTransactions';
 export {
   useComplianceFlags,
   useComplianceFlag,

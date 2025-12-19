@@ -2,7 +2,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
-import { Search, Filter, Plus, Download, User, Building2, ChevronDown, AlertCircle } from 'lucide-react';
+import { Search, Filter, Plus, Download, User, Building2, ChevronDown, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useAccounts } from '../hooks/api';
 import type { Account } from '../types/api';
@@ -13,26 +13,35 @@ export function AccountsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'person' | 'business'>('all');
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
 
-  // Fetch accounts from API with type filter
+  // Fetch accounts from API with type filter and pagination
   const filters = useMemo(() => ({
     type: activeTab !== 'all' ? activeTab : undefined,
-    limit: 100, // Fetch up to 100 accounts
-  }), [activeTab]);
+    search: searchQuery.trim() || undefined,
+    page: currentPage,
+    limit: pageSize,
+  }), [activeTab, searchQuery, currentPage]);
 
   const { data, loading, error, refetch } = useAccounts(filters);
   const accounts = data?.data || [];
+  const pagination = data?.pagination;
+  const totalAccounts = pagination?.total || 0;
+  const totalPages = pagination?.totalPages || 1;
 
-  const filteredAccounts = useMemo(() => {
-    if (!searchQuery.trim()) return accounts;
-    
-    const query = searchQuery.toLowerCase();
-    return accounts.filter(account => 
-      account.name?.toLowerCase().includes(query) ||
-      account.email?.toLowerCase().includes(query) ||
-      account.id.toLowerCase().includes(query)
-    );
-  }, [accounts, searchQuery]);
+  // Reset to page 1 when filters change
+  const handleTabChange = (tab: 'all' | 'person' | 'business') => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  };
+
+  const filteredAccounts = accounts; // No client-side filtering, done by API
 
   const toggleSelect = (id: string) => {
     setSelectedAccounts(prev => 
@@ -100,9 +109,9 @@ export function AccountsPage() {
       {/* Type Filter Tabs */}
       <div className="flex gap-2">
         {[
-          { key: 'all' as const, label: 'All', count: filteredAccounts.length },
-          { key: 'person' as const, label: 'Persons', count: personCount },
-          { key: 'business' as const, label: 'Businesses', count: businessCount },
+          { key: 'all' as const, label: 'All', count: totalAccounts },
+          { key: 'person' as const, label: 'Persons', count: totalAccounts }, // TODO: Get from API
+          { key: 'business' as const, label: 'Businesses', count: totalAccounts }, // TODO: Get from API
         ].map(tab => (
           <button 
             key={tab.key}
@@ -111,7 +120,7 @@ export function AccountsPage() {
                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' 
                 : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
               }`}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => handleTabChange(tab.key)}
           >
             {tab.label} · {tab.count}
           </button>
@@ -126,7 +135,7 @@ export function AccountsPage() {
             type="text"
             placeholder="Search accounts..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -333,6 +342,60 @@ export function AccountsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalAccounts)} of {totalAccounts} accounts
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg ${
+                        currentPage === pageNum
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Selected Actions */}

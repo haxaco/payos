@@ -1,6 +1,6 @@
 import { 
   Plus, CheckCircle, XCircle, AlertTriangle,
-  ExternalLink, Copy, MoreHorizontal, RefreshCw, Webhook as WebhookIcon
+  ExternalLink, Copy, MoreHorizontal, RefreshCw, Webhook as WebhookIcon, Info
 } from 'lucide-react';
 import { mockWebhooks } from '../data/mockDeveloper';
 
@@ -48,6 +48,22 @@ export function WebhooksPage() {
           <Plus className="w-4 h-4" />
           Add Webhook
         </button>
+      </div>
+
+      {/* Coming Soon Banner */}
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-1">
+              Webhooks Coming Soon
+            </h3>
+            <p className="text-sm text-blue-800 dark:text-blue-300">
+              Full webhook functionality will be available in <strong>Epic 10: PSP Table Stakes</strong>.
+              The UI below shows a preview of what's coming. For now, webhook creation and management is not yet functional.
+            </p>
+          </div>
+        </div>
       </div>
       
       {/* Webhook Cards */}

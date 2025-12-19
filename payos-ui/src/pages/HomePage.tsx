@@ -3,28 +3,13 @@
 import { useNavigate } from 'react-router-dom';
 import { StatCard } from '../components/ui/StatCard';
 import { Badge } from '../components/ui/Badge';
-import { Users, DollarSign, CreditCard, AlertTriangle, Sparkles, ArrowRight, TrendingUp } from 'lucide-react';
+import { Users, DollarSign, CreditCard, AlertTriangle, Sparkles, ArrowRight, TrendingUp, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-const volumeData = [
-  { month: 'Jul', usArg: 1200, usCol: 840, usMex: 520 },
-  { month: 'Aug', usArg: 1350, usCol: 910, usMex: 580 },
-  { month: 'Sep', usArg: 1180, usCol: 780, usMex: 640 },
-  { month: 'Oct', usArg: 1520, usCol: 1020, usMex: 710 },
-  { month: 'Nov', usArg: 1680, usCol: 1150, usMex: 780 },
-  { month: 'Dec', usArg: 1240, usCol: 840, usMex: 520 },
-];
-
-const recentActivity = [
-  { time: '14:32', type: 'Transfer', amount: '$4,800', from: 'TechCorp', to: 'Maria G.', status: 'completed' },
-  { time: '14:28', type: 'Card Spend', amount: '$127.50', from: 'Carlos M.', to: 'Amazon', status: 'completed' },
-  { time: '14:15', type: 'Deposit', amount: '$10,000', from: 'Acme Inc', to: '', status: 'pending' },
-  { time: '14:02', type: 'Withdrawal', amount: '$500', from: 'Ana S.', to: 'Bank', status: 'completed' },
-  { time: '13:58', type: 'Transfer', amount: '$2,200', from: 'StartupXYZ', to: 'Juan P.', status: 'flagged' },
-];
+import { useDashboardSummary } from '../hooks/api/useDashboard';
 
 export function HomePage() {
   const navigate = useNavigate();
+  const { data: summary, isLoading, error } = useDashboardSummary();
   
   // Get current date formatted
   const currentDate = new Date().toLocaleDateString('en-US', { 
@@ -32,6 +17,44 @@ export function HomePage() {
     day: 'numeric', 
     year: 'numeric' 
   });
+  
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="p-8 flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+  
+  // Error state
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">
+            Failed to load dashboard
+          </h3>
+          <p className="text-sm text-red-800 dark:text-red-300">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Format volume data for chart - use monthly data with corridor breakdown
+  const volumeData = (summary?.volume.by_month || []).map(month => {
+    const monthName = new Date(month.month).toLocaleDateString('en-US', { month: 'short' });
+    return {
+      month: monthName,
+      usArg: Math.round(month.us_arg_volume / 1000),
+      usCol: Math.round(month.us_col_volume / 1000),
+      usMex: Math.round(month.us_mex_volume / 1000),
+    };
+  });
+
+  // Get top corridors for legend (from by_corridor or fallback to monthly data)
+  const topCorridors = summary?.volume.by_corridor?.slice(0, 3) || [];
+  const corridorColors = ['#2563eb', '#7c3aed', '#9333ea', '#ec4899', '#f59e0b'];
   
   return (
     <div className="p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -47,31 +70,32 @@ export function HomePage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Accounts"
-          value="12,847"
-          change="847 MTD"
+          value={summary?.accounts.total.toLocaleString() || '0'}
+          change={`${summary?.accounts.new_30d || 0} last 30d`}
           changeType="increase"
           icon={Users}
           onClick={() => navigate('/accounts')}
         />
         <StatCard
           label="Volume"
-          value="$2.4M"
-          change="18% MTD"
+          value={`$${((summary?.volume.total_last_30d || 0) / 1000).toFixed(1)}K`}
+          change="Last 30 days"
           changeType="increase"
           icon={DollarSign}
           onClick={() => navigate('/transactions')}
         />
         <StatCard
           label="Cards"
-          value="8,234"
-          change="312 MTD"
+          value={summary?.cards.total.toString() || '0'}
+          change={`${summary?.cards.verified || 0} verified`}
           changeType="increase"
           icon={CreditCard}
           onClick={() => navigate('/cards')}
         />
         <StatCard
           label="Pending Flags"
-          value="23"
+          value={summary?.compliance.open_flags.toString() || '0'}
+          change={summary?.compliance.high_risk ? `${summary.compliance.high_risk} high risk` : undefined}
           icon={AlertTriangle}
           onClick={() => navigate('/compliance')}
         />
@@ -118,20 +142,36 @@ export function HomePage() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Volume by Corridor</h3>
-                <div className="flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-blue-600 rounded-sm"></div>
-                    <span className="text-gray-600 dark:text-gray-400">US → ARG</span>
+                {topCorridors.length > 0 ? (
+                  <div className="flex items-center gap-4 text-xs flex-wrap">
+                    {topCorridors.map((corridor, idx) => (
+                      <div key={corridor.corridor} className="flex items-center gap-2">
+                        <div 
+                          className="w-3 h-3 rounded-sm" 
+                          style={{ backgroundColor: corridorColors[idx % corridorColors.length] }}
+                        />
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {corridor.corridor} (${(corridor.volume / 1000).toFixed(0)}K)
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-violet-600 rounded-sm"></div>
-                    <span className="text-gray-600 dark:text-gray-400">US → COL</span>
+                ) : (
+                  <div className="flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-blue-600 rounded-sm"></div>
+                      <span className="text-gray-600 dark:text-gray-400">US → ARG</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-violet-600 rounded-sm"></div>
+                      <span className="text-gray-600 dark:text-gray-400">US → COL</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-purple-600 rounded-sm"></div>
+                      <span className="text-gray-600 dark:text-gray-400">US → MEX</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-purple-600 rounded-sm"></div>
-                    <span className="text-gray-600 dark:text-gray-400">US → MEX</span>
-                  </div>
-                </div>
+                )}
               </div>
               <div className="flex gap-2">
                 <button className="px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 rounded-md">7D</button>
@@ -230,25 +270,34 @@ export function HomePage() {
               </button>
             </div>
             <div className="space-y-3">
-              {recentActivity.map((activity, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{activity.time}</span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">{activity.type}</span>
+              {(summary?.recent_activity || []).map((activity) => {
+                const timeAgo = new Date(activity.time).toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                
+                return (
+                  <div key={activity.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{timeAgo}</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">{activity.type.replace('_', ' ')}</span>
+                      </div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                        {activity.from} {activity.to && `→ ${activity.to}`}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-600 dark:text-gray-400">
-                      {activity.from} {activity.to && `→ ${activity.to}`}
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white font-mono">
+                        ${activity.amount.toLocaleString()} {activity.currency}
+                      </span>
+                      {activity.status === 'completed' && <span className="text-green-600 dark:text-green-400">✓</span>}
+                      {activity.status === 'pending' && <span className="text-amber-600 dark:text-amber-400">⏳</span>}
+                      {activity.is_flagged && <span className="text-red-600 dark:text-red-400">🚩</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white font-mono">{activity.amount}</span>
-                    {activity.status === 'completed' && <span className="text-green-600 dark:text-green-400">✓</span>}
-                    {activity.status === 'pending' && <span className="text-amber-600 dark:text-amber-400">⏳</span>}
-                    {activity.status === 'flagged' && <span className="text-red-600 dark:text-red-400">🚩</span>}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

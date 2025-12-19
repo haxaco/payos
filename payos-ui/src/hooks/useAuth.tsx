@@ -23,6 +23,7 @@ interface AuthContextType {
   signup: (email: string, password: string, organizationName: string, userName?: string) => Promise<{ apiKeys: any }>;
   logout: () => void;
   refreshAuth: () => Promise<void>;
+  refreshAccessToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -163,6 +164,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function refreshAccessToken(): Promise<string | null> {
+    const refreshToken = localStorage.getItem('refresh_token');
+    
+    if (!refreshToken) {
+      clearAuthState();
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/v1/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        // Refresh token is invalid or expired
+        clearAuthState();
+        return null;
+      }
+
+      const data = await response.json();
+      const newAccessToken = data.session.accessToken;
+      const newRefreshToken = data.session.refreshToken;
+
+      // Update stored tokens
+      setAccessToken(newAccessToken);
+      localStorage.setItem('access_token', newAccessToken);
+      localStorage.setItem('refresh_token', newRefreshToken);
+
+      return newAccessToken;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      clearAuthState();
+      return null;
+    }
+  }
+
+  // Automatic token refresh before expiry (15 min tokens, refresh at 14 min)
+  useEffect(() => {
+    if (!accessToken) return;
+
+    // Refresh token 1 minute before expiry (tokens expire in 15 min)
+    const refreshInterval = setInterval(async () => {
+      await refreshAccessToken();
+    }, 14 * 60 * 1000); // 14 minutes
+
+    return () => clearInterval(refreshInterval);
+  }, [accessToken]);
+
   const value: AuthContextType = {
     user,
     organization,
@@ -172,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signup,
     logout,
     refreshAuth,
+    refreshAccessToken, // Expose for API retry logic
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -15,6 +15,13 @@
     "test:integration": "INTEGRATION=true vitest run tests/integration",
     "test:coverage": "vitest run --coverage",
     "seed:db": "tsx scripts/seed-database.ts",
+    "seed:all": "tsx scripts/seed-all.ts",
+    "seed:streams": "tsx scripts/seed-streams.ts",
+    "seed:agents": "tsx scripts/seed-agent-activity.ts",
+    "seed:enhance": "tsx scripts/enhance-seed-data.ts",
+    "seed:comprehensive": "tsx scripts/seed-enhanced-comprehensive.ts",
+    "seed:power-user": "tsx scripts/seed-power-user.ts",
+    "update:corridor-ids": "tsx scripts/update-transfers-corridor-id.ts",
     "check:rls": "tsx scripts/check-rls-in-migrations.ts"
   },
   "dependencies": {

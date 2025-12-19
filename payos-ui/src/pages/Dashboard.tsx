@@ -1,24 +1,54 @@
-import { DollarSign, TrendingUp, Users, Building2, ArrowUpRight, Sparkles, AlertTriangle } from 'lucide-react';
+import { DollarSign, TrendingUp, Users, Building2, ArrowUpRight, Sparkles, AlertTriangle, Loader2 } from 'lucide-react';
 import { StatCard } from '../components/ui/StatCard';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-const volumeData = [
-  { month: 'Jan', value: 280 },
-  { month: 'Feb', value: 320 },
-  { month: 'Mar', value: 380 },
-  { month: 'Apr', value: 420 },
-  { month: 'May', value: 480 },
-  { month: 'Jun', value: 520 },
-];
-
-const transactions = [
-  { id: 1, employer: 'TechCorp Inc', amount: 12450, contractor: '5 contractors', time: '2 min ago', status: 'completed' },
-  { id: 2, employer: 'StartupXYZ', amount: 8920, contractor: '3 contractors', time: '15 min ago', status: 'completed' },
-  { id: 3, employer: 'Global Services', amount: 15200, contractor: '8 contractors', time: '1 hour ago', status: 'flagged' },
-  { id: 4, employer: 'Innovation Labs', amount: 6750, contractor: '2 contractors', time: '2 hours ago', status: 'completed' },
-];
+import { useDashboardSummary } from '../hooks/api/useDashboard';
 
 export function Dashboard() {
+  const { data: summary, isLoading, error } = useDashboardSummary();
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="p-8 flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        <p className="ml-3 text-slate-600 dark:text-slate-400">Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">
+            Failed to load dashboard
+          </h3>
+          <p className="text-sm text-red-800 dark:text-red-300">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Format volume data for chart
+  const volumeData = (summary?.volume.by_month || []).map(month => {
+    const monthName = new Date(month.month).toLocaleDateString('en-US', { month: 'short' });
+    return {
+      month: monthName,
+      value: Math.round(month.total_volume / 1000), // Convert to thousands
+    };
+  });
+
+  // Format recent activity
+  const transactions = (summary?.recent_activity || []).slice(0, 4).map(activity => ({
+    id: activity.id,
+    employer: activity.from || 'Unknown',
+    amount: activity.amount,
+    contractor: activity.to || 'Unknown',
+    time: new Date(activity.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    status: activity.status,
+    isFlagged: activity.is_flagged,
+  }));
   return (
     <div className="p-8 space-y-8 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -35,35 +65,35 @@ export function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Volume"
-          value="$2.1M"
-          change="12.5%"
-          changeType="increase"
+          value={`$${((summary?.volume.total_last_30d || 0) / 1000000).toFixed(1)}M`}
+          change="30 days"
+          changeType="neutral"
           icon={DollarSign}
         />
         <StatCard
-          title="Active Employers"
-          value="47"
-          change="8%"
+          title="Active Accounts"
+          value={summary?.accounts.total.toLocaleString() || '0'}
+          change={`${summary?.accounts.new_30d || 0} new`}
           changeType="increase"
           icon={Building2}
           iconColor="text-purple-600 dark:text-purple-500"
           iconBgColor="bg-purple-100 dark:bg-purple-950"
         />
         <StatCard
-          title="Contractors"
-          value="1,243"
-          change="15%"
-          changeType="increase"
+          title="Verified Accounts"
+          value={summary?.accounts.verified.toLocaleString() || '0'}
+          change={`${Math.round(((summary?.accounts.verified || 0) / (summary?.accounts.total || 1)) * 100)}%`}
+          changeType="neutral"
           icon={Users}
           iconColor="text-emerald-600 dark:text-emerald-500"
           iconBgColor="bg-emerald-100 dark:bg-emerald-950"
         />
         <StatCard
-          title="Revenue (MTD)"
-          value="$24.5K"
-          change="18%"
-          changeType="increase"
-          icon={TrendingUp}
+          title="Open Flags"
+          value={summary?.compliance.open_flags.toLocaleString() || '0'}
+          change={`${summary?.compliance.high_risk || 0} high risk`}
+          changeType={summary?.compliance.open_flags > 0 ? 'decrease' : 'neutral'}
+          icon={AlertTriangle}
           iconColor="text-amber-600 dark:text-amber-500"
           iconBgColor="bg-amber-100 dark:bg-amber-950"
         />
@@ -131,32 +161,45 @@ export function Dashboard() {
             Recent Activity
           </h3>
           <div className="space-y-4">
-            {transactions.map((transaction) => (
-              <div key={transaction.id} className="pb-4 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1">
-                    <p className="font-semibold text-slate-900 dark:text-white text-sm mb-1">
-                      {transaction.employer}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {transaction.contractor} • {transaction.time}
-                    </p>
+            {transactions.length > 0 ? (
+              transactions.map((transaction) => (
+                <div key={transaction.id} className="pb-4 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <p className="font-semibold text-slate-900 dark:text-white text-sm mb-1">
+                        {transaction.employer}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {transaction.contractor} • {transaction.time}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {transaction.isFlagged && (
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      )}
+                      <span className={`
+                        px-2 py-1 text-xs font-semibold rounded-full
+                        ${transaction.status === 'completed' 
+                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400' 
+                          : transaction.status === 'pending'
+                          ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                        }
+                      `}>
+                        {transaction.status}
+                      </span>
+                    </div>
                   </div>
-                  <span className={`
-                    px-2 py-1 text-xs font-semibold rounded-full
-                    ${transaction.status === 'completed' 
-                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400' 
-                      : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400'
-                    }
-                  `}>
-                    {transaction.status}
-                  </span>
+                  <p className="text-lg font-bold text-slate-900 dark:text-white">
+                    ${transaction.amount.toLocaleString()}
+                  </p>
                 </div>
-                <p className="text-lg font-bold text-slate-900 dark:text-white">
-                  ${transaction.amount.toLocaleString()}
-                </p>
+              ))
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-slate-500 dark:text-slate-400">No recent activity</p>
               </div>
-            ))}
+            )}
           </div>
           <button className="w-full mt-4 px-4 py-2.5 text-sm font-semibold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-lg transition-colors">
             View All Transactions
@@ -164,33 +207,37 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* AI Alert Banner */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white shadow-lg shadow-blue-500/20">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-lg font-semibold">AI Compliance Alert</h3>
-              <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-xs font-semibold rounded-full">
-                3 New
-              </span>
+      {/* AI Alert Banner - Only show if there are flags */}
+      {summary?.compliance.open_flags > 0 && (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white shadow-lg shadow-blue-500/20">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-6 h-6" />
             </div>
-            <p className="text-blue-100 mb-4">
-              High-risk transactions detected. AI Copilot has analyzed the patterns and prepared detailed recommendations for your review.
-            </p>
-            <div className="flex gap-3">
-              <button className="px-5 py-2.5 bg-white text-blue-700 font-semibold rounded-lg hover:bg-blue-50 transition-colors shadow-lg">
-                Review Flags
-              </button>
-              <button className="px-5 py-2.5 bg-white/10 backdrop-blur-sm text-white font-semibold rounded-lg hover:bg-white/20 transition-colors">
-                View Details
-              </button>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-lg font-semibold">AI Compliance Alert</h3>
+                <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-xs font-semibold rounded-full">
+                  {summary.compliance.high_risk} High Risk
+                </span>
+              </div>
+              <p className="text-blue-100 mb-4">
+                {summary.compliance.open_flags} compliance flags need review. 
+                {summary.compliance.high_risk > 0 && ` ${summary.compliance.high_risk} are high-risk.`}
+                {summary.compliance.critical > 0 && ` ${summary.compliance.critical} are critical.`}
+              </p>
+              <div className="flex gap-3">
+                <button className="px-5 py-2.5 bg-white text-blue-700 font-semibold rounded-lg hover:bg-blue-50 transition-colors shadow-lg">
+                  Review Flags
+                </button>
+                <button className="px-5 py-2.5 bg-white/10 backdrop-blur-sm text-white font-semibold rounded-lg hover:bg-white/20 transition-colors">
+                  View Details
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Quick Actions Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

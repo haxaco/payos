@@ -179,3 +179,4 @@ CREATE POLICY "Tenants can delete their own agent usage" ON agent_usage
   FOR DELETE 
   USING (tenant_id = public.get_user_tenant_id());
 
+
