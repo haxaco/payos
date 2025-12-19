@@ -77,6 +77,7 @@ app.use(
 
 // Health check - verifies API is running and can connect to database
 app.get('/health', async (c) => {
+  console.log('📍 Health check requested');
   try {
     const supabase = createClient();
     
@@ -88,7 +89,7 @@ app.get('/health', async (c) => {
     
     // PGRST116 = no rows found (this is OK, just means empty table)
     if (error && error.code !== 'PGRST116') {
-      console.error('Health check - DB error:', error);
+      console.error('❌ Health check - DB error:', error);
       return c.json({
         status: 'unhealthy',
         error: 'Database connection failed',
@@ -97,6 +98,7 @@ app.get('/health', async (c) => {
       }, 503);
     }
     
+    console.log('✅ Health check passed - DB connected');
     return c.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),

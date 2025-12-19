@@ -3,8 +3,9 @@ import { serve } from '@hono/node-server';
 import app from './app.js';
 import { getScheduledTransferWorker } from './workers/scheduled-transfers.js';
 
-const port = parseInt(process.env.API_PORT || '4000');
-const host = process.env.API_HOST || '0.0.0.0';
+// Railway uses PORT, fallback to API_PORT for local dev
+const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
+const host = process.env.HOST || process.env.API_HOST || '0.0.0.0';
 const enableScheduledTransfers = process.env.ENABLE_SCHEDULED_TRANSFERS === 'true';
 const mockMode = process.env.MOCK_SCHEDULED_TRANSFERS === 'true' || process.env.NODE_ENV === 'development';
 
@@ -51,5 +52,7 @@ serve({
   port,
   hostname: host,
 });
+
+console.log(`✅ Server is listening on ${host}:${port}`);
 
 
