@@ -1,0 +1,1227 @@
+# Epic 17 & 18: x402 Infrastructure Implementation Plan
+
+**Status:** 📋 Planning  
+**Created:** December 19, 2025  
+**Priority:** P1  
+**Total Points:** 49 (Epic 17: 26 pts + Epic 18: 23 pts)
+
+---
+
+## Executive Summary
+
+This document outlines the implementation plan for **x402 (HTTP 402) payment infrastructure** - the key differentiator that positions PayOS as an agentic payment platform. We will build:
+
+1. **Epic 17: x402 Gateway** - Infrastructure for API providers to RECEIVE machine payments
+2. **Epic 18: Agent Wallets** - Infrastructure for AI agents to MAKE autonomous payments
+
+---
+
+## Strategic Context
+
+### What is x402?
+
+**x402 = HTTP 402 "Payment Required" + Stablecoin Micropayments**
+
+Traditional APIs use subscriptions or free tiers. x402 enables **pay-per-call** pricing for machine-to-machine payments:
+
+```
+1. Agent: GET /api/expensive-endpoint
+2. Server: 402 Payment Required
+            X-Payment-Address: 0x1234...
+            X-Payment-Amount: 0.01 USDC
+3. Agent: [Pays via stablecoin wallet]
+4. Agent: GET /api/expensive-endpoint
+            X-Payment-Proof: tx_hash
+5. Server: 200 OK [Returns data]
+```
+
+### Why This Matters
+
+- **For API Providers:** Monetize expensive AI/data endpoints without subscriptions
+- **For AI Agents:** Pay only for what they use, no upfront commitments
+- **For PayOS:** New revenue streams (gateway fees, wallet fees) + platform differentiation
+
+---
+
+## Key Architectural Decisions
+
+### 🔑 Decision 1: Blockchain Integration Level
+
+**RECOMMENDED: Hybrid Approach (Option B)**
+
+| Aspect | Full On-Chain (A) | Hybrid (B) ✅ | Database Only (C) |
+|--------|-------------------|--------------|-------------------|
+| **Agent Wallets** | Real crypto wallets | Internal ledger | Internal ledger |
+| **x402 Payments** | Real stablecoin txs | Internal transfers | Internal transfers |
+| **Verification** | Blockchain RPC | Mocked blockchain | N/A |
+| **Demo Quality** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+| **Complexity** | High | Medium | Low |
+| **Timeline** | 6-8 weeks | 3-4 weeks | 2-3 weeks |
+| **External Deps** | Base/Ethereum RPC | None | None |
+
+**Why Hybrid?**
+- ✅ Faster to build (3-4 weeks vs 6-8 weeks)
+- ✅ No external dependencies (Circle, Alchemy, gas fees)
+- ✅ Still demonstrates the full x402 flow
+- ✅ Can upgrade to real blockchain later without UI changes
+- ✅ Good enough for investor demos and partner pilots
+
+**Upgrade Path:**
+```
+Phase 1 (Now): Internal ledger + mock verification
+Phase 2 (Q1): Add real Circle USDC integration
+Phase 3 (Q2): Add on-chain verification via Alchemy/Infura
+Phase 4 (Q3): Full blockchain with Superfluid streaming
+```
+
+---
+
+### 🔑 Decision 2: Story Priorities
+
+**Phase A: Core x402 Infrastructure (Weeks 1-3)**
+
+**Must-Have P0 Stories:**
+- ✅ Story 17.1: x402 Endpoints API (5 pts)
+- ✅ Story 17.2: x402 Payment Verification API (5 pts)
+- ✅ Story 18.1: Agent Account Type Extension (3 pts)
+- ✅ Story 18.2: Agent Wallet CRUD API (5 pts)
+- ✅ Story 18.3: Agent Payment Execution API (5 pts)
+
+**Total P0:** 23 points (~3 weeks)
+
+**Phase B: Polish & UX (Week 4)**
+
+**Should-Have P1 Stories:**
+- 🟡 Story 17.6: x402 Dashboard Screens (5 pts)
+- 🟡 Story 18.5: Agent Wallet Dashboard (4 pts)
+- 🟡 Story 18.4: Payment Approval Workflow (3 pts)
+
+**Total P1:** 12 points (~1 week)
+
+**Phase C: Developer Experience (Future)**
+
+**Nice-to-Have P1 Stories:**
+- 🟢 Story 17.3: x402 Transaction History API (3 pts)
+- 🟢 Story 17.4: x402 Settlement Service (5 pts)
+- 🟢 Story 17.5: JavaScript SDK (3 pts)
+- 🟢 Story 18.6: Agent Payment SDK (3 pts)
+
+**Total Future:** 14 points (~1.5 weeks)
+
+---
+
+## User Flows
+
+### Flow 1: Register x402 Endpoint (Provider Side)
+
+**Actor:** API Provider (PayOS Tenant)  
+**Goal:** Monetize an API endpoint via x402
+
+```
+┌─────────────────────────────────────────────────────┐
+│ 1. Navigate to x402 Dashboard                       │
+│    → New "x402 Endpoints" tab in sidebar            │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 2. Click "Register Endpoint"                        │
+│    Modal opens with form:                           │
+│    - Name: "LATAM Compliance Check"                 │
+│    - Path: "/api/compliance/check"                  │
+│    - Method: POST                                   │
+│    - Base Price: 0.25                               │
+│    - Currency: USDC                                 │
+│    - Volume Discounts (optional):                   │
+│      * 1000+ calls: 0.20 USDC                       │
+│      * 5000+ calls: 0.15 USDC                       │
+│    - Webhook URL (optional)                         │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 3. Submit → API: POST /v1/x402/endpoints           │
+│    {                                                 │
+│      name: "LATAM Compliance Check",                │
+│      path: "/api/compliance/check",                 │
+│      method: "POST",                                │
+│      basePrice: 0.25,                               │
+│      currency: "USDC",                              │
+│      volumeDiscounts: [...]                         │
+│    }                                                 │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 4. Endpoint Created                                 │
+│    Response:                                         │
+│    {                                                 │
+│      id: "uuid",                                    │
+│      paymentAddress: "0x1234..." (internal)         │
+│      status: "active"                               │
+│    }                                                 │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 5. View in Dashboard                                │
+│    - Endpoint list with status                      │
+│    - Total calls / revenue per endpoint             │
+│    - Recent transactions                            │
+│    - Integration instructions                       │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### Flow 2: Agent Makes x402 Payment (Consumer Side)
+
+**Actor:** AI Agent (autonomous)  
+**Goal:** Call a paid API and auto-pay
+
+```
+┌─────────────────────────────────────────────────────┐
+│ 1. Agent Setup (One-time)                           │
+│    Business creates agent account:                  │
+│    → POST /v1/accounts                              │
+│      { type: "agent", name: "Compliance Bot" }      │
+│                                                      │
+│    Create wallet for agent:                         │
+│    → POST /v1/agent-wallets                         │
+│      {                                               │
+│        agentAccountId: "uuid",                      │
+│        dailySpendLimit: 100,                        │
+│        monthlySpendLimit: 2000,                     │
+│        approvedVendors: ["api.acme.com"],           │
+│        requiresApprovalAbove: 50                    │
+│      }                                               │
+│                                                      │
+│    Fund wallet:                                     │
+│    → POST /v1/transfers                             │
+│      {                                               │
+│        from: "parent_account_id",                   │
+│        to: "agent_wallet_id",                       │
+│        amount: 500                                  │
+│      }                                               │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 2. Agent Calls Paid API                             │
+│    → GET https://api.acme.com/compliance/check      │
+│                                                      │
+│    Response:                                         │
+│    ← 402 Payment Required                           │
+│      X-Payment-Address: "internal://acme/ep123"     │
+│      X-Payment-Amount: 0.25                         │
+│      X-Payment-Currency: USDC                       │
+│      X-Payment-Request-Id: "req_abc123"             │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 3. Agent Initiates Payment (Autonomous)             │
+│    → POST /v1/x402/pay                              │
+│      {                                               │
+│        walletId: "agent_wallet_uuid",               │
+│        endpointId: "ep123",                         │
+│        amount: 0.25,                                │
+│        requestId: "req_abc123",                     │
+│        category: "compliance"                       │
+│      }                                               │
+│                                                      │
+│    PayOS checks policy:                             │
+│    ✓ Vendor approved? (api.acme.com) → YES          │
+│    ✓ Daily limit remaining? (99.75 left) → YES     │
+│    ✓ Monthly limit remaining? (1999.75 left) → YES │
+│    ✓ Requires approval? (0.25 < 50) → NO           │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 4. Payment Executed (Internal Transfer)             │
+│    - Debit agent wallet: -0.25 USDC                 │
+│    - Credit endpoint owner: +0.25 USDC              │
+│    - Record x402_transaction                        │
+│    - Update wallet daily_spent                      │
+│                                                      │
+│    Response:                                         │
+│    {                                                 │
+│      transactionId: "tx_xyz789",                    │
+│      paymentProof: "proof_xyz" (mock tx_hash),      │
+│      status: "confirmed"                            │
+│    }                                                 │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 5. Agent Retries API Call with Proof               │
+│    → GET https://api.acme.com/compliance/check      │
+│      X-Payment-Proof: "proof_xyz"                   │
+│                                                      │
+│    Provider verifies:                               │
+│    → POST /v1/x402/verify                           │
+│      {                                               │
+│        paymentProof: "proof_xyz",                   │
+│        expectedAmount: 0.25,                        │
+│        endpointId: "ep123",                         │
+│        requestId: "req_abc123"                      │
+│      }                                               │
+│                                                      │
+│    PayOS Response:                                  │
+│    { verified: true, status: "confirmed" }          │
+│                                                      │
+│    Provider Response:                               │
+│    ← 200 OK                                         │
+│      { result: "verified", risk_score: 0.12 }       │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### Flow 3: Monitor Agent Spending (Parent Account)
+
+**Actor:** Business User (Agent Owner)  
+**Goal:** Monitor and control agent spending
+
+```
+┌─────────────────────────────────────────────────────┐
+│ 1. Navigate to "Agent Wallets" Dashboard            │
+│    → New sidebar item                               │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 2. View Wallet Overview                             │
+│    ┌─────────────────────────────────────────┐     │
+│    │ Compliance Bot                          │     │
+│    │ Balance: $475.25 USDC                   │     │
+│    │                                          │     │
+│    │ Daily Limit: $24.75 / $100 used         │     │
+│    │ [████░░░░░░] 24.75%                     │     │
+│    │                                          │     │
+│    │ Monthly Limit: $24.75 / $2,000 used     │     │
+│    │ [█░░░░░░░░░] 1.24%                      │     │
+│    │                                          │     │
+│    │ Status: Active                          │     │
+│    │ [Pause] [Adjust Limits] [View Txs]      │     │
+│    └─────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 3. View Transaction History                         │
+│    Recent Payments:                                 │
+│    ┌──────────────────────────────────────────┐    │
+│    │ 10:23 AM - Compliance Check              │    │
+│    │ api.acme.com/compliance/check            │    │
+│    │ -$0.25 USDC                              │    │
+│    │ Status: Confirmed                        │    │
+│    ├──────────────────────────────────────────┤    │
+│    │ 10:15 AM - FX Rate Query                 │    │
+│    │ api.acme.com/fx/rate                     │    │
+│    │ -$0.05 USDC                              │    │
+│    │ Status: Confirmed                        │    │
+│    └──────────────────────────────────────────┘    │
+│                                                      │
+│    Top Vendors:                                     │
+│    - api.acme.com: $18.50 (74 calls)                │
+│    - api.beta.com: $6.25 (25 calls)                 │
+│                                                      │
+│    Top Categories:                                  │
+│    - compliance: $12.50 (50 calls)                  │
+│    - fx_intelligence: $5.00 (100 calls)             │
+└─────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────┐
+│ 4. Adjust Spending Policies                         │
+│    [Edit Policy] →                                  │
+│    - Increase daily limit to $200                   │
+│    - Add new approved vendor: api.gamma.com         │
+│    - Lower approval threshold to $25                │
+│    - Enable auto-refill at $100 → +$500            │
+│                                                      │
+│    → PATCH /v1/agent-wallets/:id                    │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Data Models
+
+### New Tables
+
+#### 1. `x402_endpoints` (Epic 17)
+
+```sql
+CREATE TABLE x402_endpoints (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  account_id UUID NOT NULL REFERENCES accounts(id),
+  name TEXT NOT NULL,
+  path TEXT NOT NULL,
+  method TEXT NOT NULL CHECK (method IN ('GET', 'POST', 'ANY')),
+  description TEXT,
+  base_price DECIMAL(10,2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'USDC',
+  volume_discounts JSONB, -- [{ threshold: 1000, priceMultiplier: 0.8 }]
+  region_pricing JSONB,   -- [{ region: 'LATAM', priceMultiplier: 0.9 }]
+  total_calls INTEGER DEFAULT 0,
+  total_revenue DECIMAL(15,2) DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'disabled')),
+  webhook_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  
+  UNIQUE(tenant_id, path, method)
+);
+
+CREATE INDEX idx_x402_endpoints_tenant ON x402_endpoints(tenant_id);
+CREATE INDEX idx_x402_endpoints_account ON x402_endpoints(account_id);
+CREATE INDEX idx_x402_endpoints_status ON x402_endpoints(status);
+
+-- RLS
+ALTER TABLE x402_endpoints ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Tenants manage own endpoints" ON x402_endpoints
+  FOR ALL
+  USING (tenant_id = (SELECT public.get_user_tenant_id()));
+```
+
+#### 2. `agent_wallets` (Epic 18)
+
+```sql
+CREATE TABLE agent_wallets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  agent_account_id UUID NOT NULL REFERENCES accounts(id),
+  balance DECIMAL(15,2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'USDC',
+  
+  -- Spending Limits
+  daily_spend_limit DECIMAL(10,2) NOT NULL,
+  daily_spent DECIMAL(10,2) DEFAULT 0,
+  daily_reset_at TIMESTAMPTZ,
+  monthly_spend_limit DECIMAL(10,2) NOT NULL,
+  monthly_spent DECIMAL(10,2) DEFAULT 0,
+  monthly_reset_at TIMESTAMPTZ,
+  
+  -- Policy
+  approved_vendors TEXT[], -- ["api.acme.com", "api.beta.com"]
+  approved_categories TEXT[], -- ["compliance", "fx_intelligence"]
+  requires_approval_above DECIMAL(10,2), -- NULL = no approval needed
+  
+  -- Auto-funding
+  auto_fund_enabled BOOLEAN DEFAULT false,
+  auto_fund_threshold DECIMAL(10,2),
+  auto_fund_amount DECIMAL(10,2),
+  auto_fund_source_account_id UUID REFERENCES accounts(id),
+  
+  -- Status
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'frozen', 'depleted')),
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  
+  UNIQUE(agent_account_id)
+);
+
+CREATE INDEX idx_agent_wallets_tenant ON agent_wallets(tenant_id);
+CREATE INDEX idx_agent_wallets_agent ON agent_wallets(agent_account_id);
+CREATE INDEX idx_agent_wallets_status ON agent_wallets(status);
+
+-- RLS
+ALTER TABLE agent_wallets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Tenants manage own agent wallets" ON agent_wallets
+  FOR ALL
+  USING (tenant_id = (SELECT public.get_user_tenant_id()));
+```
+
+#### 3. `x402_transactions` (Both Epics)
+
+```sql
+CREATE TABLE x402_transactions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  
+  -- Payer (Agent)
+  payer_wallet_id UUID REFERENCES agent_wallets(id),
+  payer_account_id UUID REFERENCES accounts(id),
+  
+  -- Recipient (Endpoint Owner)
+  recipient_endpoint_id UUID REFERENCES x402_endpoints(id),
+  recipient_account_id UUID REFERENCES accounts(id),
+  
+  -- Payment Details
+  amount DECIMAL(10,2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'USDC',
+  
+  -- x402 Protocol Fields
+  endpoint_path TEXT,
+  request_id TEXT, -- Idempotency key
+  payment_proof TEXT NOT NULL, -- Mock tx_hash in Phase 1
+  
+  -- Metadata
+  vendor_domain TEXT, -- Extracted from endpoint
+  category TEXT,
+  
+  -- Status
+  status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('pending', 'confirmed', 'failed', 'refunded')),
+  
+  -- Blockchain (Phase 2+)
+  network TEXT, -- 'base', 'ethereum', 'solana'
+  tx_hash TEXT, -- Real blockchain tx_hash
+  confirmations INTEGER DEFAULT 0,
+  
+  created_at TIMESTAMPTZ DEFAULT now(),
+  confirmed_at TIMESTAMPTZ,
+  
+  UNIQUE(tenant_id, request_id) -- Prevent double-payment
+);
+
+CREATE INDEX idx_x402_txs_tenant ON x402_transactions(tenant_id);
+CREATE INDEX idx_x402_txs_payer ON x402_transactions(payer_wallet_id);
+CREATE INDEX idx_x402_txs_recipient ON x402_transactions(recipient_endpoint_id);
+CREATE INDEX idx_x402_txs_status ON x402_transactions(status);
+CREATE INDEX idx_x402_txs_created ON x402_transactions(created_at DESC);
+
+-- RLS
+ALTER TABLE x402_transactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Tenants view own x402 transactions" ON x402_transactions
+  FOR SELECT
+  USING (tenant_id = (SELECT public.get_user_tenant_id()));
+```
+
+### Account Type Extension
+
+```sql
+-- Migration: Add 'agent' account type
+ALTER TYPE account_type ADD VALUE IF NOT EXISTS 'agent';
+
+-- Add agent_config column for spending policies
+ALTER TABLE accounts 
+ADD COLUMN IF NOT EXISTS agent_config JSONB DEFAULT NULL;
+
+COMMENT ON COLUMN accounts.agent_config IS 'Configuration for agent-type accounts including spending policies and x402 settings';
+
+-- agent_config structure:
+-- {
+--   "parent_account_id": "uuid",
+--   "purpose": "Automate compliance checks",
+--   "x402_enabled": true
+-- }
+```
+
+---
+
+## API Endpoints
+
+### Epic 17: x402 Gateway API
+
+#### 1. Register Endpoint
+```typescript
+POST /v1/x402/endpoints
+Authorization: Bearer <token>
+
+Request:
+{
+  name: "LATAM Compliance Check",
+  path: "/api/compliance/check",
+  method: "POST",
+  description?: "Verify LATAM documents",
+  basePrice: 0.25,
+  currency?: "USDC",
+  volumeDiscounts?: [
+    { threshold: 1000, priceMultiplier: 0.8 },
+    { threshold: 5000, priceMultiplier: 0.6 }
+  ],
+  webhookUrl?: "https://..."
+}
+
+Response: 201 Created
+{
+  data: {
+    id: "ep_abc123",
+    tenantId: "uuid",
+    accountId: "uuid",
+    name: "LATAM Compliance Check",
+    path: "/api/compliance/check",
+    method: "POST",
+    basePrice: 0.25,
+    currency: "USDC",
+    status: "active",
+    totalCalls: 0,
+    totalRevenue: 0,
+    createdAt: "2025-12-19T...",
+    updatedAt: "2025-12-19T..."
+  }
+}
+```
+
+#### 2. Verify Payment
+```typescript
+POST /v1/x402/verify
+Authorization: Bearer <token>
+
+Request:
+{
+  paymentProof: "proof_xyz789",
+  expectedAmount: 0.25,
+  endpointId: "ep_abc123",
+  requestId?: "req_unique_id"
+}
+
+Response: 200 OK
+{
+  verified: true,
+  status: "confirmed",
+  transactionId: "tx_xyz789",
+  payer: "agent_account_id",
+  amount: 0.25,
+  timestamp: "2025-12-19T..."
+}
+
+// If verification fails:
+Response: 400 Bad Request
+{
+  verified: false,
+  status: "insufficient" | "invalid" | "expired",
+  error: "Payment amount insufficient"
+}
+```
+
+#### 3. List Endpoints
+```typescript
+GET /v1/x402/endpoints
+GET /v1/x402/endpoints?status=active
+GET /v1/x402/endpoints?account_id=<uuid>
+
+Response: 200 OK
+{
+  data: [...endpoints],
+  pagination: { page: 1, limit: 50, total: 5 }
+}
+```
+
+#### 4. Get Endpoint Details
+```typescript
+GET /v1/x402/endpoints/:id
+
+Response: 200 OK
+{
+  data: {
+    ...endpoint,
+    recentTransactions: [...], // Last 10
+    topPayers: [
+      { accountId: "...", accountName: "Agent Bot", totalSpent: 125.50, callCount: 502 }
+    ]
+  }
+}
+```
+
+#### 5. Update Endpoint
+```typescript
+PATCH /v1/x402/endpoints/:id
+
+Request:
+{
+  status?: "active" | "paused" | "disabled",
+  basePrice?: 0.30,
+  volumeDiscounts?: [...]
+}
+
+Response: 200 OK
+{ data: {...updated endpoint} }
+```
+
+#### 6. Delete Endpoint
+```typescript
+DELETE /v1/x402/endpoints/:id
+
+Response: 204 No Content
+```
+
+---
+
+### Epic 18: Agent Wallets API
+
+#### 1. Create Agent Wallet
+```typescript
+POST /v1/agent-wallets
+Authorization: Bearer <token>
+
+Request:
+{
+  agentAccountId: "uuid",
+  dailySpendLimit: 100.00,
+  monthlySpendLimit: 2000.00,
+  approvedVendors?: ["api.acme.com", "api.beta.com"],
+  approvedCategories?: ["compliance", "fx_intelligence"],
+  requiresApprovalAbove?: 50.00,
+  autoFundEnabled?: true,
+  autoFundThreshold?: 100.00,
+  autoFundAmount?: 500.00,
+  autoFundSourceAccountId?: "uuid"
+}
+
+Response: 201 Created
+{
+  data: {
+    id: "wallet_xyz",
+    tenantId: "uuid",
+    agentAccountId: "uuid",
+    balance: 0,
+    currency: "USDC",
+    dailySpendLimit: 100.00,
+    dailySpent: 0,
+    dailyRemaining: 100.00,
+    monthlySpendLimit: 2000.00,
+    monthlySpent: 0,
+    monthlyRemaining: 2000.00,
+    approvedVendors: ["api.acme.com"],
+    approvedCategories: ["compliance"],
+    requiresApprovalAbove: 50.00,
+    status: "active",
+    createdAt: "...",
+    updatedAt: "..."
+  }
+}
+```
+
+#### 2. Agent Pay (x402 Payment Execution)
+```typescript
+POST /v1/x402/pay
+Authorization: Bearer <agent_api_key>
+
+Request:
+{
+  walletId: "wallet_xyz",
+  endpointId: "ep_abc123",
+  amount: 0.25,
+  requestId: "req_unique_id", // Idempotency
+  category?: "compliance",
+  memo?: "Document verification for remittance #123"
+}
+
+Response: 200 OK
+{
+  data: {
+    transactionId: "tx_xyz789",
+    paymentProof: "proof_xyz789", // Use this in X-Payment-Proof header
+    status: "confirmed",
+    walletBalance: 499.75,
+    dailyRemaining: 99.75,
+    monthlyRemaining: 1999.75
+  }
+}
+
+// If policy violation:
+Response: 403 Forbidden
+{
+  error: "Policy violation",
+  reason: "Daily spend limit exceeded",
+  dailyRemaining: 0,
+  dailyLimit: 100.00
+}
+
+// If requires approval:
+Response: 202 Accepted
+{
+  transactionId: "tx_pending_123",
+  status: "pending_approval",
+  message: "Payment requires approval (amount > $50)",
+  approvalUrl: "https://dashboard.payos.com/approvals/tx_pending_123"
+}
+```
+
+#### 3. List Agent Wallets
+```typescript
+GET /v1/agent-wallets
+GET /v1/agent-wallets?status=active
+GET /v1/agent-wallets?agent_account_id=<uuid>
+
+Response: 200 OK
+{
+  data: [...wallets],
+  pagination: { page: 1, limit: 50, total: 12 }
+}
+```
+
+#### 4. Get Wallet Details
+```typescript
+GET /v1/agent-wallets/:id
+
+Response: 200 OK
+{
+  data: {
+    ...wallet,
+    recentTransactions: [...], // Last 20
+    topVendors: [
+      { vendor: "api.acme.com", spent: 125.50, calls: 502 }
+    ],
+    topCategories: [
+      { category: "compliance", spent: 85.25, calls: 341 }
+    ],
+    spendingTrend: {
+      thisWeek: 45.20,
+      lastWeek: 38.50,
+      change: +17.4
+    }
+  }
+}
+```
+
+#### 5. Update Wallet
+```typescript
+PATCH /v1/agent-wallets/:id
+
+Request:
+{
+  dailySpendLimit?: 200.00,
+  approvedVendors?: ["api.acme.com", "api.beta.com", "api.gamma.com"],
+  requiresApprovalAbove?: 25.00,
+  status?: "active" | "frozen"
+}
+
+Response: 200 OK
+{ data: {...updated wallet} }
+```
+
+#### 6. Fund Wallet (Internal Transfer)
+```typescript
+POST /v1/agent-wallets/:id/fund
+
+Request:
+{
+  sourceAccountId: "parent_account_uuid",
+  amount: 500.00
+}
+
+Response: 200 OK
+{
+  data: {
+    transferId: "transfer_xyz",
+    walletBalance: 500.00
+  }
+}
+```
+
+#### 7. Get Wallet Transactions
+```typescript
+GET /v1/agent-wallets/:id/transactions
+GET /v1/agent-wallets/:id/transactions?category=compliance
+GET /v1/agent-wallets/:id/transactions?start_date=2025-12-01&end_date=2025-12-19
+
+Response: 200 OK
+{
+  data: [...x402_transactions],
+  pagination: { ... }
+}
+```
+
+---
+
+## UI Components
+
+### New Dashboard Sections
+
+#### 1. x402 Endpoints Page (`/x402/endpoints`)
+
+**Epic 17, Story 17.6**
+
+```tsx
+// payos-ui/src/pages/X402EndpointsPage.tsx
+
+Layout:
+┌──────────────────────────────────────────────────────┐
+│ x402 Endpoints                      [+ New Endpoint] │
+├──────────────────────────────────────────────────────┤
+│ Overview                                              │
+│ ┌────────────┐ ┌────────────┐ ┌────────────┐        │
+│ │ 12         │ │ $1,234.50  │ │ 4,823      │        │
+│ │ Endpoints  │ │ Revenue    │ │ Total Calls│        │
+│ └────────────┘ └────────────┘ └────────────┘        │
+├──────────────────────────────────────────────────────┤
+│ Endpoints                                             │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ ✓ LATAM Compliance Check               $125.50 │ │
+│ │   /api/compliance/check • POST                  │ │
+│ │   502 calls • $0.25/call                        │ │
+│ │   [Pause] [Edit] [View Stats]                   │ │
+│ ├──────────────────────────────────────────────────┤ │
+│ │ ✓ FX Rate Intelligence                  $241.00 │ │
+│ │   /api/fx/rate • GET                            │ │
+│ │   4,820 calls • $0.05/call                      │ │
+│ │   [Pause] [Edit] [View Stats]                   │ │
+│ └──────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
+```
+
+**Features:**
+- List all x402 endpoints with status
+- Revenue and call count per endpoint
+- Quick actions: pause, edit, view stats
+- Modal to register new endpoint
+- Integration instructions with code snippets
+
+---
+
+#### 2. Agent Wallets Page (`/agent-wallets`)
+
+**Epic 18, Story 18.5**
+
+```tsx
+// payos-ui/src/pages/AgentWalletsPage.tsx
+
+Layout:
+┌──────────────────────────────────────────────────────┐
+│ Agent Wallets                    [+ Create Wallet]   │
+├──────────────────────────────────────────────────────┤
+│ Overview                                              │
+│ ┌────────────┐ ┌────────────┐ ┌────────────┐        │
+│ │ 5          │ │ $2,450.25  │ │ $1,234.75  │        │
+│ │ Wallets    │ │ Balance    │ │ Spent Today│        │
+│ └────────────┘ └────────────┘ └────────────┘        │
+├──────────────────────────────────────────────────────┤
+│ Wallets                                               │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ 🤖 Compliance Bot                  $475.25 USDC │ │
+│ │    Daily: $24.75 / $100 (24.75%)                │ │
+│ │    [████░░░░░░]                                 │ │
+│ │    Monthly: $24.75 / $2,000 (1.24%)             │ │
+│ │    [█░░░░░░░░░]                                 │ │
+│ │    Status: Active                                │ │
+│ │    [View] [Fund] [Adjust Limits]                │ │
+│ ├──────────────────────────────────────────────────┤ │
+│ │ 🤖 FX Intelligence Agent           $1,250.00    │ │
+│ │    Daily: $156.20 / $500 (31.24%)               │ │
+│ │    [███░░░░░░░]                                 │ │
+│ │    Monthly: $3,245.80 / $10,000 (32.46%)        │ │
+│ │    [███░░░░░░░]                                 │ │
+│ │    Status: Active                                │ │
+│ │    [View] [Fund] [Adjust Limits]                │ │
+│ └──────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
+```
+
+**Features:**
+- List all agent wallets with balances
+- Visual spend limit indicators
+- Quick actions: view, fund, adjust limits
+- Modal to create new wallet
+- Real-time balance updates
+
+---
+
+#### 3. Agent Wallet Detail Page (`/agent-wallets/:id`)
+
+**Epic 18, Story 18.5**
+
+```tsx
+// payos-ui/src/pages/AgentWalletDetailPage.tsx
+
+Layout:
+┌──────────────────────────────────────────────────────┐
+│ ← Back  Compliance Bot                               │
+│         Agent Wallet                                  │
+├──────────────────────────────────────────────────────┤
+│ Balance & Limits                                      │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ Current Balance: $475.25 USDC                    │ │
+│ │ [Fund Wallet]                                     │ │
+│ │                                                    │ │
+│ │ Daily Spending                                    │ │
+│ │ $24.75 of $100.00 (24.75%)                       │ │
+│ │ [████████░░░░░░░░░░░░] Resets in 14h 32m        │ │
+│ │                                                    │ │
+│ │ Monthly Spending                                  │ │
+│ │ $24.75 of $2,000.00 (1.24%)                      │ │
+│ │ [█░░░░░░░░░░░░░░░░░░░] Resets in 11 days        │ │
+│ │                                                    │ │
+│ │ Spending Policy                                   │ │
+│ │ • Requires approval above: $50                   │ │
+│ │ • Approved vendors: api.acme.com, api.beta.com   │ │
+│ │ • Approved categories: compliance, fx            │ │
+│ │ [Edit Policy]                                     │ │
+│ └──────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────┤
+│ Recent Transactions                                   │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ 10:23 AM  Compliance Check          -$0.25      │ │
+│ │           api.acme.com/compliance/check          │ │
+│ │           Status: ✓ Confirmed                    │ │
+│ ├──────────────────────────────────────────────────┤ │
+│ │ 10:15 AM  FX Rate Query             -$0.05      │ │
+│ │           api.acme.com/fx/rate                   │ │
+│ │           Status: ✓ Confirmed                    │ │
+│ ├──────────────────────────────────────────────────┤ │
+│ │ 09:47 AM  Compliance Check          -$0.25      │ │
+│ │           api.acme.com/compliance/check          │ │
+│ │           Status: ✓ Confirmed                    │ │
+│ └──────────────────────────────────────────────────┘ │
+│ [View All Transactions]                               │
+├──────────────────────────────────────────────────────┤
+│ Spending Analytics                                    │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ Top Vendors                                       │ │
+│ │ 1. api.acme.com          $18.50 (74 calls)       │ │
+│ │ 2. api.beta.com          $6.25 (25 calls)        │ │
+│ │                                                    │ │
+│ │ Top Categories                                    │ │
+│ │ 1. compliance            $12.50 (50 calls)       │ │
+│ │ 2. fx_intelligence       $5.00 (100 calls)       │ │
+│ │                                                    │ │
+│ │ Spending Trend (Last 7 Days)                     │ │
+│ │ [Line chart showing daily spend]                 │ │
+│ └──────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## Implementation Plan
+
+### Phase A: Core Infrastructure (Week 1-2)
+
+#### Week 1: Database & Core APIs
+
+**Day 1-2: Database Setup**
+- [ ] Create migration: `20251220_create_x402_endpoints.sql`
+- [ ] Create migration: `20251220_create_agent_wallets.sql`
+- [ ] Create migration: `20251220_create_x402_transactions.sql`
+- [ ] Create migration: `20251220_extend_account_type_agent.sql`
+- [ ] Apply migrations to dev environment
+- [ ] Verify RLS policies work correctly
+
+**Day 3-4: x402 Endpoints API (Story 17.1)**
+- [ ] Create `apps/api/src/routes/x402-endpoints.ts`
+- [ ] Implement POST `/v1/x402/endpoints` (register)
+- [ ] Implement GET `/v1/x402/endpoints` (list)
+- [ ] Implement GET `/v1/x402/endpoints/:id` (details)
+- [ ] Implement PATCH `/v1/x402/endpoints/:id` (update)
+- [ ] Implement DELETE `/v1/x402/endpoints/:id` (delete)
+- [ ] Add validation with Zod
+- [ ] Add to `apps/api/src/app.ts`
+- [ ] Test with Postman/curl
+
+**Day 5: x402 Payment Verification API (Story 17.2)**
+- [ ] Create `apps/api/src/services/x402-payment-verifier.ts`
+- [ ] Implement POST `/v1/x402/verify`
+- [ ] Mock blockchain verification (return `{ verified: true }`)
+- [ ] Record verification in `x402_transactions`
+- [ ] Test idempotency (same request_id)
+
+---
+
+#### Week 2: Agent Wallets & Payment Execution
+
+**Day 1-2: Agent Account Type (Story 18.1)**
+- [ ] Verify `agent` account type exists
+- [ ] Update account creation to support `agent` type
+- [ ] Add `agent_config` JSONB field handling
+- [ ] Update `POST /v1/accounts` to accept agent type
+- [ ] Update UI account creation form (future)
+
+**Day 3-4: Agent Wallet API (Story 18.2)**
+- [ ] Create `apps/api/src/routes/agent-wallets.ts`
+- [ ] Implement POST `/v1/agent-wallets` (create)
+- [ ] Implement GET `/v1/agent-wallets` (list)
+- [ ] Implement GET `/v1/agent-wallets/:id` (details)
+- [ ] Implement PATCH `/v1/agent-wallets/:id` (update)
+- [ ] Implement POST `/v1/agent-wallets/:id/fund` (fund wallet)
+- [ ] Add validation for spending limits
+- [ ] Test all endpoints
+
+**Day 5: Agent Payment Execution (Story 18.3)**
+- [ ] Create `apps/api/src/services/agent-payment-executor.ts`
+- [ ] Implement POST `/v1/x402/pay`
+- [ ] Policy checks:
+  - [ ] Verify vendor in `approved_vendors`
+  - [ ] Check daily spend limit
+  - [ ] Check monthly spend limit
+  - [ ] Check `requires_approval_above` threshold
+- [ ] Execute internal transfer (debit wallet, credit endpoint owner)
+- [ ] Record in `x402_transactions`
+- [ ] Update wallet `daily_spent` / `monthly_spent`
+- [ ] Generate mock `payment_proof`
+- [ ] Test happy path and policy violations
+
+---
+
+### Phase B: UI Dashboard (Week 3)
+
+**Day 1: x402 Endpoints UI (Story 17.6)**
+- [ ] Create `payos-ui/src/pages/X402EndpointsPage.tsx`
+- [ ] Create `payos-ui/src/hooks/api/useX402Endpoints.ts`
+- [ ] Implement endpoint list with status
+- [ ] Add "Register Endpoint" modal
+- [ ] Show revenue and call count
+- [ ] Add quick actions (pause, edit, delete)
+- [ ] Integration instructions modal
+
+**Day 2-3: Agent Wallets UI (Story 18.5)**
+- [ ] Create `payos-ui/src/pages/AgentWalletsPage.tsx`
+- [ ] Create `payos-ui/src/pages/AgentWalletDetailPage.tsx`
+- [ ] Create `payos-ui/src/hooks/api/useAgentWallets.ts`
+- [ ] Implement wallet list with balances
+- [ ] Add spend limit visualizations (progress bars)
+- [ ] Add "Create Wallet" modal
+- [ ] Add "Fund Wallet" modal
+- [ ] Add "Edit Policy" modal
+
+**Day 4: Agent Wallet Detail Page**
+- [ ] Transaction history table
+- [ ] Top vendors / categories
+- [ ] Spending trend chart (7 days)
+- [ ] Real-time balance updates
+
+**Day 5: Polish & Testing**
+- [ ] Add loading states
+- [ ] Add error handling
+- [ ] Add empty states
+- [ ] Test all flows end-to-end
+- [ ] Fix bugs
+
+---
+
+### Phase C: Seed Data & Demo (Week 4)
+
+**Day 1-2: Seed Data**
+- [ ] Create `apps/api/scripts/seed-x402-endpoints.ts`
+- [ ] Create `apps/api/scripts/seed-agent-wallets.ts`
+- [ ] Create `apps/api/scripts/seed-x402-transactions.ts`
+- [ ] Generate realistic data:
+  - [ ] 5-10 x402 endpoints per tenant
+  - [ ] 3-5 agent wallets per tenant
+  - [ ] 100+ x402 transactions (last 30 days)
+- [ ] Add to `pnpm seed:all`
+
+**Day 3: Demo Scenario**
+- [ ] Create demo script: `docs/DEMO_X402_SCENARIO.md`
+- [ ] Define demo user accounts
+- [ ] Script the flow:
+  1. Show endpoint revenue dashboard
+  2. Create new agent wallet
+  3. Fund wallet
+  4. Simulate agent payments
+  5. Show spending analytics
+- [ ] Test demo flow
+
+**Day 4: Documentation**
+- [ ] Update PRD with completion status
+- [ ] Create `docs/EPIC_17_18_COMPLETE.md`
+- [ ] Document API endpoints
+- [ ] Create integration guide
+- [ ] Create FAQ
+
+**Day 5: Testing & Polish**
+- [ ] End-to-end testing
+- [ ] Performance testing
+- [ ] Security review
+- [ ] Bug fixes
+- [ ] Final commit
+
+---
+
+## Success Metrics
+
+### Technical Completion
+
+- [ ] All P0 API endpoints implemented and tested
+- [ ] All database tables created with proper RLS
+- [ ] All UI dashboards functional
+- [ ] Seed data generates realistic scenarios
+- [ ] Zero linter errors
+- [ ] All tests passing
+
+### Demo Quality
+
+- [ ] Can register x402 endpoint in < 2 minutes
+- [ ] Can create agent wallet with policy in < 2 minutes
+- [ ] Agent payment executes in < 1 second
+- [ ] Dashboard shows real-time data
+- [ ] Demo flows smoothly without bugs
+
+### Documentation
+
+- [ ] API reference complete
+- [ ] Integration guide written
+- [ ] Demo scenario documented
+- [ ] Epic completion document created
+
+---
+
+## Future Enhancements (Post-PoC)
+
+### Phase 2: Real Blockchain Integration
+- Integrate Circle API for real USDC transfers
+- Add Alchemy/Infura for on-chain verification
+- Support Base, Ethereum, and Solana networks
+- Real wallet addresses for agents
+
+### Phase 3: Advanced Features
+- **Story 17.3:** x402 Transaction History API (3 pts)
+- **Story 17.4:** x402 Settlement Service (5 pts)
+- **Story 17.5:** JavaScript SDK (3 pts)
+- **Story 18.4:** Payment Approval Workflow (3 pts)
+- **Story 18.6:** Agent Payment SDK (3 pts)
+
+### Phase 4: PayOS Services (Epic 19)
+- Build PayOS's own x402 services
+- Compliance Check API ($0.25/call)
+- FX Intelligence API ($0.05/call)
+- Payment Routing API ($0.15/call)
+- Treasury Analysis API ($1.00/call)
+
+### Phase 5: Agent Registry (Epic 20)
+- Public agent discovery
+- Agent reviews and ratings
+- Streaming payments integration
+- Python SDK
+
+---
+
+## Questions to Resolve Before Starting
+
+### 1. Blockchain Strategy
+**Decision needed:** Hybrid approach (Option B) confirmed?
+- Internal ledger for wallets ✅
+- Mock blockchain verification ✅
+- Plan to upgrade later ✅
+
+### 2. Scope
+**Decision needed:** Just Epic 17 + 18, or include 19 + 20?
+- **Recommended:** Epic 17 + 18 only (3-4 weeks)
+- Defer Epic 19 + 20 to later
+
+### 3. Demo Focus
+**Decision needed:** What's the primary demo scenario?
+- Example: "LATAM fintech monetizing compliance API via agents"
+- Who's the audience? (Investors, partners, technical?)
+
+### 4. Timeline
+**Decision needed:** Can we commit 3-4 weeks to this?
+- Week 1-2: Core APIs and database
+- Week 3: UI dashboards
+- Week 4: Seed data, testing, demo
+
+---
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Complexity too high | Delays | Start with hybrid approach (no real blockchain) |
+| Unclear demo story | Poor reception | Define scenario upfront with stakeholders |
+| UI takes longer than expected | Delay | Prioritize functional over beautiful for PoC |
+| Policy logic bugs | Security issues | Thorough testing of spending limits |
+| Performance issues | Poor UX | Optimize queries, add indexes, use pagination |
+
+---
+
+## Ready to Start?
+
+**Next Steps:**
+
+1. **Review this plan** - Confirm approach, scope, timeline
+2. **Answer the 4 questions above** - Blockchain, scope, demo, timeline
+3. **Approve to proceed** - I'll create the first migration and start building
+
+**Timeline:** 3-4 weeks to complete Epic 17 + 18 (P0 + P1 stories)
+
+---
+
+**Your call:** Should we proceed with this plan? Any changes needed?
+
