@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup src/index.ts --format esm --dts",
-    "start": "node apps/api/dist/index.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
