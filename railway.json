@@ -4,7 +4,13 @@
     "builder": "NIXPACKS",
     "watchPatterns": [
       "apps/api/**",
-      "packages/**"
+      "packages/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "nixpacks.toml",
+      "railway.json",
+      "turbo.json"
     ]
   },
   "deploy": {
