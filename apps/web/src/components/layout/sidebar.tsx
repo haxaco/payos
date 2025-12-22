@@ -42,22 +42,20 @@ const mainNav = [
   { href: '/dashboard/reports', label: 'Reports', icon: FileText },
 ];
 
-const developerNav = [
-  { href: '/dashboard/api-keys', label: 'API Keys', icon: Key },
-  { href: '/dashboard/webhooks', label: 'Webhooks', icon: Webhook },
-  { href: '/dashboard/logs', label: 'Logs', icon: ScrollText },
+const x402Nav = [
+  { href: '/dashboard/x402/endpoints', label: 'x402 Endpoints', icon: DollarSign },
+  { href: '/dashboard/x402/wallets', label: 'Wallets', icon: Wallet },
+  // Note: Agent Config moved to Agent tab (issue #5)
 ];
 
 const configurationNav = [
   { href: '/dashboard/templates', label: 'Templates', icon: FileCode },
   { href: '/dashboard/verification-tiers', label: 'Verification Tiers', icon: ShieldCheck },
   { href: '/dashboard/agent-tiers', label: 'Agent Tiers (KYA)', icon: UserCheck },
-];
-
-const x402Nav = [
-  { href: '/dashboard/x402/endpoints', label: 'x402 Endpoints', icon: DollarSign },
-  { href: '/dashboard/x402/wallets', label: 'Wallets', icon: Wallet },
-  { href: '/dashboard/x402/agents', label: 'Agent Config', icon: Bot },
+  // Developer section items (collapsible)
+  { href: '/dashboard/api-keys', label: 'API Keys', icon: Key },
+  { href: '/dashboard/webhooks', label: 'Webhooks', icon: Webhook },
+  { href: '/dashboard/logs', label: 'Logs', icon: ScrollText },
 ];
 
 const settingsNav = [
@@ -153,31 +151,7 @@ export function Sidebar() {
           <NavItem key={item.href} item={item} />
         ))}
 
-        {/* Developer Section */}
-        <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
-          {!collapsed && (
-            <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              Developer
-            </div>
-          )}
-          {developerNav.map((item) => (
-            <NavItem key={item.href} item={item} />
-          ))}
-        </div>
-
-        {/* Configuration Section */}
-        <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
-          {!collapsed && (
-            <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              Configuration
-            </div>
-          )}
-          {configurationNav.map((item) => (
-            <NavItem key={item.href} item={item} />
-          ))}
-        </div>
-
-        {/* x402 Section */}
+        {/* x402 Section - Moved above Configuration for better visibility */}
         <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
           {!collapsed && (
             <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -185,6 +159,18 @@ export function Sidebar() {
             </div>
           )}
           {x402Nav.map((item) => (
+            <NavItem key={item.href} item={item} />
+          ))}
+        </div>
+
+        {/* Configuration Section - Now includes developer tools */}
+        <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
+          {!collapsed && (
+            <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Configuration
+            </div>
+          )}
+          {configurationNav.map((item) => (
             <NavItem key={item.href} item={item} />
           ))}
         </div>
