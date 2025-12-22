@@ -9,6 +9,8 @@ import type { Account } from '@payos/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { AccountsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
 import { useLocale } from '@/lib/locale';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AccountsPage() {
   const api = useApiClient();
@@ -18,21 +20,38 @@ export default function AccountsPage() {
 
   // Use React Query for data fetching with caching
   const { data: accountsData, isLoading: loading } = useQuery({
-    queryKey: ['accounts', { limit: 50 }],
+    queryKey: ['accounts'],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
-      return api.accounts.list({ limit: 50 });
+      return api.accounts.list({ limit: 1 }); // Just to get total count
     },
-    enabled: !!api && isConfigured, // Only fetch if API is ready
-    staleTime: 30 * 1000, // Consider data fresh for 30 seconds
+    enabled: !!api && isConfigured,
+    staleTime: 30 * 1000,
   });
 
-  const accounts = accountsData?.data || [];
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: accountsData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
 
-  const filteredAccounts = accounts.filter(account => 
-    account.name.toLowerCase().includes(search.toLowerCase()) ||
-    account.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Fetch accounts for current page
+  const { data: accountsPageData, isLoading: pageLoading } = useQuery({
+    queryKey: ['accounts', 'page', pagination.page, pagination.pageSize, search],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.accounts.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+        search: search || undefined,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const accounts = accountsPageData?.data || [];
+  const filteredAccounts = accounts; // No client-side filtering needed - done server-side
 
   if (!isConfigured) {
     return (
@@ -154,6 +173,14 @@ export default function AccountsPage() {
           </table>
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {!loading && !pageLoading && filteredAccounts.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mt-6"
+        />
+      )}
     </div>
   );
 }
