@@ -172,12 +172,12 @@ v1.route('/exports', exportsRouter);
 v1.route('/disputes', disputesRouter);
 v1.route('/payment-methods', paymentMethodsRouter);
 v1.route('/compliance', complianceRouter);
-v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
-v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods routes
 v1.route('/x402/endpoints', x402EndpointsRouter);
 v1.route('/x402', x402PaymentsRouter);
 v1.route('/wallets', walletsRouter);
 v1.route('/agents/x402', agentsX402Router);
+v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
+v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods routes - MUST BE LAST!
 
 app.route('/v1', v1);
 
