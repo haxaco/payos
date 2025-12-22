@@ -243,7 +243,8 @@ async function step4_simulatePayments() {
 
     // Deposit funds
     await apiRequest('POST', `/v1/wallets/${wallet.data.id}/deposit`, {
-      amount: 100
+      amount: 100,
+      sourceAccountId: TEST_ACCOUNT_ID
     });
 
     logSuccess('Consumer wallet created and funded');
@@ -263,7 +264,11 @@ async function step4_simulatePayments() {
         endpointId: testData.endpoint.id,
         walletId: wallet.data.id,
         requestId: crypto.randomUUID(),
-        sourceAccountId: TEST_ACCOUNT_ID,
+        amount: 0.10, // Base price from setup
+        currency: 'USDC',
+        method: 'POST',
+        path: '/api/weather/premium',
+        timestamp: Date.now(),
         metadata: {
           scenario: scenario.description,
           callNumber: scenario.count

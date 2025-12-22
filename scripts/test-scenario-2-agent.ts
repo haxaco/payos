@@ -180,6 +180,7 @@ async function step3_createAgentWithWallet() {
       accountName: 'Compliance Bot Account',
       agentName: 'Compliance Bot',
       agentPurpose: 'Autonomous agent for compliance checks',
+      agentType: 'compliance', // Explicitly set agent type (testing compliance type)
       parentAccountId: TEST_ACCOUNT_ID, // Required by API now
       spendingPolicy: {
         dailySpendLimit: testData.dailyLimit, // API expects dailySpendLimit

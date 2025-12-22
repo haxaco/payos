@@ -173,6 +173,7 @@ async function step2_setupAgentAndEndpoint() {
       accountName: 'Marketing Bot Account',
       agentName: 'Marketing Bot',
       agentPurpose: 'Autonomous agent for marketing campaigns',
+      agentType: 'payment', // Explicitly set agent type (testing payment type)
       parentAccountId: TEST_ACCOUNT_ID, // Required by API now
       spendingPolicy: {
         dailySpendLimit: 50, // API expects dailySpendLimit

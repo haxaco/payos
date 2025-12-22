@@ -59,7 +59,9 @@ const registerAgentSchema = z.object({
   // Agent details
   agentName: z.string().min(1).max(255),
   agentPurpose: z.string().max(500),
-  agentType: z.enum(['autonomous', 'semi_autonomous', 'human_supervised']).default('autonomous'),
+  agentType: z.enum(['payment', 'treasury', 'compliance', 'custom']).default('custom'),
+  // Note: Zod .default() should apply 'custom' if agentType is omitted from request
+  // If this fails in production, investigate Zod version or parsing behavior
   parentAccountId: z.string().uuid(), // Required for linking to business account
 
   // Wallet setup
