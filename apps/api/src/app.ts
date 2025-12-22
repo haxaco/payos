@@ -33,6 +33,8 @@ import relationshipsRouter from './routes/relationships.js';
 import x402EndpointsRouter from './routes/x402-endpoints.js';
 import walletsRouter from './routes/wallets.js';
 import x402PaymentsRouter from './routes/x402-payments.js';
+import x402AnalyticsRouter from './routes/x402-analytics.js';
+import settlementRouter from './routes/settlement.js';
 import agentsX402Router from './routes/agents-x402.js';
 import cardTransactionsRouter from './routes/card-transactions.js';
 
@@ -175,7 +177,9 @@ v1.route('/payment-methods', paymentMethodsRouter);
 v1.route('/card-transactions', cardTransactionsRouter);
 v1.route('/compliance', complianceRouter);
 v1.route('/x402/endpoints', x402EndpointsRouter);
+v1.route('/x402/analytics', x402AnalyticsRouter);
 v1.route('/x402', x402PaymentsRouter);
+v1.route('/settlement', settlementRouter);
 v1.route('/wallets', walletsRouter);
 v1.route('/agents/x402', agentsX402Router);
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes

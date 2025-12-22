@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { createSettlementService } from '../services/settlement.js';
 
 const app = new Hono();
 
@@ -413,10 +414,25 @@ app.post('/pay', async (c) => {
     }
 
     // ============================================
-    // 7. PROCESS PAYMENT (Internal Transfer)
+    // 7. CALCULATE FEES & SETTLEMENT
     // ============================================
 
-    // Deduct from wallet
+    const settlementService = createSettlementService(supabase);
+    const feeCalculation = await settlementService.calculateX402Fee(
+      ctx.tenantId,
+      auth.amount,
+      auth.currency
+    );
+
+    // Net amount goes to provider (gross - fees)
+    const netAmount = feeCalculation.netAmount;
+    const feeAmount = feeCalculation.feeAmount;
+
+    // ============================================
+    // 8. PROCESS PAYMENT (Internal Transfer)
+    // ============================================
+
+    // Deduct from consumer wallet
     const newWalletBalance = walletBalance - auth.amount;
     const newWalletStatus = newWalletBalance === 0 ? 'depleted' : 'active';
 
@@ -439,7 +455,7 @@ app.post('/pay', async (c) => {
       }, 500);
     }
 
-    // Create transfer record
+    // Create transfer record with fees
     console.log('DEBUG: x402 pay ctx:', JSON.stringify(ctx, null, 2));
 
     const { data: transfer, error: transferError } = await supabase
@@ -449,9 +465,10 @@ app.post('/pay', async (c) => {
         from_account_id: wallet.owner_account_id,
         to_account_id: endpoint.account_id,
         amount: auth.amount,
+        fee_amount: feeAmount,
         currency: auth.currency,
         type: 'x402',
-        status: 'completed',
+        status: 'pending', // Will be updated by settlement
         description: `x402 payment: ${endpoint.name}`,
         // Track who initiated this payment (user, agent, or API key)
         initiated_by_type: ctx.actorType,
@@ -466,7 +483,14 @@ app.post('/pay', async (c) => {
           timestamp: auth.timestamp,
           metadata: auth.metadata,
           price_calculated: price,
-          volume_tier: endpoint.total_calls
+          volume_tier: endpoint.total_calls,
+          fee_calculation: {
+            grossAmount: auth.amount,
+            feeAmount,
+            netAmount,
+            feeType: feeCalculation.feeType,
+            breakdown: feeCalculation.breakdown,
+          },
         }
       })
       .select()
@@ -483,7 +507,28 @@ app.post('/pay', async (c) => {
     }
 
     // ============================================
-    // 8. UPDATE ENDPOINT STATS
+    // 9. IMMEDIATE SETTLEMENT
+    // ============================================
+
+    const settlementResult = await settlementService.settleX402Immediate(
+      transfer.id,
+      ctx.tenantId,
+      auth.amount,
+      auth.currency
+    );
+
+    if (settlementResult.status !== 'completed') {
+      console.error('Settlement failed:', settlementResult.error);
+      return c.json({
+        error: 'Payment created but settlement failed',
+        transferId: transfer.id,
+        settlementError: settlementResult.error,
+        code: 'SETTLEMENT_FAILED'
+      }, 500);
+    }
+
+    // ============================================
+    // 10. UPDATE ENDPOINT STATS
     // ============================================
 
     await supabase
@@ -497,7 +542,7 @@ app.post('/pay', async (c) => {
       .eq('tenant_id', ctx.tenantId);
 
     // ============================================
-    // 9. TRIGGER WEBHOOK (if configured)
+    // 11. TRIGGER WEBHOOK (if configured)
     // ============================================
 
     if (endpoint.webhook_url) {
@@ -528,21 +573,25 @@ app.post('/pay', async (c) => {
     }
 
     // ============================================
-    // 10. RETURN SUCCESS
+    // 12. RETURN SUCCESS
     // ============================================
 
     return c.json({
       success: true,
-      message: 'Payment processed successfully',
+      message: 'Payment processed and settled successfully',
       data: {
         transferId: transfer.id,
         requestId: auth.requestId,
         amount: auth.amount,
+        feeAmount: feeAmount,
+        netAmount: netAmount,
         currency: auth.currency,
         endpointId: endpoint.id,
         walletId: wallet.id,
         newWalletBalance: newWalletBalance,
         timestamp: transfer.created_at,
+        settlementStatus: settlementResult.status,
+        settledAt: settlementResult.settledAt,
 
         // Proof of payment (for retrying original request)
         proof: {

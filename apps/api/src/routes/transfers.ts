@@ -41,6 +41,14 @@ transfers.get('/', async (c) => {
   const fromDate = query.fromDate;
   const toDate = query.toDate;
   
+  // x402-specific filters
+  const endpointId = query.endpointId;
+  const providerId = query.providerId; // Filter by provider account (endpoint owner)
+  const consumerId = query.consumerId; // Filter by consumer account (payer)
+  const currency = query.currency;
+  const minAmount = query.minAmount;
+  const maxAmount = query.maxAmount;
+  
   // Build query
   let dbQuery = supabase
     .from('transfers')
@@ -60,6 +68,26 @@ transfers.get('/', async (c) => {
   }
   if (toDate) {
     dbQuery = dbQuery.lte('created_at', toDate);
+  }
+  if (currency) {
+    dbQuery = dbQuery.eq('currency', currency);
+  }
+  if (minAmount) {
+    dbQuery = dbQuery.gte('amount', minAmount);
+  }
+  if (maxAmount) {
+    dbQuery = dbQuery.lte('amount', maxAmount);
+  }
+  
+  // x402-specific filters using JSONB metadata
+  if (endpointId && isValidUUID(endpointId)) {
+    dbQuery = dbQuery.contains('x402_metadata', { endpoint_id: endpointId });
+  }
+  if (providerId && isValidUUID(providerId)) {
+    dbQuery = dbQuery.eq('to_account_id', providerId);
+  }
+  if (consumerId && isValidUUID(consumerId)) {
+    dbQuery = dbQuery.eq('from_account_id', consumerId);
   }
   
   const { data, count, error } = await dbQuery;
