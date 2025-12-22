@@ -99,8 +99,7 @@ export default function WalletsPage() {
           ownerAccountId: formData.accountId,
           name: formData.name,
           purpose: formData.purpose,
-          currency: formData.currency,
-          paymentAddress: `internal://payos/${formData.accountId}/wallet/${Date.now()}`
+          currency: formData.currency
         });
         
         // If initial balance > 0, deposit
