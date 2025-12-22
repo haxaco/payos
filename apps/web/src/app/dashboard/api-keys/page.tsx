@@ -13,14 +13,17 @@ import {
   Badge,
 } from '@payos/ui';
 import { useApiConfig } from '@/lib/api-client';
-import { Key, Eye, EyeOff, Check, Copy, AlertTriangle } from 'lucide-react';
+import { Key, Eye, EyeOff, Check, Copy, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ApiKeysPage() {
-  const { apiKey, setApiKey, isConfigured } = useApiConfig();
+  const { apiKey, setApiKey, isConfigured, authToken } = useApiConfig();
   const [newApiKey, setNewApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
+
+  // Check if user is authenticated via JWT (normal dashboard access)
+  const isAuthenticatedViaJWT = !!authToken;
 
   const handleSaveKey = async () => {
     if (!newApiKey.startsWith('pk_')) {
@@ -43,7 +46,7 @@ export default function ApiKeysPage() {
 
       setApiKey(newApiKey);
       setNewApiKey('');
-      toast.success('API key saved successfully');
+      toast.success('API key saved successfully for programmatic access');
     } catch {
       toast.error('Failed to validate API key. Please check and try again.');
     } finally {
@@ -71,8 +74,16 @@ export default function ApiKeysPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">API Keys</h1>
         <p className="text-muted-foreground">
-          Manage your PayOS API keys for dashboard access
+          Manage API keys for programmatic access to PayOS (scripts, integrations, etc.)
         </p>
+        {isAuthenticatedViaJWT && (
+          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg">
+            <p className="text-sm text-blue-900 dark:text-blue-100">
+              ✅ <strong>Dashboard Access Active:</strong> You're logged in and can use the dashboard.
+              API keys are optional and only needed for programmatic access (command-line tools, scripts, external integrations).
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Current Key Status */}
@@ -117,23 +128,30 @@ export default function ApiKeysPage() {
                 Remove API Key
               </Button>
             </>
+          ) : isAuthenticatedViaJWT ? (
+            <div className="flex items-center gap-2 text-green-600 dark:text-green-500">
+              <CheckCircle2 className="h-5 w-5" />
+              <span>Dashboard access via login (no API key needed)</span>
+            </div>
           ) : (
             <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-500">
               <AlertTriangle className="h-5 w-5" />
-              <span>No API key configured. Dashboard features will be limited.</span>
+              <span>No authentication. Please log in or add an API key.</span>
             </div>
           )}
         </CardContent>
       </Card>
 
       {/* Add New Key */}
-      {!isConfigured && (
+      {!apiKey && (
         <Card>
           <CardHeader>
-            <CardTitle>Add API Key</CardTitle>
+            <CardTitle>Add API Key (Optional)</CardTitle>
             <CardDescription>
-              Enter your PayOS API key to enable dashboard features. You can find your
-              API key in the PayOS developer portal.
+              {isAuthenticatedViaJWT 
+                ? "Add an API key only if you need programmatic access to PayOS from scripts or external tools."
+                : "Enter your PayOS API key to enable dashboard features. You can find your API key in the PayOS developer portal."
+              }
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
