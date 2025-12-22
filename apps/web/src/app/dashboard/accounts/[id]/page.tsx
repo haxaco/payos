@@ -37,35 +37,40 @@ export default function AccountDetailPage() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const { formatCurrency: formatCurrencyLocale, formatDate: formatDateLocale } = useLocale();
 
-  // Fetch account data with React Query (parallel queries)
+  // Fetch account data with React Query - LAZY LOADING based on active tab
+  // Overview tab: Always load account data immediately
   const { data: account, isLoading: accountLoading } = useQuery({
     queryKey: ['account', accountId],
     queryFn: () => api!.accounts.get(accountId),
-    enabled: !!api,
+    enabled: !!api, // Always load account data
   });
 
+  // Agents tab: Only load when tab is active
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
     queryKey: ['account', accountId, 'agents'],
     queryFn: () => api!.accounts.getAgents(accountId, { limit: 50 }),
-    enabled: !!api,
+    enabled: !!api && activeTab === 'agents', // Lazy load only when agents tab active
   });
 
+  // Streams tab: Only load when tab is active
   const { data: streamsData, isLoading: streamsLoading } = useQuery({
     queryKey: ['account', accountId, 'streams'],
     queryFn: () => api!.accounts.getStreams(accountId, { limit: 50 }),
-    enabled: !!api,
+    enabled: !!api && activeTab === 'streams', // Lazy load only when streams tab active
   });
 
+  // Transactions tab: Only load when tab is active
   const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
     queryKey: ['account', accountId, 'transactions'],
     queryFn: () => api!.accounts.getTransactions(accountId, { limit: 50 }),
-    enabled: !!api,
+    enabled: !!api && activeTab === 'transactions', // Lazy load only when transactions tab active
   });
 
+  // Transactions tab: Also load transfers when transactions tab is active
   const { data: transfersData, isLoading: transfersLoading } = useQuery({
     queryKey: ['account', accountId, 'transfers'],
     queryFn: () => api!.accounts.getTransfers(accountId, { limit: 50 }),
-    enabled: !!api,
+    enabled: !!api && activeTab === 'transactions', // Lazy load only when transactions tab active
   });
 
   const agents = agentsData?.data || [];
