@@ -33,6 +33,7 @@ import relationshipsRouter from './routes/relationships.js';
 import x402EndpointsRouter from './routes/x402-endpoints.js';
 import walletsRouter from './routes/wallets.js';
 import x402PaymentsRouter from './routes/x402-payments.js';
+import agentsX402Router from './routes/agents-x402.js';
 
 const app = new Hono();
 
@@ -176,6 +177,7 @@ v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods
 v1.route('/x402/endpoints', x402EndpointsRouter);
 v1.route('/x402', x402PaymentsRouter);
 v1.route('/wallets', walletsRouter);
+v1.route('/agents/x402', agentsX402Router);
 
 app.route('/v1', v1);
 
