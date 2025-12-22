@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { 
   Users, 
   DollarSign, 
@@ -42,43 +43,27 @@ interface Stats {
 export default function DashboardPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [chartPeriod, setChartPeriod] = useState<'7D' | '30D' | '90D'>('7D');
 
-  useEffect(() => {
-    async function fetchStats() {
-      if (!api) {
-        setLoading(false);
-        return;
-      }
+  // Use React Query to fetch dashboard stats with caching
+  const { data: accountsData, isLoading: loading } = useQuery({
+    queryKey: ['dashboard', 'stats'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      // Fetch accounts count (limit 1 just to get total count from pagination)
+      return api.accounts.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 30 * 1000, // Cache for 30 seconds
+  });
 
-      try {
-        const [accountsRes] = await Promise.all([
-          api.accounts.list({ limit: 1 }),
-        ]);
-
-        setStats({
-          accounts: 12847,
-          volume: '$2.4M',
-          cards: 8234,
-          pendingFlags: 23,
-        });
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-        setStats({
-          accounts: 12847,
-          volume: '$2.4M',
-          cards: 8234,
-          pendingFlags: 23,
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchStats();
-  }, [api]);
+  // Mock stats (to be replaced with real data from dashboard stats endpoint)
+  const stats: Stats = {
+    accounts: accountsData?.pagination?.total || 12847,
+    volume: '$2.4M',
+    cards: 8234,
+    pendingFlags: 23,
+  };
 
   // Get current date
   const currentDate = new Date().toLocaleDateString('en-US', {
