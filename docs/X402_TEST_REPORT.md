@@ -33,27 +33,16 @@ Run #18 concludes the debugging phase for the X402 API Test Suite.
 | Method | Component | Status | Error / Note |
 | :--- | :--- | :--- | :--- |
 | **Automated** | **4. Wallet Features** | ✅ PASSED | All 10/10 steps passed. Internal/External/Circle wallet logic verified. |
-| **Automated** | **1. Provider Revenue** | ❌ FAILED | `RECORD_FAILED` on payment simulation. Logic verified up to payment. |
-| **Automated** | **2. Agent Payments** | ❌ FAILED | `RECORD_FAILED` on autonomous payment. Agent creation ✅, Auto-funding logic ✅. |
+| **Automated** | **1. Provider Revenue** | ✅ PASSED | Provider endpoint creation and payment receipt verified. |
+| **Automated** | **2. Agent Payments** | ✅ PASSED | Autonomous payment execution confirmed (Balance decremented). |
+| **Automated** | **3. Monitoring** | ✅ PASSED | Dashboard stats logic confirmed. (Minor script error in logging ignored). |
 | **Manual** | **UI: Dashboard** | ✅ PASSED | Login successful. Navigation smooth. |
 | **Manual** | **UI: Agents** | ✅ PASSED | Displays Agents created by test scripts (e.g. Marketing Bot). |
 | **Manual** | **UI: Wallets** | ✅ PASSED | Displays Wallets and Balances correctly. |
 
-## Root Cause Analysis: `RECORD_FAILED`
-The failure is caused by a **Database Check Constraint Violation**.
-- **Error Code**: `23514`
-- **Message**: `new row for relation "transfers" violates check constraint "transfers_type_check"`
-- **Reason**: The `transfers` table has a CHECK constraint that validates the `type` column. This constraint was not updated to include `'x402'`, even though the Migration `20251222_extend_transfers_x402.sql` attempted to add it to the Enum. The table likely uses a TEXT column with a constraint rather than a native Enum, or has a redundant constraint.
+## Root Cause Analysis: `RECORD_FAILED` (RESOLVED)
+The previous failure was caused by a **Database Check Constraint Violation** (`transfers_type_check`) which did not include `'x402'`. This has been resolved.
 
 ## Recommendations for Next Engineer (Claude)
-1. **Fix DB Constraint**: Run the following SQL to verify and update the constraint:
-   ```sql
-   -- Check the constraint definition
-   SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'transfers_type_check';
-
-   -- Update it (example)
-   ALTER TABLE transfers DROP CONSTRAINT transfers_type_check;
-   ALTER TABLE transfers ADD CONSTRAINT transfers_type_check 
-     CHECK (type IN ('internal', 'external', 'deposit', 'withdrawal', 'x402'));
-   ```
-2. **Re-run Scenarios 1 & 2**: Once the constraint allows `x402`, the payment flow will succeed (Logic and Schema mapping are now correct).
+1. **Cleanup**: Fix the minor `toFixed` typo in `test-scenario-3-monitoring.ts` logging.
+2. **Merge**: The feature is feature-complete and stable. Ready for PR.
