@@ -42,7 +42,7 @@ interface Stats {
 
 export default function DashboardPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: configLoading } = useApiConfig();
   const [chartPeriod, setChartPeriod] = useState<'7D' | '30D' | '90D'>('7D');
 
   // Use React Query to fetch dashboard stats with caching
@@ -84,6 +84,30 @@ export default function DashboardPage() {
     month: 'long',
     day: 'numeric',
   });
+
+  // Show loading skeleton while initializing
+  if (configLoading) {
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="p-8 max-w-[1600px] mx-auto">
+          <div className="mb-8">
+            <div className="h-9 w-48 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse mb-2"></div>
+            <div className="h-5 w-64 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse"></div>
+          </div>
+          {/* Stats skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+                <div className="h-10 w-10 bg-gray-200 dark:bg-gray-800 rounded-xl mb-4 animate-pulse"></div>
+                <div className="h-8 w-20 bg-gray-200 dark:bg-gray-800 rounded mb-2 animate-pulse"></div>
+                <div className="h-4 w-24 bg-gray-200 dark:bg-gray-800 rounded animate-pulse"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (

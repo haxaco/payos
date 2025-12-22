@@ -10,6 +10,7 @@ interface ApiClientContextType {
   apiKey: string | null;
   setApiKey: (key: string | null) => void;
   isConfigured: boolean;
+  isLoading: boolean;
   authToken: string | null;
 }
 
@@ -18,6 +19,7 @@ const ApiClientContext = createContext<ApiClientContextType>({
   apiKey: null,
   setApiKey: () => {},
   isConfigured: false,
+  isLoading: true,
   authToken: null,
 });
 
@@ -123,6 +125,7 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
     apiKey,
     setApiKey,
     isConfigured: isInitialized && (!!authToken || !!apiKey), // Configured if we have either JWT or API key
+    isLoading: !isInitialized,
     authToken,
   };
 
@@ -144,6 +147,7 @@ export function useApiConfig() {
     apiKey: context.apiKey,
     setApiKey: context.setApiKey,
     isConfigured: context.isConfigured,
+    isLoading: context.isLoading,
     authToken: context.authToken,
   };
 }

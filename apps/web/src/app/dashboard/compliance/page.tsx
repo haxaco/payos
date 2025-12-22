@@ -145,7 +145,7 @@ export default function CompliancePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-4 mb-1">
                     <h3 className="font-medium text-gray-900 dark:text-white">
-                      {flag.reasonCode.replace(/_/g, ' ')}
+                      {flag.reasonCode?.replace(/_/g, ' ') || 'Unknown reason'}
                     </h3>
                     <span className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
                       flag.riskLevel === 'high' || flag.riskLevel === 'critical'
@@ -175,7 +175,7 @@ export default function CompliancePage() {
                           ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400'
                           : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
                       }`}>
-                        {flag.status.replace(/_/g, ' ')}
+                        {flag.status?.replace(/_/g, ' ') || flag.status}
                       </span>
                     )}
                   </div>
