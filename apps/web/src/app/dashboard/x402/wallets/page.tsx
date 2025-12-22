@@ -1,17 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Wallet as WalletIcon, Plus, Search, Filter, TrendingUp, ArrowUp, ArrowDown, MoreVertical, X } from 'lucide-react';
 import Link from 'next/link';
 import type { Wallet } from '@payos/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function WalletsPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -31,32 +33,54 @@ export default function WalletsPage() {
     walletAddress: ''
   });
 
+  // Fetch account ID for form
   useEffect(() => {
-    async function fetchData() {
-      if (!api) {
-        setLoading(false);
-        return;
-      }
-
+    async function fetchAccountId() {
+      if (!api) return;
       try {
-        // Fetch wallets
-        const response = await api.wallets.list({ limit: 50 });
-        setWallets(response.data || []);
-        
-        // Fetch accounts to get account ID
         const accountsResponse = await api.accounts.list({ limit: 1 });
         if (accountsResponse.data && accountsResponse.data.length > 0) {
           setFormData(prev => ({ ...prev, accountId: accountsResponse.data[0].id }));
         }
       } catch (error) {
-        console.error('Failed to fetch data:', error);
-      } finally {
-        setLoading(false);
+        console.error('Failed to fetch account:', error);
       }
     }
-
-    fetchData();
+    fetchAccountId();
   }, [api]);
+
+  // Fetch total count
+  const { data: countData } = useQuery({
+    queryKey: ['wallets', 'count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.wallets.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
+
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
+
+  // Fetch wallets for current page
+  const { data: walletsData, isLoading: loading } = useQuery({
+    queryKey: ['wallets', 'page', pagination.page, pagination.pageSize],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.wallets.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const wallets = walletsData?.data || [];
   
   const handleCreateWallet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,8 +135,8 @@ export default function WalletsPage() {
         }
       }
       
-      // Add to list
-      setWallets(prev => [newWallet, ...prev]);
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
       
       // Reset form and close modal
       setFormData(prev => ({
@@ -335,6 +359,14 @@ export default function WalletsPage() {
               </div>
             </div>
           ))
+        )}
+
+        {/* Pagination Controls */}
+        {!loading && filteredWallets.length > 0 && (
+          <PaginationControls
+            pagination={pagination}
+            className="mt-6"
+          />
         )}
       </div>
 

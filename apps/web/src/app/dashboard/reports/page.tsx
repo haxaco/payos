@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { 
   FileText, 
@@ -37,6 +38,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@payos/ui';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 interface Report {
   id: string;
@@ -70,8 +73,7 @@ const formatOptions = [
 export default function ReportsPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generating, setGenerating] = useState(false);
   
@@ -81,25 +83,38 @@ export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  useEffect(() => {
-    fetchReports();
-  }, [api]);
+  // Fetch total count
+  const { data: countData } = useQuery({
+    queryKey: ['reports', 'count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.reports.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
 
-  async function fetchReports() {
-    if (!api) {
-      setLoading(false);
-      return;
-    }
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
 
-    try {
-      const response = await api.reports.list({ limit: 50 });
-      setReports(response.data || []);
-    } catch (error) {
-      console.error('Failed to fetch reports:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Fetch reports for current page
+  const { data: reportsData, isLoading: loading } = useQuery({
+    queryKey: ['reports', 'page', pagination.page, pagination.pageSize],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.reports.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const reports = reportsData?.data || [];
 
   async function handleGenerateReport() {
     if (!api) return;
@@ -118,7 +133,8 @@ export default function ReportsPage() {
       const result = await api.reports.create(input);
       toast.success(`Report generated successfully!`);
       setShowGenerateModal(false);
-      fetchReports();
+      // Invalidate reports queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     } catch (error: any) {
       console.error('Failed to generate report:', error);
       toast.error(error.message || 'Failed to generate report');
@@ -352,6 +368,14 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Pagination Controls */}
+        {!loading && reports.length > 0 && (
+          <PaginationControls
+            pagination={pagination}
+            className="mt-6"
+          />
         )}
       </div>
 

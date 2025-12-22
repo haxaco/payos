@@ -1,17 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { DollarSign, Plus, Search, Filter, TrendingUp, Activity, MoreVertical, X } from 'lucide-react';
 import Link from 'next/link';
 import type { X402Endpoint } from '@payos/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function X402EndpointsPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [endpoints, setEndpoints] = useState<X402Endpoint[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -28,32 +30,54 @@ export default function X402EndpointsPage() {
     accountId: ''
   });
 
+  // Fetch account ID for form
   useEffect(() => {
-    async function fetchData() {
-      if (!api) {
-        setLoading(false);
-        return;
-      }
-
+    async function fetchAccountId() {
+      if (!api) return;
       try {
-        // Fetch endpoints
-        const response = await api.x402Endpoints.list({ limit: 50 });
-        setEndpoints(response.data || []);
-        
-        // Fetch accounts to get account ID
         const accountsResponse = await api.accounts.list({ limit: 1 });
         if (accountsResponse.data && accountsResponse.data.length > 0) {
           setFormData(prev => ({ ...prev, accountId: accountsResponse.data[0].id }));
         }
       } catch (error) {
-        console.error('Failed to fetch data:', error);
-      } finally {
-        setLoading(false);
+        console.error('Failed to fetch account:', error);
       }
     }
-
-    fetchData();
+    fetchAccountId();
   }, [api]);
+
+  // Fetch total count
+  const { data: countData } = useQuery({
+    queryKey: ['x402-endpoints', 'count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.x402Endpoints.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
+
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
+
+  // Fetch endpoints for current page
+  const { data: endpointsData, isLoading: loading } = useQuery({
+    queryKey: ['x402-endpoints', 'page', pagination.page, pagination.pageSize],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.x402Endpoints.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const endpoints = endpointsData?.data || [];
   
   const handleCreateEndpoint = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,8 +98,8 @@ export default function X402EndpointsPage() {
         paymentAddress: `internal://payos/${formData.accountId}/endpoint`
       });
       
-      // Add to list
-      setEndpoints(prev => [newEndpoint, ...prev]);
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['x402-endpoints'] });
       
       // Reset form and close modal
       setFormData(prev => ({
@@ -277,6 +301,14 @@ export default function X402EndpointsPage() {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Pagination Controls */}
+        {!loading && filteredEndpoints.length > 0 && (
+          <PaginationControls
+            pagination={pagination}
+            className="mt-6"
+          />
         )}
       </div>
 

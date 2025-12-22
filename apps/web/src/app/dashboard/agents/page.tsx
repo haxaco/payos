@@ -1,39 +1,53 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Bot, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
 import type { Agent } from '@payos/api-client';
 import { AgentsEmptyState } from '@/components/ui/empty-state';
 import { CardListSkeleton } from '@/components/ui/skeletons';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AgentsPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    async function fetchAgents() {
-      if (!api) {
-        setLoading(false);
-        return;
-      }
+  // Fetch total count
+  const { data: countData } = useQuery({
+    queryKey: ['agents', 'count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.agents.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
 
-      try {
-        const response = await api.agents.list({ limit: 50 });
-        setAgents(response.data || []);
-      } catch (error) {
-        console.error('Failed to fetch agents:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
 
-    fetchAgents();
-  }, [api]);
+  // Fetch agents for current page
+  const { data: agentsData, isLoading: loading } = useQuery({
+    queryKey: ['agents', 'page', pagination.page, pagination.pageSize],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.agents.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const agents = agentsData?.data || [];
 
   const filteredAgents = agents.filter(agent => 
     agent.name.toLowerCase().includes(search.toLowerCase())
@@ -142,6 +156,14 @@ export default function AgentsPage() {
           ))
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {!loading && filteredAgents.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mt-6"
+        />
+      )}
     </div>
   );
 }
