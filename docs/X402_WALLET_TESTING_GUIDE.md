@@ -170,7 +170,7 @@ curl https://payos-production.up.railway.app/v1/wallets \
       "custodyType": "custodial",
       "provider": "payos",
       "status": "active",
-      "paymentAddress": "internal://payos/tenant_xxx/account_xxx/..."
+      "walletAddress": "internal://payos/tenant_xxx/account_xxx/..."
     }
   ]
 }
@@ -483,7 +483,7 @@ curl -X POST https://payos-production.up.railway.app/v1/wallets \
     "custodyType": "mpc",
     "provider": "circle",
     "providerWalletId": "mock_circle_wa_xxx",
-    "paymentAddress": "0xMOCK_ADDRESS_FROM_CIRCLE",
+    "walletAddress": "0xMOCK_ADDRESS_FROM_CIRCLE",
     "network": "base-mainnet",
     "status": "active",
     "balance": 0,
@@ -501,7 +501,7 @@ curl -X POST https://payos-production.up.railway.app/v1/wallets \
 - ✅ `custodyType` = "mpc"
 - ✅ `provider` = "circle"
 - ✅ `providerWalletId` is set (mock ID)
-- ✅ `paymentAddress` looks like Ethereum address
+- ✅ `walletAddress` looks like Ethereum address
 - ✅ `providerMetadata` contains mock Circle data
 
 **API Verification:**

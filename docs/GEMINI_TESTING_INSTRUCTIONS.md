@@ -14,6 +14,13 @@ The PayOS x402 payment infrastructure, including:
 3. **Spending Controls** - Policy enforcement and monitoring
 4. **Enhanced Wallets** - Multiple wallet types and external wallet support
 
+### **Important Terminology:**
+- **`x402_endpoints.payment_address`** = Where to send payments for an API endpoint
+- **`wallets.wallet_address`** = The wallet's unique address/identifier
+  - For internal wallets: `internal://payos/...`
+  - For external wallets: `0x...` (Ethereum address)
+  - For Circle wallets: `0x...` (mock address in Phase 1)
+
 ---
 
 ## 🚀 Quick Start

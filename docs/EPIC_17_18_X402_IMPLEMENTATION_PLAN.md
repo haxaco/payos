@@ -473,7 +473,7 @@ CREATE TABLE wallets (
   currency TEXT NOT NULL DEFAULT 'USDC' CHECK (currency IN ('USDC', 'EURC')),
   
   -- Wallet Identity (for x402 payments)
-  wallet_address TEXT, -- On-chain address (Phase 2) or internal ID
+  wallet_address TEXT, -- The wallet's address - on-chain address (external/Circle) or internal identifier (PayOS)
   network TEXT DEFAULT 'base-mainnet',
   
   -- Spending Policy (optional - if set, enforced on payments)

@@ -671,7 +671,7 @@ export interface Wallet {
   managedByAgentId?: string;
   balance: number;
   currency: X402Currency;
-  paymentAddress?: string;
+  walletAddress?: string;
   network?: string;
   spendingPolicy?: {
     dailyLimit?: number;

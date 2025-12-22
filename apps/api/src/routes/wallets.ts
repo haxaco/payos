@@ -112,7 +112,7 @@ function mapWalletFromDb(row: any) {
     balance: parseFloat(row.balance),
     currency: row.currency,
     spendingPolicy: row.spending_policy,
-    walletAddress: row.wallet_address || row.payment_address, // Support both old and new column names
+    walletAddress: row.wallet_address,
     network: row.network,
     status: row.status,
     name: row.name,
