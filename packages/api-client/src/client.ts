@@ -40,6 +40,22 @@ import type {
   PaymentMethod,
   CreatePaymentMethodInput,
   PaymentMethodsListParams,
+  // x402 types
+  X402Endpoint,
+  CreateX402EndpointInput,
+  UpdateX402EndpointInput,
+  X402EndpointsListParams,
+  Wallet,
+  CreateWalletInput,
+  UpdateWalletInput,
+  WalletsListParams,
+  WalletDepositInput,
+  WalletWithdrawInput,
+  X402Quote,
+  X402PaymentInput,
+  X402PaymentResponse,
+  X402VerifyPaymentInput,
+  X402VerifyPaymentResponse,
 } from './types';
 
 export interface PayOSClientConfig {
@@ -604,6 +620,114 @@ export class PayOSClient {
      */
     delete: (id: string) =>
       this.delete<{ success: boolean }>(`/payment-methods/${id}`),
+  };
+
+  // ============================================
+  // x402 Endpoints API
+  // ============================================
+
+  x402Endpoints = {
+    /**
+     * List all x402 endpoints
+     */
+    list: (params?: X402EndpointsListParams) =>
+      this.get<PaginatedResponse<X402Endpoint>>('/x402/endpoints', params),
+
+    /**
+     * Get a single x402 endpoint
+     */
+    get: (id: string) =>
+      this.get<{ data: X402Endpoint }>(`/x402/endpoints/${id}`).then(r => r.data),
+
+    /**
+     * Create a new x402 endpoint
+     */
+    create: (input: CreateX402EndpointInput) =>
+      this.post<{ data: X402Endpoint }>('/x402/endpoints', input).then(r => r.data),
+
+    /**
+     * Update an x402 endpoint
+     */
+    update: (id: string, input: UpdateX402EndpointInput) =>
+      this.patch<{ data: X402Endpoint }>(`/x402/endpoints/${id}`, input).then(r => r.data),
+
+    /**
+     * Delete an x402 endpoint
+     */
+    delete: (id: string) =>
+      this.delete<{ success: boolean }>(`/x402/endpoints/${id}`),
+  };
+
+  // ============================================
+  // Wallets API
+  // ============================================
+
+  wallets = {
+    /**
+     * List all wallets
+     */
+    list: (params?: WalletsListParams) =>
+      this.get<PaginatedResponse<Wallet>>('/wallets', params),
+
+    /**
+     * Get a single wallet
+     */
+    get: (id: string) =>
+      this.get<{ data: Wallet }>(`/wallets/${id}`).then(r => r.data),
+
+    /**
+     * Create a new wallet
+     */
+    create: (input: CreateWalletInput) =>
+      this.post<{ data: Wallet }>('/wallets', input).then(r => r.data),
+
+    /**
+     * Update a wallet
+     */
+    update: (id: string, input: UpdateWalletInput) =>
+      this.patch<{ data: Wallet }>(`/wallets/${id}`, input).then(r => r.data),
+
+    /**
+     * Delete a wallet
+     */
+    delete: (id: string) =>
+      this.delete<{ success: boolean }>(`/wallets/${id}`),
+
+    /**
+     * Deposit funds into a wallet
+     */
+    deposit: (id: string, input: WalletDepositInput) =>
+      this.post<{ data: Wallet }>(`/wallets/${id}/deposit`, input).then(r => r.data),
+
+    /**
+     * Withdraw funds from a wallet
+     */
+    withdraw: (id: string, input: WalletWithdrawInput) =>
+      this.post<{ data: Wallet }>(`/wallets/${id}/withdraw`, input).then(r => r.data),
+  };
+
+  // ============================================
+  // x402 Payments API
+  // ============================================
+
+  x402Payments = {
+    /**
+     * Get a quote for an x402 endpoint
+     */
+    getQuote: (endpointId: string) =>
+      this.get<{ data: X402Quote }>(`/x402/quote/${endpointId}`).then(r => r.data),
+
+    /**
+     * Process an x402 payment
+     */
+    pay: (input: X402PaymentInput, idempotencyKey?: string) =>
+      this.post<{ data: X402PaymentResponse }>('/x402/pay', input, { idempotencyKey }).then(r => r.data),
+
+    /**
+     * Verify an x402 payment
+     */
+    verify: (input: X402VerifyPaymentInput) =>
+      this.post<{ data: X402VerifyPaymentResponse }>('/x402/verify', input).then(r => r.data),
   };
 }
 

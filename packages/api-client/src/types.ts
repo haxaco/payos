@@ -603,3 +603,161 @@ export interface PaymentMethodsListParams extends PaginationParams {
   isVerified?: boolean;
 }
 
+// ============================================
+// x402 Types
+// ============================================
+
+export type X402EndpointMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'ANY';
+export type X402EndpointStatus = 'active' | 'paused' | 'disabled';
+export type X402Currency = 'USDC' | 'EURC';
+export type WalletStatus = 'active' | 'frozen' | 'depleted';
+
+export interface X402Endpoint {
+  id: string;
+  tenantId: string;
+  accountId: string;
+  name: string;
+  path: string;
+  method: X402EndpointMethod;
+  description?: string;
+  basePrice: number;
+  currency: X402Currency;
+  volumeDiscounts?: Array<{ threshold: number; priceMultiplier: number }>;
+  paymentAddress?: string;
+  assetAddress?: string;
+  network: string;
+  totalCalls: number;
+  totalRevenue: number;
+  status: X402EndpointStatus;
+  webhookUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateX402EndpointInput {
+  accountId: string;
+  name: string;
+  path: string;
+  method: X402EndpointMethod;
+  description?: string;
+  basePrice: number;
+  currency?: X402Currency;
+  volumeDiscounts?: Array<{ threshold: number; priceMultiplier: number }>;
+  paymentAddress?: string;
+  assetAddress?: string;
+  network?: string;
+  webhookUrl?: string;
+}
+
+export interface UpdateX402EndpointInput {
+  name?: string;
+  description?: string;
+  basePrice?: number;
+  volumeDiscounts?: Array<{ threshold: number; priceMultiplier: number }>;
+  status?: X402EndpointStatus;
+  webhookUrl?: string;
+}
+
+export interface X402EndpointsListParams extends PaginationParams {
+  accountId?: string;
+  status?: X402EndpointStatus;
+  method?: X402EndpointMethod;
+}
+
+export interface Wallet {
+  id: string;
+  tenantId: string;
+  ownerAccountId: string;
+  managedByAgentId?: string;
+  balance: number;
+  currency: X402Currency;
+  paymentAddress?: string;
+  network?: string;
+  spendingPolicy?: {
+    dailyLimit?: number;
+    monthlyLimit?: number;
+    approvedEndpoints?: string[];
+    autoFund?: { threshold: number; amount: number };
+  };
+  status: WalletStatus;
+  name?: string;
+  purpose?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateWalletInput {
+  ownerAccountId: string;
+  managedByAgentId?: string;
+  currency?: X402Currency;
+  spendingPolicy?: {
+    dailyLimit?: number;
+    monthlyLimit?: number;
+    approvedEndpoints?: string[];
+    autoFund?: { threshold: number; amount: number };
+  };
+  name?: string;
+  purpose?: string;
+}
+
+export interface UpdateWalletInput {
+  spendingPolicy?: {
+    dailyLimit?: number;
+    monthlyLimit?: number;
+    approvedEndpoints?: string[];
+    autoFund?: { threshold: number; amount: number };
+  };
+  name?: string;
+  purpose?: string;
+  status?: WalletStatus;
+}
+
+export interface WalletsListParams extends PaginationParams {
+  ownerAccountId?: string;
+  managedByAgentId?: string;
+  status?: WalletStatus;
+  currency?: X402Currency;
+}
+
+export interface WalletDepositInput {
+  amount: number;
+}
+
+export interface WalletWithdrawInput {
+  amount: number;
+}
+
+export interface X402Quote {
+  endpointId: string;
+  basePrice: number;
+  finalPrice: number;
+  currency: X402Currency;
+  discount?: number;
+  totalCalls?: number;
+}
+
+export interface X402PaymentInput {
+  endpointId: string;
+  walletId: string;
+  requestId: string;
+  amount?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface X402PaymentResponse {
+  success: boolean;
+  transferId: string;
+  walletBalance: number;
+  endpointTotalCalls: number;
+  endpointTotalRevenue: number;
+}
+
+export interface X402VerifyPaymentInput {
+  transferId: string;
+}
+
+export interface X402VerifyPaymentResponse {
+  verified: boolean;
+  transfer: Transfer;
+}
+
