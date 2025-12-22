@@ -177,7 +177,9 @@ v1.route('/x402', x402PaymentsRouter);
 v1.route('/wallets', walletsRouter);
 v1.route('/agents/x402', agentsX402Router);
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
-v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods routes - MUST BE LAST!
+// NOTE: Removed catch-all payment-methods mount to prevent route conflicts
+// Payment methods are already accessible at /v1/payment-methods
+// Account-specific payment methods handled via accounts router
 
 app.route('/v1', v1);
 
