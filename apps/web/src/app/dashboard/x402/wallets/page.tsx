@@ -18,12 +18,17 @@ export default function WalletsPage() {
   const [error, setError] = useState<string | null>(null);
   
   // Form state
+  const [createMode, setCreateMode] = useState<'select' | 'create' | 'external'>('select');
   const [formData, setFormData] = useState({
     name: '',
     purpose: '',
     currency: 'USDC' as 'USDC' | 'EURC',
     initialBalance: '0',
-    accountId: ''
+    accountId: '',
+    walletType: 'internal' as 'internal' | 'circle_custodial',
+    blockchain: 'base' as 'base' | 'eth' | 'polygon',
+    // For external wallets
+    walletAddress: ''
   });
 
   useEffect(() => {
@@ -61,21 +66,51 @@ export default function WalletsPage() {
     setError(null);
     
     try {
-      const newWallet = await api.wallets.create({
-        ownerAccountId: formData.accountId,
-        name: formData.name,
-        purpose: formData.purpose,
-        currency: formData.currency,
-        paymentAddress: `internal://payos/${formData.accountId}/wallet/${Date.now()}`
-      });
+      let newWallet;
       
-      // If initial balance > 0, deposit
-      if (parseFloat(formData.initialBalance) > 0) {
-        await api.wallets.deposit(newWallet.id, {
-          amount: parseFloat(formData.initialBalance),
-          currency: formData.currency
+      if (createMode === 'external') {
+        // Add existing external wallet
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/external`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          },
+          body: JSON.stringify({
+            ownerAccountId: formData.accountId,
+            name: formData.name,
+            purpose: formData.purpose,
+            currency: formData.currency,
+            walletAddress: formData.walletAddress,
+            blockchain: formData.blockchain
+          })
         });
-        newWallet.balance = parseFloat(formData.initialBalance);
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to add external wallet');
+        }
+        
+        const result = await response.json();
+        newWallet = result.data;
+      } else {
+        // Create new wallet (internal or Circle)
+        newWallet = await api.wallets.create({
+          ownerAccountId: formData.accountId,
+          name: formData.name,
+          purpose: formData.purpose,
+          currency: formData.currency,
+          paymentAddress: `internal://payos/${formData.accountId}/wallet/${Date.now()}`
+        });
+        
+        // If initial balance > 0, deposit
+        if (parseFloat(formData.initialBalance) > 0) {
+          await api.wallets.deposit(newWallet.id, {
+            amount: parseFloat(formData.initialBalance),
+            currency: formData.currency
+          });
+          newWallet.balance = parseFloat(formData.initialBalance);
+        }
       }
       
       // Add to list
@@ -87,14 +122,24 @@ export default function WalletsPage() {
         purpose: '',
         currency: 'USDC',
         initialBalance: '0',
-        accountId: prev.accountId
+        accountId: prev.accountId,
+        walletType: 'internal',
+        blockchain: 'base',
+        walletAddress: ''
       }));
+      setCreateMode('select');
       setShowCreateModal(false);
     } catch (err: any) {
       setError(err.message || 'Failed to create wallet');
     } finally {
       setCreating(false);
     }
+  };
+  
+  const resetModal = () => {
+    setShowCreateModal(false);
+    setCreateMode('select');
+    setError(null);
   };
 
   const filteredWallets = wallets.filter(wallet =>
@@ -297,12 +342,14 @@ export default function WalletsPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => !creating && setShowCreateModal(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => !creating && resetModal()}>
           <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create Wallet</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {createMode === 'select' ? 'Add Wallet' : createMode === 'create' ? 'Create New Wallet' : 'Link External Wallet'}
+              </h2>
               <button
-                onClick={() => !creating && setShowCreateModal(false)}
+                onClick={() => !creating && resetModal()}
                 className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 disabled={creating}
               >
@@ -310,89 +357,250 @@ export default function WalletsPage() {
               </button>
             </div>
             
-            <form onSubmit={handleCreateWallet} className="space-y-4">
-              {error && (
-                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
-                  {error}
+            {/* Step 1: Select Mode */}
+            {createMode === 'select' && (
+              <div className="space-y-4">
+                <p className="text-gray-600 dark:text-gray-400 text-sm mb-6">
+                  How would you like to add a wallet?
+                </p>
+                
+                <button
+                  onClick={() => setCreateMode('create')}
+                  className="w-full p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-left group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
+                      <Plus className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                        Create New Wallet
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Create a new custodial wallet managed by PayOS
+                      </p>
+                    </div>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => setCreateMode('external')}
+                  className="w-full p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-emerald-500 dark:hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all text-left group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+                      <ArrowDown className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                        Link Existing Wallet
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Connect a wallet you already own (MetaMask, etc.)
+                      </p>
+                    </div>
+                  </div>
+                </button>
+                
+                <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mt-4 opacity-60">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-gray-500 rounded-xl flex items-center justify-center">
+                      <WalletIcon className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-600 dark:text-gray-400">
+                        Circle Wallet (Coming Soon)
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                        Create a Circle Programmable Wallet with MPC security
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              )}
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Wallet Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g., Trading Bot Wallet"
-                  className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Purpose
-                </label>
-                <input
-                  type="text"
-                  value={formData.purpose}
-                  onChange={(e) => setFormData(prev => ({ ...prev, purpose: e.target.value }))}
-                  placeholder="e.g., x402 autonomous payments"
-                  className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
+            )}
+            
+            {/* Step 2: Create New Wallet Form */}
+            {createMode === 'create' && (
+              <form onSubmit={handleCreateWallet} className="space-y-4">
+                {error && (
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+                    {error}
+                  </div>
+                )}
+                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Currency *
+                    Wallet Name *
                   </label>
-                  <select
+                  <input
+                    type="text"
                     required
-                    value={formData.currency}
-                    onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value as any }))}
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g., Trading Bot Wallet"
                     className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="USDC">USDC</option>
-                    <option value="EURC">EURC</option>
-                  </select>
+                  />
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Initial Balance
+                    Purpose
                   </label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.initialBalance}
-                    onChange={(e) => setFormData(prev => ({ ...prev, initialBalance: e.target.value }))}
+                    type="text"
+                    value={formData.purpose}
+                    onChange={(e) => setFormData(prev => ({ ...prev, purpose: e.target.value }))}
+                    placeholder="e.g., x402 autonomous payments"
                     className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-              </div>
-              
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  disabled={creating}
-                  className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating || !formData.accountId}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? 'Creating...' : 'Create Wallet'}
-                </button>
-              </div>
-            </form>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Currency *
+                    </label>
+                    <select
+                      required
+                      value={formData.currency}
+                      onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value as any }))}
+                      className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="USDC">USDC</option>
+                      <option value="EURC">EURC</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Initial Balance
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.initialBalance}
+                      onChange={(e) => setFormData(prev => ({ ...prev, initialBalance: e.target.value }))}
+                      className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setCreateMode('select')}
+                    disabled={creating}
+                    className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creating || !formData.accountId}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {creating ? 'Creating...' : 'Create Wallet'}
+                  </button>
+                </div>
+              </form>
+            )}
+            
+            {/* Step 2: Link External Wallet Form */}
+            {createMode === 'external' && (
+              <form onSubmit={handleCreateWallet} className="space-y-4">
+                {error && (
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Wallet Address *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.walletAddress}
+                    onChange={(e) => setFormData(prev => ({ ...prev, walletAddress: e.target.value }))}
+                    placeholder="0x... or Solana address"
+                    className="w-full px-4 py-2 text-sm font-mono bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Blockchain *
+                    </label>
+                    <select
+                      required
+                      value={formData.blockchain}
+                      onChange={(e) => setFormData(prev => ({ ...prev, blockchain: e.target.value as any }))}
+                      className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="base">Base</option>
+                      <option value="eth">Ethereum</option>
+                      <option value="polygon">Polygon</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Currency *
+                    </label>
+                    <select
+                      required
+                      value={formData.currency}
+                      onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value as any }))}
+                      className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="USDC">USDC</option>
+                      <option value="EURC">EURC</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Wallet Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g., My MetaMask Wallet"
+                    className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <p className="text-amber-700 dark:text-amber-400 text-sm">
+                    <strong>Note:</strong> After linking, you&apos;ll need to verify ownership by signing a message with your wallet.
+                  </p>
+                </div>
+                
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setCreateMode('select')}
+                    disabled={creating}
+                    className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creating || !formData.accountId || !formData.walletAddress}
+                    className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {creating ? 'Linking...' : 'Link Wallet'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
