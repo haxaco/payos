@@ -9,13 +9,22 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAPIClient } from '@/hooks/useAPIClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import StatCard from '@/components/ui/stat-card';
-import { TableSkeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useApiClient } from '@/lib/api-client';
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle,
+  Badge,
+  Button,
+  StatCard,
+  Tabs, 
+  TabsContent, 
+  TabsList, 
+  TabsTrigger
+} from '@payos/ui';
+import { TableSkeleton } from '@/components/ui/skeletons';
 import { 
   DollarSign, 
   TrendingUp, 

@@ -7,10 +7,19 @@
  */
 
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle,
+  Button,
+  Tabs, 
+  TabsContent, 
+  TabsList, 
+  TabsTrigger,
+  Badge
+} from '@payos/ui';
 import { 
   Copy,
   CheckCircle2,

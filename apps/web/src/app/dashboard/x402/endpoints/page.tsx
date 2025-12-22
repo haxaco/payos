@@ -8,13 +8,19 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAPIClient } from '@/hooks/useAPIClient';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { TableSkeleton } from '@/components/ui/skeleton';
+import { useApiClient } from '@/lib/api-client';
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle,
+  Badge,
+  Button,
+  Input
+} from '@payos/ui';
+import { TableSkeleton } from '@/components/ui/skeletons';
 import { 
   Plus, 
   Search, 

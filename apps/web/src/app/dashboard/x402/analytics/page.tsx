@@ -9,19 +9,23 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { useAPIClient } from '@/hooks/useAPIClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import StatCard from '@/components/ui/stat-card';
-import { TableSkeleton } from '@/components/ui/skeleton';
+import { useApiClient } from '@/lib/api-client';
 import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle,
+  Badge,
+  Button,
+  StatCard,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  SelectValue
+} from '@payos/ui';
+import { TableSkeleton } from '@/components/ui/skeletons';
 import { 
   DollarSign, 
   TrendingUp, 

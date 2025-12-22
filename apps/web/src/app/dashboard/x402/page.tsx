@@ -7,16 +7,25 @@
  * Users can toggle between provider view (endpoints & revenue) and consumer view (payments & spending).
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAPIClient } from '@/hooks/useAPIClient';
 import { useQuery } from '@tanstack/react-query';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import StatCard from '@/components/ui/stat-card';
-import { TableSkeleton } from '@/components/ui/skeleton';
+import { useApiClient } from '@/lib/api-client';
+import { 
+  Tabs, 
+  TabsContent, 
+  TabsList, 
+  TabsTrigger,
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle,
+  Badge,
+  Button,
+  StatCard
+} from '@payos/ui';
+import { TableSkeleton } from '@/components/ui/skeletons';
 import { 
   Zap, 
   DollarSign, 
