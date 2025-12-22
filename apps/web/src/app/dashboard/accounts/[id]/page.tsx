@@ -59,7 +59,20 @@ export default function AccountDetailPage() {
     enabled: !!api && activeTab === 'streams', // Lazy load only when streams tab active
   });
 
-  // Transactions tab: Only load when tab is active
+  // Transaction counts: Load immediately for tab badges
+  const { data: transactionsCountData } = useQuery({
+    queryKey: ['account', accountId, 'transactions', 'count'],
+    queryFn: () => api!.accounts.getTransactions(accountId, { limit: 1 }),
+    enabled: !!api, // Always load for count
+  });
+
+  const { data: transfersCountData } = useQuery({
+    queryKey: ['account', accountId, 'transfers', 'count'],
+    queryFn: () => api!.accounts.getTransfers(accountId, { limit: 1 }),
+    enabled: !!api, // Always load for count
+  });
+
+  // Transactions tab: Only load full data when tab is active
   const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
     queryKey: ['account', accountId, 'transactions'],
     queryFn: () => api!.accounts.getTransactions(accountId, { limit: 50 }),
@@ -159,9 +172,11 @@ export default function AccountDetailPage() {
     );
   }
 
+  const transactionsCount = (transactionsCountData?.pagination?.total || 0) + (transfersCountData?.pagination?.total || 0);
+
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Wallet },
-    { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: Math.max(transactions.length, transfers.length) },
+    { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactionsCount },
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
     { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agents.length },
   ];
@@ -434,6 +449,7 @@ function TransactionsTab({
   accountId: string;
 }) {
   const { formatCurrency: formatCurrencyLocale, formatDate: formatDateLocale } = useLocale();
+  const router = useRouter();
   
   // Combine and sort by date (most recent first)
   const allTransactions = [
@@ -502,7 +518,11 @@ function TransactionsTab({
               const isOutgoing = tf.from?.accountId === accountId;
               
               return (
-                <tr key={`transfer-${tf.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                <tr 
+                  key={`transfer-${tf.id}`} 
+                  onClick={() => router.push(`/dashboard/transfers`)}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors"
+                >
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
                       isIncoming
@@ -514,8 +534,8 @@ function TransactionsTab({
                   </td>
                   <td className="px-6 py-4 text-gray-900 dark:text-white text-sm">
                     {isIncoming 
-                      ? `From ${tf.from?.accountName || 'External'}`
-                      : `To ${tf.to?.accountName || 'External'}`
+                      ? `From ${tf.from?.accountName || tf.from?.accountId?.slice(0, 8) || 'External'}`
+                      : `To ${tf.to?.accountName || tf.to?.accountId?.slice(0, 8) || 'External'}`
                     }
                   </td>
                   <td className="px-6 py-4">

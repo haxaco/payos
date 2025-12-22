@@ -51,7 +51,8 @@ export default function AccountsPage() {
   });
 
   const accounts = accountsPageData?.data || [];
-  const filteredAccounts = accounts; // No client-side filtering needed - done server-side
+  // Filter out agent-type accounts (they have their own dedicated page)
+  const filteredAccounts = accounts.filter(account => account.type !== 'agent');
 
   if (!isConfigured) {
     return (
@@ -104,6 +105,14 @@ export default function AccountsPage() {
           Filter
         </button>
       </div>
+
+      {/* Top Pagination Controls */}
+      {!loading && !pageLoading && filteredAccounts.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mb-4"
+        />
+      )}
 
       {/* Accounts Table */}
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">

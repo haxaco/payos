@@ -321,6 +321,71 @@ reports.get('/summary', async (c) => {
 });
 
 // ============================================
+// GET /v1/reports - List all reports
+// ============================================
+reports.get('/', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  
+  // Parse pagination params
+  const query = c.req.query();
+  const limit = Math.min(parseInt(query.limit || '50'), 100);
+  const page = Math.max(parseInt(query.page || '1'), 1);
+  const offset = (page - 1) * limit;
+  
+  try {
+    // For now, return mock/placeholder data since reports table doesn't exist yet
+    // TODO: Implement actual reports table and storage when needed
+    const mockReports = [
+      {
+        id: 'report-001',
+        name: 'Monthly Financial Summary',
+        type: 'financial_summary',
+        format: 'pdf',
+        status: 'ready',
+        rowCount: 1250,
+        summary: {
+          totalTransactions: 1250,
+          totalAmount: 2450000,
+        },
+        generatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        downloadUrl: '/v1/reports/report-001/download',
+      },
+      {
+        id: 'report-002',
+        name: 'Transactions Export',
+        type: 'transactions',
+        format: 'csv',
+        status: 'ready',
+        rowCount: 856,
+        summary: {
+          totalTransactions: 856,
+        },
+        generatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        downloadUrl: '/v1/reports/report-002/download',
+      },
+    ];
+    
+    const paginatedReports = mockReports.slice(offset, offset + limit);
+    
+    return c.json({
+      data: paginatedReports,
+      pagination: {
+        page,
+        limit,
+        total: mockReports.length,
+        totalPages: Math.ceil(mockReports.length / limit),
+      },
+    });
+  } catch (error: any) {
+    console.error('Error listing reports:', error);
+    return c.json({ error: 'Failed to list reports' }, 500);
+  }
+});
+
+// ============================================
 // POST /v1/reports (Legacy endpoint - for backward compatibility)
 // ============================================
 reports.post('/', async (c) => {

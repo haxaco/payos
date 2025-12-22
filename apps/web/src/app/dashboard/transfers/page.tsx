@@ -279,6 +279,14 @@ export default function TransfersPage() {
         Showing {filteredTransfers.length} of {transfers.length} transactions
       </div>
 
+      {/* Top Pagination Controls */}
+      {!loading && filteredTransfers.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mb-4"
+        />
+      )}
+
       {/* Transfers Table */}
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
         {loading ? (

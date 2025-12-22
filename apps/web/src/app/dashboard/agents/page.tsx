@@ -105,6 +105,14 @@ export default function AgentsPage() {
         </button>
       </div>
 
+      {/* Top Pagination Controls */}
+      {!loading && filteredAgents.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mb-4"
+        />
+      )}
+
       {/* Agents Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
+import { CardListSkeleton } from '@/components/ui/skeletons';
 
 export default function CompliancePage() {
   const api = useApiClient();
@@ -48,7 +49,7 @@ export default function CompliancePage() {
   const lowRisk = flags.filter((f: any) => f.riskLevel === 'low').length;
 
   return (
-    <div className="space-y-8">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -59,6 +60,14 @@ export default function CompliancePage() {
           Export Report
         </button>
       </div>
+
+      {/* Top Pagination Controls */}
+      {!loading && flags.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mb-6"
+        />
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -122,12 +131,18 @@ export default function CompliancePage() {
         </div>
         <div className="divide-y divide-gray-200 dark:border-gray-800">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">
-              Loading flags...
+            <div className="p-6">
+              <CardListSkeleton count={5} />
             </div>
           ) : flags.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              No compliance flags found
+            <div className="p-12 text-center">
+              <Shield className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                No Compliance Flags
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400">
+                All clear! No compliance issues detected.
+              </p>
             </div>
           ) : (
             flags.map((flag: any) => (

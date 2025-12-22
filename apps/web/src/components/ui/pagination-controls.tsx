@@ -109,9 +109,9 @@ export function PaginationControls({
   }
 
   return (
-    <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 ${className}`}>
+    <div className={`flex flex-col lg:flex-row items-center justify-between gap-4 ${className}`}>
       {/* Left: Items count and page size selector */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4 justify-center lg:justify-start">
         <div className="text-sm text-gray-600 dark:text-gray-400">
           Showing <span className="font-medium text-gray-900 dark:text-white">{startItem}</span> to{' '}
           <span className="font-medium text-gray-900 dark:text-white">{endItem}</span> of{' '}
@@ -140,7 +140,7 @@ export function PaginationControls({
       </div>
 
       {/* Center: Page navigation */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 justify-center">
         {/* First Page */}
         <Button
           variant="outline"
@@ -166,7 +166,7 @@ export function PaginationControls({
         </Button>
 
         {/* Page Numbers */}
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1 justify-center">
           {getPageNumbers().map((pageNum, index) =>
             pageNum === 'ellipsis' ? (
               <span

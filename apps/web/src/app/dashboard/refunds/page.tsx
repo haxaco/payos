@@ -191,6 +191,14 @@ export default function RefundsPage() {
         </select>
       </div>
 
+      {/* Top Pagination Controls */}
+      {!loading && refunds.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mb-4"
+        />
+      )}
+
       {/* Refunds List */}
       {filteredRefunds.length === 0 ? (
         <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-12 text-center">

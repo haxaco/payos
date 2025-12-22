@@ -298,6 +298,14 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {/* Top Pagination Controls */}
+      {!loading && reports.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mb-4"
+        />
+      )}
+
       {/* Generated Reports */}
       <div>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Generated Reports</h2>
