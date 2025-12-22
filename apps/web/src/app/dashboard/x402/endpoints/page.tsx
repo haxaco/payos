@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { DollarSign, Plus, Search, Filter, TrendingUp, Activity, MoreVertical } from 'lucide-react';
+import { DollarSign, Plus, Search, Filter, TrendingUp, Activity, MoreVertical, X } from 'lucide-react';
 import Link from 'next/link';
 import type { X402Endpoint } from '@payos/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
@@ -14,26 +14,86 @@ export default function X402EndpointsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    name: '',
+    path: '',
+    method: 'GET' as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'ANY',
+    description: '',
+    basePrice: '0.10',
+    currency: 'USDC' as 'USDC' | 'EURC',
+    accountId: ''
+  });
 
   useEffect(() => {
-    async function fetchEndpoints() {
+    async function fetchData() {
       if (!api) {
         setLoading(false);
         return;
       }
 
       try {
+        // Fetch endpoints
         const response = await api.x402Endpoints.list({ limit: 50 });
         setEndpoints(response.data || []);
+        
+        // Fetch accounts to get account ID
+        const accountsResponse = await api.accounts.list({ limit: 1 });
+        if (accountsResponse.data && accountsResponse.data.length > 0) {
+          setFormData(prev => ({ ...prev, accountId: accountsResponse.data[0].id }));
+        }
       } catch (error) {
-        console.error('Failed to fetch endpoints:', error);
+        console.error('Failed to fetch data:', error);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchEndpoints();
+    fetchData();
   }, [api]);
+  
+  const handleCreateEndpoint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!api) return;
+    
+    setCreating(true);
+    setError(null);
+    
+    try {
+      const newEndpoint = await api.x402Endpoints.create({
+        accountId: formData.accountId,
+        name: formData.name,
+        path: formData.path,
+        method: formData.method,
+        description: formData.description,
+        basePrice: parseFloat(formData.basePrice),
+        currency: formData.currency,
+        paymentAddress: `internal://payos/${formData.accountId}/endpoint`
+      });
+      
+      // Add to list
+      setEndpoints(prev => [newEndpoint, ...prev]);
+      
+      // Reset form and close modal
+      setFormData(prev => ({
+        name: '',
+        path: '',
+        method: 'GET',
+        description: '',
+        basePrice: '0.10',
+        currency: 'USDC',
+        accountId: prev.accountId
+      }));
+      setShowCreateModal(false);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create endpoint');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const filteredEndpoints = endpoints.filter(endpoint =>
     endpoint.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -220,20 +280,140 @@ export default function X402EndpointsPage() {
         )}
       </div>
 
-      {/* Create Modal (placeholder) */}
+      {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Register x402 Endpoint</h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Coming soon: UI for registering new endpoints. Use the API for now.
-            </p>
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg hover:bg-gray-300 dark:hover:bg-gray-700"
-            >
-              Close
-            </button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => !creating && setShowCreateModal(false)}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Register x402 Endpoint</h2>
+              <button
+                onClick={() => !creating && setShowCreateModal(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                disabled={creating}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateEndpoint} className="space-y-4">
+              {error && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+                  {error}
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Endpoint Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Weather API Premium"
+                  className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Path *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.path}
+                    onChange={(e) => setFormData(prev => ({ ...prev, path: e.target.value }))}
+                    placeholder="/api/weather/premium"
+                    className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Method *
+                  </label>
+                  <select
+                    required
+                    value={formData.method}
+                    onChange={(e) => setFormData(prev => ({ ...prev, method: e.target.value as any }))}
+                    className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="DELETE">DELETE</option>
+                    <option value="PATCH">PATCH</option>
+                    <option value="ANY">ANY</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Brief description of this endpoint..."
+                  rows={3}
+                  className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Base Price *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    step="0.01"
+                    min="0.01"
+                    value={formData.basePrice}
+                    onChange={(e) => setFormData(prev => ({ ...prev, basePrice: e.target.value }))}
+                    className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Currency *
+                  </label>
+                  <select
+                    required
+                    value={formData.currency}
+                    onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value as any }))}
+                    className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="USDC">USDC</option>
+                    <option value="EURC">EURC</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={creating}
+                  className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating || !formData.accountId}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creating ? 'Creating...' : 'Register Endpoint'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
