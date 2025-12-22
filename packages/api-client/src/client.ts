@@ -210,6 +210,17 @@ export class PayOSClient {
       this.get<PaginatedResponse<LedgerEntry>>(`/accounts/${id}/transactions`, params),
 
     /**
+     * Get account transfers (sent & received)
+     * More efficient than filtering all transfers client-side
+     */
+    getTransfers: (id: string, params?: PaginationParams & { 
+      type?: string; 
+      status?: string; 
+      direction?: 'sent' | 'received' | 'all' 
+    }) =>
+      this.get<PaginatedResponse<Transfer>>(`/accounts/${id}/transfers`, params),
+
+    /**
      * Get agents under this account
      */
     getAgents: (id: string, params?: PaginationParams) =>

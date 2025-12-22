@@ -52,18 +52,14 @@ export default function AccountDetailPage() {
           api.accounts.getAgents(accountId, { limit: 50 }),
           api.accounts.getStreams(accountId, { limit: 50 }),
           api.accounts.getTransactions(accountId, { limit: 50 }),
-          api.transfers.list({ limit: 100 }), // Get all transfers, filter client-side
+          api.accounts.getTransfers(accountId, { limit: 50 }), // Filter server-side for efficiency
         ]);
 
         setAccount(accountData);
         setAgents(agentsData.data || []);
         setStreams(streamsData.data || []);
         setTransactions(transactionsData.data || []);
-        // Filter transfers for this account
-        const accountTransfers = (transfersData.data || []).filter(
-          t => t.from?.accountId === accountId || t.to?.accountId === accountId
-        );
-        setTransfers(accountTransfers);
+        setTransfers(transfersData.data || []);
       } catch (error) {
         console.error('Failed to fetch account:', error);
       } finally {

@@ -636,6 +636,96 @@ accounts.get('/:id/transactions', async (c) => {
 });
 
 // ============================================
+// GET /v1/accounts/:id/transfers - Account's transfers (sent & received)
+// ============================================
+accounts.get('/:id/transfers', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+  
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid account ID format');
+  }
+  
+  // Verify account exists and belongs to tenant
+  const { data: account, error: accountError } = await supabase
+    .from('accounts')
+    .select('id, name')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  
+  if (accountError || !account) {
+    throw new NotFoundError('Account', id);
+  }
+  
+  // Parse query params
+  const query = c.req.query();
+  const { page, limit } = getPaginationParams(query);
+  const type = query.type; // Optional filter by transfer type
+  const status = query.status; // Optional filter by status
+  const direction = query.direction; // 'sent' | 'received' | 'all' (default: 'all')
+  
+  // Build query - get transfers where account is sender OR receiver
+  // Filter in SQL for performance (not client-side)
+  let dbQuery = supabase
+    .from('transfers')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+  
+  // Filter by direction
+  if (direction === 'sent') {
+    dbQuery = dbQuery.eq('from_account_id', id);
+  } else if (direction === 'received') {
+    dbQuery = dbQuery.eq('to_account_id', id);
+  } else {
+    // Default: both sent and received
+    dbQuery = dbQuery.or(`from_account_id.eq.${id},to_account_id.eq.${id}`);
+  }
+  
+  // Apply additional filters
+  if (type) {
+    dbQuery = dbQuery.eq('type', type);
+  }
+  if (status) {
+    dbQuery = dbQuery.eq('status', status);
+  }
+  
+  const { data, count, error } = await dbQuery;
+  
+  if (error) {
+    console.error('Error fetching transfers:', error);
+    return c.json({ error: 'Failed to fetch transfers' }, 500);
+  }
+  
+  // Map transfers to response format
+  const transfers = (data || []).map(transfer => ({
+    id: transfer.id,
+    type: transfer.type,
+    status: transfer.status,
+    fromAccountId: transfer.from_account_id,
+    fromAccountName: transfer.from_account_name,
+    toAccountId: transfer.to_account_id,
+    toAccountName: transfer.to_account_name,
+    amount: parseFloat(transfer.amount),
+    currency: transfer.currency || 'USDC',
+    description: transfer.description,
+    createdAt: transfer.created_at,
+    completedAt: transfer.completed_at,
+    failedAt: transfer.failed_at,
+    failureReason: transfer.failure_reason,
+    // Include direction from perspective of this account
+    direction: transfer.from_account_id === id ? 'sent' : 'received',
+    // Include x402 metadata if present
+    x402Metadata: transfer.x402_metadata || undefined,
+  }));
+  
+  return c.json(paginationResponse(transfers, count || 0, { page, limit }));
+});
+
+// ============================================
 // POST /v1/accounts/:id/verify - Mock KYC/KYB verification
 // ============================================
 const verifyAccountSchema = z.object({
