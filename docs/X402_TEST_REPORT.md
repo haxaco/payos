@@ -40,11 +40,20 @@ Run #18 concludes the debugging phase for the X402 API Test Suite.
 | **Manual** | **UI: Wallets** | ✅ PASSED | Displays Wallets and Balances correctly. |
 
 ## Root Cause Analysis: `RECORD_FAILED`
-The `transfers` table likely has a Row Level Security (RLS) policy that restricts inserts.
-- **Observation**: `POST /v1/x402/pay` executes correctly up to the database insertion, where it throws `RECORD_FAILED`.
-- **Hypothesis**: The RLS policy for `transfers` does not allow an authenticated user (acting as an Agent) to insert a record with `type='x402'` if they are not the strict "owner" of the referenced accounts in the way the existing policy expects.
+The failure is caused by a **Database Check Constraint Violation**.
+- **Error Code**: `23514`
+- **Message**: `new row for relation "transfers" violates check constraint "transfers_type_check"`
+- **Reason**: The `transfers` table has a CHECK constraint that validates the `type` column. This constraint was not updated to include `'x402'`, even though the Migration `20251222_extend_transfers_x402.sql` attempted to add it to the Enum. The table likely uses a TEXT column with a constraint rather than a native Enum, or has a redundant constraint.
 
 ## Recommendations for Next Engineer (Claude)
-1. **Fix RLS Policy**: Review and update the `transfers` RLS policy to allow `x402` payments.
-   - *Hint*: Check if `auth.uid()` is being compared to `owner_account_id` or `tenant_id` too strictly for agent-initiated transfers.
-2. **Re-run Scenarios 1-3**: Once RLS is fixed, these tests should pass immediately (Logic is verified).
+1. **Fix DB Constraint**: Run the following SQL to verify and update the constraint:
+   ```sql
+   -- Check the constraint definition
+   SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'transfers_type_check';
+
+   -- Update it (example)
+   ALTER TABLE transfers DROP CONSTRAINT transfers_type_check;
+   ALTER TABLE transfers ADD CONSTRAINT transfers_type_check 
+     CHECK (type IN ('internal', 'external', 'deposit', 'withdrawal', 'x402'));
+   ```
+2. **Re-run Scenarios 1 & 2**: Once the constraint allows `x402`, the payment flow will succeed (Logic and Schema mapping are now correct).

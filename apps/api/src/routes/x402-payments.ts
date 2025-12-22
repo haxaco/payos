@@ -35,22 +35,22 @@ const paymentAuthorizationSchema = z.object({
   requestId: z.string().uuid(), // Idempotency key
   amount: z.number().positive(),
   currency: z.enum(['USDC', 'EURC']),
-  
+
   // Wallet
   walletId: z.string().uuid(),
-  
+
   // Request Context
   method: z.string(),
   path: z.string(),
   timestamp: z.number().int().positive(),
-  
+
   // Optional metadata
   metadata: z.object({
     userAgent: z.string().optional(),
     ipAddress: z.string().optional(),
     region: z.string().optional()
   }).optional(),
-  
+
   // Signature (Phase 2: EIP-712, Phase 1: simplified)
   signature: z.string().optional()
 });
@@ -75,16 +75,16 @@ function calculatePrice(
   if (!volumeDiscounts || volumeDiscounts.length === 0) {
     return basePrice;
   }
-  
+
   // Find applicable discount tier (highest threshold not exceeding totalCalls)
   const applicableTier = volumeDiscounts
     .filter(tier => tier.threshold <= totalCalls)
     .sort((a, b) => b.threshold - a.threshold)[0];
-  
+
   if (!applicableTier) {
     return basePrice;
   }
-  
+
   return basePrice * applicableTier.priceMultiplier;
 }
 
@@ -98,13 +98,13 @@ function validateSignature(
 ): boolean {
   // Phase 1: Skip signature validation (internal ledger)
   // Phase 2: Implement EIP-712 signature verification
-  
+
   if (process.env.X402_PHASE === 'production') {
     // TODO: Implement EIP-712 signature verification
     // This would verify that the wallet owner signed this exact payment
     console.warn('⚠️  EIP-712 signature verification not implemented (Phase 2)');
   }
-  
+
   return true; // Phase 1: Trust internal auth
 }
 
@@ -119,15 +119,15 @@ async function checkSpendingPolicy(
   endpointId?: string
 ): Promise<{ allowed: boolean; reason?: string }> {
   const policy = wallet.spending_policy;
-  
+
   if (!policy) {
     return { allowed: true }; // No policy = no restrictions
   }
-  
+
   // Check approved endpoints (x402 specific)
   if (policy.approvedEndpoints && policy.approvedEndpoints.length > 0 && endpointId) {
     const isApproved = policy.approvedEndpoints.includes(endpointId);
-    
+
     if (!isApproved) {
       return {
         allowed: false,
@@ -135,7 +135,7 @@ async function checkSpendingPolicy(
       };
     }
   }
-  
+
   // Check requires approval threshold (both names for compatibility)
   const approvalThreshold = policy.approvalThreshold || policy.requiresApprovalAbove;
   if (approvalThreshold && amount > approvalThreshold) {
@@ -144,13 +144,13 @@ async function checkSpendingPolicy(
       reason: `Amount ${amount} exceeds approval threshold ${approvalThreshold}`
     };
   }
-  
+
   // Check approved vendors
   if (policy.approvedVendors && policy.approvedVendors.length > 0) {
     const isApproved = policy.approvedVendors.some((vendor: string) =>
       endpointPath.includes(vendor)
     );
-    
+
     if (!isApproved) {
       return {
         allowed: false,
@@ -158,11 +158,11 @@ async function checkSpendingPolicy(
       };
     }
   }
-  
+
   // Check daily spend limit
   if (policy.dailySpendLimit) {
     const dailySpent = policy.dailySpent || 0;
-    
+
     if (dailySpent + amount > policy.dailySpendLimit) {
       return {
         allowed: false,
@@ -170,11 +170,11 @@ async function checkSpendingPolicy(
       };
     }
   }
-  
+
   // Check monthly spend limit
   if (policy.monthlySpendLimit) {
     const monthlySpent = policy.monthlySpent || 0;
-    
+
     if (monthlySpent + amount > policy.monthlySpendLimit) {
       return {
         allowed: false,
@@ -182,7 +182,7 @@ async function checkSpendingPolicy(
       };
     }
   }
-  
+
   return { allowed: true };
 }
 
@@ -194,45 +194,45 @@ function updateSpendingPolicyCounters(
   amount: number
 ): any {
   if (!policy) return null;
-  
+
   const now = new Date();
   const updated = { ...policy };
-  
+
   // Update daily spent
   if (policy.dailySpendLimit) {
     const resetTime = policy.dailyResetAt ? new Date(policy.dailyResetAt) : null;
-    
+
     if (!resetTime || now > resetTime) {
       // Reset daily counter
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(0, 0, 0, 0);
-      
+
       updated.dailySpent = amount;
       updated.dailyResetAt = tomorrow.toISOString();
     } else {
       updated.dailySpent = (policy.dailySpent || 0) + amount;
     }
   }
-  
+
   // Update monthly spent
   if (policy.monthlySpendLimit) {
     const resetTime = policy.monthlyResetAt ? new Date(policy.monthlyResetAt) : null;
-    
+
     if (!resetTime || now > resetTime) {
       // Reset monthly counter
       const nextMonth = new Date(now);
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       nextMonth.setDate(1);
       nextMonth.setHours(0, 0, 0, 0);
-      
+
       updated.monthlySpent = amount;
       updated.monthlyResetAt = nextMonth.toISOString();
     } else {
       updated.monthlySpent = (policy.monthlySpent || 0) + amount;
     }
   }
-  
+
   return updated;
 }
 
@@ -250,24 +250,24 @@ app.post('/pay', async (c) => {
   try {
     const ctx = c.get('ctx');
     const body = await c.req.json();
-    
+
     // Validate request
     const auth = paymentAuthorizationSchema.parse(body);
-    
+
     const supabase = createClient();
-    
+
     // ============================================
     // 1. IDEMPOTENCY CHECK
     // ============================================
-    
+
     // Check if this requestId was already processed
     const { data: existingTransfer } = await supabase
       .from('transfers')
       .select('id, status, amount, currency')
-      .eq('request_id', auth.requestId)
+      .eq('x402_metadata->>request_id', auth.requestId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (existingTransfer) {
       if (existingTransfer.status === 'completed') {
         // Already processed successfully
@@ -287,25 +287,25 @@ app.post('/pay', async (c) => {
         console.log(`Retrying failed/pending payment: ${auth.requestId}`);
       }
     }
-    
+
     // ============================================
     // 2. FETCH & VALIDATE ENDPOINT
     // ============================================
-    
+
     const { data: endpoint, error: endpointError } = await supabase
       .from('x402_endpoints')
       .select('*')
       .eq('id', auth.endpointId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (endpointError || !endpoint) {
       return c.json({
         error: 'Endpoint not found',
         code: 'ENDPOINT_NOT_FOUND'
       }, 404);
     }
-    
+
     if (endpoint.status !== 'active') {
       return c.json({
         error: 'Endpoint is not active',
@@ -313,17 +313,17 @@ app.post('/pay', async (c) => {
         code: 'ENDPOINT_INACTIVE'
       }, 400);
     }
-    
+
     // ============================================
     // 3. CALCULATE PRICE
     // ============================================
-    
+
     const price = calculatePrice(
       parseFloat(endpoint.base_price),
       endpoint.volume_discounts || [],
       endpoint.total_calls
     );
-    
+
     // Validate amount matches calculated price
     if (Math.abs(auth.amount - price) > 0.0001) {
       return c.json({
@@ -333,7 +333,7 @@ app.post('/pay', async (c) => {
         code: 'AMOUNT_MISMATCH'
       }, 400);
     }
-    
+
     // Validate currency matches
     if (auth.currency !== endpoint.currency) {
       return c.json({
@@ -343,25 +343,25 @@ app.post('/pay', async (c) => {
         code: 'CURRENCY_MISMATCH'
       }, 400);
     }
-    
+
     // ============================================
     // 4. FETCH & VALIDATE WALLET
     // ============================================
-    
+
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
       .select('*')
       .eq('id', auth.walletId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (walletError || !wallet) {
       return c.json({
         error: 'Wallet not found',
         code: 'WALLET_NOT_FOUND'
       }, 404);
     }
-    
+
     if (wallet.status !== 'active') {
       return c.json({
         error: 'Wallet is not active',
@@ -369,7 +369,7 @@ app.post('/pay', async (c) => {
         code: 'WALLET_INACTIVE'
       }, 400);
     }
-    
+
     // Check sufficient balance
     const walletBalance = parseFloat(wallet.balance);
     if (walletBalance < auth.amount) {
@@ -380,22 +380,22 @@ app.post('/pay', async (c) => {
         code: 'INSUFFICIENT_BALANCE'
       }, 400);
     }
-    
+
     // ============================================
     // 5. VALIDATE SIGNATURE (Phase 2)
     // ============================================
-    
+
     if (!validateSignature(auth, auth.signature)) {
       return c.json({
         error: 'Invalid payment signature',
         code: 'INVALID_SIGNATURE'
       }, 401);
     }
-    
+
     // ============================================
     // 6. CHECK SPENDING POLICY
     // ============================================
-    
+
     const policyCheck = await checkSpendingPolicy(
       supabase,
       wallet,
@@ -403,7 +403,7 @@ app.post('/pay', async (c) => {
       endpoint.path,
       endpoint.id
     );
-    
+
     if (!policyCheck.allowed) {
       return c.json({
         error: 'Payment blocked by spending policy',
@@ -411,15 +411,15 @@ app.post('/pay', async (c) => {
         code: 'POLICY_VIOLATION'
       }, 403);
     }
-    
+
     // ============================================
     // 7. PROCESS PAYMENT (Internal Transfer)
     // ============================================
-    
+
     // Deduct from wallet
     const newWalletBalance = walletBalance - auth.amount;
     const newWalletStatus = newWalletBalance === 0 ? 'depleted' : 'active';
-    
+
     const { error: walletUpdateError } = await supabase
       .from('wallets')
       .update({
@@ -430,7 +430,7 @@ app.post('/pay', async (c) => {
       })
       .eq('id', auth.walletId)
       .eq('tenant_id', ctx.tenantId);
-    
+
     if (walletUpdateError) {
       console.error('Error updating wallet balance:', walletUpdateError);
       return c.json({
@@ -438,13 +438,14 @@ app.post('/pay', async (c) => {
         code: 'PAYMENT_FAILED'
       }, 500);
     }
-    
+
     // Create transfer record
+    console.log('DEBUG: x402 pay ctx:', JSON.stringify(ctx, null, 2));
+
     const { data: transfer, error: transferError } = await supabase
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
-        request_id: auth.requestId,
         from_account_id: wallet.owner_account_id,
         to_account_id: endpoint.account_id,
         amount: auth.amount,
@@ -470,7 +471,7 @@ app.post('/pay', async (c) => {
       })
       .select()
       .single();
-    
+
     if (transferError) {
       console.error('Error creating transfer record:', transferError);
       // Note: Wallet balance already updated - this is a consistency issue
@@ -480,11 +481,11 @@ app.post('/pay', async (c) => {
         code: 'RECORD_FAILED'
       }, 500);
     }
-    
+
     // ============================================
     // 8. UPDATE ENDPOINT STATS
     // ============================================
-    
+
     await supabase
       .from('x402_endpoints')
       .update({
@@ -494,11 +495,11 @@ app.post('/pay', async (c) => {
       })
       .eq('id', endpoint.id)
       .eq('tenant_id', ctx.tenantId);
-    
+
     // ============================================
     // 9. TRIGGER WEBHOOK (if configured)
     // ============================================
-    
+
     if (endpoint.webhook_url) {
       // Fire and forget webhook (don't block response)
       fetch(endpoint.webhook_url, {
@@ -525,11 +526,11 @@ app.post('/pay', async (c) => {
         console.error('Webhook delivery failed:', err);
       });
     }
-    
+
     // ============================================
     // 10. RETURN SUCCESS
     // ============================================
-    
+
     return c.json({
       success: true,
       message: 'Payment processed successfully',
@@ -542,7 +543,7 @@ app.post('/pay', async (c) => {
         walletId: wallet.id,
         newWalletBalance: newWalletBalance,
         timestamp: transfer.created_at,
-        
+
         // Proof of payment (for retrying original request)
         proof: {
           paymentId: transfer.id,
@@ -550,7 +551,7 @@ app.post('/pay', async (c) => {
         }
       }
     }, 200);
-    
+
   } catch (error) {
     if (error instanceof z.ZodError) {
       return c.json({
@@ -577,12 +578,12 @@ app.post('/verify', async (c) => {
   try {
     const ctx = c.get('ctx');
     const body = await c.req.json();
-    
+
     // Validate request
     const { requestId, transferId } = verifyPaymentSchema.parse(body);
-    
+
     const supabase = createClient();
-    
+
     // Fetch transfer
     const { data: transfer, error } = await supabase
       .from('transfers')
@@ -592,7 +593,7 @@ app.post('/verify', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .eq('type', 'x402')
       .single();
-    
+
     if (error || !transfer) {
       return c.json({
         verified: false,
@@ -600,9 +601,9 @@ app.post('/verify', async (c) => {
         code: 'PAYMENT_NOT_FOUND'
       }, 404);
     }
-    
+
     const verified = transfer.status === 'completed';
-    
+
     return c.json({
       verified,
       data: verified ? {
@@ -617,7 +618,7 @@ app.post('/verify', async (c) => {
         status: transfer.status
       } : null
     }, verified ? 200 : 402);
-    
+
   } catch (error) {
     if (error instanceof z.ZodError) {
       return c.json({
@@ -643,7 +644,7 @@ app.get('/quote/:endpointId', async (c) => {
     const ctx = c.get('ctx');
     const endpointId = c.req.param('endpointId');
     const supabase = createClient();
-    
+
     // Fetch endpoint
     const { data: endpoint, error } = await supabase
       .from('x402_endpoints')
@@ -651,14 +652,14 @@ app.get('/quote/:endpointId', async (c) => {
       .eq('id', endpointId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (error || !endpoint) {
       return c.json({
         error: 'Endpoint not found',
         code: 'ENDPOINT_NOT_FOUND'
       }, 404);
     }
-    
+
     if (endpoint.status !== 'active') {
       return c.json({
         error: 'Endpoint is not active',
@@ -666,14 +667,14 @@ app.get('/quote/:endpointId', async (c) => {
         code: 'ENDPOINT_INACTIVE'
       }, 400);
     }
-    
+
     // Calculate current price
     const price = calculatePrice(
       parseFloat(endpoint.base_price),
       endpoint.volume_discounts || [],
       endpoint.total_calls
     );
-    
+
     return c.json({
       data: {
         endpointId: endpoint.id,
@@ -687,7 +688,7 @@ app.get('/quote/:endpointId', async (c) => {
         totalCalls: endpoint.total_calls
       }
     });
-    
+
   } catch (error) {
     console.error('Error in GET /v1/x402/quote/:endpointId:', error);
     return c.json({

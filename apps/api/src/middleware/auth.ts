@@ -170,7 +170,7 @@ export async function authMiddleware(c: Context, next: Next) {
           last_used_ip: ip,
         })
         .eq('id', apiKey.id)
-        .then(() => {})
+        .then(() => { })
         .catch((err: any) => console.error('Failed to update API key last_used:', err));
 
       await logAuthAttempt(true, 'api_key', tenant.id, apiKey.id, ip, userAgent);
@@ -205,7 +205,7 @@ export async function authMiddleware(c: Context, next: Next) {
         .select('id, name, status')
         .eq('api_key', token)
         .single();
-      
+
       tenant = legacyResult.data;
       error = legacyResult.error;
     }
@@ -295,6 +295,13 @@ export async function authMiddleware(c: Context, next: Next) {
 
       await logAuthAttempt(true, 'jwt', tenant.id, userId, ip, userAgent);
 
+      console.log('DEBUG: Auth Success (JWT). Setting ctx:', {
+        tenantId: tenant.id,
+        actorType: 'user',
+        userId: userId,
+        userName: profile.name
+      });
+
       c.set('ctx', {
         tenantId: tenant.id,
         actorType: 'user',
@@ -337,7 +344,7 @@ export async function authMiddleware(c: Context, next: Next) {
         .select('id, name, tenant_id, status, kya_tier, kya_status')
         .eq('auth_client_id', token)
         .single();
-      
+
       agent = legacyResult.data;
       error = legacyResult.error;
     }
