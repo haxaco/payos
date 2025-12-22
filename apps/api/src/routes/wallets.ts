@@ -9,13 +9,13 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { createClient } from '../db';
-import { verifyAuth } from '../middleware/auth';
+import { createClient } from '../db/client.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const app = new Hono();
 
 // Apply auth middleware to all routes
-app.use('*', verifyAuth);
+app.use('*', authMiddleware);
 
 // ============================================
 // Validation Schemas
