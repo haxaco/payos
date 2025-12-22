@@ -15,6 +15,8 @@
     "@payos/ui": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
+    "@tanstack/react-query": "^5.90.12",
+    "@tanstack/react-query-devtools": "^5.91.1",
     "@vercel/analytics": "^1.6.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.487.0",

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
 import Link from 'next/link';
 import {
@@ -30,84 +31,101 @@ export default function AccountDetailPage() {
   const params = useParams();
   const router = useRouter();
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const accountId = params.id as string;
 
-  const [account, setAccount] = useState<Account | null>(null);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [streams, setStreams] = useState<Stream[]>([]);
-  const [transactions, setTransactions] = useState<LedgerEntry[]>([]);
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [actionLoading, setActionLoading] = useState(false);
   const { formatCurrency: formatCurrencyLocale, formatDate: formatDateLocale } = useLocale();
 
-  useEffect(() => {
-    async function fetchData() {
-      if (!api) return;
+  // Fetch account data with React Query (parallel queries)
+  const { data: account, isLoading: accountLoading } = useQuery({
+    queryKey: ['account', accountId],
+    queryFn: () => api!.accounts.get(accountId),
+    enabled: !!api,
+  });
 
-      try {
-        const [accountData, agentsData, streamsData, transactionsData, transfersData] = await Promise.all([
-          api.accounts.get(accountId),
-          api.accounts.getAgents(accountId, { limit: 50 }),
-          api.accounts.getStreams(accountId, { limit: 50 }),
-          api.accounts.getTransactions(accountId, { limit: 50 }),
-          api.accounts.getTransfers(accountId, { limit: 50 }), // Filter server-side for efficiency
-        ]);
+  const { data: agentsData, isLoading: agentsLoading } = useQuery({
+    queryKey: ['account', accountId, 'agents'],
+    queryFn: () => api!.accounts.getAgents(accountId, { limit: 50 }),
+    enabled: !!api,
+  });
 
-        setAccount(accountData);
-        setAgents(agentsData.data || []);
-        setStreams(streamsData.data || []);
-        setTransactions(transactionsData.data || []);
-        setTransfers(transfersData.data || []);
-      } catch (error) {
-        console.error('Failed to fetch account:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  const { data: streamsData, isLoading: streamsLoading } = useQuery({
+    queryKey: ['account', accountId, 'streams'],
+    queryFn: () => api!.accounts.getStreams(accountId, { limit: 50 }),
+    enabled: !!api,
+  });
 
-    fetchData();
-  }, [api, accountId]);
+  const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
+    queryKey: ['account', accountId, 'transactions'],
+    queryFn: () => api!.accounts.getTransactions(accountId, { limit: 50 }),
+    enabled: !!api,
+  });
+
+  const { data: transfersData, isLoading: transfersLoading } = useQuery({
+    queryKey: ['account', accountId, 'transfers'],
+    queryFn: () => api!.accounts.getTransfers(accountId, { limit: 50 }),
+    enabled: !!api,
+  });
+
+  const agents = agentsData?.data || [];
+  const streams = streamsData?.data || [];
+  const transactions = transactionsData?.data || [];
+  const transfers = transfersData?.data || [];
+  const loading = accountLoading;
+
+  // Mutations with automatic cache invalidation
+  const verifyMutation = useMutation({
+    mutationFn: (tier: number) => api!.accounts.verify(accountId, tier),
+    onSuccess: () => {
+      // Invalidate and refetch account data
+      queryClient.invalidateQueries({ queryKey: ['account', accountId] });
+    },
+  });
+
+  const suspendMutation = useMutation({
+    mutationFn: () => api!.accounts.suspend(accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['account', accountId] });
+    },
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: () => api!.accounts.activate(accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['account', accountId] });
+    },
+  });
 
   const handleVerify = async (tier: number) => {
     if (!api || !account) return;
-    setActionLoading(true);
     try {
-      const updated = await api.accounts.verify(accountId, tier);
-      setAccount(updated);
+      await verifyMutation.mutateAsync(tier);
     } catch (error) {
       console.error('Failed to verify account:', error);
-    } finally {
-      setActionLoading(false);
     }
   };
 
   const handleSuspend = async () => {
     if (!api || !account) return;
-    setActionLoading(true);
     try {
-      await api.accounts.suspend(accountId);
-      setAccount({ ...account, verificationStatus: 'suspended' });
+      await suspendMutation.mutateAsync();
     } catch (error) {
       console.error('Failed to suspend account:', error);
-    } finally {
-      setActionLoading(false);
     }
   };
 
   const handleActivate = async () => {
     if (!api || !account) return;
-    setActionLoading(true);
     try {
-      await api.accounts.activate(accountId);
-      setAccount({ ...account, verificationStatus: 'verified' });
+      await activateMutation.mutateAsync();
     } catch (error) {
       console.error('Failed to activate account:', error);
-    } finally {
-      setActionLoading(false);
     }
   };
+
+  // Combine mutation loading states
+  const actionLoading = verifyMutation.isPending || suspendMutation.isPending || activateMutation.isPending;
 
   if (loading) {
     return (

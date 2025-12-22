@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { Toaster } from 'sonner';
 import { ApiClientProvider } from '@/lib/api-client';
 import { ThemeProvider } from '@/components/providers/theme-provider';
+import { QueryProvider } from '@/components/providers/query-provider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -22,9 +23,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased" suppressHydrationWarning>
         <ThemeProvider>
-          <ApiClientProvider>
-            {children}
-          </ApiClientProvider>
+          <QueryProvider>
+            <ApiClientProvider>
+              {children}
+            </ApiClientProvider>
+          </QueryProvider>
           <Toaster position="top-right" richColors />
         </ThemeProvider>
 

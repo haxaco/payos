@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Users, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
@@ -12,30 +13,21 @@ import { useLocale } from '@/lib/locale';
 export default function AccountsPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const { formatCurrency } = useLocale();
 
-  useEffect(() => {
-    async function fetchAccounts() {
-      if (!api) {
-        setLoading(false);
-        return;
-      }
+  // Use React Query for data fetching with caching
+  const { data: accountsData, isLoading: loading } = useQuery({
+    queryKey: ['accounts', { limit: 50 }],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.accounts.list({ limit: 50 });
+    },
+    enabled: !!api && isConfigured, // Only fetch if API is ready
+    staleTime: 30 * 1000, // Consider data fresh for 30 seconds
+  });
 
-      try {
-        const response = await api.accounts.list({ limit: 50 });
-        setAccounts(response.data || []);
-      } catch (error) {
-        console.error('Failed to fetch accounts:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchAccounts();
-  }, [api]);
+  const accounts = accountsData?.data || [];
 
   const filteredAccounts = accounts.filter(account => 
     account.name.toLowerCase().includes(search.toLowerCase()) ||
