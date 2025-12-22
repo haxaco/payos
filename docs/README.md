@@ -10,6 +10,7 @@ docs/
 ├── GEMINI_START_HERE.md               # Quick start guide for AI assistants
 ├── MOCK_TO_API_MIGRATION.md           # Migration guide from mock to real data
 ├── GEMINI_REGRESSION_CHECKLIST.md     # Regression testing checklist for AI
+├── INFRASTRUCTURE.md                  # Production infrastructure & deployment
 │
 ├── prd/                                # Product Requirements Documents
 │   └── PayOS_PRD_Development.md       # Main PRD with all epics and stories
@@ -41,6 +42,12 @@ docs/
   - Epics 1-16: Core platform features (foundation → security)
   - Epics 17-20: x402 infrastructure (agentic payments)
   - Epic 21: Code coverage improvement (quality & testing)
+
+### Infrastructure & Deployment
+- **[INFRASTRUCTURE.md](INFRASTRUCTURE.md)** - Production infrastructure, deployment platforms, monitoring
+  - Vercel (Dashboard), Railway (API), Supabase (Database)
+  - Environment variables, health checks, CORS configuration
+  - Troubleshooting guides and performance metrics
 
 ### Security
 - **[RLS_STRATEGY.md](security/RLS_STRATEGY.md)** - Row-Level Security implementation guide
@@ -107,7 +114,7 @@ docs/
    - When an epic is done, move status docs to `docs/completed/`
    - This keeps the root clean and focused on active work
 
-## 🎯 Current Status (December 17, 2025)
+## 🎯 Current Status (December 19, 2025)
 
 ### Completed Epics
 - ✅ Epic 1-13: Core platform (foundation → advanced auth)
@@ -117,6 +124,14 @@ docs/
 
 ### Recently Completed
 - ✅ Epic 16: Database Function Security & Performance (18/18 stories) - **COMPLETE Dec 19, 2025**
+- ✅ **Production Deployment** - API (Railway), Dashboard (Vercel), Database (Supabase) - **LIVE Dec 19, 2025**
+
+### In Progress
+- 🔄 Epic 23: Dashboard Performance & API Optimization (1/7 stories, 18 points)
+  - Story 23.1 COMPLETE: Rate limit increased ✅
+  - Addresses 429 rate limit errors
+  - React Query caching implementation
+  - Server-side filtering optimization
 
 ### Planned (x402 Infrastructure)
 - 📋 Epic 17: x402 Gateway Infrastructure (26 points)
