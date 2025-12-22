@@ -265,6 +265,11 @@ async function step5_agentPaysAutonomously() {
       endpointId: testData.endpoint.id,
       walletId: testData.wallet.id,
       requestId: requestId,
+      amount: 0.25,
+      currency: 'USDC',
+      method: 'POST',
+      path: '/api/compliance/check',
+      timestamp: Date.now(),
       metadata: {
         category: 'compliance',
         autonomous: true

@@ -222,6 +222,11 @@ async function step3_makeSeveralPayments() {
         endpointId: testData.endpoint.id,
         walletId: testData.wallet.id,
         requestId: crypto.randomUUID(),
+        amount: 0.1,
+        currency: 'USDC',
+        method: 'POST',
+        path: '/api/weather/premium',
+        timestamp: Date.now(),
         metadata: {
           paymentNumber: i + 1,
           timestamp: new Date().toISOString()

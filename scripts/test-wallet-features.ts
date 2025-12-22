@@ -565,6 +565,11 @@ async function runTests() {
     } catch (error) {
       failureCount++;
       logError(`Test "${test.name}" failed`, error);
+      // Abort if authentication fails as it blocks everything else
+      if (test.name === 'Authentication') {
+        console.error('\n🛑 Authentication failed. Aborting remaining tests.');
+        break;
+      }
     }
   }
 

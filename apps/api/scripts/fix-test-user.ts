@@ -1,6 +1,13 @@
 #!/usr/bin/env tsx
 
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load env from apps/api/.env
+dotenv.config({ path: path.join(process.cwd(), 'apps/api/.env') });
+dotenv.config({ path: path.join(process.cwd(), '.env') }); // Fallback
+
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lgsreshwntpdrthfgwos.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;

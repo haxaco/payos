@@ -214,7 +214,7 @@ app.post('/register', async (c) => {
         balance: validated.initialBalance,
         currency: validated.walletCurrency,
         spending_policy: validated.spendingPolicy || null,
-        payment_address: paymentAddress,
+        wallet_address: paymentAddress,
         network: 'base-mainnet',
         status: 'active',
         name: `${validated.agentName} Wallet`,
@@ -532,7 +532,7 @@ app.get('/:id/wallet', async (c) => {
         currency: wallet.currency,
         status: wallet.status,
         spendingPolicy: wallet.spending_policy,
-        paymentAddress: wallet.payment_address,
+        paymentAddress: wallet.wallet_address,
         network: wallet.network,
         stats: {
           totalSpentLast30Days: totalSpent,

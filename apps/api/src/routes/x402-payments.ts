@@ -452,6 +452,10 @@ app.post('/pay', async (c) => {
         type: 'x402',
         status: 'completed',
         description: `x402 payment: ${endpoint.name}`,
+        // Track who initiated this payment (user, agent, or API key)
+        initiated_by_type: ctx.actorType,
+        initiated_by_id: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
+        initiated_by_name: ctx.userName || ctx.actorName || null,
         x402_metadata: {
           endpoint_id: endpoint.id,
           endpoint_path: endpoint.path,
