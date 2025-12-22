@@ -30,11 +30,12 @@ echo "Mode: $MODE"
 echo ""
 
 # Check if tsx is available
-if ! command -v tsx &> /dev/null; then
-    echo -e "${RED}❌ Error: tsx not found${NC}"
-    echo "Install with: npm install -g tsx"
-    exit 1
-fi
+# Check if tsx is available - Skipped for npx usage
+# if ! command -v tsx &> /dev/null; then
+#     echo -e "${RED}❌ Error: tsx not found${NC}"
+#     echo "Install with: npm install -g tsx"
+#     exit 1
+# fi
 
 # Test files
 SCENARIO_1="scripts/test-scenario-1-provider.ts"
@@ -50,13 +51,13 @@ if [ "$MODE" = "parallel" ]; then
     echo ""
     
     # Run all in background
-    tsx "$SCENARIO_1" > /tmp/scenario-1.log 2>&1 &
+    npx tsx "$SCENARIO_1" > /tmp/scenario-1.log 2>&1 &
     PID1=$!
     
-    tsx "$SCENARIO_2" > /tmp/scenario-2.log 2>&1 &
+    npx tsx "$SCENARIO_2" > /tmp/scenario-2.log 2>&1 &
     PID2=$!
     
-    tsx "$SCENARIO_3" > /tmp/scenario-3.log 2>&1 &
+    npx tsx "$SCENARIO_3" > /tmp/scenario-3.log 2>&1 &
     PID3=$!
     
     # Wait for all
@@ -108,7 +109,7 @@ else
     # Scenario 1
     echo -e "${YELLOW}▶ Running Scenario 1: Register x402 Endpoint (Provider)${NC}"
     echo "───────────────────────────────────────────────────────────"
-    if tsx "$SCENARIO_1"; then
+    if npx tsx "$SCENARIO_1"; then
         echo -e "${GREEN}✅ Scenario 1: PASSED${NC}"
         ((PASSED++))
     else
@@ -120,7 +121,7 @@ else
     # Scenario 2
     echo -e "${YELLOW}▶ Running Scenario 2: Agent Makes x402 Payment${NC}"
     echo "───────────────────────────────────────────────────────────"
-    if tsx "$SCENARIO_2"; then
+    if npx tsx "$SCENARIO_2"; then
         echo -e "${GREEN}✅ Scenario 2: PASSED${NC}"
         ((PASSED++))
     else
@@ -132,7 +133,7 @@ else
     # Scenario 3
     echo -e "${YELLOW}▶ Running Scenario 3: Monitor Agent Spending${NC}"
     echo "───────────────────────────────────────────────────────────"
-    if tsx "$SCENARIO_3"; then
+    if npx tsx "$SCENARIO_3"; then
         echo -e "${GREEN}✅ Scenario 3: PASSED${NC}"
         ((PASSED++))
     else

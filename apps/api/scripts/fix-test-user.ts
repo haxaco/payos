@@ -58,6 +58,18 @@ async function fixUser() {
     } else {
         console.log(`✅ Found User: ${user.id} (${user.email})`);
         userId = user.id;
+
+        // Force update password to ensure tests pass
+        const { error: updateError } = await supabase.auth.admin.updateUserById(
+            userId,
+            { password: 'Password123!' }
+        );
+
+        if (updateError) {
+            console.error('❌ Failed to update password:', updateError);
+        } else {
+            console.log('✅ Password updated to Password123!');
+        }
     }
 
     if (!userId) return;

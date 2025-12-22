@@ -115,7 +115,8 @@ async function checkSpendingPolicy(
   supabase: any,
   wallet: any,
   amount: number,
-  endpointPath: string
+  endpointPath: string,
+  endpointId?: string
 ): Promise<{ allowed: boolean; reason?: string }> {
   const policy = wallet.spending_policy;
   
@@ -123,11 +124,24 @@ async function checkSpendingPolicy(
     return { allowed: true }; // No policy = no restrictions
   }
   
-  // Check requires approval threshold
-  if (policy.requiresApprovalAbove && amount > policy.requiresApprovalAbove) {
+  // Check approved endpoints (x402 specific)
+  if (policy.approvedEndpoints && policy.approvedEndpoints.length > 0 && endpointId) {
+    const isApproved = policy.approvedEndpoints.includes(endpointId);
+    
+    if (!isApproved) {
+      return {
+        allowed: false,
+        reason: `Endpoint not in approved endpoints list`
+      };
+    }
+  }
+  
+  // Check requires approval threshold (both names for compatibility)
+  const approvalThreshold = policy.approvalThreshold || policy.requiresApprovalAbove;
+  if (approvalThreshold && amount > approvalThreshold) {
     return {
       allowed: false,
-      reason: `Amount ${amount} exceeds approval threshold ${policy.requiresApprovalAbove}`
+      reason: `Amount ${amount} exceeds approval threshold ${approvalThreshold}`
     };
   }
   
@@ -386,7 +400,8 @@ app.post('/pay', async (c) => {
       supabase,
       wallet,
       auth.amount,
-      endpoint.path
+      endpoint.path,
+      endpoint.id
     );
     
     if (!policyCheck.allowed) {

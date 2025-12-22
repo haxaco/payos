@@ -59,7 +59,7 @@ function logError(message: string, error: any) {
 
 async function apiRequest(method: string, path: string, body?: any) {
   const url = `${API_URL}${path}`;
-  
+
   const options: RequestInit = {
     method,
     headers: {
@@ -67,18 +67,18 @@ async function apiRequest(method: string, path: string, body?: any) {
       'Authorization': `Bearer ${AUTH_TOKEN}`
     }
   };
-  
+
   if (body) {
     options.body = JSON.stringify(body);
   }
-  
+
   const response = await fetch(url, options);
   const data = await response.json();
-  
+
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
   }
-  
+
   return data;
 }
 
@@ -88,7 +88,7 @@ async function apiRequest(method: string, path: string, body?: any) {
 
 async function step1_authenticate() {
   log('🔐 Step 1: Authenticate as Business User (Agent Owner)');
-  
+
   try {
     const authResponse = await fetch(`${API_URL}/v1/auth/login`, {
       method: 'POST',
@@ -98,18 +98,40 @@ async function step1_authenticate() {
         password: 'Password123!'
       })
     });
-    
+
     if (!authResponse.ok) {
       throw new Error(`Auth failed: ${authResponse.status}`);
     }
-    
+
     const authData = await authResponse.json();
-    AUTH_TOKEN = authData.data.accessToken;
-    TENANT_ID = authData.data.user.tenantId;
-    TEST_ACCOUNT_ID = authData.data.user.accountId;
-    
+    AUTH_TOKEN = authData.session.accessToken;
+    TENANT_ID = authData.tenant.id;
+
     logSuccess('Authentication successful');
-    log('Credentials:', { tenantId: TENANT_ID, accountId: TEST_ACCOUNT_ID });
+    log('Credentials:', { tenantId: TENANT_ID });
+
+    // Fetch Account ID
+    log('Fetching accounts...');
+    const accountsResponse = await fetch(`${API_URL}/v1/accounts`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${AUTH_TOKEN}`
+      }
+    });
+
+    if (!accountsResponse.ok) {
+      throw new Error(`Failed to fetch accounts: ${accountsResponse.status}`);
+    }
+
+    const accountsData = await accountsResponse.json();
+    if (accountsData.data && accountsData.data.length > 0) {
+      TEST_ACCOUNT_ID = accountsData.data[0].id;
+      logSuccess(`Found Account ID: ${TEST_ACCOUNT_ID}`);
+    } else {
+      throw new Error('No accounts found for this user/tenant');
+    }
+
   } catch (error) {
     logError('Authentication failed', error);
     throw error;
@@ -118,21 +140,25 @@ async function step1_authenticate() {
 
 async function step2_setupTestEndpoint() {
   log('📝 Step 2: Setup Test x402 Endpoint (to call later)');
-  
+
   try {
+    const randomSuffix = Math.random().toString(36).substring(7);
     const endpointData = {
       accountId: TEST_ACCOUNT_ID,
-      name: 'Compliance Check API',
-      path: '/api/compliance/check',
+      name: `Compliance Check API ${randomSuffix}`,
+      path: `/api/compliance/check/${randomSuffix}`,
       method: 'POST',
       description: 'Test endpoint for agent payments',
       basePrice: 0.25,
       currency: 'USDC'
     };
-    
+
+    // Store suffix for agent naming later
+    testData.randomSuffix = randomSuffix;
+
     const result = await apiRequest('POST', '/v1/x402/endpoints', endpointData);
     testData.endpoint = result.data;
-    
+
     logSuccess('Test endpoint created');
     log('Endpoint:', {
       id: testData.endpoint.id,
@@ -147,32 +173,33 @@ async function step2_setupTestEndpoint() {
 
 async function step3_createAgentWithWallet() {
   log('🤖 Step 3: Create Agent Account with Wallet & Spending Policies');
-  
+
   try {
     // Register agent using the x402 agent registration endpoint
     const agentData = {
-      name: 'Compliance Bot',
-      description: 'Autonomous agent for compliance checks',
-      parentAccountId: TEST_ACCOUNT_ID,
+      accountName: 'Compliance Bot Account',
+      agentName: 'Compliance Bot',
+      agentPurpose: 'Autonomous agent for compliance checks',
+      parentAccountId: TEST_ACCOUNT_ID, // Required by API now
       spendingPolicy: {
-        dailyLimit: testData.dailyLimit,
-        monthlyLimit: testData.monthlyLimit,
+        dailySpendLimit: testData.dailyLimit, // API expects dailySpendLimit
+        monthlySpendLimit: testData.monthlyLimit, // API expects monthlySpendLimit
         approvedEndpoints: [testData.endpoint.id],
-        autoFund: {
-          threshold: 100,
-          amount: 200
-        }
+        autoFundEnabled: true,
+        autoFundThreshold: 100,
+        autoFundAmount: 200,
+        approvalThreshold: 50
       },
       initialBalance: testData.initialBalance,
-      currency: 'USDC'
+      walletCurrency: 'USDC'
     };
-    
+
     log('Registering agent:', agentData);
-    
+
     const result = await apiRequest('POST', '/v1/agents/x402/register', agentData);
-    testData.agent = result.data.agent;
+    testData.agent = result.data.agent; // Result wraps in data? API returns { success: true, data: ... }
     testData.wallet = result.data.wallet;
-    
+
     logSuccess('Agent and wallet created successfully');
     log('Agent Details:', {
       agentId: testData.agent.id,
@@ -185,7 +212,7 @@ async function step3_createAgentWithWallet() {
       currency: testData.wallet.currency,
       spendingPolicy: testData.wallet.spendingPolicy
     });
-    
+
   } catch (error) {
     logError('Agent/wallet creation failed', error);
     throw error;
@@ -194,11 +221,11 @@ async function step3_createAgentWithWallet() {
 
 async function step4_simulate402Response() {
   log('🚫 Step 4: Simulate Agent Calling Paid API (Receives 402)');
-  
+
   try {
     // Get quote for the endpoint
     const quote = await apiRequest('GET', `/v1/x402/quote/${testData.endpoint.id}`);
-    
+
     log('Agent calls API: POST /api/compliance/check');
     log('API returns: 402 Payment Required');
     log('Payment Details:', {
@@ -207,9 +234,9 @@ async function step4_simulate402Response() {
       currency: quote.data.currency,
       paymentAddress: testData.endpoint.paymentAddress
     });
-    
+
     logSuccess('Agent received 402 response with payment details');
-    
+
   } catch (error) {
     logError('402 simulation failed', error);
     throw error;
@@ -218,7 +245,7 @@ async function step4_simulate402Response() {
 
 async function step5_agentPaysAutonomously() {
   log('💰 Step 5: Agent Processes Payment Autonomously');
-  
+
   try {
     // Agent checks spending policy before payment
     log('Checking spending policy...');
@@ -228,11 +255,11 @@ async function step5_agentPaysAutonomously() {
       approvedEndpoints: testData.wallet.spendingPolicy.approvedEndpoints,
       currentBalance: testData.wallet.balance
     });
-    
+
     // Agent initiates payment
     const requestId = crypto.randomUUID();
     log(`Agent initiates payment (requestId: ${requestId})`);
-    
+
     const payment = await apiRequest('POST', '/v1/x402/pay', {
       endpointId: testData.endpoint.id,
       walletId: testData.wallet.id,
@@ -242,26 +269,26 @@ async function step5_agentPaysAutonomously() {
         autonomous: true
       }
     });
-    
+
     testData.payments.push(payment.data);
-    
+
     logSuccess('Payment processed successfully');
     log('Payment Result:', {
       transferId: payment.data.transferId,
       walletBalance: payment.data.walletBalance,
       endpointTotalCalls: payment.data.endpointTotalCalls
     });
-    
+
     // Verify payment
     const verification = await apiRequest('POST', '/v1/x402/verify', {
       transferId: payment.data.transferId
     });
-    
+
     if (verification.data.verified) {
       logSuccess('Payment verified by provider');
       log('Agent can now retry API call with proof');
     }
-    
+
   } catch (error) {
     logError('Autonomous payment failed', error);
     throw error;
@@ -270,13 +297,13 @@ async function step5_agentPaysAutonomously() {
 
 async function step6_testSpendingLimits() {
   log('🛡️ Step 6: Test Spending Policy Enforcement');
-  
+
   try {
     // Test 1: Make multiple payments to approach daily limit
     log('\n📊 Test 6.1: Daily Limit Enforcement');
     const paymentsToMake = Math.floor((testData.dailyLimit - 1) / testData.endpoint.basePrice);
     log(`Making ${paymentsToMake} payments to approach daily limit...`);
-    
+
     let successfulPayments = 0;
     for (let i = 0; i < Math.min(paymentsToMake, 3); i++) {
       try {
@@ -293,22 +320,24 @@ async function step6_testSpendingLimits() {
         }
       }
     }
-    
+
     log(`Successful payments before limit: ${successfulPayments}`);
-    
+
     // Test 2: Try to use unapproved endpoint
     log('\n📊 Test 6.2: Approved Endpoints Check');
-    
+
     // Create another endpoint not in approved list
+    // Create an unapproved endpoint
+    const randomSuffix = testData.randomSuffix || Math.random().toString(36).substring(7);
     const unapprovedEndpoint = await apiRequest('POST', '/v1/x402/endpoints', {
       accountId: TEST_ACCOUNT_ID,
-      name: 'Unapproved API',
-      path: '/api/unapproved',
+      name: `Unapproved API ${randomSuffix}`,
+      path: `/api/unapproved/${randomSuffix}`,
       method: 'GET',
       basePrice: 0.10,
       currency: 'USDC'
     });
-    
+
     try {
       await apiRequest('POST', '/v1/x402/pay', {
         endpointId: unapprovedEndpoint.data.id,
@@ -323,7 +352,7 @@ async function step6_testSpendingLimits() {
         throw error;
       }
     }
-    
+
     // Test 3: Check balance
     log('\n📊 Test 6.3: Balance Check');
     const updatedWallet = await apiRequest('GET', `/v1/wallets/${testData.wallet.id}`);
@@ -332,11 +361,11 @@ async function step6_testSpendingLimits() {
       initialBalance: testData.initialBalance,
       spent: testData.initialBalance - updatedWallet.data.balance
     });
-    
+
     if (updatedWallet.data.balance < testData.initialBalance) {
       logSuccess('Balance correctly updated after payments');
     }
-    
+
   } catch (error) {
     logError('Spending limit tests failed', error);
     throw error;
@@ -345,16 +374,16 @@ async function step6_testSpendingLimits() {
 
 async function step7_testAutoFunding() {
   log('🔄 Step 7: Test Auto-Funding Feature');
-  
+
   try {
     const wallet = await apiRequest('GET', `/v1/wallets/${testData.wallet.id}`);
-    
+
     log('Auto-Fund Policy:', {
       threshold: testData.wallet.spendingPolicy.autoFund?.threshold,
       amount: testData.wallet.spendingPolicy.autoFund?.amount,
       currentBalance: wallet.data.balance
     });
-    
+
     if (wallet.data.balance < (testData.wallet.spendingPolicy.autoFund?.threshold || 0)) {
       log('Balance below threshold - auto-funding would trigger');
       logSuccess('Auto-fund policy configured correctly');
@@ -362,7 +391,7 @@ async function step7_testAutoFunding() {
       log('Balance above threshold - auto-funding not needed yet');
       logSuccess('Auto-fund policy configured correctly');
     }
-    
+
   } catch (error) {
     logError('Auto-funding test failed', error);
     throw error;
@@ -371,18 +400,18 @@ async function step7_testAutoFunding() {
 
 async function step8_viewTransactionHistory() {
   log('📜 Step 8: View Agent Transaction History');
-  
+
   try {
     // Get wallet details with transactions
     const wallet = await apiRequest('GET', `/v1/wallets/${testData.wallet.id}`);
-    
+
     log('Final Wallet State:', {
       walletId: wallet.data.id,
       balance: wallet.data.balance,
       status: wallet.data.status,
       totalPayments: testData.payments.length
     });
-    
+
     log('Payment Summary:');
     for (let i = 0; i < testData.payments.length; i++) {
       const payment = testData.payments[i];
@@ -391,9 +420,9 @@ async function step8_viewTransactionHistory() {
         balanceAfter: payment.walletBalance
       });
     }
-    
+
     logSuccess('Transaction history retrieved');
-    
+
   } catch (error) {
     logError('Transaction history retrieval failed', error);
     throw error;
@@ -408,10 +437,10 @@ async function runAgentScenario() {
   console.log('\n╔══════════════════════════════════════════════════════════╗');
   console.log('║  Scenario 2: Agent Makes x402 Payment (Consumer Side)   ║');
   console.log('╚══════════════════════════════════════════════════════════╝');
-  
+
   let passed = 0;
   let failed = 0;
-  
+
   const steps = [
     { name: 'Authentication', fn: step1_authenticate },
     { name: 'Setup Test Endpoint', fn: step2_setupTestEndpoint },
@@ -422,7 +451,7 @@ async function runAgentScenario() {
     { name: 'Test Auto-Funding', fn: step7_testAutoFunding },
     { name: 'View Transaction History', fn: step8_viewTransactionHistory }
   ];
-  
+
   for (const step of steps) {
     try {
       await step.fn();
@@ -432,22 +461,22 @@ async function runAgentScenario() {
       console.error(`\n❌ Step failed: ${step.name}`);
     }
   }
-  
+
   console.log('\n╔══════════════════════════════════════════════════════════╗');
   console.log('║                     TEST SUMMARY                         ║');
   console.log('╚══════════════════════════════════════════════════════════╝');
   console.log(`\n✅ Passed: ${passed}/${steps.length}`);
   console.log(`${failed > 0 ? '❌' : '✅'} Failed: ${failed}/${steps.length}`);
-  
+
   if (testData.wallet) {
     console.log('\n📊 Final Results:');
     console.log(`   Agent: ${testData.agent.name}`);
     console.log(`   Total Payments: ${testData.payments.length}`);
     console.log(`   Policies Enforced: ✅`);
   }
-  
+
   console.log('\n');
-  
+
   process.exit(failed > 0 ? 1 : 0);
 }
 
