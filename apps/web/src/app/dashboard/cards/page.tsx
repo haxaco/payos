@@ -1,70 +1,282 @@
 'use client';
 
-import { CreditCard, Plus } from 'lucide-react';
+import { CreditCard, Plus, TrendingUp, TrendingDown, AlertCircle, Search, Filter } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { useApiClient, useApiConfig } from '@/lib/api-client';
+import { useState } from 'react';
+import { Button } from '@payos/ui';
+
+interface CardTransaction {
+  id: string;
+  type: string;
+  status: string;
+  amount: number;
+  currency: string;
+  merchantName?: string;
+  merchantCategory?: string;
+  cardLastFour?: string;
+  declineReason?: string;
+  isDisputed: boolean;
+  transactionTime: string;
+}
+
+interface CardStats {
+  totalSpent: number;
+  totalTransactions: number;
+  totalPurchases: number;
+  totalRefunds: number;
+  totalDeclines: number;
+  purchaseAmount: number;
+  refundAmount: number;
+}
 
 export default function CardsPage() {
+  const api = useApiClient();
+  const { isConfigured } = useApiConfig();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState<string>('all');
+
+  // Fetch card transactions
+  const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
+    queryKey: ['card-transactions', { limit: 100 }],
+    queryFn: () => api!.cards.listTransactions({ limit: 100 }),
+    enabled: !!api && isConfigured,
+    staleTime: 30 * 1000,
+  });
+
+  // Fetch card stats
+  const { data: statsData, isLoading: statsLoading } = useQuery({
+    queryKey: ['card-stats'],
+    queryFn: async () => {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/card-transactions/stats`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('payos_api_key')}`,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch card stats');
+      return response.json();
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 30 * 1000,
+  });
+
+  const transactions: CardTransaction[] = transactionsData?.data || [];
+  const stats: CardStats = statsData?.stats || {
+    totalSpent: 0,
+    totalTransactions: 0,
+    totalPurchases: 0,
+    totalRefunds: 0,
+    totalDeclines: 0,
+    purchaseAmount: 0,
+    refundAmount: 0,
+  };
+
+  const loading = transactionsLoading || statsLoading;
+
+  // Filter transactions based on search and type
+  const filteredTransactions = transactions.filter((tx) => {
+    const matchesSearch =
+      !searchTerm ||
+      tx.merchantName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      tx.merchantCategory?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesType =
+      filterType === 'all' || tx.type === filterType;
+
+    return matchesSearch && matchesType;
+  });
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'purchase':
+        return <TrendingDown className="w-4 h-4 text-red-500" />;
+      case 'refund':
+        return <TrendingUp className="w-4 h-4 text-green-500" />;
+      case 'decline':
+        return <AlertCircle className="w-4 h-4 text-amber-500" />;
+      default:
+        return <CreditCard className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const baseClasses = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium';
+    switch (status) {
+      case 'completed':
+        return <span className={`${baseClasses} bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400`}>Completed</span>;
+      case 'pending':
+        return <span className={`${baseClasses} bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-400`}>Pending</span>;
+      case 'failed':
+        return <span className={`${baseClasses} bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400`}>Failed</span>;
+      default:
+        return <span className={`${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-950 dark:text-gray-400`}>{status}</span>;
+    }
+  };
+
+  if (!isConfigured) {
+    return (
+      <div className="p-8">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Configuration Required</h2>
+          <p className="text-gray-600 dark:text-gray-400">Please configure your API key to access card data.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8 max-w-[1600px] mx-auto">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Cards</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage virtual and physical cards</p>
+          <p className="text-gray-600 dark:text-gray-400">Monitor card transactions and spending</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+        <Button className="flex items-center gap-2">
           <Plus className="h-4 w-4" />
           Issue Card
-        </button>
+        </Button>
       </div>
 
-      {/* Coming Soon */}
-      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-12 text-center">
-        <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-950 dark:to-blue-900 flex items-center justify-center">
-          <CreditCard className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Spent</div>
+          <div className="text-3xl font-bold text-gray-900 dark:text-white">
+            {loading ? '...' : `$${stats.totalSpent.toFixed(2)}`}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">{stats.totalTransactions} transactions</div>
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Cards Coming Soon
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-6">
-          Issue virtual and physical cards to your users. Set spending limits, enable/disable cards instantly, and track all transactions in real-time.
-        </p>
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 rounded-lg text-sm font-medium">
-          <span className="w-2 h-2 rounded-full bg-amber-500" />
-          Feature in Development
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Purchases</div>
+          <div className="text-3xl font-bold text-gray-900 dark:text-white">
+            {loading ? '...' : stats.totalPurchases}
+          </div>
+          <div className="text-xs text-green-600 dark:text-green-400 mt-1">${stats.purchaseAmount.toFixed(2)}</div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Refunds</div>
+          <div className="text-3xl font-bold text-gray-900 dark:text-white">
+            {loading ? '...' : stats.totalRefunds}
+          </div>
+          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">${stats.refundAmount.toFixed(2)}</div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
+          <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Declined</div>
+          <div className="text-3xl font-bold text-gray-900 dark:text-white">
+            {loading ? '...' : stats.totalDeclines}
+          </div>
+          <div className="text-xs text-red-600 dark:text-red-400 mt-1">Failed transactions</div>
         </div>
       </div>
 
-      {/* Feature Preview */}
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-950 flex items-center justify-center mb-4">
-            <CreditCard className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-          </div>
-          <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Virtual Cards</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Create unlimited virtual cards for online purchases with custom spending limits.
-          </p>
+      {/* Filters */}
+      <div className="flex items-center gap-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by merchant or category..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center mb-4">
-            <CreditCard className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Physical Cards</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Order branded physical cards delivered to your users with PIN management.
-          </p>
-        </div>
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950 flex items-center justify-center mb-4">
-            <CreditCard className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Instant Controls</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Freeze, unfreeze, or cancel cards instantly. Set merchant category restrictions.
-          </p>
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="px-4 py-2 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Types</option>
+          <option value="purchase">Purchases</option>
+          <option value="refund">Refunds</option>
+          <option value="decline">Declined</option>
+        </select>
+      </div>
+
+      {/* Transactions List */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Transaction
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Merchant
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Category
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                    Loading transactions...
+                  </td>
+                </tr>
+              ) : filteredTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                    No transactions found
+                  </td>
+                </tr>
+              ) : (
+                filteredTransactions.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-3">
+                        {getTypeIcon(tx.type)}
+                        <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+                          {tx.type}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                      {tx.merchantName || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                      {tx.merchantCategory || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                      {new Date(tx.transactionTime).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <span className={tx.type === 'refund' ? 'text-green-600' : tx.type === 'decline' ? 'text-gray-400' : 'text-gray-900 dark:text-white'}>
+                        {tx.type === 'decline' ? '-' : `$${tx.amount.toFixed(2)}`}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {getStatusBadge(tx.status)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
+
+      {filteredTransactions.length > 0 && (
+        <div className="text-sm text-gray-600 dark:text-gray-400 text-center">
+          Showing {filteredTransactions.length} of {transactions.length} transactions
+        </div>
+      )}
     </div>
   );
 }
-

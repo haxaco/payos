@@ -34,6 +34,7 @@ import x402EndpointsRouter from './routes/x402-endpoints.js';
 import walletsRouter from './routes/wallets.js';
 import x402PaymentsRouter from './routes/x402-payments.js';
 import agentsX402Router from './routes/agents-x402.js';
+import cardTransactionsRouter from './routes/card-transactions.js';
 
 const app = new Hono();
 
@@ -171,6 +172,7 @@ v1.route('/scheduled-transfers', scheduledTransfersRouter);
 v1.route('/exports', exportsRouter);
 v1.route('/disputes', disputesRouter);
 v1.route('/payment-methods', paymentMethodsRouter);
+v1.route('/card-transactions', cardTransactionsRouter);
 v1.route('/compliance', complianceRouter);
 v1.route('/x402/endpoints', x402EndpointsRouter);
 v1.route('/x402', x402PaymentsRouter);

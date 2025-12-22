@@ -494,6 +494,24 @@ export class PayOSClient {
   };
 
   // ============================================
+  // Card Transactions API
+  // ============================================
+
+  cards = {
+    /**
+     * Get all card transactions across all payment methods
+     */
+    listTransactions: (params?: PaginationParams) =>
+      this.get<PaginatedResponse<any>>('/card-transactions', params),
+
+    /**
+     * Get card transactions for a specific payment method
+     */
+    getMethodTransactions: (paymentMethodId: string, params?: PaginationParams) =>
+      this.get<PaginatedResponse<any>>(`/payment-methods/${paymentMethodId}/transactions`, params),
+  };
+
+  // ============================================
   // Compliance API
   // ============================================
 
