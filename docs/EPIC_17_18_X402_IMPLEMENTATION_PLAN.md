@@ -2,6 +2,7 @@
 
 **Status:** 📋 Planning  
 **Created:** December 19, 2025  
+**Updated:** December 21, 2025  
 **Priority:** P1  
 **Total Points:** 49 (Epic 17: 26 pts + Epic 18: 23 pts)
 
@@ -12,7 +13,43 @@
 This document outlines the implementation plan for **x402 (HTTP 402) payment infrastructure** - the key differentiator that positions PayOS as an agentic payment platform. We will build:
 
 1. **Epic 17: x402 Gateway** - Infrastructure for API providers to RECEIVE machine payments
-2. **Epic 18: Agent Wallets** - Infrastructure for AI agents to MAKE autonomous payments
+2. **Epic 18: Wallets & Spending Policies** - Infrastructure for accounts (including agents) to MAKE autonomous payments
+
+**Reference:** [Coinbase x402 Whitepaper](https://www.x402.org/x402-whitepaper.pdf)
+
+---
+
+## Compatibility with x402 Standard
+
+We are building **compatible with the Coinbase x402 specification** from [x402.org](https://www.x402.org/x402-whitepaper.pdf). Key alignment:
+
+### x402 Protocol Compliance ✅
+
+| Spec Requirement | Our Implementation |
+|-----------------|-------------------|
+| HTTP 402 response with payment details | ✅ Full compliance |
+| Stablecoins only (USDC, EURC) | ✅ Enforced in API |
+| Payment request fields (maxAmountRequired, payTo, asset, network, etc.) | ✅ Full compliance |
+| EIP-712 signed payment authorization | ✅ Phase 2 (mocked in Phase 1) |
+| Idempotency via nonce/paymentId | ✅ request_id field |
+| Chain-agnostic (Base, Ethereum, Solana) | ✅ network field supported |
+
+### 402 Response Format (Per x402 Spec)
+
+```json
+{
+  "maxAmountRequired": "0.25",
+  "resource": "/api/compliance/check",
+  "description": "LATAM compliance verification",
+  "payTo": "0xABCDEF1234567890ABCDEF1234567890ABCDEF12",
+  "asset": "0xA0b86991C6218b36c1d19D4a2e9Eb0cE3606EB48",
+  "assetType": "ERC20",
+  "network": "base-mainnet",
+  "expiresAt": "2025-12-21T12:00:00Z",
+  "nonce": "unique-nonce-123",
+  "paymentId": "pay_abc123"
+}
+```
 
 ---
 
@@ -21,6 +58,9 @@ This document outlines the implementation plan for **x402 (HTTP 402) payment inf
 ### What is x402?
 
 **x402 = HTTP 402 "Payment Required" + Stablecoin Micropayments**
+
+> "x402 is an open payment standard that enables AI agents and web services to autonomously pay for API access, data, and digital services."
+> — [x402 Whitepaper](https://www.x402.org/x402-whitepaper.pdf)
 
 Traditional APIs use subscriptions or free tiers. x402 enables **pay-per-call** pricing for machine-to-machine payments:
 
@@ -35,11 +75,22 @@ Traditional APIs use subscriptions or free tiers. x402 enables **pay-per-call** 
 5. Server: 200 OK [Returns data]
 ```
 
+### Key x402 Benefits (from Whitepaper)
+
+| Benefit | Traditional Payment | x402 |
+|---------|-------------------|------|
+| **Settlement** | Days (batch) | ~200ms (instant) |
+| **Fees** | $0.30 + 2.9% | ~$0.0001 (nominal gas) |
+| **Chargebacks** | Yes (up to 120 days) | No (irreversible) |
+| **Account Required** | Yes (signup, verification) | No (just a wallet) |
+| **Agent-Native** | No (human-designed) | Yes (machine-first) |
+
 ### Why This Matters
 
 - **For API Providers:** Monetize expensive AI/data endpoints without subscriptions
 - **For AI Agents:** Pay only for what they use, no upfront commitments
 - **For PayOS:** New revenue streams (gateway fees, wallet fees) + platform differentiation
+- **Stablecoins Only:** USDC/EURC ensure price stability (per x402 spec)
 
 ---
 
@@ -339,27 +390,51 @@ Phase 4 (Q3): Full blockchain with Superfluid streaming
 
 ## Data Models
 
+### Design Principles
+
+Based on feedback and x402 spec alignment:
+
+1. **Generic Wallets** - Any account can have a wallet (not just agents)
+2. **Reuse Existing Tables** - x402 payments are a `transfer_type`, not a separate table
+3. **Stablecoins Only** - Enforce USDC/EURC per x402 spec
+4. **x402 Protocol Compliance** - All fields per the Coinbase spec
+
 ### New Tables
 
 #### 1. `x402_endpoints` (Epic 17)
+
+Registers API endpoints that accept x402 payments.
 
 ```sql
 CREATE TABLE x402_endpoints (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id),
-  account_id UUID NOT NULL REFERENCES accounts(id),
+  account_id UUID NOT NULL REFERENCES accounts(id), -- Revenue recipient
+  
+  -- Endpoint Definition
   name TEXT NOT NULL,
   path TEXT NOT NULL,
-  method TEXT NOT NULL CHECK (method IN ('GET', 'POST', 'ANY')),
+  method TEXT NOT NULL CHECK (method IN ('GET', 'POST', 'PUT', 'DELETE', 'ANY')),
   description TEXT,
-  base_price DECIMAL(10,2) NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'USDC',
+  
+  -- Pricing (x402 spec: stablecoins only)
+  base_price DECIMAL(10,4) NOT NULL, -- Up to 4 decimals for micropayments
+  currency TEXT NOT NULL DEFAULT 'USDC' CHECK (currency IN ('USDC', 'EURC')), -- Stablecoins only per x402 spec
   volume_discounts JSONB, -- [{ threshold: 1000, priceMultiplier: 0.8 }]
-  region_pricing JSONB,   -- [{ region: 'LATAM', priceMultiplier: 0.9 }]
+  
+  -- x402 Protocol Fields
+  payment_address TEXT, -- Wallet address for this endpoint (or account's default)
+  asset_address TEXT, -- ERC20 contract address (e.g., USDC on Base)
+  network TEXT NOT NULL DEFAULT 'base-mainnet', -- base-mainnet, ethereum-mainnet, etc.
+  
+  -- Stats (denormalized for performance)
   total_calls INTEGER DEFAULT 0,
-  total_revenue DECIMAL(15,2) DEFAULT 0,
+  total_revenue DECIMAL(15,4) DEFAULT 0,
+  
+  -- Status
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'disabled')),
   webhook_url TEXT,
+  
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   
@@ -378,129 +453,134 @@ CREATE POLICY "Tenants manage own endpoints" ON x402_endpoints
   USING (tenant_id = (SELECT public.get_user_tenant_id()));
 ```
 
-#### 2. `agent_wallets` (Epic 18)
+#### 2. `wallets` (Epic 18) - Generic Wallet for Any Account
+
+**Key Change:** Wallets are NOT agent-specific. Any account can have wallets. Agent usage is configured via `spending_policy`.
 
 ```sql
-CREATE TABLE agent_wallets (
+CREATE TABLE wallets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id),
-  agent_account_id UUID NOT NULL REFERENCES accounts(id),
-  balance DECIMAL(15,2) NOT NULL DEFAULT 0,
-  currency TEXT NOT NULL DEFAULT 'USDC',
   
-  -- Spending Limits
-  daily_spend_limit DECIMAL(10,2) NOT NULL,
-  daily_spent DECIMAL(10,2) DEFAULT 0,
-  daily_reset_at TIMESTAMPTZ,
-  monthly_spend_limit DECIMAL(10,2) NOT NULL,
-  monthly_spent DECIMAL(10,2) DEFAULT 0,
-  monthly_reset_at TIMESTAMPTZ,
+  -- Owner (any account type: person, business, or agent)
+  owner_account_id UUID NOT NULL REFERENCES accounts(id),
   
-  -- Policy
-  approved_vendors TEXT[], -- ["api.acme.com", "api.beta.com"]
-  approved_categories TEXT[], -- ["compliance", "fx_intelligence"]
-  requires_approval_above DECIMAL(10,2), -- NULL = no approval needed
+  -- Optional: If this wallet is managed by an agent
+  managed_by_agent_id UUID REFERENCES agents(id),
   
-  -- Auto-funding
-  auto_fund_enabled BOOLEAN DEFAULT false,
-  auto_fund_threshold DECIMAL(10,2),
-  auto_fund_amount DECIMAL(10,2),
-  auto_fund_source_account_id UUID REFERENCES accounts(id),
+  -- Balance (stablecoins only per x402 spec)
+  balance DECIMAL(15,4) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'USDC' CHECK (currency IN ('USDC', 'EURC')),
+  
+  -- Wallet Identity (for x402 payments)
+  wallet_address TEXT, -- On-chain address (Phase 2) or internal ID
+  network TEXT DEFAULT 'base-mainnet',
+  
+  -- Spending Policy (optional - if set, enforced on payments)
+  spending_policy JSONB DEFAULT NULL,
+  -- spending_policy structure:
+  -- {
+  --   "daily_limit": 100.00,
+  --   "daily_spent": 24.75,
+  --   "daily_reset_at": "2025-12-22T00:00:00Z",
+  --   "monthly_limit": 2000.00,
+  --   "monthly_spent": 245.50,
+  --   "monthly_reset_at": "2026-01-01T00:00:00Z",
+  --   "approved_vendors": ["api.acme.com", "api.beta.com"],
+  --   "approved_categories": ["compliance", "fx_intelligence"],
+  --   "requires_approval_above": 50.00,
+  --   "auto_fund": {
+  --     "enabled": true,
+  --     "threshold": 100.00,
+  --     "amount": 500.00,
+  --     "source_account_id": "uuid"
+  --   }
+  -- }
   
   -- Status
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'frozen', 'depleted')),
   
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
+  -- Metadata
+  name TEXT, -- Optional friendly name (e.g., "Compliance Bot Wallet")
+  purpose TEXT, -- Optional description of wallet use
   
-  UNIQUE(agent_account_id)
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_agent_wallets_tenant ON agent_wallets(tenant_id);
-CREATE INDEX idx_agent_wallets_agent ON agent_wallets(agent_account_id);
-CREATE INDEX idx_agent_wallets_status ON agent_wallets(status);
+CREATE INDEX idx_wallets_tenant ON wallets(tenant_id);
+CREATE INDEX idx_wallets_owner ON wallets(owner_account_id);
+CREATE INDEX idx_wallets_agent ON wallets(managed_by_agent_id) WHERE managed_by_agent_id IS NOT NULL;
+CREATE INDEX idx_wallets_status ON wallets(status);
 
 -- RLS
-ALTER TABLE agent_wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallets ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Tenants manage own agent wallets" ON agent_wallets
+CREATE POLICY "Tenants manage own wallets" ON wallets
   FOR ALL
   USING (tenant_id = (SELECT public.get_user_tenant_id()));
 ```
 
-#### 3. `x402_transactions` (Both Epics)
+### Extending Existing Tables (NO new x402_transactions table!)
+
+**Key Change:** x402 payments use the existing `transfers` table with a new type.
+
+#### Extend `transfers` Table
 
 ```sql
-CREATE TABLE x402_transactions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id),
-  
-  -- Payer (Agent)
-  payer_wallet_id UUID REFERENCES agent_wallets(id),
-  payer_account_id UUID REFERENCES accounts(id),
-  
-  -- Recipient (Endpoint Owner)
-  recipient_endpoint_id UUID REFERENCES x402_endpoints(id),
-  recipient_account_id UUID REFERENCES accounts(id),
-  
-  -- Payment Details
-  amount DECIMAL(10,2) NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'USDC',
-  
-  -- x402 Protocol Fields
-  endpoint_path TEXT,
-  request_id TEXT, -- Idempotency key
-  payment_proof TEXT NOT NULL, -- Mock tx_hash in Phase 1
-  
-  -- Metadata
-  vendor_domain TEXT, -- Extracted from endpoint
-  category TEXT,
-  
-  -- Status
-  status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('pending', 'confirmed', 'failed', 'refunded')),
-  
-  -- Blockchain (Phase 2+)
-  network TEXT, -- 'base', 'ethereum', 'solana'
-  tx_hash TEXT, -- Real blockchain tx_hash
-  confirmations INTEGER DEFAULT 0,
-  
-  created_at TIMESTAMPTZ DEFAULT now(),
-  confirmed_at TIMESTAMPTZ,
-  
-  UNIQUE(tenant_id, request_id) -- Prevent double-payment
-);
+-- Add x402 as a transfer type
+ALTER TYPE transfer_type ADD VALUE IF NOT EXISTS 'x402';
 
-CREATE INDEX idx_x402_txs_tenant ON x402_transactions(tenant_id);
-CREATE INDEX idx_x402_txs_payer ON x402_transactions(payer_wallet_id);
-CREATE INDEX idx_x402_txs_recipient ON x402_transactions(recipient_endpoint_id);
-CREATE INDEX idx_x402_txs_status ON x402_transactions(status);
-CREATE INDEX idx_x402_txs_created ON x402_transactions(created_at DESC);
+-- Add x402-specific metadata column
+ALTER TABLE transfers ADD COLUMN IF NOT EXISTS x402_metadata JSONB DEFAULT NULL;
 
--- RLS
-ALTER TABLE x402_transactions ENABLE ROW LEVEL SECURITY;
+-- x402_metadata structure (per x402 spec):
+-- {
+--   "endpoint_id": "uuid",
+--   "endpoint_path": "/api/compliance/check",
+--   "payment_proof": "proof_xyz789",
+--   "request_id": "req_abc123",          -- Idempotency key (nonce)
+--   "payment_id": "pay_xyz789",          -- x402 paymentId
+--   "vendor_domain": "api.acme.com",
+--   "category": "compliance",
+--   "asset_address": "0xA0b86991...",    -- USDC contract
+--   "network": "base-mainnet",
+--   "verified_at": "2025-12-21T10:23:00Z",
+--   "expires_at": "2025-12-21T10:25:00Z" -- From x402 payment request
+-- }
 
-CREATE POLICY "Tenants view own x402 transactions" ON x402_transactions
-  FOR SELECT
-  USING (tenant_id = (SELECT public.get_user_tenant_id()));
+COMMENT ON COLUMN transfers.x402_metadata IS 'x402 protocol metadata for pay-per-call API payments (per x402.org spec)';
+
+-- Add index for x402 queries
+CREATE INDEX idx_transfers_x402_endpoint ON transfers((x402_metadata->>'endpoint_id')) 
+  WHERE type = 'x402';
+CREATE INDEX idx_transfers_x402_request_id ON transfers((x402_metadata->>'request_id')) 
+  WHERE type = 'x402';
+
+-- Unique constraint on request_id to prevent double-payment
+CREATE UNIQUE INDEX idx_transfers_x402_request_id_unique 
+  ON transfers(tenant_id, (x402_metadata->>'request_id')) 
+  WHERE type = 'x402' AND x402_metadata->>'request_id' IS NOT NULL;
 ```
 
-### Account Type Extension
+#### Extend `accounts` Table for Agent Config
 
 ```sql
--- Migration: Add 'agent' account type
+-- Add 'agent' to account types (if not exists)
 ALTER TYPE account_type ADD VALUE IF NOT EXISTS 'agent';
 
--- Add agent_config column for spending policies
+-- Add agent_config column
 ALTER TABLE accounts 
 ADD COLUMN IF NOT EXISTS agent_config JSONB DEFAULT NULL;
 
-COMMENT ON COLUMN accounts.agent_config IS 'Configuration for agent-type accounts including spending policies and x402 settings';
+COMMENT ON COLUMN accounts.agent_config IS 'Configuration for agent-type accounts including x402 settings';
 
 -- agent_config structure:
 -- {
---   "parent_account_id": "uuid",
+--   "parent_account_id": "uuid",        -- Account that owns this agent
 --   "purpose": "Automate compliance checks",
---   "x402_enabled": true
+--   "x402_enabled": true,
+--   "default_wallet_id": "uuid"         -- Which wallet this agent uses by default
 -- }
 ```
 
@@ -635,25 +715,36 @@ Response: 204 No Content
 
 ---
 
-### Epic 18: Agent Wallets API
+### Epic 18: Wallets API (Generic - Any Account)
 
-#### 1. Create Agent Wallet
+**Note:** Wallets are NOT agent-specific. Any account can have wallets. The `spending_policy` field configures limits when the wallet is used for x402 payments (often by agents).
+
+#### 1. Create Wallet
 ```typescript
-POST /v1/agent-wallets
+POST /v1/wallets
 Authorization: Bearer <token>
 
 Request:
 {
-  agentAccountId: "uuid",
-  dailySpendLimit: 100.00,
-  monthlySpendLimit: 2000.00,
-  approvedVendors?: ["api.acme.com", "api.beta.com"],
-  approvedCategories?: ["compliance", "fx_intelligence"],
-  requiresApprovalAbove?: 50.00,
-  autoFundEnabled?: true,
-  autoFundThreshold?: 100.00,
-  autoFundAmount?: 500.00,
-  autoFundSourceAccountId?: "uuid"
+  ownerAccountId: "uuid",           // Required: Account that owns this wallet
+  managedByAgentId?: "uuid",        // Optional: If wallet is controlled by an agent
+  name?: "Compliance Bot Wallet",   // Optional: Friendly name
+  purpose?: "x402 payments for compliance checks", // Optional
+  currency: "USDC",                 // Required: USDC or EURC only (per x402 spec)
+  network?: "base-mainnet",         // Optional: base-mainnet, ethereum-mainnet, etc.
+  spendingPolicy?: {                // Optional: If set, enforced on x402 payments
+    dailyLimit: 100.00,
+    monthlyLimit: 2000.00,
+    approvedVendors: ["api.acme.com", "api.beta.com"],
+    approvedCategories: ["compliance", "fx_intelligence"],
+    requiresApprovalAbove: 50.00,
+    autoFund: {
+      enabled: true,
+      threshold: 100.00,
+      amount: 500.00,
+      sourceAccountId: "uuid"
+    }
+  }
 }
 
 Response: 201 Created
@@ -661,36 +752,49 @@ Response: 201 Created
   data: {
     id: "wallet_xyz",
     tenantId: "uuid",
-    agentAccountId: "uuid",
+    ownerAccountId: "uuid",
+    managedByAgentId: null,
+    name: "Compliance Bot Wallet",
     balance: 0,
     currency: "USDC",
-    dailySpendLimit: 100.00,
-    dailySpent: 0,
-    dailyRemaining: 100.00,
-    monthlySpendLimit: 2000.00,
-    monthlySpent: 0,
-    monthlyRemaining: 2000.00,
-    approvedVendors: ["api.acme.com"],
-    approvedCategories: ["compliance"],
-    requiresApprovalAbove: 50.00,
+    network: "base-mainnet",
+    walletAddress: "internal://payos/wallet_xyz", // Phase 1: internal, Phase 2: real address
+    spendingPolicy: {
+      dailyLimit: 100.00,
+      dailySpent: 0,
+      dailyRemaining: 100.00,
+      monthlyLimit: 2000.00,
+      monthlySpent: 0,
+      monthlyRemaining: 2000.00,
+      approvedVendors: ["api.acme.com"],
+      approvedCategories: ["compliance"],
+      requiresApprovalAbove: 50.00
+    },
     status: "active",
     createdAt: "...",
     updatedAt: "..."
   }
 }
+
+// If non-stablecoin currency requested:
+Response: 400 Bad Request
+{
+  error: "Invalid currency",
+  message: "Only stablecoins (USDC, EURC) are supported per x402 protocol"
+}
 ```
 
-#### 2. Agent Pay (x402 Payment Execution)
+#### 2. x402 Pay (Payment Execution)
 ```typescript
 POST /v1/x402/pay
-Authorization: Bearer <agent_api_key>
+Authorization: Bearer <token>
 
 Request:
 {
   walletId: "wallet_xyz",
   endpointId: "ep_abc123",
-  amount: 0.25,
-  requestId: "req_unique_id", // Idempotency
+  amount: "0.25",                    // String for precision (per x402 spec)
+  requestId: "req_unique_id",        // Required: Idempotency key (nonce)
   category?: "compliance",
   memo?: "Document verification for remittance #123"
 }
@@ -698,39 +802,57 @@ Request:
 Response: 200 OK
 {
   data: {
-    transactionId: "tx_xyz789",
-    paymentProof: "proof_xyz789", // Use this in X-Payment-Proof header
+    transferId: "uuid",              // ID in transfers table (type='x402')
+    paymentProof: "proof_xyz789",    // Use this in X-Payment-Proof header
+    paymentId: "pay_abc123",         // x402 paymentId for verification
     status: "confirmed",
-    walletBalance: 499.75,
-    dailyRemaining: 99.75,
-    monthlyRemaining: 1999.75
+    amount: "0.25",
+    currency: "USDC",
+    walletBalance: "499.75",
+    spendingPolicy: {
+      dailyRemaining: "99.75",
+      monthlyRemaining: "1999.75"
+    }
   }
 }
 
-// If policy violation:
+// If spending policy violation:
 Response: 403 Forbidden
 {
   error: "Policy violation",
+  code: "DAILY_LIMIT_EXCEEDED",
   reason: "Daily spend limit exceeded",
-  dailyRemaining: 0,
-  dailyLimit: 100.00
+  spendingPolicy: {
+    dailyLimit: "100.00",
+    dailyRemaining: "0.00"
+  }
+}
+
+// If vendor not approved:
+Response: 403 Forbidden
+{
+  error: "Policy violation",
+  code: "VENDOR_NOT_APPROVED",
+  reason: "Vendor 'api.unknown.com' not in approved vendors list",
+  approvedVendors: ["api.acme.com", "api.beta.com"]
 }
 
 // If requires approval:
 Response: 202 Accepted
 {
-  transactionId: "tx_pending_123",
+  transferId: "uuid",
   status: "pending_approval",
   message: "Payment requires approval (amount > $50)",
-  approvalUrl: "https://dashboard.payos.com/approvals/tx_pending_123"
+  approvalUrl: "https://dashboard.payos.com/approvals/<id>"
 }
 ```
 
-#### 3. List Agent Wallets
+#### 3. List Wallets
 ```typescript
-GET /v1/agent-wallets
-GET /v1/agent-wallets?status=active
-GET /v1/agent-wallets?agent_account_id=<uuid>
+GET /v1/wallets
+GET /v1/wallets?status=active
+GET /v1/wallets?owner_account_id=<uuid>
+GET /v1/wallets?managed_by_agent_id=<uuid>
 
 Response: 200 OK
 {
@@ -741,23 +863,23 @@ Response: 200 OK
 
 #### 4. Get Wallet Details
 ```typescript
-GET /v1/agent-wallets/:id
+GET /v1/wallets/:id
 
 Response: 200 OK
 {
   data: {
     ...wallet,
-    recentTransactions: [...], // Last 20
+    recentTransactions: [...], // Last 20 x402 transfers
     topVendors: [
-      { vendor: "api.acme.com", spent: 125.50, calls: 502 }
+      { vendor: "api.acme.com", spent: "125.50", calls: 502 }
     ],
     topCategories: [
-      { category: "compliance", spent: 85.25, calls: 341 }
+      { category: "compliance", spent: "85.25", calls: 341 }
     ],
     spendingTrend: {
-      thisWeek: 45.20,
-      lastWeek: 38.50,
-      change: +17.4
+      thisWeek: "45.20",
+      lastWeek: "38.50",
+      changePercent: 17.4
     }
   }
 }
@@ -765,48 +887,51 @@ Response: 200 OK
 
 #### 5. Update Wallet
 ```typescript
-PATCH /v1/agent-wallets/:id
+PATCH /v1/wallets/:id
 
 Request:
 {
-  dailySpendLimit?: 200.00,
-  approvedVendors?: ["api.acme.com", "api.beta.com", "api.gamma.com"],
-  requiresApprovalAbove?: 25.00,
-  status?: "active" | "frozen"
+  name?: "Updated Wallet Name",
+  status?: "active" | "frozen",
+  spendingPolicy?: {
+    dailyLimit?: 200.00,
+    approvedVendors?: ["api.acme.com", "api.beta.com", "api.gamma.com"],
+    requiresApprovalAbove?: 25.00
+  }
 }
 
 Response: 200 OK
 { data: {...updated wallet} }
 ```
 
-#### 6. Fund Wallet (Internal Transfer)
+#### 6. Fund Wallet
 ```typescript
-POST /v1/agent-wallets/:id/fund
+POST /v1/wallets/:id/fund
 
 Request:
 {
   sourceAccountId: "parent_account_uuid",
-  amount: 500.00
+  amount: "500.00"
 }
 
 Response: 200 OK
 {
   data: {
-    transferId: "transfer_xyz",
-    walletBalance: 500.00
+    transferId: "uuid",          // Internal transfer record
+    walletBalance: "500.00"
   }
 }
 ```
 
-#### 7. Get Wallet Transactions
+#### 7. Get Wallet Transactions (x402 payments only)
 ```typescript
-GET /v1/agent-wallets/:id/transactions
-GET /v1/agent-wallets/:id/transactions?category=compliance
-GET /v1/agent-wallets/:id/transactions?start_date=2025-12-01&end_date=2025-12-19
+GET /v1/wallets/:id/transactions
+GET /v1/wallets/:id/transactions?category=compliance
+GET /v1/wallets/:id/transactions?start_date=2025-12-01&end_date=2025-12-19
 
 Response: 200 OK
 {
-  data: [...x402_transactions],
+  data: [...transfers where type='x402'],  // From transfers table!
   pagination: { ... }
 }
 ```
@@ -858,54 +983,58 @@ Layout:
 
 ---
 
-#### 2. Agent Wallets Page (`/agent-wallets`)
+#### 2. Wallets Page (`/wallets`)
 
 **Epic 18, Story 18.5**
 
 ```tsx
-// payos-ui/src/pages/AgentWalletsPage.tsx
+// payos-ui/src/pages/WalletsPage.tsx
 
 Layout:
 ┌──────────────────────────────────────────────────────┐
-│ Agent Wallets                    [+ Create Wallet]   │
+│ Wallets                          [+ Create Wallet]   │
 ├──────────────────────────────────────────────────────┤
 │ Overview                                              │
 │ ┌────────────┐ ┌────────────┐ ┌────────────┐        │
 │ │ 5          │ │ $2,450.25  │ │ $1,234.75  │        │
-│ │ Wallets    │ │ Balance    │ │ Spent Today│        │
+│ │ Wallets    │ │ Balance    │ │ x402 Today │        │
 │ └────────────┘ └────────────┘ └────────────┘        │
+├──────────────────────────────────────────────────────┤
+│ Filter: [All] [Agent-Managed] [Personal]              │
 ├──────────────────────────────────────────────────────┤
 │ Wallets                                               │
 │ ┌──────────────────────────────────────────────────┐ │
-│ │ 🤖 Compliance Bot                  $475.25 USDC │ │
+│ │ 🤖 Compliance Bot Wallet          $475.25 USDC  │ │
+│ │    Owner: Acme Corp                              │ │
+│ │    Managed by: Compliance Agent                  │ │
 │ │    Daily: $24.75 / $100 (24.75%)                │ │
 │ │    [████░░░░░░]                                 │ │
 │ │    Monthly: $24.75 / $2,000 (1.24%)             │ │
 │ │    [█░░░░░░░░░]                                 │ │
-│ │    Status: Active                                │ │
+│ │    Status: Active • USDC • base-mainnet         │ │
 │ │    [View] [Fund] [Adjust Limits]                │ │
 │ ├──────────────────────────────────────────────────┤ │
-│ │ 🤖 FX Intelligence Agent           $1,250.00    │ │
-│ │    Daily: $156.20 / $500 (31.24%)               │ │
-│ │    [███░░░░░░░]                                 │ │
-│ │    Monthly: $3,245.80 / $10,000 (32.46%)        │ │
-│ │    [███░░░░░░░]                                 │ │
-│ │    Status: Active                                │ │
-│ │    [View] [Fund] [Adjust Limits]                │ │
+│ │ 💼 Treasury Operations             $5,000.00    │ │
+│ │    Owner: Acme Corp                              │ │
+│ │    No spending policy (unrestricted)             │ │
+│ │    Status: Active • USDC • base-mainnet         │ │
+│ │    [View] [Fund]                                │ │
 │ └──────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────┘
 ```
 
 **Features:**
-- List all agent wallets with balances
-- Visual spend limit indicators
+- List all wallets (not just agent wallets)
+- Filter by: agent-managed, personal, all
+- Visual spend limit indicators (if spending policy set)
+- Show owner account and managing agent
 - Quick actions: view, fund, adjust limits
 - Modal to create new wallet
-- Real-time balance updates
+- Stablecoin badge (USDC/EURC)
 
 ---
 
-#### 3. Agent Wallet Detail Page (`/agent-wallets/:id`)
+#### 3. Wallet Detail Page (`/wallets/:id`)
 
 **Epic 18, Story 18.5**
 
@@ -978,12 +1107,13 @@ Layout:
 #### Week 1: Database & Core APIs
 
 **Day 1-2: Database Setup**
-- [ ] Create migration: `20251220_create_x402_endpoints.sql`
-- [ ] Create migration: `20251220_create_agent_wallets.sql`
-- [ ] Create migration: `20251220_create_x402_transactions.sql`
-- [ ] Create migration: `20251220_extend_account_type_agent.sql`
+- [ ] Create migration: `20251222_create_x402_endpoints.sql`
+- [ ] Create migration: `20251222_create_wallets.sql` (generic wallets, NOT agent-specific)
+- [ ] Create migration: `20251222_extend_transfers_x402.sql` (add x402_metadata to existing table)
+- [ ] Create migration: `20251222_extend_accounts_agent_config.sql`
 - [ ] Apply migrations to dev environment
 - [ ] Verify RLS policies work correctly
+- [ ] Verify stablecoin-only currency constraint
 
 **Day 3-4: x402 Endpoints API (Story 17.1)**
 - [ ] Create `apps/api/src/routes/x402-endpoints.ts`
@@ -1005,38 +1135,44 @@ Layout:
 
 ---
 
-#### Week 2: Agent Wallets & Payment Execution
+#### Week 2: Wallets & Payment Execution
 
 **Day 1-2: Agent Account Type (Story 18.1)**
-- [ ] Verify `agent` account type exists
+- [ ] Verify `agent` account type exists (may already be in DB)
 - [ ] Update account creation to support `agent` type
 - [ ] Add `agent_config` JSONB field handling
 - [ ] Update `POST /v1/accounts` to accept agent type
-- [ ] Update UI account creation form (future)
+- [ ] Document agent_config structure
 
-**Day 3-4: Agent Wallet API (Story 18.2)**
-- [ ] Create `apps/api/src/routes/agent-wallets.ts`
-- [ ] Implement POST `/v1/agent-wallets` (create)
-- [ ] Implement GET `/v1/agent-wallets` (list)
-- [ ] Implement GET `/v1/agent-wallets/:id` (details)
-- [ ] Implement PATCH `/v1/agent-wallets/:id` (update)
-- [ ] Implement POST `/v1/agent-wallets/:id/fund` (fund wallet)
-- [ ] Add validation for spending limits
+**Day 3-4: Wallets API (Story 18.2)**
+- [ ] Create `apps/api/src/routes/wallets.ts` (generic wallets, NOT agent-specific)
+- [ ] Implement POST `/v1/wallets` (create - any account can have wallets)
+- [ ] Implement GET `/v1/wallets` (list with filters)
+- [ ] Implement GET `/v1/wallets/:id` (details with spending stats)
+- [ ] Implement PATCH `/v1/wallets/:id` (update spending policy)
+- [ ] Implement POST `/v1/wallets/:id/fund` (fund wallet)
+- [ ] Add validation:
+  - [ ] Currency must be USDC or EURC (per x402 spec)
+  - [ ] Spending policy limits must be positive
+  - [ ] Approved vendors must be valid domains
 - [ ] Test all endpoints
 
-**Day 5: Agent Payment Execution (Story 18.3)**
-- [ ] Create `apps/api/src/services/agent-payment-executor.ts`
+**Day 5: x402 Payment Execution (Story 18.3)**
+- [ ] Create `apps/api/src/services/x402-payment-executor.ts`
 - [ ] Implement POST `/v1/x402/pay`
-- [ ] Policy checks:
+- [ ] Policy checks (if spending_policy set):
   - [ ] Verify vendor in `approved_vendors`
   - [ ] Check daily spend limit
   - [ ] Check monthly spend limit
   - [ ] Check `requires_approval_above` threshold
-- [ ] Execute internal transfer (debit wallet, credit endpoint owner)
-- [ ] Record in `x402_transactions`
-- [ ] Update wallet `daily_spent` / `monthly_spent`
-- [ ] Generate mock `payment_proof`
-- [ ] Test happy path and policy violations
+- [ ] Execute internal transfer:
+  - [ ] Debit wallet balance
+  - [ ] Credit endpoint owner's account
+  - [ ] Create transfer record with `type='x402'` (NOT new table!)
+  - [ ] Set `x402_metadata` with endpoint_id, payment_proof, etc.
+- [ ] Update wallet `spending_policy.daily_spent` / `monthly_spent`
+- [ ] Generate mock `payment_proof` (UUID-based in Phase 1)
+- [ ] Test happy path and all policy violations
 
 ---
 
@@ -1051,21 +1187,23 @@ Layout:
 - [ ] Add quick actions (pause, edit, delete)
 - [ ] Integration instructions modal
 
-**Day 2-3: Agent Wallets UI (Story 18.5)**
-- [ ] Create `payos-ui/src/pages/AgentWalletsPage.tsx`
-- [ ] Create `payos-ui/src/pages/AgentWalletDetailPage.tsx`
-- [ ] Create `payos-ui/src/hooks/api/useAgentWallets.ts`
+**Day 2-3: Wallets UI (Story 18.5)**
+- [ ] Create `payos-ui/src/pages/WalletsPage.tsx`
+- [ ] Create `payos-ui/src/pages/WalletDetailPage.tsx`
+- [ ] Create `payos-ui/src/hooks/api/useWallets.ts`
 - [ ] Implement wallet list with balances
-- [ ] Add spend limit visualizations (progress bars)
+- [ ] Add filter: All / Agent-Managed / Personal
+- [ ] Add spend limit visualizations (progress bars, if policy set)
 - [ ] Add "Create Wallet" modal
 - [ ] Add "Fund Wallet" modal
-- [ ] Add "Edit Policy" modal
+- [ ] Add "Edit Spending Policy" modal
 
-**Day 4: Agent Wallet Detail Page**
-- [ ] Transaction history table
+**Day 4: Wallet Detail Page**
+- [ ] x402 Transaction history (from transfers table, type='x402')
 - [ ] Top vendors / categories
 - [ ] Spending trend chart (7 days)
 - [ ] Real-time balance updates
+- [ ] Show owner account and managing agent (if applicable)
 
 **Day 5: Polish & Testing**
 - [ ] Add loading states
@@ -1080,12 +1218,13 @@ Layout:
 
 **Day 1-2: Seed Data**
 - [ ] Create `apps/api/scripts/seed-x402-endpoints.ts`
-- [ ] Create `apps/api/scripts/seed-agent-wallets.ts`
-- [ ] Create `apps/api/scripts/seed-x402-transactions.ts`
+- [ ] Create `apps/api/scripts/seed-wallets.ts` (various wallet types)
+- [ ] Create `apps/api/scripts/seed-x402-transfers.ts` (adds to existing transfers table)
 - [ ] Generate realistic data:
   - [ ] 5-10 x402 endpoints per tenant
-  - [ ] 3-5 agent wallets per tenant
-  - [ ] 100+ x402 transactions (last 30 days)
+  - [ ] 3-5 wallets per tenant (mix of agent-managed and regular)
+  - [ ] 100+ x402 transfers (last 30 days) - type='x402' in transfers table
+  - [ ] All amounts in USDC/EURC only
 - [ ] Add to `pnpm seed:all`
 
 **Day 3: Demo Scenario**
