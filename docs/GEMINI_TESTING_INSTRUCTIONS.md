@@ -43,12 +43,21 @@ Local API: http://localhost:4000 (if running locally)
 ```bash
 cd /Users/haxaco/Dev/PayOS
 
-# Run all 4 test suites in parallel
+# Run all 5 test suites in parallel
 tsx scripts/test-scenario-1-provider.ts & \
 tsx scripts/test-scenario-2-agent.ts & \
 tsx scripts/test-scenario-3-monitoring.ts & \
 tsx scripts/test-wallet-features.ts & \
+tsx scripts/test-pagination.ts & \
 wait
+```
+
+### **3a. Run Pagination Tests Only**
+```bash
+# Test pagination across all 10 paginated endpoints
+npx tsx scripts/test-pagination.ts
+
+# Expected: All tests pass with proper pagination support
 ```
 
 ---
@@ -156,6 +165,49 @@ tsx scripts/test-wallet-features.ts
 
 ---
 
+### **Test Suite 5: Pagination (NEW)** 🆕
+**File:** `scripts/test-pagination.ts`  
+**Duration:** ~20 seconds  
+**What it tests:**
+- All 10 paginated endpoints support proper pagination
+- First page returns correct number of records
+- Second page returns correct records (no duplicates)
+- Items per page (limit) parameter works
+- Last page returns correct remaining records
+- Total counts are accurate
+- Page calculations are correct
+
+**Endpoints Tested:**
+1. Accounts (1,072 records)
+2. Transfers (30,884 records)
+3. Schedules (60 records)
+4. Refunds (12 records)
+5. Cards (61 records)
+6. Compliance (15 records)
+7. Reports (147 records)
+8. Agents (68 records)
+9. x402 Endpoints (62 records)
+10. x402 Wallets (69 records)
+
+**Run:**
+```bash
+npx tsx scripts/test-pagination.ts
+```
+
+**Expected Output:**
+```
+✅ Passed: 10/10
+❌ Failed: 0/10
+⏱️  Duration: ~20s
+
+All pagination tests passed! 🎉
+```
+
+**Manual Testing Guide:**
+For comprehensive UI testing, see: `docs/PAGINATION_TESTING_GUIDE.md`
+
+---
+
 ## 📊 Expected Results Summary
 
 ### **All Tests Passing:**
@@ -168,9 +220,10 @@ Test Suite 1 (Provider):       ✅ 7/7 passed
 Test Suite 2 (Agent):          ✅ 10/10 passed
 Test Suite 3 (Monitoring):     ✅ 8/8 passed
 Test Suite 4 (Wallets):        ✅ 10/10 passed
+Test Suite 5 (Pagination):     ✅ 10/10 passed
 ────────────────────────────────────────────────────────────────
-Total:                         ✅ 35/35 passed (100%)
-Duration:                      ~52s
+Total:                         ✅ 45/45 passed (100%)
+Duration:                      ~72s
 Status:                        🎉 ALL TESTS PASSED
 ```
 
