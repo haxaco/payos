@@ -1,0 +1,52 @@
+name: TypeScript Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build dependencies
+        run: pnpm build --filter=@payos/ui --filter=@payos/types --filter=@payos/api-client
+      
+      - name: TypeScript check - Web
+        run: cd apps/web && pnpm tsc --noEmit
+        continue-on-error: false
+      
+      - name: TypeScript check - API Client
+        run: cd packages/api-client && pnpm tsc --noEmit
+        continue-on-error: false
+      
+      - name: TypeScript check - UI
+        run: cd packages/ui && pnpm tsc --noEmit
+        continue-on-error: false
+      
+      # API package has pre-existing errors, so we skip it for now
+      # Uncomment when API TypeScript errors are fixed
+      # - name: TypeScript check - API
+      #   run: cd apps/api && pnpm tsc --noEmit
+      #   continue-on-error: false
+
