@@ -42,7 +42,7 @@ export default function X402EndpointDetailPage() {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const api = useAPIClient();
+  const api = useApiClient();
   const endpointId = params.id as string;
   const [copiedCode, setCopiedCode] = useState(false);
 

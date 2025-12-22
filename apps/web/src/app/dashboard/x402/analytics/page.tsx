@@ -40,7 +40,7 @@ type Metric = 'revenue' | 'calls' | 'unique_payers';
 
 export default function X402AnalyticsPage() {
   const router = useRouter();
-  const api = useAPIClient();
+  const api = useApiClient();
   const [period, setPeriod] = useState<Period>('30d');
   const [topMetric, setTopMetric] = useState<Metric>('revenue');
 

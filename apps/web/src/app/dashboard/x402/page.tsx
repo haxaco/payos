@@ -40,7 +40,7 @@ import {
 type ViewMode = 'provider' | 'consumer';
 
 export default function X402OverviewPage() {
-  const api = useAPIClient();
+  const api = useApiClient();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<ViewMode>('provider');
 

@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 
 export default function X402EndpointsPage() {
-  const api = useAPIClient();
+  const api = useApiClient();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
