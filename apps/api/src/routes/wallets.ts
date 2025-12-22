@@ -52,11 +52,11 @@ const createWalletSchema = z.object({
   currency: z.enum(['USDC', 'EURC']).default('USDC'),
   initialBalance: z.number().min(0).default(0),
   spendingPolicy: spendingPolicySchema,
-  
+
   // New Phase 2 fields
   walletType: z.enum(['internal', 'circle_custodial', 'circle_mpc']).default('internal'),
   blockchain: z.enum(['base', 'eth', 'polygon', 'avax', 'sol']).default('base'),
-  
+
   // Optional metadata
   name: z.string().max(255).optional(),
   purpose: z.string().max(500).optional()
@@ -68,15 +68,15 @@ const addExternalWalletSchema = z.object({
   managedByAgentId: z.string().uuid().optional(),
   currency: z.enum(['USDC', 'EURC']).default('USDC'),
   spendingPolicy: spendingPolicySchema,
-  
+
   // External wallet details
   walletAddress: z.string().min(10), // 0x... or Solana address
   blockchain: z.enum(['base', 'eth', 'polygon', 'avax', 'sol']),
-  
+
   // Verification (signature to prove ownership)
   signature: z.string().optional(),
   signatureMessage: z.string().optional(),
-  
+
   // Metadata
   name: z.string().max(255).optional(),
   purpose: z.string().max(500).optional()
@@ -104,6 +104,8 @@ const withdrawSchema = z.object({
 // ============================================
 
 function mapWalletFromDb(row: any) {
+  console.log('DEBUG: mapWalletFromDb row keys:', Object.keys(row));
+  console.log('DEBUG: mapWalletFromDb row:', row);
   return {
     id: row.id,
     tenantId: row.tenant_id,
@@ -117,7 +119,7 @@ function mapWalletFromDb(row: any) {
     status: row.status,
     name: row.name,
     purpose: row.purpose,
-    
+
     // New Phase 2 fields
     walletType: row.wallet_type || 'internal',
     custodyType: row.custody_type || 'custodial',
@@ -126,22 +128,23 @@ function mapWalletFromDb(row: any) {
     providerWalletSetId: row.provider_wallet_set_id,
     blockchain: row.blockchain || 'base',
     tokenContract: row.token_contract,
-    
+    providerMetadata: row.provider_metadata,
+
     // Verification
     verificationStatus: row.verification_status || 'verified',
     verificationMethod: row.verification_method,
     verifiedAt: row.verified_at,
-    
+
     // Sync
     lastSyncedAt: row.last_synced_at,
     syncEnabled: row.sync_enabled || false,
-    
+
     // Compliance
     kycStatus: row.kyc_status || 'not_required',
     amlCleared: row.aml_cleared !== false,
     sanctionsStatus: row.sanctions_status || 'not_screened',
     riskScore: row.risk_score,
-    
+
     // Timestamps
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -168,12 +171,12 @@ app.post('/', async (c) => {
   try {
     const ctx = c.get('ctx');
     const body = await c.req.json();
-    
+
     // Validate request
     const validated = createWalletSchema.parse(body);
-    
+
     const supabase = createClient();
-    
+
     // Verify owner account belongs to tenant
     const { data: account, error: accountError } = await supabase
       .from('accounts')
@@ -181,13 +184,13 @@ app.post('/', async (c) => {
       .eq('id', validated.ownerAccountId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (accountError || !account) {
-      return c.json({ 
-        error: 'Account not found or does not belong to your tenant' 
+      return c.json({
+        error: 'Account not found or does not belong to your tenant'
       }, 404);
     }
-    
+
     // If managed by agent, verify agent exists and belongs to tenant
     if (validated.managedByAgentId) {
       const { data: agent, error: agentError } = await supabase
@@ -196,27 +199,27 @@ app.post('/', async (c) => {
         .eq('id', validated.managedByAgentId)
         .eq('tenant_id', ctx.tenantId)
         .single();
-      
+
       if (agentError || !agent) {
-        return c.json({ 
-          error: 'Agent not found or does not belong to your tenant' 
+        return c.json({
+          error: 'Agent not found or does not belong to your tenant'
         }, 404);
       }
     }
-    
+
     // NOTE: Accounts can have MULTIPLE wallets
     // We no longer check for duplicates - just create a new one
-    
+
     // Determine wallet address based on type
     let walletAddress: string;
     let providerWalletId: string | null = null;
     let providerWalletSetId: string | null = null;
     let providerEntityId: string | null = null;
     let providerMetadata: any = null;
-    
+
     const blockchain = validated.blockchain || 'base';
     const tokenContract = getTokenContract(validated.currency, blockchain);
-    
+
     if (validated.walletType === 'internal') {
       // Internal PayOS wallet (Phase 1)
       walletAddress = validated.managedByAgentId
@@ -225,7 +228,7 @@ app.post('/', async (c) => {
     } else {
       // Circle wallet (mock for now, real in Phase 2)
       const circleService = getCircleService(ctx.tenantId);
-      
+
       try {
         const circleWallet = await circleService.createWallet({
           walletSetId: circleService.getDefaultWalletSetId(),
@@ -233,7 +236,7 @@ app.post('/', async (c) => {
           name: validated.name || `PayOS Wallet`,
           refId: validated.ownerAccountId
         });
-        
+
         walletAddress = circleWallet.address;
         providerWalletId = circleWallet.id;
         providerWalletSetId = circleWallet.walletSetId;
@@ -252,7 +255,7 @@ app.post('/', async (c) => {
         }, 500);
       }
     }
-    
+
     // Create wallet record
     const { data: wallet, error: createError } = await supabase
       .from('wallets')
@@ -268,7 +271,7 @@ app.post('/', async (c) => {
         status: 'active',
         name: validated.name,
         purpose: validated.purpose,
-        
+
         // Phase 2 fields
         wallet_type: validated.walletType,
         custody_type: validated.walletType === 'circle_mpc' ? 'mpc' : 'custodial',
@@ -279,12 +282,12 @@ app.post('/', async (c) => {
         provider_metadata: providerMetadata,
         blockchain: blockchain,
         token_contract: tokenContract,
-        
+
         // Verification (new wallets are auto-verified)
         verification_status: 'verified',
         verification_method: validated.walletType === 'internal' ? 'internal' : 'api_created',
         verified_at: new Date().toISOString(),
-        
+
         // Compliance defaults
         kyc_status: 'not_required',
         aml_cleared: true,
@@ -292,15 +295,15 @@ app.post('/', async (c) => {
       })
       .select()
       .single();
-    
+
     if (createError) {
       console.error('Error creating wallet:', createError);
-      return c.json({ 
+      return c.json({
         error: 'Failed to create wallet',
-        details: createError.message 
+        details: createError.message
       }, 500);
     }
-    
+
     // If initial balance > 0, create a deposit transfer
     if (validated.initialBalance > 0) {
       await supabase
@@ -320,16 +323,16 @@ app.post('/', async (c) => {
           }
         });
     }
-    
+
     return c.json({
       data: mapWalletFromDb(wallet)
     }, 201);
-    
+
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ 
-        error: 'Validation failed', 
-        details: error.errors 
+      return c.json({
+        error: 'Validation failed',
+        details: error.errors
       }, 400);
     }
     console.error('Error in POST /v1/wallets:', error);
@@ -345,7 +348,7 @@ app.get('/', async (c) => {
   try {
     const ctx = c.get('ctx');
     const supabase = createClient();
-    
+
     // Parse query params
     const ownerAccountId = c.req.query('owner_account_id');
     const managedByAgentId = c.req.query('managed_by_agent_id');
@@ -353,37 +356,37 @@ app.get('/', async (c) => {
     const page = parseInt(c.req.query('page') || '1');
     const limit = parseInt(c.req.query('limit') || '50');
     const offset = (page - 1) * limit;
-    
+
     // Build query
     let query = supabase
       .from('wallets')
       .select('*', { count: 'exact' })
       .eq('tenant_id', ctx.tenantId)
       .order('created_at', { ascending: false });
-    
+
     // Apply filters
     if (ownerAccountId) {
       query = query.eq('owner_account_id', ownerAccountId);
     }
-    
+
     if (managedByAgentId) {
       query = query.eq('managed_by_agent_id', managedByAgentId);
     }
-    
+
     if (status) {
       query = query.eq('status', status);
     }
-    
+
     // Apply pagination
     query = query.range(offset, offset + limit - 1);
-    
+
     const { data: wallets, error, count } = await query;
-    
+
     if (error) {
       console.error('Error fetching wallets:', error);
       return c.json({ error: 'Failed to fetch wallets' }, 500);
     }
-    
+
     return c.json({
       data: wallets?.map(mapWalletFromDb) || [],
       pagination: {
@@ -393,7 +396,7 @@ app.get('/', async (c) => {
         totalPages: Math.ceil((count || 0) / limit)
       }
     });
-    
+
   } catch (error) {
     console.error('Error in GET /v1/wallets:', error);
     return c.json({ error: 'Internal server error' }, 500);
@@ -416,12 +419,12 @@ app.post('/external', async (c) => {
   try {
     const ctx = c.get('ctx');
     const body = await c.req.json();
-    
+
     // Validate request
     const validated = addExternalWalletSchema.parse(body);
-    
+
     const supabase = createClient();
-    
+
     // Verify owner account belongs to tenant
     const { data: account, error: accountError } = await supabase
       .from('accounts')
@@ -429,13 +432,13 @@ app.post('/external', async (c) => {
       .eq('id', validated.ownerAccountId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (accountError || !account) {
-      return c.json({ 
-        error: 'Account not found or does not belong to your tenant' 
+      return c.json({
+        error: 'Account not found or does not belong to your tenant'
       }, 404);
     }
-    
+
     // Check if this wallet address is already linked to this tenant
     const { data: existingWallet } = await supabase
       .from('wallets')
@@ -443,18 +446,18 @@ app.post('/external', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .eq('wallet_address', validated.walletAddress)
       .single();
-    
+
     if (existingWallet) {
       return c.json({
         error: 'This wallet address is already linked to your account',
         walletId: existingWallet.id
       }, 409);
     }
-    
+
     // Verify ownership (mock for now)
     let verificationStatus: 'verified' | 'pending' | 'unverified' = 'unverified';
     let verificationMethod: string | null = null;
-    
+
     if (validated.signature && validated.signatureMessage) {
       // Mock verification - in Phase 2, use real signature verification
       const circleService = getCircleService(ctx.tenantId);
@@ -463,7 +466,7 @@ app.post('/external', async (c) => {
         validated.signature,
         validated.signatureMessage
       );
-      
+
       if (verifyResult.verified) {
         verificationStatus = 'verified';
         verificationMethod = 'signature';
@@ -475,10 +478,10 @@ app.post('/external', async (c) => {
       // No signature provided - mark as pending verification
       verificationStatus = 'pending';
     }
-    
+
     const blockchain = validated.blockchain || 'base';
     const tokenContract = getTokenContract(validated.currency, blockchain);
-    
+
     // Create external wallet record
     const { data: wallet, error: createError } = await supabase
       .from('wallets')
@@ -494,23 +497,23 @@ app.post('/external', async (c) => {
         status: verificationStatus === 'verified' ? 'active' : 'frozen',
         name: validated.name,
         purpose: validated.purpose,
-        
+
         // External wallet fields
         wallet_type: 'external',
         custody_type: 'self',
         provider: 'external',
         blockchain: blockchain,
         token_contract: tokenContract,
-        
+
         // Verification
         verification_status: verificationStatus,
         verification_method: verificationMethod,
         verified_at: verificationStatus === 'verified' ? new Date().toISOString() : null,
-        
+
         // Sync - enable for external wallets
         sync_enabled: true,
         last_synced_at: null, // Will be updated on first sync
-        
+
         // Compliance - external wallets may need KYC
         kyc_status: 'pending',
         aml_cleared: false,
@@ -518,25 +521,25 @@ app.post('/external', async (c) => {
       })
       .select()
       .single();
-    
+
     if (createError) {
       console.error('Error adding external wallet:', createError);
-      return c.json({ 
+      return c.json({
         error: 'Failed to add external wallet',
-        details: createError.message 
+        details: createError.message
       }, 500);
     }
-    
+
     return c.json({
       data: mapWalletFromDb(wallet),
-      message: verificationStatus === 'verified' 
+      message: verificationStatus === 'verified'
         ? 'External wallet added and verified successfully'
         : verificationStatus === 'pending'
-        ? 'External wallet added. Please verify ownership to activate.'
-        : 'External wallet added but verification failed. Please try again.',
+          ? 'External wallet added. Please verify ownership to activate.'
+          : 'External wallet added but verification failed. Please try again.',
       requiresVerification: verificationStatus !== 'verified'
     }, 201);
-    
+
   } catch (error) {
     if (error instanceof z.ZodError) {
       return c.json({
@@ -558,15 +561,15 @@ app.post('/:id/verify', async (c) => {
     const ctx = c.get('ctx');
     const walletId = c.req.param('id');
     const body = await c.req.json();
-    
+
     const { signature, message } = body;
-    
+
     if (!signature || !message) {
       return c.json({ error: 'Signature and message are required' }, 400);
     }
-    
+
     const supabase = createClient();
-    
+
     // Fetch wallet
     const { data: wallet, error: fetchError } = await supabase
       .from('wallets')
@@ -574,22 +577,22 @@ app.post('/:id/verify', async (c) => {
       .eq('id', walletId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (fetchError || !wallet) {
       return c.json({ error: 'Wallet not found' }, 404);
     }
-    
+
     if (wallet.wallet_type !== 'external') {
       return c.json({ error: 'Only external wallets require verification' }, 400);
     }
-    
+
     if (wallet.verification_status === 'verified') {
-      return c.json({ 
+      return c.json({
         message: 'Wallet is already verified',
         data: mapWalletFromDb(wallet)
       });
     }
-    
+
     // Verify signature (mock for now)
     const circleService = getCircleService(ctx.tenantId);
     const verifyResult = await circleService.verifyWalletOwnership(
@@ -597,14 +600,14 @@ app.post('/:id/verify', async (c) => {
       signature,
       message
     );
-    
+
     if (!verifyResult.verified) {
-      return c.json({ 
+      return c.json({
         error: 'Verification failed. Signature does not match wallet address.',
         details: 'Please ensure you are signing with the correct wallet.'
       }, 400);
     }
-    
+
     // Update wallet status
     const { data: updatedWallet, error: updateError } = await supabase
       .from('wallets')
@@ -619,17 +622,17 @@ app.post('/:id/verify', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .select()
       .single();
-    
+
     if (updateError) {
       console.error('Error updating wallet verification:', updateError);
       return c.json({ error: 'Failed to update wallet' }, 500);
     }
-    
+
     return c.json({
       message: 'Wallet verified successfully',
       data: mapWalletFromDb(updatedWallet)
     });
-    
+
   } catch (error) {
     console.error('Error in POST /v1/wallets/:id/verify:', error);
     return c.json({ error: 'Internal server error' }, 500);
@@ -645,7 +648,7 @@ app.get('/:id', async (c) => {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
     const supabase = createClient();
-    
+
     // Fetch wallet
     const { data: wallet, error } = await supabase
       .from('wallets')
@@ -653,11 +656,11 @@ app.get('/:id', async (c) => {
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (error || !wallet) {
       return c.json({ error: 'Wallet not found' }, 404);
     }
-    
+
     // Fetch recent transactions involving this wallet
     const { data: recentTxs } = await supabase
       .from('transfers')
@@ -666,7 +669,7 @@ app.get('/:id', async (c) => {
       .or(`x402_metadata->>wallet_id.eq.${id}`)
       .order('created_at', { ascending: false })
       .limit(20);
-    
+
     // Format response
     const response = {
       ...mapWalletFromDb(wallet),
@@ -682,9 +685,9 @@ app.get('/:id', async (c) => {
         createdAt: tx.created_at
       })) || []
     };
-    
+
     return c.json({ data: response });
-    
+
   } catch (error) {
     console.error('Error in GET /v1/wallets/:id:', error);
     return c.json({ error: 'Internal server error' }, 500);
@@ -700,12 +703,12 @@ app.patch('/:id', async (c) => {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
     const body = await c.req.json();
-    
+
     // Validate request
     const validated = updateWalletSchema.parse(body);
-    
+
     const supabase = createClient();
-    
+
     // Check wallet exists and belongs to tenant
     const { data: existing, error: fetchError } = await supabase
       .from('wallets')
@@ -713,11 +716,11 @@ app.patch('/:id', async (c) => {
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (fetchError || !existing) {
       return c.json({ error: 'Wallet not found' }, 404);
     }
-    
+
     // Update wallet
     const { data: updated, error: updateError } = await supabase
       .from('wallets')
@@ -730,21 +733,21 @@ app.patch('/:id', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .select()
       .single();
-    
+
     if (updateError) {
       console.error('Error updating wallet:', updateError);
       return c.json({ error: 'Failed to update wallet' }, 500);
     }
-    
+
     return c.json({
       data: mapWalletFromDb(updated)
     });
-    
+
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ 
-        error: 'Validation failed', 
-        details: error.errors 
+      return c.json({
+        error: 'Validation failed',
+        details: error.errors
       }, 400);
     }
     console.error('Error in PATCH /v1/wallets/:id:', error);
@@ -761,12 +764,12 @@ app.post('/:id/deposit', async (c) => {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
     const body = await c.req.json();
-    
+
     // Validate request
     const validated = depositSchema.parse(body);
-    
+
     const supabase = createClient();
-    
+
     // Fetch wallet
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
@@ -774,19 +777,19 @@ app.post('/:id/deposit', async (c) => {
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (walletError || !wallet) {
       return c.json({ error: 'Wallet not found' }, 404);
     }
-    
+
     // Check wallet is active
     if (wallet.status !== 'active') {
-      return c.json({ 
+      return c.json({
         error: 'Wallet is not active',
-        status: wallet.status 
+        status: wallet.status
       }, 400);
     }
-    
+
     // Verify source account belongs to tenant
     const { data: sourceAccount, error: sourceError } = await supabase
       .from('accounts')
@@ -794,31 +797,31 @@ app.post('/:id/deposit', async (c) => {
       .eq('id', validated.sourceAccountId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (sourceError || !sourceAccount) {
-      return c.json({ 
-        error: 'Source account not found or does not belong to your tenant' 
+      return c.json({
+        error: 'Source account not found or does not belong to your tenant'
       }, 404);
     }
-    
+
     // Update wallet balance
     const newBalance = parseFloat(wallet.balance) + validated.amount;
-    
+
     const { error: updateError } = await supabase
       .from('wallets')
-      .update({ 
+      .update({
         balance: newBalance,
         status: 'active', // Reset from depleted if needed
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId);
-    
+
     if (updateError) {
       console.error('Error updating wallet balance:', updateError);
       return c.json({ error: 'Failed to deposit funds' }, 500);
     }
-    
+
     // Create transfer record
     const { data: transfer, error: transferError } = await supabase
       .from('transfers')
@@ -838,13 +841,13 @@ app.post('/:id/deposit', async (c) => {
       })
       .select()
       .single();
-    
+
     if (transferError) {
       console.error('Error creating transfer record:', transferError);
       // Note: balance already updated, but transfer record failed
       // In production, this should be a transaction
     }
-    
+
     return c.json({
       data: {
         walletId: wallet.id,
@@ -855,12 +858,12 @@ app.post('/:id/deposit', async (c) => {
         currency: wallet.currency
       }
     });
-    
+
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ 
-        error: 'Validation failed', 
-        details: error.errors 
+      return c.json({
+        error: 'Validation failed',
+        details: error.errors
       }, 400);
     }
     console.error('Error in POST /v1/wallets/:id/deposit:', error);
@@ -877,12 +880,12 @@ app.post('/:id/withdraw', async (c) => {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
     const body = await c.req.json();
-    
+
     // Validate request
     const validated = withdrawSchema.parse(body);
-    
+
     const supabase = createClient();
-    
+
     // Fetch wallet
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
@@ -890,29 +893,29 @@ app.post('/:id/withdraw', async (c) => {
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (walletError || !wallet) {
       return c.json({ error: 'Wallet not found' }, 404);
     }
-    
+
     // Check wallet is active
     if (wallet.status !== 'active') {
-      return c.json({ 
+      return c.json({
         error: 'Wallet is not active',
-        status: wallet.status 
+        status: wallet.status
       }, 400);
     }
-    
+
     // Check sufficient balance
     const currentBalance = parseFloat(wallet.balance);
     if (currentBalance < validated.amount) {
-      return c.json({ 
+      return c.json({
         error: 'Insufficient balance',
         available: currentBalance,
         requested: validated.amount
       }, 400);
     }
-    
+
     // Verify destination account belongs to tenant
     const { data: destAccount, error: destError } = await supabase
       .from('accounts')
@@ -920,32 +923,32 @@ app.post('/:id/withdraw', async (c) => {
       .eq('id', validated.destinationAccountId)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (destError || !destAccount) {
-      return c.json({ 
-        error: 'Destination account not found or does not belong to your tenant' 
+      return c.json({
+        error: 'Destination account not found or does not belong to your tenant'
       }, 404);
     }
-    
+
     // Update wallet balance
     const newBalance = currentBalance - validated.amount;
     const newStatus = newBalance === 0 ? 'depleted' : 'active';
-    
+
     const { error: updateError } = await supabase
       .from('wallets')
-      .update({ 
+      .update({
         balance: newBalance,
         status: newStatus,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId);
-    
+
     if (updateError) {
       console.error('Error updating wallet balance:', updateError);
       return c.json({ error: 'Failed to withdraw funds' }, 500);
     }
-    
+
     // Create transfer record
     const { data: transfer, error: transferError } = await supabase
       .from('transfers')
@@ -965,13 +968,13 @@ app.post('/:id/withdraw', async (c) => {
       })
       .select()
       .single();
-    
+
     if (transferError) {
       console.error('Error creating transfer record:', transferError);
       // Note: balance already updated, but transfer record failed
       // In production, this should be a transaction
     }
-    
+
     return c.json({
       data: {
         walletId: wallet.id,
@@ -983,12 +986,12 @@ app.post('/:id/withdraw', async (c) => {
         status: newStatus
       }
     });
-    
+
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ 
-        error: 'Validation failed', 
-        details: error.errors 
+      return c.json({
+        error: 'Validation failed',
+        details: error.errors
       }, 400);
     }
     console.error('Error in POST /v1/wallets/:id/withdraw:', error);
@@ -1005,7 +1008,7 @@ app.delete('/:id', async (c) => {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
     const supabase = createClient();
-    
+
     // Fetch wallet
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
@@ -1013,15 +1016,15 @@ app.delete('/:id', async (c) => {
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
       .single();
-    
+
     if (walletError || !wallet) {
       return c.json({ error: 'Wallet not found' }, 404);
     }
-    
+
     // Check balance is 0
     if (parseFloat(wallet.balance) > 0) {
       const force = c.req.query('force') === 'true';
-      
+
       if (!force) {
         return c.json({
           error: 'Wallet has non-zero balance',
@@ -1030,23 +1033,23 @@ app.delete('/:id', async (c) => {
         }, 409);
       }
     }
-    
+
     // Delete wallet
     const { error: deleteError } = await supabase
       .from('wallets')
       .delete()
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId);
-    
+
     if (deleteError) {
       console.error('Error deleting wallet:', deleteError);
       return c.json({ error: 'Failed to delete wallet' }, 500);
     }
-    
-    return c.json({ 
-      message: 'Wallet deleted successfully' 
+
+    return c.json({
+      message: 'Wallet deleted successfully'
     }, 200);
-    
+
   } catch (error) {
     console.error('Error in DELETE /v1/wallets/:id:', error);
     return c.json({ error: 'Internal server error' }, 500);

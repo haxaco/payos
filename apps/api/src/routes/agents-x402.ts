@@ -108,7 +108,7 @@ function mapAgentFromDb(agent: any, account: any, wallet?: any) {
       currency: wallet.currency,
       status: wallet.status,
       spendingPolicy: wallet.spending_policy,
-      paymentAddress: wallet.payment_address
+      walletAddress: wallet.wallet_address
     } : null,
     createdAt: agent.created_at,
     updatedAt: agent.updated_at

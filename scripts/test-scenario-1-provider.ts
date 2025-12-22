@@ -263,6 +263,7 @@ async function step4_simulatePayments() {
         endpointId: testData.endpoint.id,
         walletId: wallet.data.id,
         requestId: crypto.randomUUID(),
+        sourceAccountId: TEST_ACCOUNT_ID,
         metadata: {
           scenario: scenario.description,
           callNumber: scenario.count
