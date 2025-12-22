@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { 
   ArrowLeft, 
@@ -16,6 +17,8 @@ import { Input, cn } from '@payos/ui';
 import { formatCurrency } from '@payos/ui';
 import type { Refund } from '@payos/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 const REASON_LABELS: Record<string, string> = {
   customer_request: 'Customer Request',
@@ -28,30 +31,41 @@ const REASON_LABELS: Record<string, string> = {
 export default function RefundsPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [refunds, setRefunds] = useState<Refund[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  useEffect(() => {
-    async function fetchRefunds() {
-      if (!api) {
-        setLoading(false);
-        return;
-      }
+  // Fetch total count
+  const { data: countData } = useQuery({
+    queryKey: ['refunds', 'count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.refunds.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
 
-      try {
-        const response = await api.refunds.list({ limit: 50 });
-        setRefunds(response.data || []);
-      } catch (error) {
-        console.error('Failed to fetch refunds:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
 
-    fetchRefunds();
-  }, [api]);
+  // Fetch refunds for current page
+  const { data: refundsData, isLoading: loading } = useQuery({
+    queryKey: ['refunds', 'page', pagination.page, pagination.pageSize],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.refunds.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const refunds = refundsData?.data || [];
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -242,6 +256,14 @@ export default function RefundsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Pagination Controls */}
+      {!loading && refunds.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mt-6"
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { 
   Calendar, 
@@ -20,39 +21,58 @@ import {
 import Link from 'next/link';
 import { Button, Input, cn } from '@payos/ui';
 import { formatCurrency } from '@payos/ui';
-import type { ScheduledTransfer } from '@payos/api-client';
+import type { ScheduledTransfer, ScheduleStatus } from '@payos/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { CreateScheduleModal } from '@/components/schedules/create-schedule-modal';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function SchedulesPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [schedules, setSchedules] = useState<ScheduledTransfer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchSchedules();
-  }, [api]);
+  // Fetch total count
+  const { data: countData } = useQuery({
+    queryKey: ['schedules', 'count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.scheduledTransfers.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
 
-  async function fetchSchedules() {
-    if (!api) {
-      setLoading(false);
-      return;
-    }
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
 
-    try {
-      const response = await api.scheduledTransfers.list({ limit: 50 });
-      setSchedules(response.data || []);
-    } catch (error) {
-      console.error('Failed to fetch schedules:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Fetch schedules for current page
+  const { data: schedulesData, isLoading: loading } = useQuery({
+    queryKey: ['schedules', 'page', pagination.page, pagination.pageSize, statusFilter],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.scheduledTransfers.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+        status: statusFilter !== 'all' ? (statusFilter as ScheduleStatus) : undefined,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const schedules = schedulesData?.data || [];
+
+  const fetchSchedules = () => {
+    queryClient.invalidateQueries({ queryKey: ['schedules'] });
+  };
 
   const handlePause = async (id: string) => {
     if (!api) return;
@@ -364,6 +384,14 @@ export default function SchedulesPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Pagination Controls */}
+      {!loading && schedules.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mt-6"
+        />
       )}
 
       {/* Create Modal */}

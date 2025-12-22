@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { useState } from 'react';
 import { Button } from '@payos/ui';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 interface CardTransaction {
   id: string;
@@ -36,11 +38,28 @@ export default function CardsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
 
-  // Fetch card transactions
-  const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
-    queryKey: ['card-transactions', { limit: 100 }],
-    queryFn: () => api!.cards.listTransactions({ limit: 100 }),
+  // Fetch total count
+  const { data: countData } = useQuery({
+    queryKey: ['card-transactions', 'count'],
+    queryFn: () => api!.cards.listTransactions({ limit: 1 }),
     enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
+
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
+
+  // Fetch card transactions for current page
+  const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
+    queryKey: ['card-transactions', 'page', pagination.page, pagination.pageSize],
+    queryFn: () => api!.cards.listTransactions({
+      page: pagination.page,
+      limit: pagination.pageSize,
+    }),
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
     staleTime: 30 * 1000,
   });
 
@@ -272,10 +291,12 @@ export default function CardsPage() {
         </div>
       </div>
 
-      {filteredTransactions.length > 0 && (
-        <div className="text-sm text-gray-600 dark:text-gray-400 text-center">
-          Showing {filteredTransactions.length} of {transactions.length} transactions
-        </div>
+      {/* Pagination Controls */}
+      {!transactionsLoading && filteredTransactions.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mt-6"
+        />
       )}
     </div>
   );
