@@ -105,8 +105,7 @@ export default function WalletsPage() {
         // If initial balance > 0, deposit
         if (parseFloat(formData.initialBalance) > 0) {
           await api.wallets.deposit(newWallet.id, {
-            amount: parseFloat(formData.initialBalance),
-            currency: formData.currency
+            amount: parseFloat(formData.initialBalance)
           });
           newWallet.balance = parseFloat(formData.initialBalance);
         }
