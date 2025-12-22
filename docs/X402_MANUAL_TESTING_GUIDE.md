@@ -756,15 +756,40 @@ tsx scripts/test-scenario-2-agent.ts
 
 # Scenario 3: Monitoring
 tsx scripts/test-scenario-3-monitoring.ts
+
+# NEW: Enhanced Wallet Features
+tsx scripts/test-wallet-features.ts
 ```
 
 ### **Parallel Testing (for LLMs like Gemini):**
 ```bash
-# Run all 3 in parallel
+# Run all 4 in parallel
 tsx scripts/test-scenario-1-provider.ts & \
 tsx scripts/test-scenario-2-agent.ts & \
 tsx scripts/test-scenario-3-monitoring.ts & \
+tsx scripts/test-wallet-features.ts & \
 wait
+```
+
+---
+
+## 🆕 Enhanced Wallet Features Testing
+
+For testing the NEW wallet features (multiple wallet types, external wallets, Circle integration), see the dedicated guide:
+
+📖 **[X402 Wallet Testing Guide](./X402_WALLET_TESTING_GUIDE.md)**
+
+**New features covered:**
+- ✅ Multiple wallet types (Internal, Circle, External)
+- ✅ Create New vs Link Existing wallet flows
+- ✅ External wallet verification
+- ✅ Multiple wallets per account
+- ✅ Circle integration (mocked)
+- ✅ Wallet type-specific behaviors
+
+**Automated test:**
+```bash
+tsx scripts/test-wallet-features.ts
 ```
 
 ---
