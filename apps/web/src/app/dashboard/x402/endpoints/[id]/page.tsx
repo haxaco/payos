@@ -315,13 +315,13 @@ const response = await client.fetch('https://your-api.com${endpoint?.path || '/a
                             {new Date(tx.createdAt).toLocaleString()}
                           </td>
                           <td className="p-3 text-sm font-mono">
-                            {tx.fromAccountId.slice(0, 8)}...
+                            {tx.from?.accountId?.slice(0, 8) || 'N/A'}...
                           </td>
                           <td className="p-3 text-right font-medium">
                             {parseFloat(tx.amount).toFixed(4)} {tx.currency}
                           </td>
                           <td className="p-3 text-right text-sm text-red-600 dark:text-red-400">
-                            -{parseFloat(tx.feeAmount || '0').toFixed(4)}
+                            -{parseFloat(tx.x402Metadata?.settlement_fee || '0').toFixed(4)}
                           </td>
                           <td className="p-3">
                             <Badge variant={tx.status === 'completed' ? 'default' : 'secondary'}>
