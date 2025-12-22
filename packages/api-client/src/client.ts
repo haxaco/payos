@@ -787,6 +787,83 @@ export class PayOSClient {
     verify: (input: X402VerifyPaymentInput) =>
       this.post<{ data: X402VerifyPaymentResponse }>('/x402/verify', input).then(r => r.data),
   };
+
+  // ============================================
+  // x402 Analytics API
+  // ============================================
+
+  x402Analytics = {
+    /**
+     * Get analytics summary
+     */
+    getSummary: (params?: { period?: string }) =>
+      this.get<{ data: any }>('/x402/analytics/summary', params).then(r => r.data),
+
+    /**
+     * Get revenue time-series data
+     */
+    getRevenue: (params?: {
+      period?: string;
+      startDate?: string;
+      endDate?: string;
+      groupBy?: string;
+      endpointId?: string;
+      currency?: string;
+    }) =>
+      this.get<{ data: any }>('/x402/analytics/revenue', params).then(r => r.data),
+
+    /**
+     * Get top performing endpoints
+     */
+    getTopEndpoints: (params?: {
+      metric?: 'revenue' | 'calls' | 'unique_payers';
+      limit?: number;
+      period?: string;
+    }) =>
+      this.get<{ data: any }>('/x402/analytics/top-endpoints', params).then(r => r.data),
+
+    /**
+     * Get analytics for a specific endpoint
+     */
+    getEndpointAnalytics: (endpointId: string, params?: { period?: string }) =>
+      this.get<{ data: any }>(`/x402/analytics/endpoint/${endpointId}`, params).then(r => r.data),
+  };
+
+  // ============================================
+  // Settlement API
+  // ============================================
+
+  settlement = {
+    /**
+     * Get settlement configuration
+     */
+    getConfig: () =>
+      this.get<{ data: any }>('/settlement/config').then(r => r.data),
+
+    /**
+     * Update settlement configuration
+     */
+    updateConfig: (input: any) =>
+      this.patch<{ data: any }>('/settlement/config', input).then(r => r.data),
+
+    /**
+     * Preview fee calculation
+     */
+    previewFee: (input: { amount: number; currency?: string }) =>
+      this.post<{ data: any }>('/settlement/preview', input).then(r => r.data),
+
+    /**
+     * Get settlement analytics
+     */
+    getAnalytics: (params?: { startDate?: string; endDate?: string; type?: string }) =>
+      this.get<{ data: any }>('/settlement/analytics', params).then(r => r.data),
+
+    /**
+     * Get settlement status for a transfer
+     */
+    getStatus: (transferId: string) =>
+      this.get<{ data: any }>(`/settlement/status/${transferId}`).then(r => r.data),
+  };
 }
 
 /**

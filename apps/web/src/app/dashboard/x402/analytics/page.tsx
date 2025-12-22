@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { useAPIClient } from '@/hooks/useAPIClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,45 +36,26 @@ type Metric = 'revenue' | 'calls' | 'unique_payers';
 
 export default function X402AnalyticsPage() {
   const router = useRouter();
+  const api = useAPIClient();
   const [period, setPeriod] = useState<Period>('30d');
   const [topMetric, setTopMetric] = useState<Metric>('revenue');
 
   // Fetch summary
   const { data: summaryData, isLoading: summaryLoading } = useQuery({
     queryKey: ['x402', 'analytics', 'summary', period],
-    queryFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/v1/x402/analytics/summary?period=${period}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          },
-        }
-      );
-      if (!response.ok) throw new Error('Failed to fetch summary');
-      return response.json();
-    },
+    queryFn: () => api!.x402Analytics.getSummary({ period }),
+    enabled: !!api,
   });
 
   // Fetch top endpoints
   const { data: topEndpointsData, isLoading: topLoading } = useQuery({
     queryKey: ['x402', 'analytics', 'top-endpoints', period, topMetric],
-    queryFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/v1/x402/analytics/top-endpoints?period=${period}&metric=${topMetric}&limit=10`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          },
-        }
-      );
-      if (!response.ok) throw new Error('Failed to fetch top endpoints');
-      return response.json();
-    },
+    queryFn: () => api!.x402Analytics.getTopEndpoints({ period, metric: topMetric, limit: 10 }),
+    enabled: !!api,
   });
 
-  const summary = summaryData?.data;
-  const topEndpoints = topEndpointsData?.data?.endpoints || [];
+  const summary = summaryData;
+  const topEndpoints = topEndpointsData?.endpoints || [];
 
   const periodLabels: Record<Period, string> = {
     '24h': 'Last 24 Hours',

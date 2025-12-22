@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAPIClient } from '@/hooks/useAPIClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,62 +33,33 @@ export default function X402EndpointDetailPage() {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const api = useAPIClient();
   const endpointId = params.id as string;
   const [copiedCode, setCopiedCode] = useState(false);
 
   // Fetch endpoint details
   const { data: endpointData, isLoading: endpointLoading } = useQuery({
     queryKey: ['x402', 'endpoint', endpointId],
-    queryFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/v1/x402/endpoints/${endpointId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          },
-        }
-      );
-      if (!response.ok) throw new Error('Failed to fetch endpoint');
-      return response.json();
-    },
+    queryFn: () => api!.x402Endpoints.get(endpointId),
+    enabled: !!api,
   });
 
   // Fetch endpoint analytics
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
     queryKey: ['x402', 'analytics', 'endpoint', endpointId],
-    queryFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/v1/x402/analytics/endpoint/${endpointId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          },
-        }
-      );
-      if (!response.ok) throw new Error('Failed to fetch analytics');
-      return response.json();
-    },
+    queryFn: () => api!.x402Analytics.getEndpointAnalytics(endpointId),
+    enabled: !!api,
   });
 
   // Fetch endpoint transactions
   const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
     queryKey: ['x402', 'endpoint', endpointId, 'transactions'],
-    queryFn: async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/v1/transfers?type=x402&endpointId=${endpointId}&limit=20`,
-        {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          },
-        }
-      );
-      if (!response.ok) throw new Error('Failed to fetch transactions');
-      return response.json();
-    },
+    queryFn: () => api!.transfers.list({ type: 'x402', endpointId, limit: 20 }),
+    enabled: !!api,
   });
 
-  const endpoint = endpointData?.data;
-  const analytics = analyticsData?.data;
+  const endpoint = endpointData;
+  const analytics = analyticsData;
   const transactions = transactionsData?.data || [];
 
   // Generate SDK code samples

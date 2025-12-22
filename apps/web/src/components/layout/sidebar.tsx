@@ -30,14 +30,18 @@ import {
   Calendar,
   RotateCcw,
   DollarSign,
+  Zap,
+  BarChart3,
+  Code,
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useState } from 'react';
 
 const x402Nav = [
-  { href: '/dashboard/x402/endpoints', label: 'x402 Endpoints', icon: DollarSign },
-  { href: '/dashboard/x402/wallets', label: 'Wallets', icon: Wallet },
-  // Note: Agent Config moved to Agent tab (issue #5)
+  { href: '/dashboard/x402', label: 'x402 Overview', icon: Zap },
+  { href: '/dashboard/x402/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/dashboard/x402/endpoints', label: 'Endpoints', icon: DollarSign },
+  { href: '/dashboard/x402/integration', label: 'Integration', icon: Code },
 ];
 
 const configurationNav = [

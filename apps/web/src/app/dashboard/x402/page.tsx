@@ -38,22 +38,14 @@ export default function X402OverviewPage() {
   // Fetch analytics summary
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
     queryKey: ['x402', 'analytics', 'summary'],
-    queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/x402/analytics/summary`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to fetch analytics');
-      return response.json();
-    },
+    queryFn: () => api!.x402Analytics.getSummary(),
     enabled: !!api && viewMode === 'provider',
   });
 
   // Fetch provider endpoints
   const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
     queryKey: ['x402', 'endpoints'],
-    queryFn: () => api!.get('/v1/x402/endpoints'),
+    queryFn: () => api!.x402Endpoints.list(),
     enabled: !!api && viewMode === 'provider',
   });
 
@@ -67,7 +59,7 @@ export default function X402OverviewPage() {
     enabled: !!api && viewMode === 'consumer',
   });
 
-  const analytics = analyticsData?.data;
+  const analytics = analyticsData;
   const endpoints = endpointsData?.data || [];
   const payments = paymentsData?.data || [];
 
