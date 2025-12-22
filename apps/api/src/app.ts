@@ -31,6 +31,7 @@ import disputesRouter from './routes/disputes.js';
 import { compliance as complianceRouter } from './routes/compliance.js';
 import relationshipsRouter from './routes/relationships.js';
 import x402EndpointsRouter from './routes/x402-endpoints.js';
+import walletsRouter from './routes/wallets.js';
 
 const app = new Hono();
 
@@ -172,6 +173,7 @@ v1.route('/compliance', complianceRouter);
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 v1.route('/', paymentMethodsRouter); // For /accounts/:accountId/payment-methods routes
 v1.route('/x402/endpoints', x402EndpointsRouter);
+v1.route('/wallets', walletsRouter);
 
 app.route('/v1', v1);
 
