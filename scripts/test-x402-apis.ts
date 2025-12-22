@@ -11,15 +11,11 @@
  * Run with: tsx scripts/test-x402-apis.ts
  */
 
-import { createClient } from '@supabase/supabase-js';
-
 // ============================================
 // Configuration
 // ============================================
 
 const API_URL = process.env.API_URL || 'http://localhost:4000';
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!;
 
 let AUTH_TOKEN = '';
 let TENANT_ID = '';
@@ -89,41 +85,39 @@ async function step1_authenticate() {
   log('AUTH', 'Authenticating with test user...');
   
   try {
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    
-    // Try to sign in with test user (from power user seed script)
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: 'haxaco@gmail.com',
-      password: 'Password123!'
+    // Authenticate via API
+    const authResponse = await fetch(`${API_URL}/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'haxaco@gmail.com',
+        password: 'Password123!'
+      })
     });
     
-    if (authError) {
-      throw authError;
+    if (!authResponse.ok) {
+      throw new Error(`Auth failed: ${authResponse.status}`);
     }
     
-    AUTH_TOKEN = authData.session!.access_token;
+    const authData = await authResponse.json();
+    AUTH_TOKEN = authData.session.accessToken;
+    TENANT_ID = authData.tenant.id;
     
-    // Get tenant ID and account ID from the user's JWT
-    const { data: userData } = await supabase.auth.getUser();
+    // Get a test account using the API
+    const accountsResponse = await fetch(`${API_URL}/v1/accounts?limit=1&type=person`, {
+      headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+    });
     
-    // Get tenant from database
-    const { data: tenants } = await supabase
-      .from('tenants')
-      .select('id')
-      .limit(1)
-      .single();
+    if (!accountsResponse.ok) {
+      throw new Error(`Failed to fetch accounts: ${accountsResponse.status}`);
+    }
     
-    TENANT_ID = tenants!.id;
-    
-    // Get a test account
-    const { data: accounts } = await supabase
-      .from('accounts')
-      .select('id')
-      .eq('type', 'person')
-      .limit(1)
-      .single();
-    
-    TEST_ACCOUNT_ID = accounts!.id;
+    const accountsData = await accountsResponse.json();
+    if (accountsData.data && accountsData.data.length > 0) {
+      TEST_ACCOUNT_ID = accountsData.data[0].id;
+    } else {
+      throw new Error('No test accounts found');
+    }
     
     logSuccess('AUTH', 'Authenticated successfully');
     log('AUTH', 'Tenant ID', TENANT_ID);
@@ -257,7 +251,8 @@ async function step6_processPayment() {
   log('PAYMENT', 'Processing x402 payment...');
   
   try {
-    const requestId = `test-${Date.now()}`;
+    // Generate a proper UUID for requestId
+    const requestId = crypto.randomUUID();
     
     const result = await apiRequest('POST', '/v1/x402/pay', {
       endpointId: testData.endpoint.id,
@@ -442,7 +437,7 @@ async function step13_testSpendingPolicy() {
     try {
       await apiRequest('POST', '/v1/x402/pay', {
         endpointId: testData.endpoint.id,
-        requestId: `test-policy-${Date.now()}`,
+        requestId: crypto.randomUUID(),
         amount: largeAmount,
         currency: testData.endpoint.currency,
         walletId: testData.agent.wallet.id,

@@ -143,12 +143,11 @@ app.post('/register', async (c) => {
         tenant_id: ctx.tenantId,
         name: validated.accountName,
         email: validated.accountEmail,
-        type: 'agent', // Using the new 'agent' account type
+        type: 'person', // For now, keep as 'person' type with agent_config
         agent_config: {
           purpose: validated.agentPurpose,
           x402: validated.agentConfig?.x402 || { enabled: true }
-        },
-        status: 'active'
+        }
       })
       .select()
       .single();
