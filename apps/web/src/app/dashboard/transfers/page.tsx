@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { 
   ArrowLeftRight, 
@@ -21,18 +22,19 @@ import {
   User,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Transfer } from '@payos/api-client';
+import type { Transfer, TransferStatus, TransferType } from '@payos/api-client';
 import { InitiatedByBadgeCompact } from '@/components/transactions/initiated-by-badge';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { TransactionsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
 import { RefundModal } from '@/components/transfers/refund-modal';
 import { ExportModal } from '@/components/transfers/export-modal';
+import { usePagination } from '@/hooks/usePagination';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function TransfersPage() {
   const api = useApiClient();
   const { isConfigured } = useApiConfig();
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -43,25 +45,47 @@ export default function TransfersPage() {
   const [refundTransfer, setRefundTransfer] = useState<Transfer | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    async function fetchTransfers() {
-      if (!api) {
-        setLoading(false);
-        return;
-      }
+  // Fetch total count for pagination
+  const { data: countData } = useQuery({
+    queryKey: ['transfers', 'count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.transfers.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000, // 1 minute
+  });
 
-      try {
-        const response = await api.transfers.list({ limit: 100 });
-        setTransfers(response.data || []);
-      } catch (error) {
-        console.error('Failed to fetch transfers:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  // Initialize pagination
+  const pagination = usePagination({
+    totalItems: countData?.pagination?.total || 0,
+    initialPageSize: 50,
+  });
 
-    fetchTransfers();
-  }, [api]);
+  // Fetch transfers for current page with filters
+  const { data: transfersData, isLoading: loading } = useQuery({
+    queryKey: [
+      'transfers',
+      'page',
+      pagination.page,
+      pagination.pageSize,
+      statusFilter,
+      typeFilter,
+    ],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.transfers.list({
+        page: pagination.page,
+        limit: pagination.pageSize,
+        status: statusFilter !== 'all' ? (statusFilter as TransferStatus) : undefined,
+        type: typeFilter !== 'all' ? (typeFilter as TransferType) : undefined,
+      });
+    },
+    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    staleTime: 30 * 1000,
+  });
+
+  const transfers = transfersData?.data || [];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -73,17 +97,17 @@ export default function TransfersPage() {
     }
   };
 
+  // Client-side filtering for search and initiatedBy (not yet supported by API)
   const filteredTransfers = transfers.filter(transfer => {
     const matchesSearch = 
+      !search ||
       transfer.from?.accountName?.toLowerCase().includes(search.toLowerCase()) ||
       transfer.to?.accountName?.toLowerCase().includes(search.toLowerCase()) ||
       transfer.id.toLowerCase().includes(search.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || transfer.status === statusFilter;
-    const matchesType = typeFilter === 'all' || transfer.type === typeFilter;
     const matchesInitiatedBy = initiatedByFilter === 'all' || transfer.initiatedBy?.type === initiatedByFilter;
     
-    return matchesSearch && matchesStatus && matchesType && matchesInitiatedBy;
+    return matchesSearch && matchesInitiatedBy;
   });
 
   const exportData = (format: 'csv' | 'json' | 'pdf') => {
@@ -336,6 +360,14 @@ export default function TransfersPage() {
         )}
       </div>
 
+      {/* Pagination Controls */}
+      {!loading && filteredTransfers.length > 0 && (
+        <PaginationControls
+          pagination={pagination}
+          className="mt-6"
+        />
+      )}
+
       {/* Transfer Detail Modal */}
       {selectedTransfer && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -518,11 +550,8 @@ export default function TransfersPage() {
           onClose={() => setRefundTransfer(null)}
           onSuccess={async () => {
             setRefundTransfer(null);
-            // Refresh transfers
-            if (api) {
-              const response = await api.transfers.list({ limit: 100 });
-              setTransfers(response.data || []);
-            }
+            // Invalidate transfers queries to refresh data
+            queryClient.invalidateQueries({ queryKey: ['transfers'] });
           }}
         />
       )}
