@@ -494,6 +494,35 @@ export class PayOSClient {
   };
 
   // ============================================
+  // Compliance API
+  // ============================================
+
+  compliance = {
+    /**
+     * List compliance flags with filters
+     */
+    listFlags: (params?: {
+      status?: string;
+      risk_level?: string;
+      flag_type?: string;
+      limit?: number;
+      offset?: number;
+    }) =>
+      this.get<PaginatedResponse<any>>('/compliance/flags', params),
+
+    /**
+     * Get count of open compliance flags
+     */
+    getOpenFlagsCount: async () => {
+      const response = await this.get<PaginatedResponse<any>>('/compliance/flags', {
+        status: 'open',
+        limit: 1,
+      });
+      return response.pagination?.total || 0;
+    },
+  };
+
+  // ============================================
   // Refunds API
   // ============================================
 

@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { useApiClient } from '@/lib/api-client';
 import { cn } from '@payos/ui';
 import {
   Home,
@@ -28,19 +30,6 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
-
-const mainNav = [
-  { href: '/dashboard', label: 'Home', icon: Home },
-  { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
-  { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
-  { href: '/dashboard/schedules', label: 'Schedules', icon: Calendar },
-  { href: '/dashboard/refunds', label: 'Refunds', icon: RotateCcw },
-  { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
-  { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: 23 },
-  { href: '/dashboard/treasury', label: 'Treasury', icon: Wallet },
-  { href: '/dashboard/agents', label: 'Agents', icon: Bot },
-  { href: '/dashboard/reports', label: 'Reports', icon: FileText },
-];
 
 const x402Nav = [
   { href: '/dashboard/x402/endpoints', label: 'x402 Endpoints', icon: DollarSign },
@@ -72,6 +61,33 @@ interface NavItemProps {
 export function Sidebar() {
   const pathname = usePathname();
   const { collapsed, setCollapsed } = useSidebar();
+  const api = useApiClient();
+
+  // Fetch real compliance count
+  const { data: complianceCount } = useQuery({
+    queryKey: ['compliance', 'open-count'],
+    queryFn: async () => {
+      if (!api) return 0;
+      return api.compliance.getOpenFlagsCount();
+    },
+    enabled: !!api,
+    staleTime: 30 * 1000, // Cache for 30 seconds
+    refetchOnWindowFocus: true, // Refetch when user comes back to window
+  });
+
+  // Build main nav with dynamic compliance count
+  const mainNav = [
+    { href: '/dashboard', label: 'Home', icon: Home },
+    { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
+    { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
+    { href: '/dashboard/schedules', label: 'Schedules', icon: Calendar },
+    { href: '/dashboard/refunds', label: 'Refunds', icon: RotateCcw },
+    { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
+    { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: complianceCount || undefined },
+    { href: '/dashboard/treasury', label: 'Treasury', icon: Wallet },
+    { href: '/dashboard/agents', label: 'Agents', icon: Bot },
+    { href: '/dashboard/reports', label: 'Reports', icon: FileText },
+  ];
 
   const isActive = (href: string) => {
     if (href === '/dashboard') {

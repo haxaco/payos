@@ -46,8 +46,8 @@ export default function DashboardPage() {
   const [chartPeriod, setChartPeriod] = useState<'7D' | '30D' | '90D'>('7D');
 
   // Use React Query to fetch dashboard stats with caching
-  const { data: accountsData, isLoading: loading } = useQuery({
-    queryKey: ['dashboard', 'stats'],
+  const { data: accountsData, isLoading: accountsLoading } = useQuery({
+    queryKey: ['dashboard', 'accounts'],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       // Fetch accounts count (limit 1 just to get total count from pagination)
@@ -57,12 +57,25 @@ export default function DashboardPage() {
     staleTime: 30 * 1000, // Cache for 30 seconds
   });
 
-  // Mock stats (to be replaced with real data from dashboard stats endpoint)
+  // Fetch compliance flags count
+  const { data: complianceCount, isLoading: complianceLoading } = useQuery({
+    queryKey: ['dashboard', 'compliance-count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.compliance.getOpenFlagsCount();
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 30 * 1000, // Cache for 30 seconds
+  });
+
+  const loading = accountsLoading || complianceLoading;
+
+  // Stats (mixing real and mock data)
   const stats: Stats = {
     accounts: accountsData?.pagination?.total || 12847,
     volume: '$2.4M',
     cards: 8234,
-    pendingFlags: 23,
+    pendingFlags: complianceCount || 0, // Real compliance count!
   };
 
   // Get current date
