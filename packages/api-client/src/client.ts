@@ -138,7 +138,7 @@ export class PayOSClient {
 
     // Handle errors
     if (!response.ok) {
-      const error = PayOSError.fromResponse(data, response.status);
+      const error = PayOSError.fromResponse(data, response.status, response.headers);
       this.config.onError?.(error);
       throw error;
     }

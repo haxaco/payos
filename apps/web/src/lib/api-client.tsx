@@ -1,8 +1,9 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
-import { PayOSClient, createPayOSClient } from '@payos/api-client';
+import { PayOSClient, createPayOSClient, PayOSError } from '@payos/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 interface ApiClientContextType {
   client: PayOSClient | null;
@@ -80,11 +81,39 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
       apiKey: token, // API client uses this as the auth token
       onError: (error) => {
         console.error('API Error:', error);
-        // Handle 401 - if using API key, clear it
-        if (error.status === 401 && apiKey) {
-          setApiKey(null);
+        
+        // Handle 429 Rate Limiting
+        if (error.status === 429) {
+          const retryAfter = error.retryAfter || 60;
+          toast.error('Too Many Requests', {
+            description: `Please wait ${retryAfter} seconds before trying again.`,
+            duration: retryAfter * 1000, // Show toast for the retry duration
+            action: {
+              label: 'Dismiss',
+              onClick: () => {},
+            },
+          });
+          return;
         }
-        // If using JWT, Supabase will handle re-auth
+        
+        // Handle 401 - if using API key, clear it
+        if (error.status === 401) {
+          if (apiKey) {
+            setApiKey(null);
+            toast.error('Invalid API Key', {
+              description: 'Your API key is invalid or expired. Please re-enter it.',
+            });
+          }
+          // If using JWT, Supabase will handle re-auth
+          return;
+        }
+        
+        // Generic error toast for other errors (don't show for validation errors)
+        if (error.status >= 500) {
+          toast.error('Server Error', {
+            description: error.message || 'An unexpected error occurred. Please try again.',
+          });
+        }
       },
     });
   }, [authToken, apiKey]);
