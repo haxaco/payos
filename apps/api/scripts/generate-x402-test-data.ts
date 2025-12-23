@@ -71,6 +71,49 @@ async function main() {
     console.log(`✅ Using tenant: ${tenant.name} (${tenantId})\n`);
     
     // ============================================
+    // 0. CLEANUP EXISTING TEST DATA (if any)
+    // ============================================
+    console.log('🧹 Cleaning up existing x402 test data...');
+    
+    // Delete existing x402 transactions
+    await supabase
+      .from('transfers')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('type', 'x402');
+    
+    // Delete existing x402 endpoints
+    await supabase
+      .from('x402_endpoints')
+      .delete()
+      .eq('tenant_id', tenantId);
+    
+    // Delete existing test wallets (by matching test account names)
+    const { data: existingAccounts } = await supabase
+      .from('accounts')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .in('name', ['WeatherAPI Provider', 'AI Startup Inc', 'WeatherNow Mobile']);
+    
+    if (existingAccounts && existingAccounts.length > 0) {
+      const accountIds = existingAccounts.map(a => a.id);
+      
+      // Delete wallets
+      await supabase
+        .from('wallets')
+        .delete()
+        .in('owner_account_id', accountIds);
+      
+      // Delete accounts
+      await supabase
+        .from('accounts')
+        .delete()
+        .in('id', accountIds);
+    }
+    
+    console.log('✅ Cleanup complete\n');
+    
+    // ============================================
     // 1. CREATE PROVIDER ACCOUNT & WALLET
     // ============================================
     console.log('📦 Creating provider account...');
@@ -79,12 +122,13 @@ async function main() {
       .from('accounts')
       .insert({
         tenant_id: tenantId,
-        account_name: 'WeatherAPI Provider',
-        account_type: 'business',
+        name: 'WeatherAPI Provider',
+        type: 'business',
         currency: 'USDC',
-        balance: 0,
-        kyc_status: 'approved',
-        status: 'active'
+        balance_total: 0,
+        balance_available: 0,
+        verification_status: 'verified',
+        verification_tier: 2
       })
       .select()
       .single();
@@ -128,12 +172,13 @@ async function main() {
       .from('accounts')
       .insert({
         tenant_id: tenantId,
-        account_name: 'AI Startup Inc',
-        account_type: 'business',
+        name: 'AI Startup Inc',
+        type: 'business',
         currency: 'USDC',
-        balance: 0,
-        kyc_status: 'approved',
-        status: 'active'
+        balance_total: 0,
+        balance_available: 0,
+        verification_status: 'verified',
+        verification_tier: 2
       })
       .select()
       .single();
@@ -169,12 +214,13 @@ async function main() {
       .from('accounts')
       .insert({
         tenant_id: tenantId,
-        account_name: 'WeatherNow Mobile',
-        account_type: 'business',
+        name: 'WeatherNow Mobile',
+        type: 'business',
         currency: 'USDC',
-        balance: 0,
-        kyc_status: 'approved',
-        status: 'active'
+        balance_total: 0,
+        balance_available: 0,
+        verification_status: 'verified',
+        verification_tier: 2
       })
       .select()
       .single();
@@ -330,8 +376,7 @@ async function main() {
           settlement_fee: 0.0003,
           settlement_net_amount: 0.0097
         },
-        created_at: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString()
+        created_at: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString()
       })),
       // Historical API calls
       ...Array.from({ length: 3 }, (_, i) => ({
@@ -357,8 +402,7 @@ async function main() {
           settlement_fee: 0.00015,
           settlement_net_amount: 0.00485
         },
-        created_at: new Date(Date.now() - (i + 10) * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date(Date.now() - (i + 10) * 24 * 60 * 60 * 1000).toISOString()
+        created_at: new Date(Date.now() - (i + 10) * 24 * 60 * 60 * 1000).toISOString()
       }))
     ];
     
@@ -394,8 +438,8 @@ async function main() {
     console.log('\n🌐 You can now test the x402 dashboard at:');
     console.log('   http://localhost:3000/dashboard/x402\n');
     console.log('📋 Summary:');
-    console.log(`   - Provider: ${providerAccount.account_name}`);
-    console.log(`   - Consumers: ${consumer1.account_name}, ${consumer2.account_name}`);
+    console.log(`   - Provider: ${providerAccount.name}`);
+    console.log(`   - Consumers: ${consumer1.name}, ${consumer2.name}`);
     console.log(`   - Endpoints: 3 (2 active, 1 paused)`);
     console.log(`   - Transactions: ${transactions.length}`);
     console.log();
