@@ -156,6 +156,28 @@ export interface Transfer {
 
   idempotencyKey?: string;
 
+  // x402 specific metadata
+  x402Metadata?: {
+    endpoint_id?: string;
+    endpoint_path?: string;
+    endpoint_method?: string;
+    wallet_id?: string;
+    request_id?: string;
+    timestamp?: string;
+    metadata?: any;
+    price_calculated?: number;
+    volume_tier?: number;
+    settlement_fee?: number;
+    settlement_net_amount?: number;
+    fee_calculation?: {
+      grossAmount: number;
+      feeAmount: number;
+      netAmount: number;
+      feeType: string;
+      breakdown: any;
+    };
+  };
+
   createdAt: string;
   completedAt?: string;
   failedAt?: string;
