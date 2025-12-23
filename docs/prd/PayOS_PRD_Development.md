@@ -60,7 +60,10 @@ PayOS is a B2B stablecoin payout operating system for LATAM. This PRD covers the
 25. [Epic 21: Code Coverage Improvement](#epic-21-code-coverage-improvement)
 26. [Epic 22: Seed Data & Final UI Integration](#epic-22-seed-data--final-ui-integration)
 27. [Epic 23: Dashboard Performance & API Optimization](#epic-23-dashboard-performance--api-optimization)
-28. [Implementation Schedule](#implementation-schedule)
+28. [Epic 24: Enhanced API Key Security & Agent Authentication](#epic-24-enhanced-api-key-security--agent-authentication)
+29. [Epic 25: User Onboarding & API Improvements](#epic-25-user-onboarding--api-improvements)
+30. [Epic 26: x402 Payment Performance Optimization](#epic-26-x402-payment-performance-optimization)
+31. [Implementation Schedule](#implementation-schedule)
 19. [API Reference](#api-reference)
 20. [Testing & Demo Scenarios](#testing--demo-scenarios)
 
@@ -10493,6 +10496,909 @@ const x402 = new X402Client({
 - **Sample Apps PRD:** `/docs/SAMPLE_APPS_PRD.md`
 - **x402 SDK Guide:** `/docs/X402_SDK_GUIDE.md`
 - **Epic 17:** x402 Gateway Infrastructure (completed)
+
+---
+
+## Epic 25: User Onboarding & API Improvements 🚀
+
+### Overview
+
+During SDK testing, we identified **7 critical snags** that would block first-time users from successfully setting up x402 credentials. While we created an internal automation script to workaround these issues, **real users won't have access to that script**. This epic fixes the underlying API and documentation problems so external users have a smooth onboarding experience.
+
+**Status:** 📋 PLANNED  
+**Priority:** P0 (Blocking external adoption)  
+**Points:** 29 points  
+**Duration:** ~4 days  
+
+### Business Value
+
+- **Faster Onboarding:** Reduce setup time from 63 min → 5-15 min
+- **Reduced Support Load:** Fix confusing errors before users hit them
+- **Better First Impression:** Users succeed on first try
+- **External Adoption:** Enable beta testers and partners to self-serve
+
+### Problem Statement
+
+**Current User Journey (Manual Setup):**
+```
+1. Read PRD → Try to create wallet
+2. Error: "ownerAccountId required" (expected "accountId")
+3. Try to create agent → Error: "parentAccountId required" 
+4. Create account, retry agent creation
+5. Try to fund wallet → Error: "sourceAccountId required"
+6. Give up or contact support 😞
+```
+
+**Desired User Journey:**
+```
+1. Read PRD with clear step-by-step guide
+2. Follow steps OR use onboarding wizard
+3. Entities created in correct order
+4. Helpful errors if something goes wrong
+5. Test funding works out of the box
+6. Ready to test in < 15 minutes ✅
+```
+
+### Stories
+
+#### Story 25.1: Standardize Wallet API Field Names (P0, 2 hours)
+
+**Problem:** API expects `ownerAccountId` but users intuitively try `accountId`.
+
+**Solution:** Accept both field names, normalize internally.
+
+**Implementation:**
+```typescript
+// apps/api/src/routes/wallets.ts
+const createWalletSchema = z.object({
+  accountId: z.string().optional(),
+  ownerAccountId: z.string().optional(),
+  currency: z.string(),
+  name: z.string()
+}).refine(data => data.accountId || data.ownerAccountId, {
+  message: "Either accountId or ownerAccountId is required"
+});
+
+// Normalize internally
+const normalizedAccountId = body.accountId || body.ownerAccountId;
+```
+
+**Acceptance Criteria:**
+- [ ] Wallet creation accepts both `accountId` and `ownerAccountId`
+- [ ] Internally uses consistent naming
+- [ ] Update API docs to recommend `accountId`
+- [ ] Add deprecation notice for `ownerAccountId` (remove in v2)
+
+---
+
+#### Story 25.2: Implement Agent-Wallet Auto-Assignment (P0, 3 hours)
+
+**Problem:** PATCH `/v1/agents/:id` with `walletId` doesn't persist the relationship.
+
+**Solution:** Accept `walletId` on agent creation, update `managed_by_agent_id` on wallet.
+
+**Implementation:**
+```typescript
+// apps/api/src/routes/agents.ts
+const createAgentSchema = z.object({
+  parentAccountId: z.string(),
+  name: z.string(),
+  walletId: z.string().optional(), // ← New field
+  // ...
+});
+
+// After creating agent
+if (body.walletId) {
+  await supabase
+    .from('wallets')
+    .update({ managed_by_agent_id: agentId })
+    .eq('id', body.walletId)
+    .eq('owner_account_id', body.parentAccountId); // Security check
+}
+```
+
+**Acceptance Criteria:**
+- [ ] Agent creation accepts optional `walletId`
+- [ ] Wallet's `managed_by_agent_id` updated on assignment
+- [ ] Security check: wallet must belong to same account as agent
+- [ ] PATCH `/v1/agents/:id` also supports wallet assignment
+- [ ] GET `/v1/agents/:id` returns assigned `walletId`
+
+---
+
+#### Story 25.3: Add Test Wallet Funding Endpoint (P0, 2 hours)
+
+**Problem:** Deposit endpoint requires `sourceAccountId` which test users don't have.
+
+**Solution:** Add development-only endpoint for test funding.
+
+**Implementation:**
+```typescript
+// apps/api/src/routes/wallets.ts
+
+/**
+ * POST /v1/wallets/:id/fund-test
+ * Development-only endpoint to fund wallets for testing
+ */
+app.post('/v1/wallets/:id/fund-test', async (c) => {
+  // Only allow in development/staging
+  if (process.env.NODE_ENV === 'production') {
+    return c.json({ error: 'Not available in production' }, 403);
+  }
+  
+  const { id } = c.req.param();
+  const { amount } = await c.req.json();
+  
+  // Validate amount (max $10k for test)
+  if (amount < 0 || amount > 10000) {
+    return c.json({ 
+      error: 'Amount must be between 0 and 10000 for test funding' 
+    }, 400);
+  }
+  
+  // Update balance directly
+  const { data: wallet, error } = await supabase
+    .from('wallets')
+    .update({ balance: amount })
+    .eq('id', id)
+    .select()
+    .single();
+  
+  return c.json({ 
+    data: wallet,
+    message: `Wallet funded with ${amount} ${wallet.currency} (test mode)` 
+  });
+});
+```
+
+**Acceptance Criteria:**
+- [ ] Endpoint only accessible in dev/staging environments
+- [ ] Returns 403 in production
+- [ ] Max funding limit of $10,000 per call
+- [ ] Clear response message indicating test mode
+- [ ] Documented in API reference
+
+---
+
+#### Story 25.4: Enhanced Error Messages with Next Steps (P0, 2 hours)
+
+**Problem:** Errors like "parentAccountId required" don't explain what to do.
+
+**Solution:** Add `suggestion` and `docsUrl` fields to error responses.
+
+**Implementation:**
+```typescript
+// apps/api/src/middleware/error.ts
+interface EnhancedError {
+  error: string;
+  code: string;
+  details?: any;
+  suggestion?: string;  // ← New: actionable suggestion
+  docsUrl?: string;     // ← New: link to relevant docs
+}
+
+// Example usage in agents route:
+if (!body.parentAccountId) {
+  return c.json({
+    error: 'Validation failed',
+    code: 'MISSING_PARENT_ACCOUNT',
+    details: { parentAccountId: ['Required'] },
+    suggestion: 'Create an account first using POST /v1/accounts, then use its ID as parentAccountId',
+    docsUrl: 'https://docs.payos.ai/api/agents#create-agent'
+  }, 400);
+}
+```
+
+**Acceptance Criteria:**
+- [ ] All validation errors include `suggestion` field
+- [ ] All validation errors include `docsUrl` field
+- [ ] Suggestions are actionable (specific API calls to make)
+- [ ] URLs link to correct section of docs
+- [ ] TypeScript types updated for error responses
+
+---
+
+#### Story 25.5: Onboarding Wizard API Endpoints (P1, 4 hours)
+
+**Problem:** Users need to make 5+ sequential API calls to get started.
+
+**Solution:** Add single-call endpoints for complete setup.
+
+**Implementation:**
+```typescript
+// apps/api/src/routes/onboarding.ts
+
+/**
+ * POST /v1/onboarding/setup-x402-consumer
+ * Creates account, agent, and wallet in one transaction
+ */
+app.post('/v1/onboarding/setup-x402-consumer', async (c) => {
+  const schema = z.object({
+    accountName: z.string(),
+    accountType: z.enum(['person', 'business']),
+    agentName: z.string(),
+    agentDescription: z.string().optional(),
+    walletName: z.string().default('Agent Spending Wallet'),
+    initialFunding: z.number().min(0).max(10000).optional(),
+  });
+  
+  const data = schema.parse(await c.req.json());
+  
+  // Create everything in one transaction
+  const result = await db.transaction(async (tx) => {
+    const account = await tx.from('accounts').insert({
+      tenant_id: c.get('tenantId'),
+      name: data.accountName,
+      type: data.accountType,
+      // ...
+    }).single();
+    
+    const agent = await tx.from('agents').insert({
+      parent_account_id: account.id,
+      name: data.agentName,
+      description: data.agentDescription,
+      // ...
+    }).single();
+    
+    const wallet = await tx.from('wallets').insert({
+      owner_account_id: account.id,
+      managed_by_agent_id: agent.id,
+      name: data.walletName,
+      balance: data.initialFunding || 0,
+      // ...
+    }).single();
+    
+    return { account, agent, wallet };
+  });
+  
+  return c.json({
+    data: result,
+    message: 'x402 consumer setup complete',
+    nextSteps: [
+      '1. Save your agent token (shown once above)',
+      '2. Install SDK: npm install @payos/x402-client-sdk',
+      '3. See sample code: https://docs.payos.ai/x402/quickstart'
+    ]
+  });
+});
+
+/**
+ * POST /v1/onboarding/setup-x402-provider
+ * Creates provider account and wallet in one transaction
+ */
+app.post('/v1/onboarding/setup-x402-provider', async (c) => {
+  // Similar implementation for provider setup
+});
+```
+
+**Acceptance Criteria:**
+- [ ] Consumer endpoint creates account + agent + wallet atomically
+- [ ] Provider endpoint creates account + wallet atomically
+- [ ] All-or-nothing: rollback on any error
+- [ ] Returns all created entities in response
+- [ ] Includes `nextSteps` array with clear guidance
+- [ ] Optional test funding parameter
+- [ ] Documented with full examples
+
+---
+
+#### Story 25.6: Idempotency Support for Creation Endpoints (P1, 3 hours)
+
+**Problem:** If user's script fails halfway, re-running creates duplicates.
+
+**Solution:** Add idempotency key support to prevent duplicates.
+
+**Implementation:**
+```typescript
+// All POST endpoints accept optional idempotency key
+const schema = z.object({
+  idempotencyKey: z.string().uuid().optional(),
+  // ... other fields
+});
+
+// Check if this key was used before (in-memory or Redis)
+if (body.idempotencyKey) {
+  const cached = await cache.get(`idempotency:${body.idempotencyKey}`);
+  if (cached) {
+    return c.json(JSON.parse(cached)); // Return cached response
+  }
+}
+
+// Create entity...
+const result = await createEntity(body);
+
+// Cache response for 24 hours
+if (body.idempotencyKey) {
+  await cache.set(
+    `idempotency:${body.idempotencyKey}`,
+    JSON.stringify(result),
+    { ex: 86400 }
+  );
+}
+```
+
+**Acceptance Criteria:**
+- [ ] All POST endpoints accept `idempotencyKey` (optional)
+- [ ] Duplicate requests with same key return cached response
+- [ ] Cache expires after 24 hours
+- [ ] Works across server restarts (Redis preferred, fallback to DB)
+- [ ] Documented in API reference
+
+---
+
+#### Story 25.7: Dashboard Onboarding Wizard UI (P1, 6 hours)
+
+**Problem:** Non-technical users need a point-and-click setup flow.
+
+**Solution:** Add guided wizard in dashboard.
+
+**Pages:**
+- `/dashboard/onboarding/x402-setup` - Main wizard page
+- 4 steps: Account → Agent → Wallet → Complete
+
+**Features:**
+- [ ] Progress bar showing current step
+- [ ] Form validation at each step
+- [ ] Auto-saves progress (can resume later)
+- [ ] Displays generated credentials (agent token, wallet ID)
+- [ ] Downloads `.env` file at completion
+- [ ] Links to SDK docs and sample apps
+- [ ] "Start Over" option to reset wizard
+
+**Implementation:** See `/docs/USER_ONBOARDING_IMPROVEMENTS.md` for detailed UI spec.
+
+---
+
+#### Story 25.8: Update PRD with Setup Flow Diagrams (P1, 2 hours)
+
+**Problem:** PRD doesn't clearly show the dependency order or provide troubleshooting.
+
+**Solution:** Add comprehensive setup documentation to PRD.
+
+**Updates to `/docs/SAMPLE_APPS_PRD.md`:**
+- [ ] Add "Setup Flow Diagram" section (Option A: Quick, Option B: Step-by-step)
+- [ ] Add "API Field Names" reference table
+- [ ] Add "Common Errors & Solutions" section
+- [ ] Add "Prerequisites Checklist"
+- [ ] Add "Before You Start" section with health checks
+- [ ] Update all code examples to use correct field names
+
+---
+
+#### Story 25.9: Add Error Troubleshooting Guide (P1, 2 hours)
+
+**Problem:** Users get stuck on errors and don't know how to fix them.
+
+**Solution:** Comprehensive troubleshooting documentation.
+
+**New File:** `/docs/API_TROUBLESHOOTING.md`
+
+**Sections:**
+- Common setup errors (with solutions)
+- Authentication errors
+- Validation errors
+- Permission errors
+- Network/connectivity issues
+- Each error includes: cause, solution, prevention
+
+---
+
+#### Story 25.10: Add Prerequisites Validation Endpoint (P2, 1 hour)
+
+**Problem:** Users don't know if their environment is ready for setup.
+
+**Solution:** Add validation endpoint that checks all prerequisites.
+
+**Implementation:**
+```typescript
+/**
+ * GET /v1/onboarding/validate
+ * Checks if user is ready for x402 setup
+ */
+app.get('/v1/onboarding/validate', async (c) => {
+  const checks = {
+    apiKeyValid: true,  // If we're here, key is valid
+    hasOrganization: !!(await getOrganization(c)),
+    canCreateAccounts: await checkPermission(c, 'accounts:create'),
+    canCreateAgents: await checkPermission(c, 'agents:create'),
+    canCreateWallets: await checkPermission(c, 'wallets:create'),
+  };
+  
+  const ready = Object.values(checks).every(v => v);
+  
+  return c.json({
+    ready,
+    checks,
+    message: ready 
+      ? 'Ready to set up x402!' 
+      : 'Missing some prerequisites',
+    nextStep: ready 
+      ? 'POST /v1/onboarding/setup-x402-consumer' 
+      : 'Contact support to enable missing permissions'
+  });
+});
+```
+
+**Acceptance Criteria:**
+- [ ] Validates all prerequisites
+- [ ] Returns clear pass/fail for each check
+- [ ] Suggests next step based on results
+- [ ] Used by dashboard wizard before starting
+
+---
+
+### Implementation Priority
+
+**Phase 1: Critical API Fixes (P0) - Day 1**
+1. Story 25.1: Standardize field names (2h)
+2. Story 25.2: Agent-wallet assignment (3h)
+3. Story 25.3: Test funding endpoint (2h)
+4. Story 25.4: Enhanced error messages (2h)
+
+**Phase 2: UX Improvements (P1) - Days 2-3**
+5. Story 25.5: Onboarding wizard endpoints (4h)
+6. Story 25.6: Idempotency support (3h)
+7. Story 25.7: Dashboard wizard UI (6h)
+
+**Phase 3: Documentation (P1) - Day 4**
+8. Story 25.8: Update PRD with diagrams (2h)
+9. Story 25.9: Troubleshooting guide (2h)
+10. Story 25.10: Prerequisites validation (1h)
+
+### Total Estimate
+
+| Phase | Stories | Hours | Priority |
+|-------|---------|-------|----------|
+| Phase 1 | 25.1-25.4 | 9 | P0 |
+| Phase 2 | 25.5-25.7 | 13 | P1 |
+| Phase 3 | 25.8-25.10 | 5 | P1 |
+| **Total** | **10 stories** | **27 hours** (~4 days) | |
+
+### Success Criteria
+
+**Quantitative:**
+- [ ] Setup time reduced from 63 min → 15 min (manual) or 5 min (wizard)
+- [ ] Support tickets for "setup issues" drop by 80%
+- [ ] Beta tester completion rate > 90%
+- [ ] Zero API field name confusion errors
+
+**Qualitative:**
+- [ ] External users can complete setup without asking for help
+- [ ] Error messages are actionable and helpful
+- [ ] PRD works as a standalone guide (no internal scripts needed)
+- [ ] Dashboard wizard provides smooth UX for non-technical users
+
+### Related Documentation
+
+- **Setup Snags Analysis:** `/docs/SDK_SETUP_IMPROVEMENTS.md`
+- **Snags Summary:** `/docs/X402_SETUP_SNAGS_SUMMARY.md`
+- **User Improvements:** `/docs/USER_ONBOARDING_IMPROVEMENTS.md`
+- **Sample Apps PRD:** `/docs/SAMPLE_APPS_PRD.md`
+
+---
+
+## Epic 26: x402 Payment Performance Optimization ⚡
+
+### Overview
+
+Current x402 payment throughput is **3.8 payments/sec**, with each payment taking approximately **260ms** to complete. Performance testing revealed that sequential database queries, lack of caching, and synchronous settlement are the primary bottlenecks. This epic implements optimizations in two phases: conservative (parallel queries + caching) and aggressive (async settlement + batch updates).
+
+**Status:** 🚧 IN PROGRESS  
+**Priority:** P1 (Performance Critical)  
+**Points:** 13 points  
+**Duration:** 1-2 weeks  
+
+### Business Value
+
+- **Increased Throughput:** 3.8 → 8.7 payments/sec (conservative) or 15+ payments/sec (aggressive)
+- **Lower Latency:** 260ms → 115ms (conservative) or 60-80ms (aggressive) per payment
+- **Better UX:** Faster response times for AI agents consuming paid APIs
+- **Scalability:** Support high-frequency AI agent usage patterns
+- **Cost Efficiency:** Reduced database load and API response times
+
+### Current State
+
+**Performance Profile (per payment):**
+```
+Total: ~260ms
+├─ Database Queries (sequential): ~150ms
+│  ├─ Fetch endpoint: 30ms
+│  ├─ Fetch consumer wallet: 30ms
+│  ├─ Fetch provider wallet: 30ms
+│  └─ Create transfer: 60ms
+├─ Settlement (synchronous): ~80ms
+│  ├─ Update consumer wallet: 40ms
+│  └─ Update provider wallet: 40ms
+└─ Business Logic: ~30ms
+   ├─ Spending policy checks: 10ms
+   ├─ Idempotency check: 10ms
+   └─ Response formatting: 10ms
+```
+
+**Throughput:** 3.8 payments/sec (tested with 50 concurrent requests)
+
+### Desired State
+
+**Conservative Optimization (Phase 1):**
+```
+Total: ~115ms (-55% reduction)
+├─ Database Queries (parallel): ~60ms (-60%)
+│  ├─ Parallel fetch (endpoint + wallets): 30ms
+│  └─ Create transfer: 30ms
+├─ Settlement (synchronous): ~40ms (-50%)
+│  └─ Batch update (single query): 40ms
+└─ Business Logic (cached): ~15ms (-50%)
+   └─ Cached spending policies: 5ms
+```
+
+**Throughput:** ~8.7 payments/sec (2.3x improvement)
+
+**Aggressive Optimization (Phase 2):**
+```
+Total: ~60-80ms (-70-75% reduction)
+├─ Database Queries (parallel): ~40ms
+├─ Async Settlement (background): 0ms* (non-blocking)
+└─ Business Logic (cached): ~20ms
+
+*Settlement happens in background worker
+```
+
+**Throughput:** 15+ payments/sec (4x improvement)
+
+---
+
+### Stories
+
+#### Story 26.1: Parallel Database Queries (Conservative) 🎯
+
+**Goal:** Execute independent database queries in parallel instead of sequentially.
+
+**Status:** ✅ COMPLETE  
+**Priority:** P1  
+**Points:** 3  
+**Effort:** 2 hours  
+
+**Current Implementation (Sequential):**
+```typescript
+// Sequential: 90ms total
+const endpoint = await fetchEndpoint(endpointId);      // 30ms
+const consumerWallet = await fetchWallet(consumerId);  // 30ms
+const providerWallet = await fetchWallet(providerId);  // 30ms
+```
+
+**Optimized Implementation (Parallel):**
+```typescript
+// Parallel: 30ms total (3x faster)
+const [endpoint, consumerWallet, providerWallet] = await Promise.all([
+  fetchEndpoint(endpointId),
+  fetchWallet(consumerId),
+  fetchWallet(providerId)
+]);
+```
+
+**Implementation:**
+- Modify `/apps/api/src/routes/x402-payments.ts`
+- Use `Promise.all()` for independent queries
+- Maintain error handling for individual failures
+
+**Acceptance Criteria:**
+- [x] Endpoint + wallet queries execute in parallel
+- [x] Error handling preserved for each query
+- [x] No change to business logic or response format
+- [x] Performance test shows ~60ms reduction in query time
+
+**Impact:** 60ms saved per payment, 2.3x throughput increase
+
+---
+
+#### Story 26.2: Spending Policy Caching (Conservative) 🎯
+
+**Goal:** Cache spending policies in memory to avoid repeated database lookups.
+
+**Status:** ✅ COMPLETE  
+**Priority:** P1  
+**Points:** 2  
+**Effort:** 1.5 hours  
+
+**Current Implementation:**
+```typescript
+// Fetches spending_policy on every payment
+const { data: wallet } = await supabase
+  .from('wallets')
+  .select('*, spending_policy')
+  .eq('id', walletId)
+  .single();
+```
+
+**Optimized Implementation:**
+```typescript
+// In-memory cache with 30s TTL
+const policyCache = new Map<string, {
+  policy: SpendingPolicy;
+  expiresAt: number;
+}>();
+
+function getCachedPolicy(walletId: string): SpendingPolicy | null {
+  const cached = policyCache.get(walletId);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.policy;
+  }
+  return null;
+}
+
+// Use cached policy or fetch if missing
+let policy = getCachedPolicy(walletId);
+if (!policy) {
+  policy = await fetchSpendingPolicy(walletId);
+  policyCache.set(walletId, {
+    policy,
+    expiresAt: Date.now() + 30000 // 30s TTL
+  });
+}
+```
+
+**Implementation:**
+- Add in-memory cache with LRU eviction
+- Cache spending policies for 30 seconds
+- Invalidate cache on policy updates
+
+**Acceptance Criteria:**
+- [x] Spending policies cached in memory
+- [x] Cache TTL of 30 seconds
+- [x] Cache invalidated on policy updates
+- [x] Performance test shows ~10ms reduction per payment
+
+**Impact:** 10ms saved per payment on cache hits
+
+---
+
+#### Story 26.3: Batch Settlement Updates (Conservative) 🎯
+
+**Goal:** Update both wallet balances in a single database transaction instead of two sequential updates.
+
+**Status:** ✅ COMPLETE  
+**Priority:** P1  
+**Points:** 3  
+**Effort:** 2 hours  
+
+**Current Implementation (Sequential):**
+```typescript
+// Two separate updates: 80ms total
+await supabase
+  .from('wallets')
+  .update({ balance: newConsumerBalance })
+  .eq('id', consumerId);  // 40ms
+
+await supabase
+  .from('wallets')
+  .update({ balance: newProviderBalance })
+  .eq('id', providerId);  // 40ms
+```
+
+**Optimized Implementation (Batch):**
+```typescript
+// Single batch update via database function: 40ms total
+await supabase.rpc('settle_x402_payment', {
+  consumer_wallet_id: consumerId,
+  provider_wallet_id: providerId,
+  amount: paymentAmount,
+  transfer_id: transferId
+});
+```
+
+**Database Function:**
+```sql
+CREATE OR REPLACE FUNCTION settle_x402_payment(
+  consumer_wallet_id UUID,
+  provider_wallet_id UUID,
+  amount DECIMAL,
+  transfer_id UUID
+) RETURNS VOID AS $$
+BEGIN
+  -- Update both wallets in single transaction
+  UPDATE wallets
+  SET balance = balance - amount,
+      updated_at = NOW()
+  WHERE id = consumer_wallet_id;
+  
+  UPDATE wallets
+  SET balance = balance + amount,
+      updated_at = NOW()
+  WHERE id = provider_wallet_id;
+  
+  -- Mark transfer as completed
+  UPDATE transfers
+  SET status = 'completed',
+      completed_at = NOW()
+  WHERE id = transfer_id;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**Implementation:**
+- Create database function for batch settlement
+- Update payment route to use batch function
+- Ensure ACID properties maintained
+
+**Acceptance Criteria:**
+- [x] Database function performs batch update
+- [x] Transaction atomicity maintained
+- [x] Performance test shows ~40ms reduction
+- [x] Error handling for partial failures
+
+**Impact:** 40ms saved per payment
+
+---
+
+#### Story 26.4: Async Settlement Worker (Aggressive) 🚀
+
+**Goal:** Move settlement to background worker so API responds immediately after creating transfer.
+
+**Status:** 📋 PLANNED  
+**Priority:** P2 (Phase 2)  
+**Points:** 5  
+**Effort:** 1 day  
+
+**Current Flow (Synchronous):**
+```
+Client Request → Validate → Create Transfer → Settle Wallets → Respond
+                                                    ↑
+                                            80ms blocking delay
+```
+
+**Optimized Flow (Asynchronous):**
+```
+Client Request → Validate → Create Transfer → Queue Settlement → Respond (pending)
+                                                    ↓
+                                            Background Worker
+                                                    ↓
+                                            Settle Wallets (80ms)
+                                                    ↓
+                                            Webhook Notification
+```
+
+**Implementation:**
+- Add `settlement_queue` table for pending settlements
+- Create worker process to process queue
+- Update API to return `status: 'pending'` immediately
+- Send webhook when settlement completes
+
+**Queue Table:**
+```sql
+CREATE TABLE settlement_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transfer_id UUID REFERENCES transfers(id),
+  consumer_wallet_id UUID REFERENCES wallets(id),
+  provider_wallet_id UUID REFERENCES wallets(id),
+  amount DECIMAL NOT NULL,
+  status TEXT DEFAULT 'queued', -- queued, processing, completed, failed
+  attempts INT DEFAULT 0,
+  max_attempts INT DEFAULT 3,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  processed_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_settlement_queue_status ON settlement_queue(status) 
+WHERE status IN ('queued', 'processing');
+```
+
+**Worker Implementation:**
+```typescript
+// apps/api/src/workers/settlement-worker.ts
+async function processSettlementQueue() {
+  while (true) {
+    const { data: items } = await supabase
+      .from('settlement_queue')
+      .select('*')
+      .eq('status', 'queued')
+      .order('created_at', { ascending: true })
+      .limit(10);
+
+    for (const item of items) {
+      try {
+        await settlePayment(item);
+        await markComplete(item.id);
+        await sendWebhook(item.transfer_id);
+      } catch (error) {
+        await handleFailure(item.id, error);
+      }
+    }
+
+    await sleep(100); // 100ms poll interval
+  }
+}
+```
+
+**Acceptance Criteria:**
+- [ ] Settlement queue table created
+- [ ] Worker processes queue in background
+- [ ] API responds with `status: 'pending'` immediately
+- [ ] Webhook sent on completion
+- [ ] Retry logic for failures (3 attempts)
+- [ ] Dead letter queue for persistent failures
+- [ ] Performance test shows 60-80ms response time
+
+**Impact:** ~100-120ms saved per payment (non-blocking)
+
+---
+
+### Implementation Priority
+
+**Phase 1: Conservative Optimizations (P1) - Week 1** ✅ COMPLETE
+1. ✅ Story 26.1: Parallel database queries (2h)
+2. ✅ Story 26.2: Spending policy caching (1.5h)
+3. ✅ Story 26.3: Batch settlement updates (2h)
+
+**Phase 2: Aggressive Optimizations (P2) - Week 2** 📋 PLANNED
+4. Story 26.4: Async settlement worker (1 day)
+
+**Phase 3: Testing & Monitoring - Week 2**
+5. Load testing with target: 10+ payments/sec
+6. Monitoring dashboard for payment latency
+7. Performance regression tests
+
+---
+
+### Performance Targets
+
+| Metric | Before | Phase 1 (Conservative) | Phase 2 (Aggressive) |
+|--------|--------|------------------------|----------------------|
+| **Latency (p50)** | 260ms | 115ms | 60-80ms |
+| **Latency (p95)** | 350ms | 150ms | 100ms |
+| **Throughput** | 3.8/sec | 8.7/sec | 15+/sec |
+| **Database Queries** | 5 sequential | 2 parallel + 1 batch | 1 parallel |
+| **Blocking Time** | 260ms | 115ms | ~60ms |
+
+---
+
+### Success Criteria
+
+**Phase 1 (Conservative):**
+- [x] Payment latency reduced by 50%+
+- [x] Throughput increased to 8+ payments/sec
+- [x] No regression in error handling or idempotency
+- [x] All existing tests pass
+- [x] Performance monitoring in place
+
+**Phase 2 (Aggressive):**
+- [ ] Payment latency reduced by 70%+
+- [ ] Throughput increased to 15+ payments/sec
+- [ ] Webhook delivery success rate > 99%
+- [ ] Settlement success rate > 99.9%
+- [ ] Graceful degradation if worker unavailable
+
+---
+
+### Testing Plan
+
+**Performance Testing:**
+1. Load test with 100 concurrent agents
+2. Sustained throughput test (1000 payments)
+3. Latency percentile tracking (p50, p95, p99)
+4. Database connection pool monitoring
+
+**Regression Testing:**
+1. Idempotency (duplicate `requestId`)
+2. Spending limits (per-request and daily)
+3. Insufficient balance errors
+4. Concurrent payment handling
+5. Error recovery and retry logic
+
+**Monitoring:**
+1. Payment latency histogram (Prometheus)
+2. Throughput counter (payments/sec)
+3. Database query performance (slow query log)
+4. Settlement queue depth (for Phase 2)
+5. Webhook delivery rate (for Phase 2)
+
+---
+
+### Related Documentation
+
+- **Performance Analysis:** `/docs/X402_PERFORMANCE_ANALYSIS.md`
+- **Test Results:** `/docs/X402_TEST_RESULTS.md`
+- **Business Scenarios:** `/docs/X402_BUSINESS_SCENARIOS_STATUS.md`
+- **Payment Route:** `/apps/api/src/routes/x402-payments.ts`
 
 ---
 
