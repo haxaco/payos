@@ -1,19 +1,22 @@
 /**
  * @payos/x402-client-sdk
  * 
- * Client SDK for consuming x402-enabled APIs with automatic payment handling.
+ * Consumer SDK for calling x402-enabled APIs with automatic payment handling.
  * 
- * Usage:
+ * Simple Usage (Agent with auto-derived wallet):
  * ```typescript
  * const client = new X402Client({
- *   apiUrl: 'https://api.payos.com',
- *   walletId: 'your-wallet-id',
- *   auth: 'your-api-key'
+ *   apiKey: 'ak_live_xxxxx'  // Agent's API key - wallet is auto-derived
  * });
  * 
- * const response = await client.fetch('https://api.example.com/protected-endpoint', {
- *   method: 'GET',
- *   autoRetry: true // Automatically handle 402 and retry with payment
+ * const response = await client.fetch('https://api.example.com/protected');
+ * ```
+ * 
+ * Advanced Usage (Explicit wallet):
+ * ```typescript
+ * const client = new X402Client({
+ *   apiKey: 'pk_live_xxxxx',
+ *   walletId: 'wal_specific'  // Override default wallet
  * });
  * ```
  * 
@@ -27,14 +30,26 @@ import { v4 as uuidv4 } from 'uuid';
 // ============================================
 
 export interface X402ClientConfig {
-  /** PayOS API URL (e.g., https://api.payos.com) */
-  apiUrl: string;
+  /** API key for authentication (required) */
+  apiKey: string;
   
-  /** Wallet ID to use for payments */
-  walletId: string;
+  /** Optional: Wallet ID to use for payments (default: derived from agent) */
+  walletId?: string;
   
-  /** Authentication token (JWT or API key) */
-  auth: string;
+  /** Optional: PayOS API URL (default: https://api.payos.ai) */
+  apiUrl?: string;
+  
+  /** Optional: Maximum amount to auto-pay per request */
+  maxAutoPayAmount?: number;
+  
+  /** Optional: Maximum daily spending */
+  maxDailySpend?: number;
+  
+  /** Optional: Callback when payment is processed */
+  onPayment?: (payment: X402Payment) => void | Promise<void>;
+  
+  /** Optional: Callback when spending limit is reached */
+  onLimitReached?: (limit: X402LimitReached) => void | Promise<void>;
   
   /** Optional: Custom fetch implementation */
   fetcher?: typeof fetch;
@@ -50,62 +65,35 @@ export interface X402FetchOptions extends RequestInit {
   /** Maximum number of payment retries (default: 1) */
   maxRetries?: number;
   
-  /** Callback for payment confirmations */
+  /** Override onPayment callback for this request */
   onPayment?: (payment: X402Payment) => void | Promise<void>;
   
-  /** Callback for errors */
+  /** Override onError callback for this request */
   onError?: (error: X402Error) => void | Promise<void>;
 }
 
 export interface X402PaymentDetails {
-  /** Endpoint ID from x402 response */
   endpointId: string;
-  
-  /** Amount to pay */
   amount: number;
-  
-  /** Currency (USDC, EURC) */
   currency: string;
-  
-  /** Payment address (from 402 response) */
   paymentAddress?: string;
-  
-  /** Asset address (ERC20 contract) */
   assetAddress?: string;
-  
-  /** Network (base-mainnet, etc.) */
   network?: string;
 }
 
 export interface X402Payment {
-  /** Unique request ID (idempotency key) */
   requestId: string;
-  
-  /** Transfer ID from PayOS */
   transferId: string;
-  
-  /** Amount paid */
   amount: number;
-  
-  /** Currency */
   currency: string;
-  
-  /** Endpoint ID */
   endpointId: string;
-  
-  /** Wallet ID used */
+  endpoint?: string;
   walletId: string;
-  
-  /** Payment proof */
   proof: {
     paymentId: string;
     signature: string;
   };
-  
-  /** New wallet balance after payment */
   newWalletBalance: number;
-  
-  /** Timestamp */
   timestamp: string;
 }
 
@@ -115,28 +103,103 @@ export interface X402Error {
   details?: any;
 }
 
+export interface X402LimitReached {
+  type: 'per_request' | 'daily';
+  limit: number;
+  requested: number;
+}
+
+export interface X402Status {
+  balance: number;
+  currency: string;
+  todaySpend: number;
+  dailyLimit: number | null;
+  remaining: number;
+  agentId?: string;
+  agentName?: string;
+}
+
 // ============================================
 // X402 Client
 // ============================================
 
 export class X402Client {
-  private config: Required<X402ClientConfig>;
+  private config: {
+    apiKey: string;
+    walletId?: string;
+    apiUrl: string;
+    maxAutoPayAmount?: number;
+    maxDailySpend?: number;
+    onPayment?: (payment: X402Payment) => void | Promise<void>;
+    onLimitReached?: (limit: X402LimitReached) => void | Promise<void>;
+    fetcher: typeof fetch;
+    debug: boolean;
+  };
+  
+  private resolvedWalletId?: string;
+  private todaySpend: number = 0;
   
   constructor(config: X402ClientConfig) {
+    if (!config.apiKey) {
+      throw new Error('X402Client requires an apiKey');
+    }
+    
     this.config = {
-      ...config,
+      apiKey: config.apiKey,
+      walletId: config.walletId,
+      apiUrl: config.apiUrl || 'http://localhost:3456',
+      maxAutoPayAmount: config.maxAutoPayAmount,
+      maxDailySpend: config.maxDailySpend,
+      onPayment: config.onPayment,
+      onLimitReached: config.onLimitReached,
       fetcher: config.fetcher || fetch,
       debug: config.debug || false
     };
   }
   
   /**
+   * Resolve wallet ID from agent authentication
+   */
+  private async resolveWalletId(): Promise<string> {
+    // If explicitly provided, use it
+    if (this.config.walletId) {
+      return this.config.walletId;
+    }
+    
+    // If already resolved, return cached
+    if (this.resolvedWalletId) {
+      return this.resolvedWalletId;
+    }
+    
+    // Fetch from API based on authenticated agent
+    this.log('Resolving wallet from agent authentication...');
+    
+    const response = await this.config.fetcher(`${this.config.apiUrl}/v1/auth/me`, {
+      headers: {
+        'Authorization': `Bearer ${this.config.apiKey}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to authenticate. Check your API key.');
+    }
+    
+    const result = await response.json() as { walletId?: string; agentId?: string };
+    
+    if (!result.walletId) {
+      throw new Error('No wallet associated with this API key. Please provide walletId explicitly.');
+    }
+    
+    this.resolvedWalletId = result.walletId;
+    this.log(`Wallet resolved: ${this.resolvedWalletId}`);
+    
+    return this.resolvedWalletId;
+  }
+  
+  /**
    * Fetch a URL with automatic x402 payment handling
    */
-  async fetch(
-    url: string,
-    options: X402FetchOptions = {}
-  ): Promise<Response> {
+  async fetch(url: string, options: X402FetchOptions = {}): Promise<Response> {
     const {
       autoRetry = true,
       maxRetries = 1,
@@ -175,12 +238,28 @@ export class X402Client {
         // Parse 402 response
         const paymentDetails = await this.parse402Response(response);
         
+        // Check spending limits
+        const limitCheck = this.checkLimits(paymentDetails.amount);
+        if (limitCheck) {
+          this.log(`Spending limit reached: ${limitCheck.type}`);
+          if (this.config.onLimitReached) {
+            await this.config.onLimitReached(limitCheck);
+          }
+          return response;
+        }
+        
         // Process payment
         this.log('Processing payment...');
-        const payment = await this.pay(paymentDetails, url, fetchOptions.method as string || 'GET');
+        const walletId = await this.resolveWalletId();
+        const payment = await this.pay(paymentDetails, url, fetchOptions.method as string || 'GET', walletId);
         
-        if (onPayment) {
-          await onPayment(payment);
+        // Track spending
+        this.todaySpend += payment.amount;
+        
+        // Callbacks
+        const paymentCallback = onPayment || this.config.onPayment;
+        if (paymentCallback) {
+          await paymentCallback(payment);
         }
         
         this.log('Payment successful, retrying request...');
@@ -212,14 +291,32 @@ export class X402Client {
   }
   
   /**
+   * Check if payment would exceed limits
+   */
+  private checkLimits(amount: number): X402LimitReached | null {
+    // Check per-request limit
+    if (this.config.maxAutoPayAmount && amount > this.config.maxAutoPayAmount) {
+      return {
+        type: 'per_request',
+        limit: this.config.maxAutoPayAmount,
+        requested: amount
+      };
+    }
+    
+    // Check daily limit
+    if (this.config.maxDailySpend && (this.todaySpend + amount) > this.config.maxDailySpend) {
+      return {
+        type: 'daily',
+        limit: this.config.maxDailySpend,
+        requested: amount
+      };
+    }
+    
+    return null;
+  }
+  
+  /**
    * Parse 402 response to extract payment details
-   * 
-   * x402 spec defines these headers:
-   * - X-Payment-Required: "true"
-   * - X-Payment-Amount: "0.0001"
-   * - X-Payment-Currency: "USDC"
-   * - X-Payment-Address: "0x..."
-   * - X-Endpoint-ID: "uuid"
    */
   private async parse402Response(response: Response): Promise<X402PaymentDetails> {
     const endpointId = response.headers.get('X-Endpoint-ID');
@@ -249,7 +346,8 @@ export class X402Client {
   private async pay(
     details: X402PaymentDetails,
     path: string,
-    method: string
+    method: string,
+    walletId: string
   ): Promise<X402Payment> {
     const requestId = uuidv4();
     const timestamp = Date.now();
@@ -259,7 +357,7 @@ export class X402Client {
       requestId,
       amount: details.amount,
       currency: details.currency,
-      walletId: this.config.walletId,
+      walletId,
       method,
       path,
       timestamp,
@@ -275,23 +373,23 @@ export class X402Client {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.auth}`
+        'Authorization': `Bearer ${this.config.apiKey}`
       },
       body: JSON.stringify(paymentRequest)
     });
     
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json() as { error?: string; message?: string };
       throw new Error(`Payment failed: ${error.error || error.message || 'Unknown error'}`);
     }
     
-    const result = await response.json();
+    const result = await response.json() as { success?: boolean; data?: X402Payment; error?: string };
     
     if (!result.success) {
       throw new Error(`Payment failed: ${result.error || 'Unknown error'}`);
     }
     
-    return result.data;
+    return result.data!;
   }
   
   /**
@@ -312,7 +410,7 @@ export class X402Client {
       `${this.config.apiUrl}/v1/x402/quote/${endpointId}`,
       {
         headers: {
-          'Authorization': `Bearer ${this.config.auth}`
+          'Authorization': `Bearer ${this.config.apiKey}`
         }
       }
     );
@@ -321,8 +419,41 @@ export class X402Client {
       throw new Error('Failed to fetch quote');
     }
     
-    const result = await response.json();
+    const result = await response.json() as { data: any };
     return result.data;
+  }
+  
+  /**
+   * Get wallet and spending status
+   */
+  async getStatus(): Promise<X402Status> {
+    const walletId = await this.resolveWalletId();
+    
+    const response = await this.config.fetcher(
+      `${this.config.apiUrl}/v1/wallets/${walletId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${this.config.apiKey}`
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch wallet status');
+    }
+    
+    const wallet = await response.json() as { balance: string; currency: string };
+    const balance = parseFloat(wallet.balance);
+    
+    return {
+      balance,
+      currency: wallet.currency || 'USDC',
+      todaySpend: this.todaySpend,
+      dailyLimit: this.config.maxDailySpend || null,
+      remaining: this.config.maxDailySpend 
+        ? Math.max(0, this.config.maxDailySpend - this.todaySpend)
+        : balance
+    };
   }
   
   /**
@@ -335,13 +466,13 @@ export class X402Client {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.auth}`
+          'Authorization': `Bearer ${this.config.apiKey}`
         },
         body: JSON.stringify({ requestId, transferId })
       }
     );
     
-    const result = await response.json();
+    const result = await response.json() as { verified?: boolean };
     return result.verified === true;
   }
   
@@ -349,7 +480,12 @@ export class X402Client {
    * Update client configuration
    */
   updateConfig(config: Partial<X402ClientConfig>): void {
-    this.config = { ...this.config, ...config };
+    Object.assign(this.config, config);
+    
+    // Clear resolved wallet if apiKey changed
+    if (config.apiKey) {
+      this.resolvedWalletId = undefined;
+    }
   }
   
   /**
@@ -404,4 +540,3 @@ export function extract402Details(response: Response): X402PaymentDetails | null
 // ============================================
 
 export default X402Client;
-

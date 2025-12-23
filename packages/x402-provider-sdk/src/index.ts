@@ -4,18 +4,21 @@
  * Provider SDK for monetizing APIs with x402 - HTTP 402 Payment Required.
  * Framework-agnostic middleware for Express, Hono, Fastify, and more.
  * 
- * Usage:
+ * Simple Usage:
  * ```typescript
- * import { X402Provider, createX402Middleware } from '@payos/x402-provider-sdk';
+ * import { X402Provider } from '@payos/x402-provider-sdk';
  * 
- * const provider = new X402Provider({
- *   apiUrl: 'https://api.payos.com',
- *   auth: 'your-api-key',
- *   accountId: 'your-account-id'
+ * const x402 = new X402Provider({
+ *   apiKey: 'pk_live_xxxxx'  // That's it!
  * });
  * 
- * // Use as middleware
- * app.use('/protected', provider.middleware());
+ * // Register endpoint
+ * await x402.register('/api/data', { name: 'Data API', price: 0.001 });
+ * 
+ * // Protect route
+ * app.get('/api/data', x402.protect(), (req, res) => {
+ *   res.json({ data: 'premium content' });
+ * });
  * ```
  * 
  * Spec: https://www.x402.org/x402-whitepaper.pdf
@@ -26,14 +29,14 @@
 // ============================================
 
 export interface X402ProviderConfig {
-  /** PayOS API URL (e.g., https://api.payos.com) */
-  apiUrl: string;
+  /** API key for authentication (required) */
+  apiKey: string;
   
-  /** Authentication token (JWT or API key) */
-  auth: string;
+  /** Optional: PayOS API URL (default: https://api.payos.ai) */
+  apiUrl?: string;
   
-  /** Provider account ID */
-  accountId: string;
+  /** Optional: Account ID (default: derived from API key) */
+  accountId?: string;
   
   /** Optional: Custom fetch implementation */
   fetcher?: typeof fetch;
@@ -43,13 +46,13 @@ export interface X402ProviderConfig {
 }
 
 export interface X402EndpointConfig {
-  /** Endpoint name (e.g., "Compliance Check API") */
+  /** Endpoint name (required) */
   name: string;
   
-  /** Base price per call */
-  basePrice: number;
+  /** Price per call (required) */
+  price: number;
   
-  /** Currency (USDC or EURC) */
+  /** Optional: Currency (default: USDC) */
   currency?: 'USDC' | 'EURC';
   
   /** Optional: Description */
@@ -58,7 +61,7 @@ export interface X402EndpointConfig {
   /** Optional: Volume discounts */
   volumeDiscounts?: Array<{
     threshold: number;
-    priceMultiplier: number;
+    discount: number;  // Percentage off (0.1 = 10% off)
   }>;
   
   /** Optional: Webhook URL for payment notifications */
@@ -68,7 +71,7 @@ export interface X402EndpointConfig {
   network?: string;
 }
 
-export interface X402MiddlewareOptions {
+export interface X402ProtectOptions {
   /** Skip payment check (for testing) */
   skipPaymentCheck?: boolean;
   
@@ -117,31 +120,107 @@ export interface X402Payment {
   status: string;
 }
 
+export interface X402Analytics {
+  totalRevenue: number;
+  netRevenue: number;
+  totalCalls: number;
+  uniquePayers: number;
+  averageTransaction: number;
+  topEndpoints: Array<{
+    id: string;
+    name: string;
+    revenue: number;
+    calls: number;
+  }>;
+}
+
 // ============================================
 // X402 Provider
 // ============================================
 
 export class X402Provider {
-  private config: Required<X402ProviderConfig>;
+  private config: {
+    apiKey: string;
+    apiUrl: string;
+    accountId?: string;
+    fetcher: typeof fetch;
+    debug: boolean;
+  };
+  
+  private resolvedAccountId?: string;
   private registeredEndpoints: Map<string, X402Endpoint> = new Map();
   
   constructor(config: X402ProviderConfig) {
+    if (!config.apiKey) {
+      throw new Error('X402Provider requires an apiKey');
+    }
+    
     this.config = {
-      ...config,
+      apiKey: config.apiKey,
+      apiUrl: config.apiUrl || 'http://localhost:3456',
+      accountId: config.accountId,
       fetcher: config.fetcher || fetch,
       debug: config.debug || false
     };
   }
   
   /**
-   * Register an endpoint with PayOS
+   * Resolve account ID from API key authentication
    */
-  async registerEndpoint(
+  private async resolveAccountId(): Promise<string> {
+    if (this.config.accountId) {
+      return this.config.accountId;
+    }
+    
+    if (this.resolvedAccountId) {
+      return this.resolvedAccountId;
+    }
+    
+    this.log('Resolving account from API key...');
+    
+    const response = await this.config.fetcher(`${this.config.apiUrl}/v1/auth/me`, {
+      headers: {
+        'Authorization': `Bearer ${this.config.apiKey}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to authenticate. Check your API key.');
+    }
+    
+    const result = await response.json() as { accountId?: string };
+    
+    if (!result.accountId) {
+      throw new Error('No account associated with this API key. Please provide accountId explicitly.');
+    }
+    
+    this.resolvedAccountId = result.accountId;
+    this.log(`Account resolved: ${this.resolvedAccountId}`);
+    
+    return this.resolvedAccountId;
+  }
+  
+  /**
+   * Register an endpoint with PayOS
+   * 
+   * @param path - The API path (e.g., '/api/weather/premium')
+   * @param config - Endpoint configuration
+   * @param method - HTTP method (default: GET)
+   */
+  async register(
     path: string,
-    method: string,
-    config: X402EndpointConfig
+    config: X402EndpointConfig,
+    method: string = 'GET'
   ): Promise<X402Endpoint> {
+    const accountId = await this.resolveAccountId();
+    
     this.log(`Registering endpoint: ${method} ${path}`);
+    
+    // Convert discount format
+    const volumeDiscounts = config.volumeDiscounts?.map(d => ({
+      threshold: d.threshold,
+      priceMultiplier: 1 - d.discount
+    }));
     
     const response = await this.config.fetcher(
       `${this.config.apiUrl}/v1/x402/endpoints`,
@@ -149,17 +228,17 @@ export class X402Provider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.auth}`
+          'Authorization': `Bearer ${this.config.apiKey}`
         },
         body: JSON.stringify({
-          accountId: this.config.accountId,
+          accountId,
           name: config.name,
           path,
           method: method.toUpperCase(),
           description: config.description,
-          basePrice: config.basePrice,
+          basePrice: config.price,
           currency: config.currency || 'USDC',
-          volumeDiscounts: config.volumeDiscounts,
+          volumeDiscounts,
           webhookUrl: config.webhookUrl,
           network: config.network || 'base-mainnet'
         })
@@ -178,14 +257,14 @@ export class X402Provider {
     const key = `${method.toUpperCase()}:${path}`;
     this.registeredEndpoints.set(key, endpoint);
     
-    this.log(`Endpoint registered successfully: ${endpoint.id}`);
+    this.log(`Endpoint registered: ${endpoint.id}`);
     return endpoint;
   }
   
   /**
-   * Get registered endpoint
+   * Get endpoint by path and method
    */
-  async getEndpoint(path: string, method: string): Promise<X402Endpoint | null> {
+  async getEndpoint(path: string, method: string = 'GET'): Promise<X402Endpoint | null> {
     const key = `${method.toUpperCase()}:${path}`;
     
     // Check cache first
@@ -200,7 +279,7 @@ export class X402Provider {
       `${this.config.apiUrl}/v1/x402/endpoints`,
       {
         headers: {
-          'Authorization': `Bearer ${this.config.auth}`
+          'Authorization': `Bearer ${this.config.apiKey}`
         }
       }
     );
@@ -237,7 +316,7 @@ export class X402Provider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.auth}`
+          'Authorization': `Bearer ${this.config.apiKey}`
         },
         body: JSON.stringify({ requestId, transferId })
       }
@@ -260,14 +339,38 @@ export class X402Provider {
   }
   
   /**
-   * Create middleware for your framework
-   * 
-   * This returns a function that can be used with Express, Hono, Fastify, etc.
+   * Get analytics for your endpoints
    */
-  middleware(options: X402MiddlewareOptions = {}) {
+  async getAnalytics(period: string = '30d'): Promise<X402Analytics> {
+    const response = await this.config.fetcher(
+      `${this.config.apiUrl}/v1/x402/analytics/summary?period=${period}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${this.config.apiKey}`
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch analytics');
+    }
+    
+    const result = await response.json() as { data: X402Analytics };
+    return result.data;
+  }
+  
+  /**
+   * Express/Connect-style middleware
+   * 
+   * Usage:
+   * ```typescript
+   * app.get('/api/data', x402.protect(), (req, res) => { ... });
+   * ```
+   */
+  protect(options: X402ProtectOptions = {}) {
     return async (req: any, res: any, next?: Function) => {
       try {
-        const path = req.path || req.url;
+        const path = req.path || req.url?.split('?')[0];
         const method = req.method;
         
         this.log(`Middleware: ${method} ${path}`);
@@ -306,8 +409,8 @@ export class X402Provider {
             return this.return402(res, endpoint, options);
           }
         } else {
-          // Default verifier
-          const requestId = paymentProof.split(':')[2]; // Extract from proof signature
+          // Default verifier - extract request ID from proof
+          const requestId = paymentProof.split(':')[2] || paymentProof;
           payment = await this.verifyPayment(requestId, paymentId);
           
           if (!payment) {
@@ -331,24 +434,72 @@ export class X402Provider {
       } catch (error) {
         console.error('[X402Provider] Middleware error:', error);
         
-        // On error, allow request through (fail open)
-        if (next) {
-          return next();
+        // On error, return 500 (don't fail open for security)
+        if (res.status) {
+          return res.status(500).json({ error: 'Payment verification error' });
         }
+        
+        throw error;
       }
     };
   }
   
   /**
-   * Return 402 Payment Required response
+   * Hono-style middleware
+   * 
+   * Usage:
+   * ```typescript
+   * app.get('/api/data', x402.honoMiddleware(), (c) => { ... });
+   * ```
    */
-  private return402(res: any, endpoint: X402Endpoint, options: X402MiddlewareOptions) {
-    // Custom handler
+  honoMiddleware(options: X402ProtectOptions = {}) {
+    return async (c: any, next: Function) => {
+      const path = c.req.path;
+      const method = c.req.method;
+      
+      this.log(`Hono Middleware: ${method} ${path}`);
+      
+      if (options.skipPaymentCheck) {
+        return next();
+      }
+      
+      const endpoint = await this.getEndpoint(path, method);
+      
+      if (!endpoint) {
+        return next();
+      }
+      
+      const paymentId = c.req.header('X-Payment-ID');
+      const paymentProof = c.req.header('X-Payment-Proof');
+      
+      if (!paymentId || !paymentProof) {
+        return this.return402Hono(c, endpoint);
+      }
+      
+      const requestId = paymentProof.split(':')[2] || paymentProof;
+      const payment = await this.verifyPayment(requestId, paymentId);
+      
+      if (!payment) {
+        return this.return402Hono(c, endpoint);
+      }
+      
+      if (options.onPaymentVerified) {
+        await options.onPaymentVerified(payment);
+      }
+      
+      c.set('x402Payment', payment);
+      return next();
+    };
+  }
+  
+  /**
+   * Return 402 Payment Required response (Express-style)
+   */
+  private return402(res: any, endpoint: X402Endpoint, options: X402ProtectOptions) {
     if (options.on402) {
       return options.on402(endpoint);
     }
     
-    // Set x402 headers
     const headers: Record<string, string> = {
       'X-Payment-Required': 'true',
       'X-Payment-Amount': endpoint.basePrice.toString(),
@@ -362,9 +513,7 @@ export class X402Provider {
       headers['X-Asset-Address'] = endpoint.assetAddress;
     }
     
-    // Handle different response types
     if (typeof res.status === 'function') {
-      // Express-style
       res.status(402);
       Object.entries(headers).forEach(([key, value]) => {
         res.setHeader(key, value);
@@ -380,47 +529,59 @@ export class X402Provider {
           network: endpoint.network
         }
       });
-    } else if (typeof res.json === 'function') {
-      // Hono-style
-      Object.entries(headers).forEach(([key, value]) => {
-        res.header(key, value);
-      });
-      return res.json({
-        error: 'Payment Required',
-        message: `This endpoint requires payment of ${endpoint.basePrice} ${endpoint.currency}`,
-        paymentDetails: {
-          amount: endpoint.basePrice,
-          currency: endpoint.currency,
-          paymentAddress: endpoint.paymentAddress,
-          endpointId: endpoint.id,
-          network: endpoint.network
-        }
-      }, 402);
     }
     
-    // Generic response
     return {
       status: 402,
       headers,
       body: {
         error: 'Payment Required',
-        message: `This endpoint requires payment of ${endpoint.basePrice} ${endpoint.currency}`,
         paymentDetails: {
           amount: endpoint.basePrice,
           currency: endpoint.currency,
-          paymentAddress: endpoint.paymentAddress,
-          endpointId: endpoint.id,
-          network: endpoint.network
+          endpointId: endpoint.id
         }
       }
     };
   }
   
   /**
+   * Return 402 Payment Required response (Hono-style)
+   */
+  private return402Hono(c: any, endpoint: X402Endpoint) {
+    c.header('X-Payment-Required', 'true');
+    c.header('X-Payment-Amount', endpoint.basePrice.toString());
+    c.header('X-Payment-Currency', endpoint.currency);
+    c.header('X-Payment-Address', endpoint.paymentAddress);
+    c.header('X-Endpoint-ID', endpoint.id);
+    c.header('X-Payment-Network', endpoint.network);
+    
+    if (endpoint.assetAddress) {
+      c.header('X-Asset-Address', endpoint.assetAddress);
+    }
+    
+    return c.json({
+      error: 'Payment Required',
+      message: `This endpoint requires payment of ${endpoint.basePrice} ${endpoint.currency}`,
+      paymentDetails: {
+        amount: endpoint.basePrice,
+        currency: endpoint.currency,
+        paymentAddress: endpoint.paymentAddress,
+        endpointId: endpoint.id,
+        network: endpoint.network
+      }
+    }, 402);
+  }
+  
+  /**
    * Update provider configuration
    */
   updateConfig(config: Partial<X402ProviderConfig>): void {
-    this.config = { ...this.config, ...config };
+    Object.assign(this.config, config);
+    
+    if (config.apiKey) {
+      this.resolvedAccountId = undefined;
+    }
   }
   
   /**
@@ -443,17 +604,6 @@ export class X402Provider {
 // ============================================
 // Utility Functions
 // ============================================
-
-/**
- * Create x402 middleware (convenience function)
- */
-export function createX402Middleware(
-  config: X402ProviderConfig,
-  options?: X402MiddlewareOptions
-) {
-  const provider = new X402Provider(config);
-  return provider.middleware(options);
-}
 
 /**
  * Create 402 response (for manual handling)
@@ -489,4 +639,3 @@ export function create402Response(endpoint: X402Endpoint) {
 // ============================================
 
 export default X402Provider;
-

@@ -1,125 +1,93 @@
 /**
- * Sample Weather Client (Consumer)
+ * Sample AI Agent (Consumer)
  * 
  * Demonstrates x402 Consumer SDK for calling paid APIs with automatic payment.
  * 
+ * Setup:
+ *   1. Create an agent in PayOS dashboard
+ *   2. Agent automatically gets: API key + wallet
+ *   3. Set environment variable: PAYOS_API_KEY=ak_xxx
+ *   4. Run: pnpm dev
+ * 
  * Usage:
- *   pnpm dev                    # Interactive mode
+ *   pnpm dev                    # Interactive demo
  *   pnpm dev --free             # Call free endpoint
- *   pnpm dev --premium          # Call premium endpoint (auto-pay)
- *   pnpm dev --quote <endpoint> # Get price quote
- *   pnpm dev --balance          # Check wallet balance
+ *   pnpm dev --forecast         # Call paid forecast (auto-pay)
+ *   pnpm dev --historical       # Call paid historical (auto-pay)
+ *   pnpm dev --status           # Check wallet/spending status
  */
 
-import { X402Client, X402Payment, X402Error } from '@payos/x402-client-sdk';
+import { X402Client } from '@payos/x402-client-sdk';
 import chalk from 'chalk';
 import ora from 'ora';
 
-// Configuration from environment
-const config = {
-  payosApiUrl: process.env.PAYOS_API_URL || 'http://localhost:3456',
-  payosApiKey: process.env.PAYOS_API_KEY || '',
-  payosWalletId: process.env.PAYOS_WALLET_ID || '',
-  weatherApiUrl: process.env.WEATHER_API_URL || 'http://localhost:4000',
-  debug: process.env.DEBUG === 'true'
-};
+// ============================================
+// Configuration
+// ============================================
 
-// Validate configuration
-if (!config.payosApiKey || !config.payosWalletId) {
-  console.error(chalk.red('\n❌ Missing required environment variables:'));
-  console.error(chalk.gray('   PAYOS_API_KEY - Your PayOS API key'));
-  console.error(chalk.gray('   PAYOS_WALLET_ID - Your consumer wallet ID'));
-  console.error(chalk.gray('\nExample:'));
-  console.error(chalk.gray('   PAYOS_API_KEY=pk_xxx PAYOS_WALLET_ID=wal_xxx pnpm dev'));
+const WEATHER_API_URL = process.env.WEATHER_API_URL || 'http://localhost:4000';
+const DEBUG = process.env.DEBUG === 'true';
+
+// Validate API key
+if (!process.env.PAYOS_API_KEY) {
+  console.error(`
+${chalk.red('╔══════════════════════════════════════════════════════════════════╗')}
+${chalk.red('║')}  ${chalk.red('❌ Missing PAYOS_API_KEY environment variable')}                   ${chalk.red('║')}
+${chalk.red('╠══════════════════════════════════════════════════════════════════╣')}
+${chalk.red('║')}                                                                  ${chalk.red('║')}
+${chalk.red('║')}  To get your agent API key:                                      ${chalk.red('║')}
+${chalk.red('║')}  1. Go to PayOS dashboard (http://localhost:3000)                ${chalk.red('║')}
+${chalk.red('║')}  2. Navigate to Agents                                           ${chalk.red('║')}
+${chalk.red('║')}  3. Create a new agent                                           ${chalk.red('║')}
+${chalk.red('║')}  4. Copy the API key (wallet is auto-created)                    ${chalk.red('║')}
+${chalk.red('║')}                                                                  ${chalk.red('║')}
+${chalk.red('║')}  Then run:                                                       ${chalk.red('║')}
+${chalk.red('║')}  ${chalk.yellow('PAYOS_API_KEY=ak_xxx pnpm dev')}                                   ${chalk.red('║')}
+${chalk.red('║')}                                                                  ${chalk.red('║')}
+${chalk.red('╚══════════════════════════════════════════════════════════════════╝')}
+  `);
   process.exit(1);
 }
 
-// Initialize x402 Client SDK
-const client = new X402Client({
-  apiUrl: config.payosApiUrl,
-  walletId: config.payosWalletId,
-  auth: config.payosApiKey,
-  debug: config.debug
+// ============================================
+// Initialize x402 Client
+// ============================================
+
+const x402 = new X402Client({
+  apiKey: process.env.PAYOS_API_KEY,
+  
+  // Safety limits (optional)
+  maxAutoPayAmount: 0.10,   // Don't auto-pay more than $0.10 per request
+  maxDailySpend: 10.0,      // Daily spending limit of $10
+  
+  // Callbacks (optional)
+  onPayment: (payment) => {
+    console.log(chalk.green(`\n   💰 Payment processed!`));
+    console.log(chalk.gray(`      Amount: ${payment.amount} ${payment.currency}`));
+    console.log(chalk.gray(`      Transfer: ${payment.transferId.slice(0, 8)}...`));
+    console.log(chalk.gray(`      New Balance: $${payment.newWalletBalance.toFixed(4)}\n`));
+  },
+  
+  onLimitReached: (limit) => {
+    console.log(chalk.yellow(`\n   ⚠️  Spending limit reached!`));
+    console.log(chalk.gray(`      Type: ${limit.type}`));
+    console.log(chalk.gray(`      Limit: $${limit.limit}`));
+    console.log(chalk.gray(`      Requested: $${limit.requested}\n`));
+  },
+  
+  debug: DEBUG
 });
-
-// ============================================
-// Display Functions
-// ============================================
-
-function printHeader() {
-  console.log('');
-  console.log(chalk.cyan('╔══════════════════════════════════════════════════════════╗'));
-  console.log(chalk.cyan('║                                                          ║'));
-  console.log(chalk.cyan('║   🌤️  Weather Client ') + chalk.gray('(x402 Consumer SDK Demo)') + chalk.cyan('           ║'));
-  console.log(chalk.cyan('║                                                          ║'));
-  console.log(chalk.cyan('╚══════════════════════════════════════════════════════════╝'));
-  console.log('');
-  console.log(chalk.gray(`   Weather API: ${config.weatherApiUrl}`));
-  console.log(chalk.gray(`   PayOS API:   ${config.payosApiUrl}`));
-  console.log(chalk.gray(`   Wallet:      ${config.payosWalletId.slice(0, 12)}...`));
-  console.log('');
-}
-
-function printWeather(data: any) {
-  console.log('');
-  console.log(chalk.bold(`   📍 ${data.location}`));
-  console.log(chalk.gray('   ─────────────────────────────────────────'));
-  console.log(`   🌡️  Temperature: ${chalk.yellow(data.temperature + '°F')}`);
-  console.log(`   ☁️  Conditions:  ${data.conditions}`);
-  
-  if (data.tier === 'premium') {
-    console.log(`   💧 Humidity:    ${data.humidity}%`);
-    console.log(`   💨 Wind:        ${data.wind.speed} mph ${data.wind.direction}`);
-    console.log(`   🌡️  Feels Like:  ${data.feelsLike}°F`);
-    console.log(`   👁️  Visibility:  ${data.visibility} mi`);
-    console.log(`   ☀️  UV Index:    ${data.uvIndex}`);
-    
-    if (data.forecast) {
-      console.log('');
-      console.log(chalk.bold('   📅 5-Day Forecast'));
-      console.log(chalk.gray('   ─────────────────────────────────────────'));
-      for (const day of data.forecast) {
-        console.log(`   ${day.day.padEnd(10)} ${chalk.yellow(day.high + '°')}/${chalk.blue(day.low + '°')}  ${day.conditions}`);
-      }
-    }
-  }
-  
-  console.log('');
-  console.log(chalk.gray(`   Tier: ${data.tier}`));
-  console.log(chalk.gray(`   Time: ${data.timestamp}`));
-  
-  if (data.x402?.paid) {
-    console.log('');
-    console.log(chalk.green('   ✅ Paid via x402'));
-    if (data.x402.payment) {
-      console.log(chalk.gray(`      Amount: ${data.x402.payment.amount} ${data.x402.payment.currency}`));
-      console.log(chalk.gray(`      TX: ${data.x402.payment.transferId}`));
-    }
-  }
-  
-  console.log('');
-}
-
-function printPayment(payment: X402Payment) {
-  console.log('');
-  console.log(chalk.green('   💰 Payment Successful!'));
-  console.log(chalk.gray('   ─────────────────────────────────────────'));
-  console.log(`   Amount:      ${chalk.yellow(payment.amount + ' ' + payment.currency)}`);
-  console.log(`   Transfer ID: ${chalk.gray(payment.transferId)}`);
-  console.log(`   Request ID:  ${chalk.gray(payment.requestId)}`);
-  console.log(`   New Balance: ${chalk.cyan('$' + payment.newWalletBalance.toFixed(4))}`);
-  console.log('');
-}
 
 // ============================================
 // API Functions
 // ============================================
 
-async function fetchFreeWeather(location: string = 'San Francisco') {
-  const spinner = ora('Fetching free weather data...').start();
+async function fetchCurrentWeather(location: string = 'San Francisco') {
+  const spinner = ora('Fetching current weather (free)...').start();
   
   try {
-    const response = await fetch(`${config.weatherApiUrl}/api/weather/free?location=${encodeURIComponent(location)}`);
+    // Free endpoint - no payment needed
+    const response = await fetch(`${WEATHER_API_URL}/api/weather/current?location=${encodeURIComponent(location)}`);
     const data = await response.json();
     
     spinner.succeed('Weather data received');
@@ -131,94 +99,46 @@ async function fetchFreeWeather(location: string = 'San Francisco') {
   }
 }
 
-async function fetchPremiumWeather(location: string = 'San Francisco') {
-  const spinner = ora('Fetching premium weather data...').start();
-  
-  let paymentInfo: X402Payment | null = null;
+async function fetchWeatherForecast(location: string = 'San Francisco') {
+  const spinner = ora('Fetching 5-day forecast (paid)...').start();
   
   try {
-    const response = await client.fetch(
-      `${config.weatherApiUrl}/api/weather/premium?location=${encodeURIComponent(location)}`,
-      {
-        method: 'GET',
-        autoRetry: true,
-        maxRetries: 1,
-        onPayment: (payment) => {
-          paymentInfo = payment;
-          spinner.text = 'Payment processed, fetching data...';
-        },
-        onError: (error) => {
-          spinner.fail('Payment failed');
-          console.error(chalk.red(`   Error: ${error.message}`));
-        }
-      }
+    // Paid endpoint - x402 client handles payment automatically
+    const response = await x402.fetch(
+      `${WEATHER_API_URL}/api/weather/forecast?location=${encodeURIComponent(location)}`
     );
     
     if (response.ok) {
       const data = await response.json();
-      spinner.succeed('Premium weather data received');
-      
-      if (paymentInfo) {
-        printPayment(paymentInfo);
-      }
-      
-      printWeather(data);
+      spinner.succeed('Forecast data received');
+      printForecast(data);
     } else if (response.status === 402) {
-      spinner.fail('Payment required but auto-pay disabled or failed');
-      const body = await response.json();
-      console.log(chalk.yellow('\n   Payment Details:'));
-      console.log(chalk.gray(`   Amount: ${body.paymentDetails?.amount} ${body.paymentDetails?.currency}`));
-      console.log(chalk.gray(`   Endpoint: ${body.paymentDetails?.endpointId}`));
+      spinner.fail('Payment required but could not be processed');
+      console.log(chalk.yellow('   Check your wallet balance and limits'));
     } else {
       spinner.fail(`Request failed: ${response.status}`);
     }
     
   } catch (error: any) {
-    spinner.fail('Failed to fetch weather');
+    spinner.fail('Failed to fetch forecast');
     console.error(chalk.red(`   Error: ${error.message}`));
   }
 }
 
-async function fetchHistoricalWeather(location: string = 'San Francisco', days: number = 30) {
-  const spinner = ora(`Fetching ${days}-day historical data...`).start();
-  
-  let paymentInfo: X402Payment | null = null;
+async function fetchHistoricalWeather(location: string = 'San Francisco', days: number = 7) {
+  const spinner = ora(`Fetching ${days}-day historical data (paid)...`).start();
   
   try {
-    const response = await client.fetch(
-      `${config.weatherApiUrl}/api/weather/historical?location=${encodeURIComponent(location)}&days=${days}`,
-      {
-        method: 'GET',
-        autoRetry: true,
-        onPayment: (payment) => {
-          paymentInfo = payment;
-          spinner.text = 'Payment processed, fetching data...';
-        }
-      }
+    const response = await x402.fetch(
+      `${WEATHER_API_URL}/api/weather/historical?location=${encodeURIComponent(location)}&days=${days}`
     );
     
     if (response.ok) {
       const data = await response.json();
       spinner.succeed('Historical data received');
-      
-      if (paymentInfo) {
-        printPayment(paymentInfo);
-      }
-      
-      console.log('');
-      console.log(chalk.bold(`   📊 Historical Weather for ${data.location}`));
-      console.log(chalk.gray(`   Period: ${data.period}`));
-      console.log(chalk.gray('   ─────────────────────────────────────────'));
-      console.log(chalk.gray('   Date         High   Low   Precip  Humidity'));
-      
-      for (const day of data.data.slice(0, 10)) {
-        console.log(`   ${day.date}   ${day.high}°    ${day.low}°    ${day.precipitation}"    ${day.humidity}%`);
-      }
-      
-      if (data.data.length > 10) {
-        console.log(chalk.gray(`   ... and ${data.data.length - 10} more days`));
-      }
-      console.log('');
+      printHistorical(data);
+    } else if (response.status === 402) {
+      spinner.fail('Payment required but could not be processed');
     } else {
       spinner.fail(`Request failed: ${response.status}`);
     }
@@ -229,69 +149,115 @@ async function fetchHistoricalWeather(location: string = 'San Francisco', days: 
   }
 }
 
-async function getQuote(endpointId: string) {
-  const spinner = ora('Getting price quote...').start();
+async function checkStatus() {
+  const spinner = ora('Checking wallet status...').start();
   
   try {
-    const quote = await client.getQuote(endpointId);
-    spinner.succeed('Quote received');
+    const status = await x402.getStatus();
+    spinner.succeed('Status retrieved');
     
-    console.log('');
-    console.log(chalk.bold('   💵 Price Quote'));
-    console.log(chalk.gray('   ─────────────────────────────────────────'));
-    console.log(`   Endpoint:   ${quote.name}`);
-    console.log(`   Path:       ${quote.method} ${quote.path}`);
-    console.log(`   Base Price: ${chalk.yellow(quote.basePrice + ' ' + quote.currency)}`);
-    console.log(`   Your Price: ${chalk.green(quote.currentPrice + ' ' + quote.currency)}`);
-    
-    if (quote.volumeDiscounts?.length > 0) {
-      console.log('');
-      console.log(chalk.bold('   📉 Volume Discounts'));
-      for (const discount of quote.volumeDiscounts) {
-        const off = Math.round((1 - discount.priceMultiplier) * 100);
-        console.log(`   ${discount.threshold}+ calls: ${off}% off`);
-      }
-    }
-    
-    console.log('');
-    console.log(chalk.gray(`   Your total calls: ${quote.totalCalls}`));
-    console.log('');
+    console.log(`
+   ${chalk.bold('💳 Agent Status')}
+   ${chalk.gray('─────────────────────────────────────────')}
+   Balance:     ${chalk.green('$' + status.balance.toFixed(4))} ${status.currency}
+   Today Spent: ${chalk.yellow('$' + status.todaySpend.toFixed(4))}
+   Daily Limit: ${status.dailyLimit ? '$' + status.dailyLimit.toFixed(2) : 'None'}
+   Remaining:   ${chalk.cyan('$' + status.remaining.toFixed(4))}
+`);
     
   } catch (error: any) {
-    spinner.fail('Failed to get quote');
+    spinner.fail('Failed to get status');
     console.error(chalk.red(`   Error: ${error.message}`));
   }
 }
 
-async function checkBalance() {
-  const spinner = ora('Checking wallet balance...').start();
+// ============================================
+// Display Functions
+// ============================================
+
+function printWeather(data: any) {
+  console.log(`
+   ${chalk.bold(`📍 ${data.location}`)}
+   ${chalk.gray('─────────────────────────────────────────')}
+   🌡️  Temperature: ${chalk.yellow(data.temperature + '°' + data.temperatureUnit)}
+   ☁️  Conditions:  ${data.conditions}
+   ${chalk.gray(`Tier: ${data.tier} | ${data.timestamp}`)}
+`);
+}
+
+function printForecast(data: any) {
+  console.log(`
+   ${chalk.bold(`📍 ${data.location} - 5 Day Forecast`)}
+   ${chalk.gray('─────────────────────────────────────────')}
+   Current: ${data.current.temperature}°${data.current.temperatureUnit} - ${data.current.conditions}
+   
+   ${chalk.bold('📅 Extended Forecast')}
+   ${chalk.gray('─────────────────────────────────────────')}`);
   
-  try {
-    const response = await fetch(`${config.payosApiUrl}/v1/wallets/${config.payosWalletId}`, {
-      headers: {
-        'Authorization': `Bearer ${config.payosApiKey}`
-      }
-    });
-    
-    if (response.ok) {
-      const wallet = await response.json();
-      spinner.succeed('Balance retrieved');
-      
-      console.log('');
-      console.log(chalk.bold('   💳 Wallet Balance'));
-      console.log(chalk.gray('   ─────────────────────────────────────────'));
-      console.log(`   Wallet ID: ${wallet.id}`);
-      console.log(`   Balance:   ${chalk.green('$' + parseFloat(wallet.balance).toFixed(4))} ${wallet.currency || 'USDC'}`);
-      console.log(`   Status:    ${wallet.status}`);
-      console.log('');
-    } else {
-      spinner.fail('Failed to get balance');
-    }
-    
-  } catch (error: any) {
-    spinner.fail('Failed to check balance');
-    console.error(chalk.red(`   Error: ${error.message}`));
+  for (const day of data.forecast) {
+    console.log(`   ${day.day.padEnd(8)} ${chalk.yellow(day.high + '°')}/${chalk.blue(day.low + '°')}  ${day.conditions.padEnd(14)} 💧${day.precipitation}%`);
   }
+  
+  console.log(`
+   ${chalk.gray(`Tier: ${data.tier}`)}
+   ${data.x402?.paid ? chalk.green('✅ Paid via x402') : ''}
+`);
+}
+
+function printHistorical(data: any) {
+  console.log(`
+   ${chalk.bold(`📊 ${data.location} - ${data.period}`)}
+   ${chalk.gray('─────────────────────────────────────────')}
+   ${chalk.gray('Date         High   Low   Precip  Humidity')}`);
+  
+  // Show first 10 days
+  for (const day of data.data.slice(0, 10)) {
+    console.log(`   ${day.date}   ${day.high}°    ${day.low}°    ${day.precipitation.toFixed(2)}"   ${day.humidity}%`);
+  }
+  
+  if (data.data.length > 10) {
+    console.log(chalk.gray(`   ... and ${data.data.length - 10} more days`));
+  }
+  
+  console.log(`
+   ${chalk.gray(`Tier: ${data.tier}`)}
+   ${data.x402?.paid ? chalk.green('✅ Paid via x402') : ''}
+`);
+}
+
+function printHeader() {
+  console.log(`
+${chalk.cyan('╔══════════════════════════════════════════════════════════════════╗')}
+${chalk.cyan('║')}                                                                  ${chalk.cyan('║')}
+${chalk.cyan('║')}   ${chalk.bold('🤖 AI Agent')} ${chalk.gray('(x402 Consumer SDK Demo)')}                         ${chalk.cyan('║')}
+${chalk.cyan('║')}                                                                  ${chalk.cyan('║')}
+${chalk.cyan('╠══════════════════════════════════════════════════════════════════╣')}
+${chalk.cyan('║')}                                                                  ${chalk.cyan('║')}
+${chalk.cyan('║')}   Weather API: ${chalk.gray(WEATHER_API_URL.padEnd(45))} ${chalk.cyan('║')}
+${chalk.cyan('║')}   Auto-pay:    ${chalk.green('Enabled')}                                          ${chalk.cyan('║')}
+${chalk.cyan('║')}   Max/request: ${chalk.yellow('$0.10')}                                            ${chalk.cyan('║')}
+${chalk.cyan('║')}   Daily limit: ${chalk.yellow('$10.00')}                                           ${chalk.cyan('║')}
+${chalk.cyan('║')}                                                                  ${chalk.cyan('║')}
+${chalk.cyan('╚══════════════════════════════════════════════════════════════════╝')}
+`);
+}
+
+function printHelp() {
+  console.log(`
+   ${chalk.bold('Usage:')}
+   ${chalk.gray('─────────────────────────────────────────')}
+   pnpm dev               Interactive demo
+   pnpm dev --free        Free weather (no payment)
+   pnpm dev --forecast    5-day forecast (auto-pay $0.001)
+   pnpm dev --historical  Historical data (auto-pay $0.01)
+   pnpm dev --status      Check wallet balance
+   pnpm dev --help        Show this help
+   
+   ${chalk.bold('Examples:')}
+   ${chalk.gray('─────────────────────────────────────────')}
+   pnpm dev --forecast "New York"
+   pnpm dev --historical "London" 14
+`);
 }
 
 // ============================================
@@ -307,32 +273,22 @@ async function main() {
   switch (command) {
     case '--free':
     case '-f':
-      await fetchFreeWeather(args[1]);
+      await fetchCurrentWeather(args[1]);
       break;
       
-    case '--premium':
+    case '--forecast':
     case '-p':
-      await fetchPremiumWeather(args[1]);
+      await fetchWeatherForecast(args[1]);
       break;
       
     case '--historical':
     case '-h':
-      await fetchHistoricalWeather(args[1], parseInt(args[2]) || 30);
+      await fetchHistoricalWeather(args[1], parseInt(args[2]) || 7);
       break;
       
-    case '--quote':
-    case '-q':
-      if (!args[1]) {
-        console.error(chalk.red('   Please provide an endpoint ID'));
-        console.log(chalk.gray('   Usage: pnpm dev --quote <endpoint-id>'));
-        break;
-      }
-      await getQuote(args[1]);
-      break;
-      
-    case '--balance':
-    case '-b':
-      await checkBalance();
+    case '--status':
+    case '-s':
+      await checkStatus();
       break;
       
     case '--help':
@@ -341,58 +297,49 @@ async function main() {
       
     case 'interactive':
     default:
-      await runInteractive();
+      await runInteractiveDemo();
       break;
   }
 }
 
-function printHelp() {
-  console.log(chalk.bold('   Commands:'));
-  console.log(chalk.gray('   ─────────────────────────────────────────'));
-  console.log('   --free, -f [location]       Fetch free weather data');
-  console.log('   --premium, -p [location]    Fetch premium weather (auto-pay)');
-  console.log('   --historical, -h [loc] [d]  Fetch historical data');
-  console.log('   --quote, -q <endpoint-id>   Get price quote');
-  console.log('   --balance, -b               Check wallet balance');
-  console.log('   --help                      Show this help');
-  console.log('');
-  console.log(chalk.bold('   Examples:'));
-  console.log(chalk.gray('   ─────────────────────────────────────────'));
-  console.log('   pnpm dev --free "New York"');
-  console.log('   pnpm dev --premium "Los Angeles"');
-  console.log('   pnpm dev --historical "Chicago" 7');
-  console.log('   pnpm dev --balance');
-  console.log('');
+async function runInteractiveDemo() {
+  console.log(`
+   ${chalk.bold('🎬 Running Interactive Demo')}
+   ${chalk.gray('─────────────────────────────────────────')}
+`);
+
+  // Step 1: Check status
+  console.log(chalk.cyan('   ▶ Step 1: Check agent status'));
+  await checkStatus();
+  
+  // Step 2: Free endpoint
+  console.log(chalk.cyan('   ▶ Step 2: Call FREE endpoint'));
+  await fetchCurrentWeather('San Francisco');
+  
+  // Step 3: Paid endpoint (will trigger payment)
+  console.log(chalk.cyan('   ▶ Step 3: Call PAID endpoint (auto-payment will occur)'));
+  await fetchWeatherForecast('San Francisco');
+  
+  // Step 4: Check status again
+  console.log(chalk.cyan('   ▶ Step 4: Check status after payment'));
+  await checkStatus();
+  
+  console.log(`
+${chalk.green('╔══════════════════════════════════════════════════════════════════╗')}
+${chalk.green('║')}  ${chalk.green('✅ Demo complete!')}                                               ${chalk.green('║')}
+${chalk.green('║')}                                                                  ${chalk.green('║')}
+${chalk.green('║')}  The agent automatically:                                        ${chalk.green('║')}
+${chalk.green('║')}  • Detected 402 Payment Required                                 ${chalk.green('║')}
+${chalk.green('║')}  • Processed payment via PayOS                                   ${chalk.green('║')}
+${chalk.green('║')}  • Retried request with payment proof                            ${chalk.green('║')}
+${chalk.green('║')}  • Received premium data                                         ${chalk.green('║')}
+${chalk.green('║')}                                                                  ${chalk.green('║')}
+${chalk.green('║')}  Check the PayOS dashboard to see the transaction!               ${chalk.green('║')}
+${chalk.green('╚══════════════════════════════════════════════════════════════════╝')}
+`);
 }
 
-async function runInteractive() {
-  console.log(chalk.bold('   Interactive Mode'));
-  console.log(chalk.gray('   ─────────────────────────────────────────'));
-  console.log('   1. Free weather');
-  console.log('   2. Premium weather (auto-pay)');
-  console.log('   3. Historical weather (auto-pay)');
-  console.log('   4. Check balance');
-  console.log('');
-  console.log(chalk.gray('   Running demo sequence...\n'));
-  
-  // Demo: Free endpoint
-  console.log(chalk.cyan('   ▶ Testing FREE endpoint...'));
-  await fetchFreeWeather('San Francisco');
-  
-  // Demo: Check balance
-  console.log(chalk.cyan('   ▶ Checking wallet balance...'));
-  await checkBalance();
-  
-  // Demo: Premium endpoint (will trigger payment)
-  console.log(chalk.cyan('   ▶ Testing PREMIUM endpoint (will process payment)...'));
-  await fetchPremiumWeather('San Francisco');
-  
-  // Demo: Check balance again
-  console.log(chalk.cyan('   ▶ Checking balance after payment...'));
-  await checkBalance();
-  
-  console.log(chalk.green('\n   ✅ Demo complete!\n'));
-}
-
-main().catch(console.error);
-
+main().catch((error) => {
+  console.error(chalk.red('Fatal error:'), error);
+  process.exit(1);
+});
