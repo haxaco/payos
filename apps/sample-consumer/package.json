@@ -1,0 +1,26 @@
+{
+  "name": "@payos/sample-consumer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sample CLI client using x402 Consumer SDK",
+  "type": "module",
+  "bin": {
+    "x402-weather": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@payos/x402-client-sdk": "workspace:*",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
+

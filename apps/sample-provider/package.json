@@ -1,0 +1,23 @@
+{
+  "name": "@payos/sample-provider",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sample Weather API using x402 Provider SDK",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "@payos/x402-provider-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
+

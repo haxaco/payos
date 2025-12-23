@@ -167,11 +167,11 @@ export class X402Provider {
     );
     
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json() as { error?: string };
       throw new Error(`Failed to register endpoint: ${error.error || 'Unknown error'}`);
     }
     
-    const result = await response.json();
+    const result = await response.json() as { data: X402Endpoint };
     const endpoint = result.data;
     
     // Cache endpoint
@@ -209,7 +209,7 @@ export class X402Provider {
       return null;
     }
     
-    const result = await response.json();
+    const result = await response.json() as { data?: X402Endpoint[] };
     const endpoints = result.data || [];
     
     // Find matching endpoint
@@ -248,7 +248,7 @@ export class X402Provider {
       return null;
     }
     
-    const result = await response.json();
+    const result = await response.json() as { verified?: boolean; data?: X402Payment };
     
     if (!result.verified) {
       this.log('Payment not verified');
@@ -256,7 +256,7 @@ export class X402Provider {
     }
     
     this.log('Payment verified successfully');
-    return result.data;
+    return result.data || null;
   }
   
   /**
@@ -349,7 +349,7 @@ export class X402Provider {
     }
     
     // Set x402 headers
-    const headers = {
+    const headers: Record<string, string> = {
       'X-Payment-Required': 'true',
       'X-Payment-Amount': endpoint.basePrice.toString(),
       'X-Payment-Currency': endpoint.currency,
