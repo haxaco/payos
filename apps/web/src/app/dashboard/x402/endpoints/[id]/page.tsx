@@ -171,26 +171,26 @@ const response = await client.fetch('https://your-api.com${endpoint?.path || '/a
           <StatCard
             title="Revenue"
             value={`$${analytics?.metrics?.revenue?.toFixed(2) || '0.00'}`}
-            subtitle={`Net: $${analytics?.metrics?.netRevenue?.toFixed(2) || '0.00'}`}
+            description={`Net: $${analytics?.metrics?.netRevenue?.toFixed(2) || '0.00'}`}
             icon={<DollarSign className="h-5 w-5" />}
-            trend={analytics?.metrics?.revenue > 0 ? 'up' : undefined}
+            trend={analytics?.metrics?.revenue > 0 ? { value: analytics.metrics.revenue } : undefined}
           />
           <StatCard
             title="API Calls"
             value={analytics?.metrics?.calls?.toLocaleString() || '0'}
-            subtitle={`${analytics?.metrics?.successRate?.toFixed(1) || '0'}% success`}
+            description={`${analytics?.metrics?.successRate?.toFixed(1) || '0'}% success`}
             icon={<BarChart3 className="h-5 w-5" />}
           />
           <StatCard
             title="Unique Payers"
             value={analytics?.metrics?.uniquePayers?.toString() || '0'}
-            subtitle="Consumers"
+            description="Consumers"
             icon={<Users className="h-5 w-5" />}
           />
           <StatCard
             title="Avg Call Value"
             value={`$${analytics?.metrics?.averageCallValue?.toFixed(4) || '0.0000'}`}
-            subtitle={`${endpoint.currency}`}
+            description={`${endpoint.currency}`}
             icon={<TrendingUp className="h-5 w-5" />}
           />
         </div>
@@ -217,7 +217,7 @@ const response = await client.fetch('https://your-api.com${endpoint?.path || '/a
                 <div>
                   <span className="text-sm text-gray-600 dark:text-gray-400">Base Price</span>
                   <p className="font-medium font-mono">
-                    {parseFloat(endpoint.basePrice).toFixed(4)} {endpoint.currency}
+                    {Number(endpoint.basePrice).toFixed(4)} {endpoint.currency}
                   </p>
                 </div>
                 <div>

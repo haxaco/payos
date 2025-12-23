@@ -116,27 +116,27 @@ export default function X402OverviewPage() {
               <StatCard
                 title="Total Revenue"
                 value={`$${analytics?.totalRevenue?.toFixed(2) || '0.00'}`}
-                subtitle="Last 30 days"
+                description="Last 30 days"
                 icon={<DollarSign className="h-5 w-5" />}
-                trend={analytics?.totalRevenue > 0 ? 'up' : undefined}
+                trend={analytics?.totalRevenue > 0 ? { value: analytics.totalRevenue } : undefined}
               />
               <StatCard
                 title="Net Revenue"
                 value={`$${analytics?.netRevenue?.toFixed(2) || '0.00'}`}
-                subtitle={`${analytics?.totalFees?.toFixed(2) || '0.00'} in fees`}
+                description={`${analytics?.totalFees?.toFixed(2) || '0.00'} in fees`}
                 icon={<TrendingUp className="h-5 w-5" />}
-                trend={analytics?.netRevenue > 0 ? 'up' : undefined}
+                trend={analytics?.netRevenue > 0 ? { value: analytics.netRevenue } : undefined}
               />
               <StatCard
                 title="API Calls"
                 value={analytics?.transactionCount?.toLocaleString() || '0'}
-                subtitle={`Avg $${analytics?.averageTransactionSize?.toFixed(4) || '0'}`}
+                description={`Avg $${analytics?.averageTransactionSize?.toFixed(4) || '0'}`}
                 icon={<BarChart3 className="h-5 w-5" />}
               />
               <StatCard
                 title="Active Endpoints"
-                value={analytics?.activeEndpoints || '0'}
-                subtitle={`${analytics?.uniquePayers || '0'} unique payers`}
+                value={String(analytics?.activeEndpoints || '0')}
+                description={`${analytics?.uniquePayers || '0'} unique payers`}
                 icon={<Zap className="h-5 w-5" />}
               />
             </div>
@@ -271,19 +271,19 @@ export default function X402OverviewPage() {
             <StatCard
               title="Total Spent"
               value={`$${payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0).toFixed(2)}`}
-              subtitle="All x402 payments"
+              description="All x402 payments"
               icon={<DollarSign className="h-5 w-5" />}
             />
             <StatCard
               title="API Calls Made"
               value={payments.length.toString()}
-              subtitle="Last 30 days"
+              description="Last 30 days"
               icon={<BarChart3 className="h-5 w-5" />}
             />
             <StatCard
               title="Unique Endpoints"
               value={new Set(payments.map((p: any) => p.x402Metadata?.endpointId)).size.toString()}
-              subtitle="APIs you're using"
+              description="APIs you're using"
               icon={<Zap className="h-5 w-5" />}
             />
           </div>

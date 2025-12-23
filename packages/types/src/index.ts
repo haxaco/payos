@@ -2,7 +2,7 @@
 // CORE TYPES
 // ============================================
 
-export type AccountType = 'person' | 'business';
+export type AccountType = 'person' | 'business' | 'agent';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified';
 export type VerificationTier = 0 | 1 | 2 | 3;
 
@@ -18,7 +18,11 @@ export type TransferType =
   | 'stream_withdraw'
   | 'stream_cancel'
   | 'wrap'
-  | 'unwrap';
+  | 'unwrap'
+  | 'x402'
+  | 'payout'
+  | 'refund'
+  | 'wallet_transfer';
 
 export type TransferStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 

@@ -254,11 +254,11 @@ export default function TransferDetailPage() {
                 {transfer.amount.toFixed(8)} {transfer.currency}
               </dd>
             </div>
-            {transfer.fees > 0 && (
+            {transfer.fees?.amount && transfer.fees.amount > 0 && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Fees</dt>
                 <dd className="font-mono text-gray-900 dark:text-white">
-                  {transfer.fees.toFixed(8)} {transfer.currency}
+                  {transfer.fees.amount.toFixed(8)} {transfer.fees.currency || transfer.currency}
                 </dd>
               </div>
             )}

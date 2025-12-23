@@ -118,27 +118,27 @@ export default function X402AnalyticsPage() {
           <StatCard
             title="Gross Revenue"
             value={`$${summary?.totalRevenue?.toFixed(2) || '0.00'}`}
-            subtitle={periodLabels[period]}
+            description={periodLabels[period]}
             icon={<DollarSign className="h-5 w-5" />}
-            trend={summary?.totalRevenue > 0 ? 'up' : undefined}
+            trend={summary?.totalRevenue > 0 ? { value: summary.totalRevenue } : undefined}
           />
           <StatCard
             title="Net Revenue"
             value={`$${summary?.netRevenue?.toFixed(2) || '0.00'}`}
-            subtitle={`-$${summary?.totalFees?.toFixed(2) || '0.00'} fees`}
+            description={`-$${summary?.totalFees?.toFixed(2) || '0.00'} fees`}
             icon={<TrendingUp className="h-5 w-5" />}
-            trend={summary?.netRevenue > 0 ? 'up' : undefined}
+            trend={summary?.netRevenue > 0 ? { value: summary.netRevenue } : undefined}
           />
           <StatCard
             title="Total API Calls"
             value={summary?.transactionCount?.toLocaleString() || '0'}
-            subtitle={`$${summary?.averageTransactionSize?.toFixed(4) || '0'} avg`}
+            description={`$${summary?.averageTransactionSize?.toFixed(4) || '0'} avg`}
             icon={<BarChart3 className="h-5 w-5" />}
           />
           <StatCard
             title="Unique Payers"
             value={summary?.uniquePayers?.toString() || '0'}
-            subtitle={`${summary?.activeEndpoints || '0'} endpoints`}
+            description={`${summary?.activeEndpoints || '0'} endpoints`}
             icon={<Zap className="h-5 w-5" />}
           />
         </div>

@@ -26,7 +26,7 @@ export interface PaginationParams {
 // Account Types
 // ============================================
 
-export type AccountType = 'person' | 'business';
+export type AccountType = 'person' | 'business' | 'agent';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'suspended';
 
 export interface Account {
@@ -269,7 +269,7 @@ export interface StreamStats {
 // Transfer Types
 // ============================================
 
-export type TransferType = 'cross_border' | 'internal' | 'stream_start' | 'stream_withdraw' | 'deposit' | 'withdrawal';
+export type TransferType = 'cross_border' | 'internal' | 'stream_start' | 'stream_withdraw' | 'deposit' | 'withdrawal' | 'x402' | 'payout' | 'refund' | 'wallet_transfer';
 export type TransferStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface Transfer {
@@ -286,9 +286,9 @@ export interface Transfer {
     accountName: string;
   } | null;
   initiatedBy: {
-    type: 'user' | 'agent' | 'system';
+    type: 'user' | 'agent' | 'system' | 'api_key';
     id: string;
-    name: string;
+    name?: string | null;
   };
   amount: number;
   currency: string;
@@ -296,9 +296,37 @@ export interface Transfer {
   destinationCurrency?: string;
   fxRate?: number;
   feeAmount: number;
+  fees?: {
+    amount: number;
+    currency: string;
+    breakdown?: Array<{ type: string; amount: number }>;
+  };
   description?: string;
   createdAt: string;
   completedAt?: string;
+  failedAt?: string;
+  failureReason?: string;
+  idempotencyKey?: string;
+  streamId?: string;
+  x402Metadata?: {
+    endpoint_id?: string;
+    endpoint_path?: string;
+    endpoint_method?: string;
+    wallet_id?: string;
+    request_id?: string;
+    timestamp?: string;
+    price_calculated?: number;
+    volume_tier?: number;
+    settlement_fee?: number;
+    settlement_net_amount?: number;
+    metadata?: Record<string, unknown>;
+    fee_calculation?: {
+      grossAmount?: number;
+      feeAmount?: number;
+      netAmount?: number;
+      feeType?: string;
+    };
+  };
 }
 
 export interface CreateTransferInput {
@@ -321,6 +349,11 @@ export interface TransfersListParams extends PaginationParams {
   status?: TransferStatus;
   type?: TransferType;
   accountId?: string;
+  endpointId?: string;
+  x402_endpoint_id?: string;
+  x402_provider_account_id?: string;
+  x402_consumer_account_id?: string;
+  x402_wallet_id?: string;
 }
 
 // ============================================
