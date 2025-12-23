@@ -326,42 +326,42 @@ export default function TransferDetailPage() {
 
       {/* x402 Metadata Section */}
       {isX402 && transfer.x402Metadata && (
-        <div className="bg-purple-50 dark:bg-purple-950/30 rounded-2xl border border-purple-200 dark:border-purple-800 p-6 mb-6">
-          <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100 mb-4 flex items-center gap-2">
-            <Zap className="h-5 w-5" />
+        <div className="bg-purple-50 dark:bg-gray-900 rounded-2xl border border-purple-200 dark:border-purple-500/30 p-6 mb-6">
+          <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-300 mb-4 flex items-center gap-2">
+            <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             x402 Payment Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Endpoint Info */}
-            <div>
-              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-3 flex items-center gap-2">
+            <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4">
+              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
                 <Globe className="h-4 w-4" />
                 Endpoint Information
               </h4>
               <dl className="space-y-3">
                 {transfer.x402Metadata.endpoint_path && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-purple-400">Path</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                    <dt className="text-purple-600 dark:text-gray-400">Path</dt>
+                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
                       {transfer.x402Metadata.endpoint_path}
                     </dd>
                   </div>
                 )}
                 {transfer.x402Metadata.endpoint_method && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-purple-400">Method</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                    <dt className="text-purple-600 dark:text-gray-400">Method</dt>
+                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
                       {transfer.x402Metadata.endpoint_method}
                     </dd>
                   </div>
                 )}
                 {transfer.x402Metadata.endpoint_id && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-purple-400">Endpoint ID</dt>
-                    <dd className="font-mono text-xs text-purple-900 dark:text-purple-100">
+                    <dt className="text-purple-600 dark:text-gray-400">Endpoint ID</dt>
+                    <dd className="font-mono text-xs text-purple-900 dark:text-white">
                       <Link 
                         href={`/dashboard/x402/endpoints/${transfer.x402Metadata.endpoint_id}`}
-                        className="hover:underline flex items-center gap-1"
+                        className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
                       >
                         {transfer.x402Metadata.endpoint_id.slice(0, 8)}...
                         <ExternalLink className="h-3 w-3" />
@@ -373,40 +373,46 @@ export default function TransferDetailPage() {
             </div>
 
             {/* Wallet Info */}
-            <div>
-              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-3 flex items-center gap-2">
+            <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4">
+              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
                 <Wallet className="h-4 w-4" />
                 Wallet & Settlement
               </h4>
               <dl className="space-y-3">
                 {transfer.x402Metadata.wallet_id && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-purple-400">Wallet ID</dt>
-                    <dd className="font-mono text-xs text-purple-900 dark:text-purple-100">
-                      {transfer.x402Metadata.wallet_id.slice(0, 8)}...
+                    <dt className="text-purple-600 dark:text-gray-400">Wallet ID</dt>
+                    <dd className="font-mono text-xs text-purple-900 dark:text-white">
+                      <Link 
+                        href={`/dashboard/wallets?search=${transfer.x402Metadata.wallet_id}`}
+                        className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
+                      >
+                        {transfer.x402Metadata.wallet_id.slice(0, 8)}...
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
                     </dd>
                   </div>
                 )}
                 {transfer.x402Metadata.price_calculated !== undefined && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-purple-400">Price</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                    <dt className="text-purple-600 dark:text-gray-400">Price</dt>
+                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
                       ${transfer.x402Metadata.price_calculated?.toFixed(4)}
                     </dd>
                   </div>
                 )}
                 {transfer.x402Metadata.settlement_fee !== undefined && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-purple-400">Settlement Fee</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                    <dt className="text-purple-600 dark:text-gray-400">Settlement Fee</dt>
+                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
                       ${transfer.x402Metadata.settlement_fee?.toFixed(4)}
                     </dd>
                   </div>
                 )}
                 {transfer.x402Metadata.settlement_net_amount !== undefined && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-purple-400">Net Amount</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                    <dt className="text-purple-600 dark:text-gray-400">Net Amount</dt>
+                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
                       ${transfer.x402Metadata.settlement_net_amount?.toFixed(4)}
                     </dd>
                   </div>
@@ -416,32 +422,32 @@ export default function TransferDetailPage() {
           </div>
 
           {/* Request Info */}
-          <div className="mt-6 pt-6 border-t border-purple-200 dark:border-purple-800">
-            <h4 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-3 flex items-center gap-2">
+          <div className="mt-6 pt-6 border-t border-purple-200 dark:border-gray-700">
+            <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Request Details
             </h4>
             <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {transfer.x402Metadata.request_id && (
-                <div>
-                  <dt className="text-purple-600 dark:text-purple-400 text-sm">Request ID</dt>
-                  <dd className="font-mono text-xs text-purple-900 dark:text-purple-100">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Request ID</dt>
+                  <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
                     {transfer.x402Metadata.request_id}
                   </dd>
                 </div>
               )}
               {transfer.x402Metadata.timestamp && (
-                <div>
-                  <dt className="text-purple-600 dark:text-purple-400 text-sm">Timestamp</dt>
-                  <dd className="font-mono text-xs text-purple-900 dark:text-purple-100">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Timestamp</dt>
+                  <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
                     {transfer.x402Metadata.timestamp}
                   </dd>
                 </div>
               )}
               {transfer.x402Metadata.volume_tier !== undefined && (
-                <div>
-                  <dt className="text-purple-600 dark:text-purple-400 text-sm">Volume Tier</dt>
-                  <dd className="font-mono text-xs text-purple-900 dark:text-purple-100">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Volume Tier</dt>
+                  <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
                     {transfer.x402Metadata.volume_tier} calls
                   </dd>
                 </div>
@@ -451,33 +457,33 @@ export default function TransferDetailPage() {
 
           {/* Fee Calculation Breakdown */}
           {transfer.x402Metadata.fee_calculation && (
-            <div className="mt-6 pt-6 border-t border-purple-200 dark:border-purple-800">
-              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-3 flex items-center gap-2">
+            <div className="mt-6 pt-6 border-t border-purple-200 dark:border-gray-700">
+              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
                 <DollarSign className="h-4 w-4" />
                 Fee Calculation Breakdown
               </h4>
               <dl className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <dt className="text-purple-600 dark:text-purple-400 text-sm">Gross Amount</dt>
-                  <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Gross Amount</dt>
+                  <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
                     ${transfer.x402Metadata.fee_calculation.grossAmount?.toFixed(4)}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-purple-600 dark:text-purple-400 text-sm">Fee Amount</dt>
-                  <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Fee Amount</dt>
+                  <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
                     ${transfer.x402Metadata.fee_calculation.feeAmount?.toFixed(4)}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-purple-600 dark:text-purple-400 text-sm">Net Amount</dt>
-                  <dd className="font-mono text-sm text-purple-900 dark:text-purple-100">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Net Amount</dt>
+                  <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
                     ${transfer.x402Metadata.fee_calculation.netAmount?.toFixed(4)}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-purple-600 dark:text-purple-400 text-sm">Fee Type</dt>
-                  <dd className="text-sm text-purple-900 dark:text-purple-100 capitalize">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Fee Type</dt>
+                  <dd className="text-sm text-purple-900 dark:text-white capitalize mt-1">
                     {transfer.x402Metadata.fee_calculation.feeType}
                   </dd>
                 </div>

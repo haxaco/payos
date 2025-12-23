@@ -20,6 +20,7 @@ import {
   CheckCircle,
   Bot,
   User,
+  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Transfer, TransferStatus, TransferType } from '@payos/api-client';
@@ -259,8 +260,10 @@ export default function TransfersPage() {
           className="px-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="all">All Types</option>
+          <option value="x402">⚡ x402 Payments</option>
           <option value="internal">Internal</option>
           <option value="cross_border">Cross-border</option>
+          <option value="payout">Payout</option>
         </select>
         {/* NEW: Initiated By Filter */}
         <select
@@ -317,14 +320,28 @@ export default function TransfersPage() {
                   className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer"
                 >
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      {transfer.type === 'internal' ? (
-                        <ArrowLeftRight className="h-4 w-4 text-blue-500" />
+                    <Link 
+                      href={`/dashboard/transfers/${transfer.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-2 hover:opacity-80"
+                    >
+                      {transfer.type === 'x402' ? (
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 text-xs font-medium">
+                          <Zap className="h-3 w-3" />
+                          x402
+                        </span>
+                      ) : transfer.type === 'internal' ? (
+                        <>
+                          <ArrowLeftRight className="h-4 w-4 text-blue-500" />
+                          <span className="text-sm text-gray-900 dark:text-white">Internal</span>
+                        </>
                       ) : (
-                        <ArrowUpRight className="h-4 w-4 text-emerald-500" />
+                        <>
+                          <ArrowUpRight className="h-4 w-4 text-emerald-500" />
+                          <span className="text-sm text-gray-900 dark:text-white capitalize">{transfer.type.replace('_', ' ')}</span>
+                        </>
                       )}
-                      <span className="text-sm text-gray-900 dark:text-white capitalize">{transfer.type.replace('_', ' ')}</span>
-                    </div>
+                    </Link>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm">
