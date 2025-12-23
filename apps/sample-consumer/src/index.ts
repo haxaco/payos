@@ -28,21 +28,26 @@ import ora from 'ora';
 const WEATHER_API_URL = process.env.WEATHER_API_URL || 'http://localhost:4000';
 const DEBUG = process.env.DEBUG === 'true';
 
-// Validate API key
-if (!process.env.PAYOS_API_KEY) {
+// Validate required environment variables
+if (!process.env.PAYOS_API_KEY || !process.env.PAYOS_AGENT_ID) {
   console.error(`
 ${chalk.red('╔══════════════════════════════════════════════════════════════════╗')}
-${chalk.red('║')}  ${chalk.red('❌ Missing PAYOS_API_KEY environment variable')}                   ${chalk.red('║')}
+${chalk.red('║')}  ${chalk.red('❌ Missing required environment variables')}                       ${chalk.red('║')}
 ${chalk.red('╠══════════════════════════════════════════════════════════════════╣')}
 ${chalk.red('║')}                                                                  ${chalk.red('║')}
-${chalk.red('║')}  To get your agent API key:                                      ${chalk.red('║')}
+${chalk.red('║')}  Required:                                                       ${chalk.red('║')}
+${chalk.red('║')}  • PAYOS_API_KEY  - From Settings → API Keys                     ${chalk.red('║')}
+${chalk.red('║')}  • PAYOS_AGENT_ID - From creating an agent                       ${chalk.red('║')}
+${chalk.red('║')}                                                                  ${chalk.red('║')}
+${chalk.red('║')}  Setup steps:                                                    ${chalk.red('║')}
 ${chalk.red('║')}  1. Go to PayOS dashboard (http://localhost:3000)                ${chalk.red('║')}
-${chalk.red('║')}  2. Navigate to Agents                                           ${chalk.red('║')}
-${chalk.red('║')}  3. Create a new agent                                           ${chalk.red('║')}
-${chalk.red('║')}  4. Copy the API key (wallet is auto-created)                    ${chalk.red('║')}
+${chalk.red('║')}  2. Get API key from Settings → API Keys                         ${chalk.red('║')}
+${chalk.red('║')}  3. Create an agent and note its ID                              ${chalk.red('║')}
+${chalk.red('║')}  4. Create a wallet and assign it to the agent                   ${chalk.red('║')}
+${chalk.red('║')}  5. Fund the wallet                                              ${chalk.red('║')}
 ${chalk.red('║')}                                                                  ${chalk.red('║')}
 ${chalk.red('║')}  Then run:                                                       ${chalk.red('║')}
-${chalk.red('║')}  ${chalk.yellow('PAYOS_API_KEY=ak_xxx pnpm dev')}                                   ${chalk.red('║')}
+${chalk.red('║')}  ${chalk.yellow('PAYOS_API_KEY=pk_xxx PAYOS_AGENT_ID=agt_xxx pnpm dev')}            ${chalk.red('║')}
 ${chalk.red('║')}                                                                  ${chalk.red('║')}
 ${chalk.red('╚══════════════════════════════════════════════════════════════════╝')}
   `);
@@ -55,6 +60,7 @@ ${chalk.red('╚═════════════════════�
 
 const x402 = new X402Client({
   apiKey: process.env.PAYOS_API_KEY,
+  agentId: process.env.PAYOS_AGENT_ID,  // Wallet is looked up from agent
   
   // Safety limits (optional)
   maxAutoPayAmount: 0.10,   // Don't auto-pay more than $0.10 per request
@@ -226,6 +232,9 @@ function printHistorical(data: any) {
 }
 
 function printHeader() {
+  const agentId = process.env.PAYOS_AGENT_ID || 'not set';
+  const agentDisplay = agentId.length > 20 ? agentId.slice(0, 17) + '...' : agentId;
+  
   console.log(`
 ${chalk.cyan('╔══════════════════════════════════════════════════════════════════╗')}
 ${chalk.cyan('║')}                                                                  ${chalk.cyan('║')}
@@ -233,6 +242,7 @@ ${chalk.cyan('║')}   ${chalk.bold('🤖 AI Agent')} ${chalk.gray('(x402 Consum
 ${chalk.cyan('║')}                                                                  ${chalk.cyan('║')}
 ${chalk.cyan('╠══════════════════════════════════════════════════════════════════╣')}
 ${chalk.cyan('║')}                                                                  ${chalk.cyan('║')}
+${chalk.cyan('║')}   Agent ID:    ${chalk.gray(agentDisplay.padEnd(45))} ${chalk.cyan('║')}
 ${chalk.cyan('║')}   Weather API: ${chalk.gray(WEATHER_API_URL.padEnd(45))} ${chalk.cyan('║')}
 ${chalk.cyan('║')}   Auto-pay:    ${chalk.green('Enabled')}                                          ${chalk.cyan('║')}
 ${chalk.cyan('║')}   Max/request: ${chalk.yellow('$0.10')}                                            ${chalk.cyan('║')}

@@ -33,7 +33,10 @@ export interface X402ClientConfig {
   /** API key for authentication (required) */
   apiKey: string;
   
-  /** Optional: Wallet ID to use for payments (default: derived from agent) */
+  /** Agent ID - wallet will be looked up from agent (required unless walletId provided) */
+  agentId?: string;
+  
+  /** Wallet ID to use for payments (alternative to agentId) */
   walletId?: string;
   
   /** Optional: PayOS API URL (default: https://api.payos.ai) */
@@ -126,6 +129,7 @@ export interface X402Status {
 export class X402Client {
   private config: {
     apiKey: string;
+    agentId?: string;
     walletId?: string;
     apiUrl: string;
     maxAutoPayAmount?: number;
@@ -144,8 +148,13 @@ export class X402Client {
       throw new Error('X402Client requires an apiKey');
     }
     
+    if (!config.agentId && !config.walletId) {
+      throw new Error('X402Client requires either agentId or walletId');
+    }
+    
     this.config = {
       apiKey: config.apiKey,
+      agentId: config.agentId,
       walletId: config.walletId,
       apiUrl: config.apiUrl || 'http://localhost:3456',
       maxAutoPayAmount: config.maxAutoPayAmount,
@@ -158,7 +167,7 @@ export class X402Client {
   }
   
   /**
-   * Resolve wallet ID from agent authentication
+   * Resolve wallet ID from agent or use explicit wallet
    */
   private async resolveWalletId(): Promise<string> {
     // If explicitly provided, use it
@@ -171,26 +180,34 @@ export class X402Client {
       return this.resolvedWalletId;
     }
     
-    // Fetch from API based on authenticated agent
-    this.log('Resolving wallet from agent authentication...');
+    // Must have agentId if no walletId
+    if (!this.config.agentId) {
+      throw new Error('No wallet configured. Provide either agentId or walletId.');
+    }
     
-    const response = await this.config.fetcher(`${this.config.apiUrl}/v1/auth/me`, {
-      headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`
+    // Fetch agent to get wallet ID
+    this.log(`Resolving wallet from agent ${this.config.agentId}...`);
+    
+    const response = await this.config.fetcher(
+      `${this.config.apiUrl}/v1/agents/${this.config.agentId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${this.config.apiKey}`
+        }
       }
-    });
+    );
     
     if (!response.ok) {
-      throw new Error('Failed to authenticate. Check your API key.');
+      throw new Error(`Failed to fetch agent ${this.config.agentId}. Check your API key and agent ID.`);
     }
     
-    const result = await response.json() as { walletId?: string; agentId?: string };
+    const agent = await response.json() as { walletId?: string; id?: string };
     
-    if (!result.walletId) {
-      throw new Error('No wallet associated with this API key. Please provide walletId explicitly.');
+    if (!agent.walletId) {
+      throw new Error(`Agent ${this.config.agentId} has no wallet assigned. Assign a wallet first.`);
     }
     
-    this.resolvedWalletId = result.walletId;
+    this.resolvedWalletId = agent.walletId;
     this.log(`Wallet resolved: ${this.resolvedWalletId}`);
     
     return this.resolvedWalletId;

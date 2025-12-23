@@ -9,13 +9,15 @@
 ## 📋 Table of Contents
 
 1. [Overview](#overview)
-2. [PayOS Onboarding](#payos-onboarding)
-3. [SDK Design Philosophy](#sdk-design-philosophy)
-4. [App 1: Weather API Provider](#app-1-weather-api-provider)
-5. [App 2: AI Agent Consumer](#app-2-ai-agent-consumer)
-6. [App 3: Compliance Service (Both)](#app-3-compliance-service-both)
-7. [E2E Testing](#e2e-testing)
-8. [Success Metrics](#success-metrics)
+2. [PayOS Concepts](#payos-concepts)
+3. [Getting Started](#getting-started)
+4. [Provider Setup](#provider-setup-monetize-your-apis)
+5. [Consumer Setup](#consumer-setup-call-paid-apis)
+6. [Sample App 1: Weather API Provider](#sample-app-1-weather-api-provider)
+7. [Sample App 2: AI Agent Consumer](#sample-app-2-ai-agent-consumer)
+8. [E2E Testing](#e2e-testing)
+9. [API Reference](#api-reference)
+10. [Future Work](#future-work)
 
 ---
 
@@ -23,763 +25,894 @@
 
 ### What is x402?
 
-x402 is an open protocol for HTTP-native payments. When a server returns HTTP 402 (Payment Required), the client automatically:
-1. Parses payment details from response headers
-2. Processes payment via a payment provider (PayOS)
+x402 is an open protocol for HTTP-native payments. When an API server returns HTTP status code `402 Payment Required`, the client:
+
+1. Reads payment details from response headers
+2. Processes payment through PayOS
 3. Retries the request with proof of payment
 4. Receives the protected resource
 
-### PayOS Role
+This enables machine-to-machine payments without pre-negotiated contracts or API key subscriptions.
 
-PayOS is the payment orchestration layer that:
-- **For Providers:** Registers endpoints, verifies payments, tracks revenue
-- **For Consumers:** Manages wallets, processes payments, tracks spending
-- **Settlement:** Handles instant wallet-to-wallet transfers
+### What is PayOS?
 
-### Sample Apps Overview
+PayOS is the payment orchestration layer for x402. It provides:
 
-| App | Role | Description |
-|-----|------|-------------|
-| **Weather API** | Provider | Monetizes weather data endpoints |
-| **AI Agent** | Consumer | Autonomous agent that calls paid APIs |
-| **Compliance Service** | Both | Sells compliance checks, uses upstream APIs |
+- **For API Providers:** Register endpoints, set pricing, receive payments, track revenue
+- **For API Consumers (Agents):** Manage wallets, process payments, track spending
+- **Settlement:** Instant wallet-to-wallet transfers with configurable fees
+
+### Provider vs Consumer
+
+These are **not different account types** - they are different business roles:
+
+| Role | What You Do | Example |
+|------|-------------|---------|
+| **Provider** | Monetize your APIs by returning 402 for paid endpoints | Weather API charging $0.001/request |
+| **Consumer** | Call paid APIs, pay automatically via your wallet | AI agent researching weather data |
+
+A single organization can be **both** - consuming APIs from other businesses while providing APIs to others.
 
 ---
 
-## PayOS Onboarding
+## PayOS Concepts
 
-> **Critical:** Before using the SDK, users must complete PayOS onboarding.
+Before starting, understand these key concepts:
 
-### Step 1: Create PayOS Account
+### Organization (Tenant)
 
-**Via Dashboard:**
-1. Navigate to `https://dashboard.payos.ai` (or `http://localhost:3000` for local dev)
-2. Click "Sign Up"
-3. Complete email verification
-4. You now have a PayOS account
+When you sign up for PayOS, you create an **organization**. This is the top-level container for all your PayOS resources.
 
-**Via API (programmatic):**
-```bash
-curl -X POST https://api.payos.ai/v1/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "developer@example.com",
-    "password": "secure-password",
-    "name": "My Company"
-  }'
+### Account
+
+An **account** represents a business entity that can send or receive payments. Accounts are used to:
+- Receive revenue from API monetization (as a provider)
+- Track spending on external APIs (as a consumer)
+
+### Wallet
+
+A **wallet** holds funds in a specific currency (e.g., USDC). Wallets are:
+- **Created explicitly** via API or dashboard
+- **Linked to accounts** for payment operations
+- Used to pay for API calls (consumer) or receive payments (provider)
+
+### Agent
+
+An **agent** is an AI or automated system that makes API calls autonomously. Agents:
+- Are registered with PayOS for tracking and security
+- Have **one wallet assigned** for spending
+- Can call any x402-enabled API and pay automatically
+
+### API Key
+
+An **API key** authenticates programmatic access to PayOS APIs. Keys are:
+- Currently **user-scoped** (can access all organization resources)
+- Used by SDKs to interact with PayOS
+- Found in the PayOS dashboard under **Settings → API Keys**
+
+---
+
+## Getting Started
+
+### Step 1: Create a PayOS Account
+
+1. Navigate to the PayOS dashboard: `https://dashboard.payos.ai` (or `http://localhost:3000` for local development)
+
+2. Click **"Sign Up"** and complete registration
+
+3. Verify your email address
+
+4. You now have a PayOS organization!
+
+### Step 2: Get Your API Key
+
+1. Log into the PayOS dashboard
+
+2. Navigate to **Settings → API Keys**
+
+3. Click **"Create API Key"**
+
+4. Give it a name (e.g., "Development Key")
+
+5. Copy the API key - **you won't see it again!**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Settings → API Keys                                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Your API Keys                                              │
+│  ─────────────────────────────────────────────────────────  │
+│                                                             │
+│  Name              Created        Last Used                 │
+│  ──────────────────────────────────────────────────────     │
+│  Development Key   Dec 23, 2024   Never         [Revoke]    │
+│  Production Key    Dec 20, 2024   2 hours ago   [Revoke]    │
+│                                                             │
+│  [+ Create API Key]                                         │
+│                                                             │
+│  ─────────────────────────────────────────────────────────  │
+│  ⚠️ Keep your API keys secure. Never commit them to git.    │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Step 2: Create an Account (Provider or Consumer)
+Your API key looks like: `pk_live_a1b2c3d4e5f6...` or `pk_test_...` for test mode.
 
-An "Account" in PayOS represents an entity that can send/receive payments.
+---
 
-**For API Providers:**
+## Provider Setup (Monetize Your APIs)
+
+To monetize your APIs with x402, you need:
+1. An **Account** to receive payments
+2. A **Wallet** linked to that account
+3. The **Provider SDK** integrated into your API
+
+### Step 3a: Create an Account
+
+Using your API key, create an account to receive payments:
+
+**Request:**
 ```bash
 curl -X POST https://api.payos.ai/v1/accounts \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Authorization: Bearer pk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Weather API Provider",
+    "name": "Weather API Inc",
     "type": "business",
     "email": "billing@weatherapi.com"
   }'
 ```
 
-**For AI Agent Consumers:**
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "acc_a1b2c3d4e5f6",
+    "name": "Weather API Inc",
+    "type": "business",
+    "email": "billing@weatherapi.com",
+    "status": "active",
+    "createdAt": "2024-12-23T10:30:00Z"
+  }
+}
+```
+
+Save the `id` - this is your **Account ID** (`acc_a1b2c3d4e5f6`).
+
+### Step 4a: Create a Wallet
+
+Create a wallet to receive payments:
+
+**Request:**
+```bash
+curl -X POST https://api.payos.ai/v1/wallets \
+  -H "Authorization: Bearer pk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accountId": "acc_a1b2c3d4e5f6",
+    "currency": "USDC",
+    "name": "Revenue Wallet"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "wal_x1y2z3w4v5u6",
+    "accountId": "acc_a1b2c3d4e5f6",
+    "name": "Revenue Wallet",
+    "currency": "USDC",
+    "balance": "0.00",
+    "address": "0x1234...abcd",
+    "status": "active",
+    "createdAt": "2024-12-23T10:31:00Z"
+  }
+}
+```
+
+Save the `id` - this is your **Wallet ID** (`wal_x1y2z3w4v5u6`).
+
+### Step 5a: Integrate the Provider SDK
+
+Install the SDK:
+```bash
+npm install @payos/x402-provider-sdk
+```
+
+Initialize with your API key:
+```typescript
+import { X402Provider } from '@payos/x402-provider-sdk';
+
+const x402 = new X402Provider({
+  apiKey: 'pk_live_your_api_key'
+});
+```
+
+That's it! See [Sample App 1](#sample-app-1-weather-api-provider) for full implementation.
+
+---
+
+## Consumer Setup (Call Paid APIs)
+
+To call paid APIs with automatic payment, you need:
+1. An **Agent** registered with PayOS
+2. A **Wallet** with funds, assigned to that agent
+3. The **Consumer SDK** integrated into your application
+
+### Step 3b: Create an Agent
+
+Register your AI/bot with PayOS:
+
+**Request:**
 ```bash
 curl -X POST https://api.payos.ai/v1/agents \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Authorization: Bearer pk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Research Agent",
     "description": "AI agent that researches topics by calling various APIs",
-    "capabilities": ["web_search", "api_calls"]
+    "capabilities": ["api_calls", "web_search"]
   }'
 ```
 
-**Response includes:**
-- `id` - Your account/agent ID
-- `apiKey` - API key for SDK authentication (for agents)
-- `walletId` - Auto-created wallet for payments (for agents)
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "agt_m1n2o3p4q5r6",
+    "name": "Research Agent",
+    "description": "AI agent that researches topics by calling various APIs",
+    "capabilities": ["api_calls", "web_search"],
+    "status": "active",
+    "walletId": null,
+    "createdAt": "2024-12-23T10:35:00Z"
+  }
+}
+```
 
-### Step 3: Fund Your Wallet (Consumers Only)
+Save the `id` - this is your **Agent ID** (`agt_m1n2o3p4q5r6`).
 
-Agents need funds to pay for API calls:
+Note: `walletId` is `null` - the agent needs a wallet assigned before it can make payments.
 
+### Step 4b: Create a Wallet for the Agent
+
+Create a wallet that will fund the agent's API calls:
+
+**Request:**
 ```bash
-# Get wallet details
-curl https://api.payos.ai/v1/wallets/YOUR_WALLET_ID \
-  -H "Authorization: Bearer YOUR_API_KEY"
-
-# Fund wallet (via dashboard or API)
-curl -X POST https://api.payos.ai/v1/wallets/YOUR_WALLET_ID/fund \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+curl -X POST https://api.payos.ai/v1/wallets \
+  -H "Authorization: Bearer pk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "amount": 100,
     "currency": "USDC",
-    "source": "card_xxxx"
+    "name": "Agent Spending Wallet"
   }'
 ```
 
-### Step 4: Get API Key
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "wal_s1t2u3v4w5x6",
+    "name": "Agent Spending Wallet",
+    "currency": "USDC",
+    "balance": "0.00",
+    "address": "0x5678...efgh",
+    "status": "active",
+    "createdAt": "2024-12-23T10:36:00Z"
+  }
+}
+```
 
-**For Providers:**
+### Step 5b: Assign Wallet to Agent
+
+Link the wallet to your agent:
+
+**Request:**
 ```bash
-curl -X POST https://api.payos.ai/v1/api-keys \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+curl -X PATCH https://api.payos.ai/v1/agents/agt_m1n2o3p4q5r6 \
+  -H "Authorization: Bearer pk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Production Key",
-    "accountId": "YOUR_ACCOUNT_ID",
-    "permissions": ["endpoints:write", "endpoints:read", "analytics:read"]
+    "walletId": "wal_s1t2u3v4w5x6"
   }'
 ```
 
-**For Agents (created automatically with agent):**
-When you create an agent, an API key is automatically generated and returned.
-
-### Quick Reference
-
-| Role | What You Need | How to Get It |
-|------|---------------|---------------|
-| **Provider** | Account ID + API Key | Create account, generate API key |
-| **Consumer (Agent)** | API Key only | Create agent (wallet auto-created) |
-| **Consumer (Manual)** | API Key + Wallet ID | Create account, create wallet, generate API key |
-
----
-
-## SDK Design Philosophy
-
-### Principle 1: Minimal Configuration
-
-**Provider SDK - Only needs API key:**
-```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
-
-const provider = new X402Provider({
-  apiKey: 'pk_live_xxx'  // That's it!
-});
-
-// Account ID is derived from API key
-// API URL defaults to production
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "agt_m1n2o3p4q5r6",
+    "name": "Research Agent",
+    "description": "AI agent that researches topics by calling various APIs",
+    "capabilities": ["api_calls", "web_search"],
+    "status": "active",
+    "walletId": "wal_s1t2u3v4w5x6",
+    "updatedAt": "2024-12-23T10:37:00Z"
+  }
+}
 ```
 
-**Consumer SDK - Only needs API key (for agents):**
+### Step 6b: Fund the Wallet
+
+Add funds to the wallet so the agent can pay for API calls:
+
+**Request:**
+```bash
+curl -X POST https://api.payos.ai/v1/wallets/wal_s1t2u3v4w5x6/deposit \
+  -H "Authorization: Bearer pk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 100.00,
+    "currency": "USDC",
+    "source": "bank_transfer"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "dep_a1b2c3d4e5f6",
+    "walletId": "wal_s1t2u3v4w5x6",
+    "amount": "100.00",
+    "currency": "USDC",
+    "status": "completed",
+    "newBalance": "100.00",
+    "createdAt": "2024-12-23T10:38:00Z"
+  }
+}
+```
+
+### Step 7b: Integrate the Consumer SDK
+
+Install the SDK:
+```bash
+npm install @payos/x402-client-sdk
+```
+
+Initialize with your API key and agent ID:
 ```typescript
 import { X402Client } from '@payos/x402-client-sdk';
 
-const client = new X402Client({
-  apiKey: 'ak_live_xxx'  // Agent API key - wallet is auto-derived
-});
-
-// Wallet is automatically determined from the authenticated agent
-```
-
-### Principle 2: Smart Defaults, Optional Overrides
-
-```typescript
-// Simple: Use defaults
-const client = new X402Client({
-  apiKey: 'ak_live_xxx'
-});
-
-// Advanced: Override specific options
-const client = new X402Client({
-  apiKey: 'ak_live_xxx',
-  walletId: 'specific-wallet',  // Optional: use specific wallet
-  apiUrl: 'https://api.payos.ai',  // Optional: custom API URL
-  maxAutoPayAmount: 1.0,  // Optional: limit auto-payments
-  debug: true  // Optional: enable logging
+const x402 = new X402Client({
+  apiKey: 'pk_live_your_api_key',
+  agentId: 'agt_m1n2o3p4q5r6'  // Wallet is looked up from agent
 });
 ```
 
-### Principle 3: Zero-Config for Common Cases
-
-**Provider middleware should just work:**
-```typescript
-import express from 'express';
-import { X402Provider } from '@payos/x402-provider-sdk';
-
-const app = express();
-const x402 = new X402Provider({ apiKey: 'pk_live_xxx' });
-
-// Register endpoint (one-time, on app startup)
-await x402.register('/api/data', {
-  name: 'Data API',
-  price: 0.001
-});
-
-// Protect route (that's it!)
-app.get('/api/data', x402.protect(), (req, res) => {
-  res.json({ data: 'premium content' });
-});
-```
-
-**Consumer fetch should just work:**
-```typescript
-import { X402Client } from '@payos/x402-client-sdk';
-
-const client = new X402Client({ apiKey: 'ak_live_xxx' });
-
-// Just fetch - payment handled automatically
-const response = await client.fetch('https://api.weather.com/premium');
-const data = await response.json();
-```
+That's it! See [Sample App 2](#sample-app-2-ai-agent-consumer) for full implementation.
 
 ---
 
-## App 1: Weather API Provider
+## Sample App 1: Weather API Provider
 
-### Description
+A complete example of an API that monetizes endpoints using x402.
 
-A REST API that monetizes weather data. Free tier for basic weather, paid tier for detailed forecasts and historical data.
+### What You'll Build
 
-### User Journey
+- Express.js API with free and paid endpoints
+- x402 middleware that returns 402 for unpaid requests
+- Automatic payment verification
 
-1. **Developer signs up for PayOS**
-2. **Creates a business account** for their Weather API
-3. **Gets API key** with endpoint permissions
-4. **Integrates SDK** into their Express/Fastify/Hono app
-5. **Registers endpoints** with pricing
-6. **Deploys** - endpoints are now monetized!
+### Prerequisites
 
-### Technical Specification
+- Node.js 18+
+- PayOS account with API key
+- Account and wallet created (see [Provider Setup](#provider-setup-monetize-your-apis))
 
-**Stack:**
-- Runtime: Node.js 20+
-- Framework: Express
-- SDK: `@payos/x402-provider-sdk`
+### Project Setup
 
-**Endpoints:**
+```bash
+mkdir weather-api
+cd weather-api
+npm init -y
+npm install express @payos/x402-provider-sdk
+npm install -D typescript @types/express @types/node tsx
+```
 
-| Endpoint | Price | Description |
-|----------|-------|-------------|
-| `GET /api/weather/current` | Free | Current conditions |
-| `GET /api/weather/forecast` | $0.001 | 5-day forecast |
-| `GET /api/weather/historical` | $0.01 | 30-day history |
-| `POST /api/weather/alerts` | $0.005 | Custom weather alerts |
+### Environment Variables
 
-**Complete Implementation:**
+Create a `.env` file:
+```bash
+# From PayOS Dashboard → Settings → API Keys
+PAYOS_API_KEY=pk_live_your_api_key
+
+# From creating your account (Step 3a)
+PAYOS_ACCOUNT_ID=acc_a1b2c3d4e5f6
+
+# Optional
+PORT=4000
+```
+
+### Implementation
+
+Create `src/server.ts`:
 
 ```typescript
-// server.ts
 import express from 'express';
 import { X402Provider } from '@payos/x402-provider-sdk';
 
 const app = express();
 app.use(express.json());
 
-// Initialize provider with just API key
+// ============================================
+// Initialize x402 Provider
+// ============================================
+
 const x402 = new X402Provider({
   apiKey: process.env.PAYOS_API_KEY!,
-  debug: process.env.NODE_ENV === 'development'
+  accountId: process.env.PAYOS_ACCOUNT_ID  // Optional if you only have one account
 });
 
-// Startup: Register all monetized endpoints
+// ============================================
+// Register Paid Endpoints (run once on startup)
+// ============================================
+
 async function registerEndpoints() {
+  // Register the forecast endpoint - $0.001 per call
   await x402.register('/api/weather/forecast', {
     name: 'Weather Forecast API',
-    description: '5-day weather forecast with hourly resolution',
+    description: '5-day weather forecast',
     price: 0.001,
     currency: 'USDC'
-  });
-
-  await x402.register('/api/weather/historical', {
-    name: 'Historical Weather API',
-    description: '30-day historical weather data',
-    price: 0.01,
-    currency: 'USDC',
-    volumeDiscounts: [
-      { threshold: 100, discount: 0.1 },   // 10% off after 100 calls
-      { threshold: 1000, discount: 0.25 }  // 25% off after 1000 calls
-    ]
   });
 
   console.log('✅ Endpoints registered with PayOS');
 }
 
-// Free endpoint - no protection
+// ============================================
+// API Routes
+// ============================================
+
+// Free endpoint - no payment required
 app.get('/api/weather/current', (req, res) => {
+  const location = req.query.location || 'San Francisco';
+  
   res.json({
-    location: req.query.location || 'San Francisco',
+    location,
     temperature: 68,
     conditions: 'Partly cloudy',
     tier: 'free'
   });
 });
 
-// Paid endpoint - protected by x402
-app.get('/api/weather/forecast', x402.protect(), (req, res) => {
+// Paid endpoint - x402.protect() middleware checks for payment
+app.get('/api/weather/forecast', x402.protect(), (req: any, res) => {
+  const location = req.query.location || 'San Francisco';
+  
   res.json({
-    location: req.query.location || 'San Francisco',
+    location,
     forecast: [
-      { day: 1, high: 72, low: 58, conditions: 'Sunny' },
-      { day: 2, high: 75, low: 60, conditions: 'Clear' },
-      { day: 3, high: 70, low: 55, conditions: 'Cloudy' },
-      { day: 4, high: 68, low: 52, conditions: 'Rain' },
-      { day: 5, high: 65, low: 50, conditions: 'Sunny' }
+      { day: 'Mon', high: 72, low: 58 },
+      { day: 'Tue', high: 75, low: 60 },
+      { day: 'Wed', high: 70, low: 55 },
+      { day: 'Thu', high: 68, low: 52 },
+      { day: 'Fri', high: 65, low: 50 }
     ],
     tier: 'premium',
-    payment: req.x402Payment  // Payment details attached by middleware
+    payment: req.x402Payment  // Payment details from middleware
   });
 });
 
-app.get('/api/weather/historical', x402.protect(), (req, res) => {
-  // Return 30 days of historical data
-  const days = parseInt(req.query.days as string) || 30;
-  const data = Array.from({ length: days }, (_, i) => ({
-    date: new Date(Date.now() - i * 86400000).toISOString().split('T')[0],
-    high: 60 + Math.random() * 20,
-    low: 40 + Math.random() * 20,
-    precipitation: Math.random() * 0.5
-  }));
+// ============================================
+// Start Server
+// ============================================
 
-  res.json({ location: req.query.location, period: `${days} days`, data });
-});
-
-// Start server
 const PORT = process.env.PORT || 4000;
+
 app.listen(PORT, async () => {
-  await registerEndpoints();
   console.log(`🌤️ Weather API running on http://localhost:${PORT}`);
+  await registerEndpoints();
 });
 ```
 
-**Environment Variables:**
+### Running the Provider
+
 ```bash
-PAYOS_API_KEY=pk_live_xxxxxxxxxxxxx  # From PayOS dashboard
-PORT=4000  # Optional, defaults to 4000
+npx tsx src/server.ts
 ```
 
-**Testing:**
+### Testing the Provider
+
+**Free endpoint (works without payment):**
 ```bash
-# Free endpoint (should work)
 curl http://localhost:4000/api/weather/current
+```
 
-# Paid endpoint (should return 402)
+**Response:**
+```json
+{
+  "location": "San Francisco",
+  "temperature": 68,
+  "conditions": "Partly cloudy",
+  "tier": "free"
+}
+```
+
+**Paid endpoint (returns 402 without payment):**
+```bash
 curl -v http://localhost:4000/api/weather/forecast
+```
 
-# Check 402 headers:
-# X-Payment-Required: true
-# X-Payment-Amount: 0.001
-# X-Payment-Currency: USDC
+**Response (HTTP 402):**
+```
+< HTTP/1.1 402 Payment Required
+< X-Payment-Required: true
+< X-Payment-Amount: 0.001
+< X-Payment-Currency: USDC
+< X-Endpoint-ID: ep_abc123
+< X-Payment-Address: 0x1234...abcd
+
+{
+  "error": "Payment Required",
+  "message": "This endpoint requires payment of 0.001 USDC",
+  "paymentDetails": {
+    "amount": 0.001,
+    "currency": "USDC",
+    "endpointId": "ep_abc123",
+    "paymentAddress": "0x1234...abcd"
+  }
+}
 ```
 
 ---
 
-## App 2: AI Agent Consumer
+## Sample App 2: AI Agent Consumer
 
-### Description
+A complete example of an AI agent that calls paid APIs with automatic payment.
 
-An autonomous AI agent that calls various paid APIs to accomplish tasks. The agent is registered in PayOS with its own wallet, enabling it to pay for API access without human intervention.
+### What You'll Build
 
-### User Journey
+- CLI application that calls weather APIs
+- Automatic 402 detection and payment
+- Spending tracking and limits
 
-1. **Developer signs up for PayOS**
-2. **Creates an agent** - receives API key and auto-funded wallet
-3. **Integrates SDK** into their agent code
-4. **Agent makes API calls** - payments happen automatically
-5. **Monitor spending** in PayOS dashboard
+### Prerequisites
 
-### Why Agent Model?
+- Node.js 18+
+- PayOS account with API key
+- Agent with wallet created and funded (see [Consumer Setup](#consumer-setup-call-paid-apis))
+- Weather API provider running (from Sample App 1)
 
-Traditional API integrations require:
-- Managing API keys for each service
-- Pre-paying or setting up billing with each provider
-- Manual intervention when credits run out
+### Project Setup
 
-With x402 + PayOS:
-- Single wallet for all x402-enabled APIs
-- Automatic payment on 402 response
-- Unified spending visibility
-- Spending limits and controls
-
-### Technical Specification
-
-**Stack:**
-- Runtime: Node.js 20+
-- SDK: `@payos/x402-client-sdk`
-
-**Agent Configuration:**
-```typescript
-// Agent is registered in PayOS with:
-// - Unique agent ID
-// - API key for authentication
-// - Wallet (auto-created, auto-linked)
-// - Spending limits (configurable)
+```bash
+mkdir weather-agent
+cd weather-agent
+npm init -y
+npm install @payos/x402-client-sdk
+npm install -D typescript @types/node tsx
 ```
 
-**Complete Implementation:**
+### Environment Variables
+
+Create a `.env` file:
+```bash
+# From PayOS Dashboard → Settings → API Keys
+PAYOS_API_KEY=pk_live_your_api_key
+
+# From creating your agent (Step 3b)
+PAYOS_AGENT_ID=agt_m1n2o3p4q5r6
+
+# The Weather API URL (from Sample App 1)
+WEATHER_API_URL=http://localhost:4000
+```
+
+### Implementation
+
+Create `src/agent.ts`:
 
 ```typescript
-// agent.ts
 import { X402Client } from '@payos/x402-client-sdk';
 
-// Initialize with just the agent API key
-// Wallet is automatically determined from the authenticated agent
+// ============================================
+// Initialize x402 Client
+// ============================================
+
 const x402 = new X402Client({
-  apiKey: process.env.PAYOS_AGENT_KEY!,  // Agent's API key
+  apiKey: process.env.PAYOS_API_KEY!,
+  agentId: process.env.PAYOS_AGENT_ID!,
   
-  // Optional: Safety limits
-  maxAutoPayAmount: 0.10,  // Don't auto-pay more than $0.10/request
-  maxDailySpend: 10.0,     // Daily spending limit
+  // Safety limits (optional but recommended)
+  maxAutoPayAmount: 0.10,  // Don't pay more than $0.10 per request
+  maxDailySpend: 10.00,    // Daily spending cap
   
-  // Optional: Callbacks
+  // Callbacks (optional)
   onPayment: (payment) => {
-    console.log(`💰 Paid $${payment.amount} for ${payment.endpoint}`);
-  },
-  onLimitReached: (limit) => {
-    console.warn(`⚠️ Spending limit reached: ${limit.type}`);
+    console.log(`💰 Paid ${payment.amount} ${payment.currency}`);
+    console.log(`   New balance: $${payment.newWalletBalance}`);
   }
 });
 
-// Simple usage: Just fetch, payment handled automatically
+// ============================================
+// Agent Functions
+// ============================================
+
 async function getWeatherForecast(location: string) {
+  console.log(`\n🔍 Fetching forecast for ${location}...`);
+  
+  // x402.fetch() handles everything:
+  // 1. Makes request to API
+  // 2. If 402 returned, reads payment details
+  // 3. Processes payment via PayOS
+  // 4. Retries request with payment proof
+  // 5. Returns successful response
+  
   const response = await x402.fetch(
-    `https://weather-api.example.com/api/weather/forecast?location=${location}`
+    `${process.env.WEATHER_API_URL}/api/weather/forecast?location=${location}`
   );
   
   if (response.ok) {
-    return await response.json();
+    const data = await response.json();
+    console.log('\n✅ Forecast received:');
+    console.log(JSON.stringify(data, null, 2));
+    return data;
+  } else {
+    console.error(`❌ Failed: ${response.status}`);
+    return null;
   }
-  
-  throw new Error(`Weather API failed: ${response.status}`);
 }
 
-// Usage with multiple APIs
-async function researchTopic(topic: string) {
-  // Call news API (x402-enabled)
-  const news = await x402.fetch(
-    `https://news-api.example.com/search?q=${topic}`
-  );
-  
-  // Call analysis API (x402-enabled)
-  const analysis = await x402.fetch(
-    `https://analysis-api.example.com/analyze`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ topic, context: await news.json() })
-    }
-  );
-  
-  return await analysis.json();
-}
-
-// Check agent's spending status
-async function checkBudget() {
+async function checkBalance() {
   const status = await x402.getStatus();
   
-  console.log(`
-    Wallet Balance: $${status.balance}
-    Today's Spend:  $${status.todaySpend}
-    Daily Limit:    $${status.dailyLimit}
-    Remaining:      $${status.remaining}
-  `);
-  
-  return status;
+  console.log('\n💳 Agent Status:');
+  console.log(`   Balance: $${status.balance.toFixed(4)}`);
+  console.log(`   Today's spend: $${status.todaySpend.toFixed(4)}`);
+  console.log(`   Daily limit: $${status.dailyLimit || 'None'}`);
 }
 
-// Main agent loop
+// ============================================
+// Main
+// ============================================
+
 async function main() {
-  console.log('🤖 AI Agent starting...\n');
+  console.log('🤖 AI Agent Starting...\n');
   
-  // Check we have budget
-  const budget = await checkBudget();
-  if (budget.remaining < 1) {
-    console.error('❌ Insufficient budget');
-    return;
+  // Check initial balance
+  await checkBalance();
+  
+  // Get weather forecast (will auto-pay)
+  await getWeatherForecast('San Francisco');
+  
+  // Check balance after payment
+  await checkBalance();
+}
+
+main().catch(console.error);
+```
+
+### Running the Agent
+
+```bash
+npx tsx src/agent.ts
+```
+
+### Expected Output
+
+```
+🤖 AI Agent Starting...
+
+💳 Agent Status:
+   Balance: $100.0000
+   Today's spend: $0.0000
+   Daily limit: $10.00
+
+🔍 Fetching forecast for San Francisco...
+💰 Paid 0.001 USDC
+   New balance: $99.999
+
+✅ Forecast received:
+{
+  "location": "San Francisco",
+  "forecast": [
+    { "day": "Mon", "high": 72, "low": 58 },
+    { "day": "Tue", "high": 75, "low": 60 },
+    ...
+  ],
+  "tier": "premium",
+  "payment": {
+    "transferId": "txn_abc123",
+    "amount": 0.001,
+    "currency": "USDC"
   }
-  
-  // Get weather forecast (will auto-pay if needed)
-  const forecast = await getWeatherForecast('San Francisco');
-  console.log('Weather:', forecast);
-  
-  // Research a topic (multiple paid API calls)
-  const research = await researchTopic('renewable energy');
-  console.log('Research:', research);
-  
-  // Final budget check
-  await checkBudget();
 }
 
-main();
-```
-
-**Environment Variables:**
-```bash
-PAYOS_AGENT_KEY=ak_live_xxxxxxxxxxxxx  # Agent's API key (from agent creation)
-```
-
-**CLI Interface (Optional):**
-```bash
-# Interactive mode
-pnpm dev
-
-# Specific commands
-pnpm dev --weather "New York"
-pnpm dev --research "AI trends"
-pnpm dev --budget
-```
-
----
-
-## App 3: Compliance Service (Both)
-
-### Description
-
-A compliance checking service that:
-1. **Sells** compliance check endpoints (acts as Provider)
-2. **Uses** upstream identity/AML APIs (acts as Consumer)
-
-This demonstrates real-world usage where a service monetizes its own APIs while consuming other paid APIs.
-
-### Business Model
-
-```
-Client Request ($0.25)
-    │
-    ▼
-┌───────────────────────┐
-│  Compliance Service   │
-│  (Provider + Consumer)│
-└───────────┬───────────┘
-            │
-    ┌───────┴───────┐
-    ▼               ▼
-Identity API    AML API
-  ($0.05)       ($0.03)
-
-Margin: $0.25 - $0.08 = $0.17 (68%)
-```
-
-### Technical Specification
-
-**Stack:**
-- Runtime: Node.js 20+
-- Framework: Hono (lighter than Express)
-- SDKs: Both provider and client
-
-**Complete Implementation:**
-
-```typescript
-// server.ts
-import { Hono } from 'hono';
-import { X402Provider } from '@payos/x402-provider-sdk';
-import { X402Client } from '@payos/x402-client-sdk';
-
-const app = new Hono();
-
-// Provider: For selling our compliance checks
-const provider = new X402Provider({
-  apiKey: process.env.PAYOS_PROVIDER_KEY!
-});
-
-// Consumer: For calling upstream APIs
-const consumer = new X402Client({
-  apiKey: process.env.PAYOS_CONSUMER_KEY!,
-  maxAutoPayAmount: 0.10  // Safety limit per request
-});
-
-// Register our endpoints
-async function setup() {
-  await provider.register('/api/compliance/full', {
-    name: 'Full Compliance Check',
-    description: 'Complete AML + KYC + PEP screening',
-    price: 0.25,
-    currency: 'USDC'
-  });
-
-  await provider.register('/api/compliance/kyc', {
-    name: 'KYC Check',
-    description: 'Know Your Customer verification',
-    price: 0.10,
-    currency: 'USDC'
-  });
-}
-
-// Full compliance check (our premium endpoint)
-app.post('/api/compliance/full', provider.honoMiddleware(), async (c) => {
-  const { name, dob, ssn, address } = await c.req.json();
-
-  // Call upstream Identity API (we pay for this)
-  const identityResult = await consumer.fetch(
-    'https://identity-api.example.com/verify',
-    {
-      method: 'POST',
-      body: JSON.stringify({ name, dob, ssn })
-    }
-  ).then(r => r.json());
-
-  // Call upstream AML API (we pay for this)
-  const amlResult = await consumer.fetch(
-    'https://aml-api.example.com/screen',
-    {
-      method: 'POST',
-      body: JSON.stringify({ name, dob })
-    }
-  ).then(r => r.json());
-
-  // Aggregate and return results
-  return c.json({
-    status: 'completed',
-    identity: identityResult,
-    aml: amlResult,
-    riskScore: calculateRiskScore(identityResult, amlResult),
-    payment: c.get('x402Payment')  // What client paid us
-  });
-});
-
-// Health check
-app.get('/health', (c) => c.json({ status: 'ok' }));
-
-// Start server
-const PORT = process.env.PORT || 4001;
-Bun.serve({
-  port: PORT,
-  fetch: app.fetch,
-});
-
-setup().then(() => {
-  console.log(`✅ Compliance Service running on http://localhost:${PORT}`);
-});
-
-function calculateRiskScore(identity: any, aml: any): string {
-  // Business logic here
-  return 'low';
-}
-```
-
-**Environment Variables:**
-```bash
-# Provider role (for our endpoints)
-PAYOS_PROVIDER_KEY=pk_live_xxxxxxxxxxxxx
-
-# Consumer role (for upstream APIs)
-PAYOS_CONSUMER_KEY=ak_live_xxxxxxxxxxxxx
-
-PORT=4001
+💳 Agent Status:
+   Balance: $99.9990
+   Today's spend: $0.0010
+   Daily limit: $10.00
 ```
 
 ---
 
 ## E2E Testing
 
-### Test Scenario 1: Provider Only
+### Test Scenario: Complete Payment Flow
 
+1. **Start the Provider** (Terminal 1):
 ```bash
-# 1. Start Weather API
-cd apps/sample-provider
-PAYOS_API_KEY=pk_test_xxx pnpm dev
-
-# 2. Test free endpoint
-curl http://localhost:4000/api/weather/current
-# ✅ Should return weather data
-
-# 3. Test paid endpoint without payment
-curl -v http://localhost:4000/api/weather/forecast
-# ✅ Should return 402 with payment headers
+cd weather-api
+PAYOS_API_KEY=pk_xxx PAYOS_ACCOUNT_ID=acc_xxx npx tsx src/server.ts
 ```
 
-### Test Scenario 2: Consumer Only
-
+2. **Run the Agent** (Terminal 2):
 ```bash
-# 1. Ensure Weather API is running
-# 2. Run AI Agent
-cd apps/sample-consumer
-PAYOS_AGENT_KEY=ak_test_xxx pnpm dev
-
-# ✅ Should:
-# - Detect 402 response
-# - Process payment automatically
-# - Retry and get data
-# - Show payment confirmation
+cd weather-agent
+PAYOS_API_KEY=pk_xxx PAYOS_AGENT_ID=agt_xxx npx tsx src/agent.ts
 ```
 
-### Test Scenario 3: Full E2E
+3. **Verify in Dashboard**:
+   - Provider account shows revenue increase
+   - Agent wallet shows balance decrease
+   - Transfer visible in transaction history
 
-```bash
-# Terminal 1: Weather API (Provider)
-cd apps/sample-provider && PAYOS_API_KEY=pk_test_xxx pnpm dev
+### What Happens Behind the Scenes
 
-# Terminal 2: AI Agent (Consumer)
-cd apps/sample-consumer && PAYOS_AGENT_KEY=ak_test_xxx pnpm dev --weather "NYC"
-
-# Verify in Dashboard:
-# - Provider sees revenue from API calls
-# - Consumer (agent) sees spending
-# - Transfer visible in both views
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Payment Flow                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Agent                     PayOS                    Provider     │
+│    │                         │                          │        │
+│    │  1. GET /forecast       │                          │        │
+│    │─────────────────────────────────────────────────────>       │
+│    │                         │                          │        │
+│    │  2. 402 Payment Required (headers)                 │        │
+│    │<─────────────────────────────────────────────────────       │
+│    │                         │                          │        │
+│    │  3. POST /v1/x402/pay   │                          │        │
+│    │─────────────────────────>                          │        │
+│    │                         │                          │        │
+│    │  4. Payment processed   │                          │        │
+│    │     (wallet debited)    │                          │        │
+│    │<─────────────────────────                          │        │
+│    │                         │                          │        │
+│    │  5. GET /forecast + proof                          │        │
+│    │─────────────────────────────────────────────────────>       │
+│    │                         │                          │        │
+│    │                         │  6. Verify payment       │        │
+│    │                         │<──────────────────────────        │
+│    │                         │                          │        │
+│    │                         │  7. Payment valid        │        │
+│    │                         │──────────────────────────>        │
+│    │                         │                          │        │
+│    │  8. 200 OK + forecast data                         │        │
+│    │<─────────────────────────────────────────────────────       │
+│    │                         │                          │        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Success Metrics
+## API Reference
 
-### Developer Experience
+### Provider SDK
 
-| Metric | Target |
-|--------|--------|
-| Time to first 402 response | < 5 minutes |
-| Time to first successful paid request | < 10 minutes |
-| Lines of code to integrate | < 20 |
-| Environment variables needed | 1-2 |
+```typescript
+import { X402Provider } from '@payos/x402-provider-sdk';
 
-### Technical
+// Initialize
+const x402 = new X402Provider({
+  apiKey: string,        // Required: Your PayOS API key
+  accountId?: string,    // Optional: Account ID (if multiple accounts)
+  apiUrl?: string,       // Optional: PayOS API URL (default: production)
+  debug?: boolean        // Optional: Enable debug logging
+});
 
-| Metric | Target |
-|--------|--------|
-| SDK bundle size | < 50KB |
-| Payment latency | < 500ms |
-| Error rate | < 0.1% |
-| TypeScript coverage | 100% |
+// Register an endpoint for monetization
+await x402.register(
+  path: string,          // API path (e.g., '/api/data')
+  config: {
+    name: string,        // Display name
+    description?: string,// Optional description
+    price: number,       // Price per call (e.g., 0.001)
+    currency?: string,   // 'USDC' | 'EURC' (default: USDC)
+    volumeDiscounts?: [  // Optional volume discounts
+      { threshold: 100, discount: 0.1 }  // 10% off after 100 calls
+    ]
+  },
+  method?: string        // HTTP method (default: 'GET')
+);
 
-### Documentation
+// Middleware for Express/Connect
+app.get('/api/data', x402.protect(), handler);
 
-| Metric | Target |
-|--------|--------|
-| Example completeness | Copy-paste ready |
-| Edge cases documented | Yes |
-| Error messages helpful | Yes |
+// Middleware for Hono
+app.get('/api/data', x402.honoMiddleware(), handler);
+
+// Get revenue analytics
+const analytics = await x402.getAnalytics(period?: '7d' | '30d' | '90d');
+```
+
+### Consumer SDK
+
+```typescript
+import { X402Client } from '@payos/x402-client-sdk';
+
+// Initialize
+const x402 = new X402Client({
+  apiKey: string,           // Required: Your PayOS API key
+  agentId: string,          // Required: Agent ID (wallet looked up from agent)
+  walletId?: string,        // Optional: Override wallet
+  apiUrl?: string,          // Optional: PayOS API URL
+  maxAutoPayAmount?: number,// Optional: Max per-request payment
+  maxDailySpend?: number,   // Optional: Daily spending limit
+  onPayment?: (payment) => void,      // Optional: Payment callback
+  onLimitReached?: (limit) => void,   // Optional: Limit reached callback
+  debug?: boolean           // Optional: Enable debug logging
+});
+
+// Fetch with automatic payment handling
+const response = await x402.fetch(url: string, options?: RequestInit);
+
+// Get wallet and spending status
+const status = await x402.getStatus();
+// Returns: { balance, currency, todaySpend, dailyLimit, remaining }
+
+// Get price quote for an endpoint
+const quote = await x402.getQuote(endpointId: string);
+```
 
 ---
 
-## Appendix: API Reference
+## Future Work
 
-### X402Provider
+### Epic: Enhanced API Key Security
 
-```typescript
-new X402Provider(config: {
-  apiKey: string;           // Required: PayOS API key
-  apiUrl?: string;          // Optional: API URL (default: production)
-  debug?: boolean;          // Optional: Enable debug logging
-})
+Currently, API keys are user-scoped. For better security with AI agents, consider:
 
-// Methods
-provider.register(path, config)    // Register an endpoint
-provider.protect()                 // Express middleware
-provider.honoMiddleware()          // Hono middleware
-provider.getEndpoint(path)         // Get endpoint details
-provider.getAnalytics()            // Get revenue analytics
-```
+- [ ] **Agent-specific API keys**: Each agent gets its own key
+- [ ] **Key rotation**: Agents can spawn new keys and revoke old ones
+- [ ] **Scoped permissions**: Keys with limited permissions (read-only, spending limits)
+- [ ] **Key auditing**: Track which key performed which action
 
-### X402Client
+### Epic: Advanced Wallet Management
 
-```typescript
-new X402Client(config: {
-  apiKey: string;              // Required: Agent API key
-  walletId?: string;           // Optional: Override wallet (default: agent's wallet)
-  apiUrl?: string;             // Optional: API URL (default: production)
-  maxAutoPayAmount?: number;   // Optional: Max per-request payment
-  maxDailySpend?: number;      // Optional: Daily spending limit
-  onPayment?: (payment) => void;  // Optional: Payment callback
-  onLimitReached?: (limit) => void;  // Optional: Limit callback
-  debug?: boolean;             // Optional: Enable debug logging
-})
+- [ ] **Multi-wallet agents**: Agent can access multiple wallets for different purposes
+- [ ] **Wallet linking**: Connect existing external wallets (not just PayOS-created)
+- [ ] **Auto-funding**: Automatically top up agent wallets from a master wallet
 
-// Methods
-client.fetch(url, options)    // Fetch with auto-payment
-client.getQuote(endpointId)   // Get price quote
-client.getStatus()            // Get wallet/spending status
-client.verifyPayment(id)      // Verify a payment
-```
+### Epic: Provider Features
+
+- [ ] **Tiered pricing**: Different prices for different API tiers
+- [ ] **Subscription endpoints**: Monthly access passes instead of per-call
+- [ ] **Rate limiting**: Combine with payment for abuse prevention
+
+---
+
+## Appendix: Quick Reference
+
+### Provider Checklist
+
+- [ ] Sign up on PayOS dashboard
+- [ ] Get API key from Settings → API Keys
+- [ ] Create an Account via API
+- [ ] Create a Wallet for that Account
+- [ ] Install `@payos/x402-provider-sdk`
+- [ ] Initialize with `apiKey` (and `accountId` if multiple)
+- [ ] Register endpoints with `x402.register()`
+- [ ] Protect routes with `x402.protect()`
+
+### Consumer Checklist
+
+- [ ] Sign up on PayOS dashboard
+- [ ] Get API key from Settings → API Keys
+- [ ] Create an Agent via API
+- [ ] Create a Wallet via API
+- [ ] Assign Wallet to Agent via API
+- [ ] Fund the Wallet via API or dashboard
+- [ ] Install `@payos/x402-client-sdk`
+- [ ] Initialize with `apiKey` and `agentId`
+- [ ] Use `x402.fetch()` for automatic payments
 
