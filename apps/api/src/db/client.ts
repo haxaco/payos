@@ -12,8 +12,12 @@ export function createClient() {
     throw new Error('Missing Supabase environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
   }
 
+  // Service role key bypasses RLS automatically
   client = createSupabaseClient(supabaseUrl, supabaseKey, {
-    auth: { persistSession: false },
+    auth: { 
+      persistSession: false,
+      autoRefreshToken: false
+    },
   });
 
   return client;

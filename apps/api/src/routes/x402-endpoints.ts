@@ -242,6 +242,8 @@ app.get('/:id', async (c) => {
     const id = c.req.param('id');
     const supabase = createClient();
     
+    console.log('DEBUG: Fetching endpoint', { endpointId: id, tenantId: ctx.tenantId });
+    
     // Fetch endpoint
     const { data: endpoint, error } = await supabase
       .from('x402_endpoints')
@@ -250,7 +252,29 @@ app.get('/:id', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .single();
     
-    if (error || !endpoint) {
+    if (error) {
+      console.error('DEBUG: Error fetching endpoint:', error);
+      return c.json({ error: 'Endpoint not found', details: error.message }, 404);
+    }
+    
+    if (!endpoint) {
+      console.log('DEBUG: Endpoint not found for tenant', { endpointId: id, tenantId: ctx.tenantId });
+      
+      // Check if endpoint exists with different tenant (for debugging)
+      const { data: anyEndpoint } = await supabase
+        .from('x402_endpoints')
+        .select('id, tenant_id')
+        .eq('id', id)
+        .single();
+      
+      if (anyEndpoint) {
+        console.log('DEBUG: Endpoint exists but belongs to different tenant', { 
+          endpointId: id, 
+          expectedTenantId: ctx.tenantId,
+          actualTenantId: anyEndpoint.tenant_id 
+        });
+      }
+      
       return c.json({ error: 'Endpoint not found' }, 404);
     }
     
