@@ -10127,6 +10127,375 @@ React Query handles this automatically, but need to ensure:
 
 ---
 
+## Epic 24: Enhanced API Key Security & Agent Authentication 🔐
+
+### Overview
+
+Currently, API keys are user-scoped (can access all organization resources). For better security with AI agents and x402 SDK usage, we need agent-specific API keys with scoped permissions, key rotation, and improved audit trails.
+
+**Status:** 📋 PLANNED  
+**Priority:** P2 (Security Enhancement)  
+**Points:** 28 points  
+**Duration:** 2-3 weeks  
+
+### Business Value
+
+- **Better Security:** Agent-specific keys limit blast radius of compromised keys
+- **Compliance:** Granular audit trails for agent actions
+- **Developer Experience:** Clearer separation between user and agent authentication
+- **Scalability:** Support high-volume agent deployments
+
+### Current State
+
+```
+User signs up → Gets API key → Key can access ALL organization resources
+                                     ↓
+                         Used for both manual & agent access
+                         No scoping, no rotation, hard to audit
+```
+
+### Desired State
+
+```
+User signs up → Gets user API key (manual access, full permissions)
+                      ↓
+              Creates Agent → Agent gets own API key (auto-generated)
+                                     ↓
+                          Agent key scoped to:
+                          - Assigned wallet only
+                          - x402 payment operations
+                          - Read-only for most resources
+                          - Revocable independently
+```
+
+### Stories
+
+#### Story 24.1: Agent-Specific API Keys (5 points)
+
+**Goal:** Each agent gets its own API key upon creation.
+
+**Database Changes:**
+```sql
+-- Add api_key to agents table
+ALTER TABLE agents ADD COLUMN api_key TEXT UNIQUE;
+ALTER TABLE agents ADD COLUMN api_key_created_at TIMESTAMPTZ;
+ALTER TABLE agents ADD COLUMN api_key_last_used_at TIMESTAMPTZ;
+
+-- Create index for lookups
+CREATE INDEX idx_agents_api_key ON agents(api_key) WHERE api_key IS NOT NULL;
+```
+
+**API Changes:**
+- `POST /v1/agents` - Auto-generate `api_key` on creation
+- `GET /v1/agents/:id` - Return masked API key (`ak_***...last4`)
+- `POST /v1/agents/:id/rotate-key` - Generate new key, invalidate old one
+- `DELETE /v1/agents/:id/revoke-key` - Revoke API key
+
+**SDK Changes:**
+```typescript
+// Before (user key)
+const x402 = new X402Client({ apiKey: 'pk_user_xxx' });
+
+// After (agent key)
+const x402 = new X402Client({ apiKey: 'ak_agent_xxx' });
+// Wallet auto-derived from agent key
+```
+
+**Acceptance Criteria:**
+- [ ] Agent creation auto-generates unique API key (`ak_` prefix)
+- [ ] Agent API keys stored securely (hashed)
+- [ ] Rotate endpoint generates new key, returns plaintext once
+- [ ] Old keys invalidated immediately on rotation
+- [ ] API key last used timestamp updated on each request
+
+---
+
+#### Story 24.2: Scoped Permissions for Agent Keys (8 points)
+
+**Goal:** Agent keys have limited permissions compared to user keys.
+
+**Permission Matrix:**
+
+| Resource | User Key | Agent Key |
+|----------|----------|-----------|
+| Read own agent | ✅ | ✅ |
+| Read assigned wallet | ✅ | ✅ |
+| Make x402 payments | ✅ | ✅ |
+| Read x402 endpoints | ✅ | ✅ (public only) |
+| Create accounts | ✅ | ❌ |
+| Create wallets | ✅ | ❌ |
+| Create other agents | ✅ | ❌ |
+| Read all organization data | ✅ | ❌ |
+| Admin operations | ✅ | ❌ |
+
+**Implementation:**
+```sql
+-- New table for permissions
+CREATE TABLE api_key_permissions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  api_key_id UUID NOT NULL,
+  resource TEXT NOT NULL,
+  action TEXT NOT NULL,
+  granted BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Middleware checks permissions
+SELECT COUNT(*) FROM api_key_permissions 
+WHERE api_key_id = $1 
+  AND resource = $2 
+  AND action = $3 
+  AND granted = true;
+```
+
+**Acceptance Criteria:**
+- [ ] Middleware checks key type and permissions before allowing operations
+- [ ] Agent keys can only access own wallet
+- [ ] Agent keys can make x402 payments
+- [ ] Agent keys blocked from admin operations
+- [ ] Clear error messages when permission denied
+- [ ] Permission checks cached for performance
+
+---
+
+#### Story 24.3: Authentication Endpoint for SDKs (3 points)
+
+**Goal:** Add `/v1/auth/me` endpoint for SDK initialization.
+
+**Endpoint:**
+```typescript
+GET /v1/auth/me
+Authorization: Bearer <api_key>
+
+// User key response
+{
+  "type": "user",
+  "userId": "user_123",
+  "organizationId": "org_456",
+  "permissions": ["admin", "read", "write"]
+}
+
+// Agent key response
+{
+  "type": "agent",
+  "agentId": "agt_789",
+  "organizationId": "org_456",
+  "walletId": "wal_abc123",
+  "permissions": ["x402:pay", "wallet:read"]
+}
+```
+
+**SDK Usage:**
+```typescript
+// Provider SDK - resolves accountId
+const provider = new X402Provider({ apiKey: 'pk_xxx' });
+// Calls /v1/auth/me, caches accountId
+
+// Consumer SDK - resolves agentId and walletId
+const consumer = new X402Client({ apiKey: 'ak_xxx' });
+// Calls /v1/auth/me, caches agentId + walletId
+```
+
+**Acceptance Criteria:**
+- [ ] `/v1/auth/me` endpoint returns key type and metadata
+- [ ] User keys return userId and organization
+- [ ] Agent keys return agentId, walletId, organization
+- [ ] 401 error for invalid keys
+- [ ] Response cached by SDK to avoid repeated calls
+- [ ] TypeScript types match response structure
+
+---
+
+#### Story 24.4: API Key Rotation Flow (5 points)
+
+**Goal:** Allow secure key rotation without downtime.
+
+**Rotation Flow:**
+```
+1. User calls POST /v1/agents/:id/rotate-key
+2. System generates new key
+3. Old key marked as "rotating" (grace period: 5 minutes)
+4. New key returned to user (only time it's visible)
+5. User updates environment with new key
+6. After 5 minutes, old key becomes invalid
+```
+
+**API:**
+```typescript
+POST /v1/agents/:id/rotate-key
+{
+  "gracePeriodMinutes": 5  // Optional, default 5
+}
+
+Response:
+{
+  "newApiKey": "ak_live_new123...",
+  "oldKeyExpiresAt": "2024-12-23T11:05:00Z",
+  "warningMessage": "Update your application with the new key. Old key expires in 5 minutes."
+}
+```
+
+**Acceptance Criteria:**
+- [ ] Rotation creates new key, marks old as rotating
+- [ ] Grace period allows both keys to work simultaneously
+- [ ] After grace period, old key returns 401
+- [ ] Rotation logged in audit trail
+- [ ] Old key completely deleted after grace period
+
+---
+
+#### Story 24.5: Key Usage Audit Trail (3 points)
+
+**Goal:** Track API key usage for security and debugging.
+
+**Audit Log:**
+```sql
+CREATE TABLE api_key_usage_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  api_key_id UUID NOT NULL,
+  endpoint TEXT NOT NULL,
+  method TEXT NOT NULL,
+  ip_address TEXT,
+  user_agent TEXT,
+  status_code INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Partitioned by month for performance
+CREATE INDEX idx_key_usage_created ON api_key_usage_logs(api_key_id, created_at DESC);
+```
+
+**Dashboard View:**
+```
+Agent: Research Agent
+API Key: ak_***...1234
+Last Used: 2 minutes ago
+
+Recent Activity (last 24h):
+- 145 requests
+- 142 successful (97.9%)
+- 3 failed (2.1%)
+
+Top Endpoints:
+- POST /v1/x402/pay: 100 requests
+- GET /v1/wallets/:id: 45 requests
+```
+
+**Acceptance Criteria:**
+- [ ] Every API request logged asynchronously
+- [ ] Logs include endpoint, method, IP, user agent, status
+- [ ] Dashboard shows key usage statistics
+- [ ] Old logs auto-purged after 90 days
+- [ ] No performance impact on API requests
+
+---
+
+#### Story 24.6: Update SDKs for Agent Keys (3 points)
+
+**Goal:** Update Provider and Consumer SDKs to use new authentication.
+
+**Provider SDK:**
+```typescript
+// Before
+const x402 = new X402Provider({
+  apiKey: 'pk_xxx',
+  accountId: 'acc_xxx'  // Had to provide
+});
+
+// After
+const x402 = new X402Provider({
+  apiKey: 'pk_xxx'
+  // accountId auto-derived from /v1/auth/me
+});
+```
+
+**Consumer SDK:**
+```typescript
+// Before
+const x402 = new X402Client({
+  apiKey: 'pk_xxx',
+  agentId: 'agt_xxx',
+  walletId: 'wal_xxx'  // Had to provide both
+});
+
+// After
+const x402 = new X402Client({
+  apiKey: 'ak_agent_xxx'
+  // agentId + walletId auto-derived from /v1/auth/me
+});
+```
+
+**Acceptance Criteria:**
+- [ ] Both SDKs call `/v1/auth/me` on initialization
+- [ ] Results cached to avoid repeated calls
+- [ ] Clear error if wrong key type used
+- [ ] Backward compatible with explicit IDs
+- [ ] Updated documentation and examples
+
+---
+
+#### Story 24.7: Security Best Practices Documentation (1 point)
+
+**Goal:** Document security best practices for API key management.
+
+**Topics:**
+- Key rotation schedule (every 90 days recommended)
+- Environment variable management (never commit keys)
+- Key scoping strategies (one key per agent)
+- Revoking compromised keys
+- Monitoring key usage for anomalies
+- Using separate keys for dev/staging/prod
+
+**Deliverables:**
+- [ ] Security guide in `/docs/API_KEY_SECURITY.md`
+- [ ] FAQ section for common questions
+- [ ] Example rotation scripts
+- [ ] Monitoring setup guide
+
+---
+
+### Implementation Order
+
+**Phase 1: Core Infrastructure (Week 1)**
+1. Story 24.3: Authentication endpoint (`/v1/auth/me`)
+2. Story 24.1: Agent-specific API keys
+3. Story 24.6: Update SDKs
+
+**Phase 2: Security & Permissions (Week 2)**
+4. Story 24.2: Scoped permissions
+5. Story 24.4: Key rotation flow
+6. Story 24.5: Audit trail
+
+**Phase 3: Documentation (Week 2)**
+7. Story 24.7: Security documentation
+
+### Success Criteria
+
+- [ ] Agents can use their own API keys with SDKs
+- [ ] Agent keys have restricted permissions (can't create accounts)
+- [ ] Key rotation works without downtime
+- [ ] All key usage logged for audit
+- [ ] SDKs work seamlessly with new authentication
+- [ ] Documentation complete and tested
+
+### Security Benefits
+
+| Before | After |
+|--------|-------|
+| One key per user | One key per agent |
+| Full permissions always | Scoped permissions |
+| No rotation mechanism | Graceful rotation with grace period |
+| Hard to audit agent actions | Complete audit trail |
+| Compromised key = full access | Compromised key = limited blast radius |
+
+### Related Documentation
+
+- **Sample Apps PRD:** `/docs/SAMPLE_APPS_PRD.md`
+- **x402 SDK Guide:** `/docs/X402_SDK_GUIDE.md`
+- **Epic 17:** x402 Gateway Infrastructure (completed)
+
+---
+
 ## Changelog
 
 ### Version 1.12 (December 22, 2025)
