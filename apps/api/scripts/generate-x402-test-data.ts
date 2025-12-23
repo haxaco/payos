@@ -252,11 +252,9 @@ async function main() {
     console.log(`✅ Consumer 2 created: ${consumer2.id} / Wallet: ${wallet2.id}\n`);
     
     // ============================================
-    // 3. CREATE x402 ENDPOINTS
+    // 3. CREATE x402 ENDPOINTS (linked to provider wallet)
     // ============================================
-    console.log('🔌 Creating x402 endpoints...');
-    
-    const paymentAddress = `internal://payos/${tenantId}/${providerAccount.id}`;
+    console.log('🔌 Creating x402 endpoints (linked to provider wallet)...');
     
     // Endpoint 1: Premium Weather
     const { data: endpoint1, error: endpoint1Error } = await supabase
@@ -270,7 +268,7 @@ async function main() {
         description: 'Real-time premium weather data with 15-minute forecasts',
         base_price: 0.01,
         currency: 'USDC',
-        payment_address: paymentAddress,
+        payment_address: providerWallet.wallet_address, // ✅ Link to actual wallet
         network: 'base-mainnet',
         status: 'active',
         total_calls: 0,
@@ -302,7 +300,7 @@ async function main() {
         description: 'Access to 10 years of historical weather data',
         base_price: 0.005,
         currency: 'USDC',
-        payment_address: paymentAddress,
+        payment_address: providerWallet.wallet_address, // ✅ Link to actual wallet
         network: 'base-mainnet',
         status: 'active',
         total_calls: 0,
@@ -330,7 +328,7 @@ async function main() {
         description: 'Subscribe to real-time severe weather alerts',
         base_price: 0.02,
         currency: 'USDC',
-        payment_address: paymentAddress,
+        payment_address: providerWallet.wallet_address, // ✅ Link to actual wallet
         network: 'base-mainnet',
         status: 'paused',
         total_calls: 0,
