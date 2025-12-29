@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="850" viewBox="0 0 900 850" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="partnerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="discoveryGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="aiNativeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="enrichmentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#43e97b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#38f9d7;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#fa709a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fee140;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="railsGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#a8edea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fed6e3;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="900" height="850" fill="#f8fafc"/>
+  
+  <!-- Title -->
+  <text x="450" y="40" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="700" fill="#1e293b">PayOS AI-Native Infrastructure Architecture</text>
+  <text x="450" y="65" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#64748b">Composable Primitives for Agentic Payments</text>
+  
+  <!-- Layer 1: Partner Applications -->
+  <g transform="translate(50, 90)">
+    <rect width="800" height="80" rx="12" fill="url(#partnerGrad)" filter="url(#shadow)"/>
+    <text x="400" y="25" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="white" opacity="0.9">PARTNER APPLICATIONS</text>
+    <g transform="translate(50, 40)">
+      <rect width="160" height="30" rx="6" fill="white" opacity="0.2"/>
+      <text x="80" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="white">Procurement Agent</text>
+    </g>
+    <g transform="translate(230, 40)">
+      <rect width="160" height="30" rx="6" fill="white" opacity="0.2"/>
+      <text x="80" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="white">Payroll Platform</text>
+    </g>
+    <g transform="translate(410, 40)">
+      <rect width="160" height="30" rx="6" fill="white" opacity="0.2"/>
+      <text x="80" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="white">Accounting Software</text>
+    </g>
+    <g transform="translate(590, 40)">
+      <rect width="160" height="30" rx="6" fill="white" opacity="0.2"/>
+      <text x="80" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="white">CS/Support Agent</text>
+    </g>
+  </g>
+  
+  <!-- Arrow -->
+  <path d="M450 175 L450 190" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <polygon points="445,190 450,200 455,190" fill="#94a3b8"/>
+  
+  <!-- Layer 2: Tool Discovery -->
+  <g transform="translate(50, 205)">
+    <rect width="800" height="70" rx="12" fill="url(#discoveryGrad)" filter="url(#shadow)"/>
+    <text x="400" y="22" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="white" opacity="0.9">TOOL DISCOVERY (Epic 32) 🧭</text>
+    <text x="400" y="45" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="white">"What can PayOS do?" → Capabilities, schemas, limits, function-calling formats</text>
+    <text x="750" y="60" text-anchor="end" font-family="system-ui, sans-serif" font-size="10" fill="white" opacity="0.8">11 pts</text>
+  </g>
+  
+  <!-- Arrow -->
+  <path d="M450 280 L450 295" stroke="#94a3b8" stroke-width="2"/>
+  <polygon points="445,295 450,305 455,295" fill="#94a3b8"/>
+  
+  <!-- Layer 3: AI-Native Layer (main layer) -->
+  <g transform="translate(50, 310)">
+    <rect width="800" height="200" rx="12" fill="url(#aiNativeGrad)" filter="url(#shadow)"/>
+    <text x="400" y="25" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="white" opacity="0.9">AI-NATIVE LAYER</text>
+    
+    <!-- Structured Responses -->
+    <g transform="translate(20, 40)">
+      <rect width="240" height="70" rx="8" fill="white" opacity="0.25"/>
+      <text x="120" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="white">📋 Structured Responses (Epic 30)</text>
+      <text x="120" y="38" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Machine-parseable errors</text>
+      <text x="120" y="50" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Suggested actions + Retry guidance</text>
+      <text x="120" y="62" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white" opacity="0.8">26 pts | P0</text>
+    </g>
+    
+    <!-- Simulation Engine -->
+    <g transform="translate(280, 40)">
+      <rect width="240" height="70" rx="8" fill="white" opacity="0.25"/>
+      <text x="120" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="white">🔮 Simulation Engine (Epic 28)</text>
+      <text x="120" y="38" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Dry-run any action</text>
+      <text x="120" y="50" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Preview outcomes + Validate batches</text>
+      <text x="120" y="62" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white" opacity="0.8">24 pts | P0</text>
+    </g>
+    
+    <!-- Context API -->
+    <g transform="translate(540, 40)">
+      <rect width="240" height="70" rx="8" fill="white" opacity="0.25"/>
+      <text x="120" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="white">🔍 Context API (Epic 31)</text>
+      <text x="120" y="38" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">"Tell me everything about X"</text>
+      <text x="120" y="50" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Account | Transfer | Agent | Batch</text>
+      <text x="120" y="62" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white" opacity="0.8">16 pts | P0</text>
+    </g>
+    
+    <!-- Workflow Engine -->
+    <g transform="translate(20, 120)">
+      <rect width="760" height="70" rx="8" fill="white" opacity="0.25"/>
+      <text x="380" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="white">⚙️ Workflow Engine (Epic 29)</text>
+      <text x="380" y="38" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Approval chains | Conditional logic | Multi-step processes | Notifications</text>
+      
+      <!-- Step boxes -->
+      <g transform="translate(80, 45)">
+        <rect width="80" height="20" rx="4" fill="white" opacity="0.3"/>
+        <text x="40" y="14" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="white">Approval Step</text>
+      </g>
+      <g transform="translate(180, 45)">
+        <rect width="80" height="20" rx="4" fill="white" opacity="0.3"/>
+        <text x="40" y="14" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="white">Condition Step</text>
+      </g>
+      <g transform="translate(280, 45)">
+        <rect width="80" height="20" rx="4" fill="white" opacity="0.3"/>
+        <text x="40" y="14" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="white">Action Step</text>
+      </g>
+      <g transform="translate(380, 45)">
+        <rect width="80" height="20" rx="4" fill="white" opacity="0.3"/>
+        <text x="40" y="14" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="white">Wait Step</text>
+      </g>
+      <g transform="translate(480, 45)">
+        <rect width="80" height="20" rx="4" fill="white" opacity="0.3"/>
+        <text x="40" y="14" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="white">Notification</text>
+      </g>
+      <text x="660" y="62" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white" opacity="0.8">42 pts | P0/P1</text>
+    </g>
+  </g>
+  
+  <!-- Arrow -->
+  <path d="M450 515 L450 530" stroke="#94a3b8" stroke-width="2"/>
+  <polygon points="445,530 450,540 455,530" fill="#94a3b8"/>
+  
+  <!-- Layer 4: Data Enrichment Layer -->
+  <g transform="translate(50, 545)">
+    <rect width="800" height="80" rx="12" fill="url(#enrichmentGrad)" filter="url(#shadow)"/>
+    <text x="400" y="22" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#1e293b" opacity="0.9">DATA ENRICHMENT LAYER</text>
+    
+    <!-- Metadata Schema -->
+    <g transform="translate(30, 35)">
+      <rect width="230" height="35" rx="6" fill="white" opacity="0.4"/>
+      <text x="115" y="15" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#1e293b">🏷️ Metadata Schema (Epic 33)</text>
+      <text x="115" y="28" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="#1e293b">Custom fields: GL codes, PO#s | 11 pts P1</text>
+    </g>
+    
+    <!-- Transaction Decomposition -->
+    <g transform="translate(285, 35)">
+      <rect width="230" height="35" rx="6" fill="white" opacity="0.4"/>
+      <text x="115" y="15" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#1e293b">📦 Decomposition (Epic 34)</text>
+      <text x="115" y="28" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="#1e293b">Line items, partial refunds | 14 pts P1</text>
+    </g>
+    
+    <!-- Entity Onboarding -->
+    <g transform="translate(540, 35)">
+      <rect width="230" height="35" rx="6" fill="white" opacity="0.4"/>
+      <text x="115" y="15" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#1e293b">🚀 Onboarding API (Epic 35)</text>
+      <text x="115" y="28" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" fill="#1e293b">Single-call vendor setup | 14 pts P1</text>
+    </g>
+  </g>
+  
+  <!-- Arrow -->
+  <path d="M450 630 L450 645" stroke="#94a3b8" stroke-width="2"/>
+  <polygon points="445,645 450,655 455,645" fill="#94a3b8"/>
+  
+  <!-- Layer 5: Core Settlement -->
+  <g transform="translate(50, 660)">
+    <rect width="800" height="70" rx="12" fill="url(#coreGrad)" filter="url(#shadow)"/>
+    <text x="400" y="22" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="white" opacity="0.9">CORE SETTLEMENT LAYER</text>
+    <g transform="translate(50, 35)">
+      <rect width="160" height="25" rx="4" fill="white" opacity="0.3"/>
+      <text x="80" y="17" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Protocol Orchestrator</text>
+    </g>
+    <g transform="translate(230, 35)">
+      <rect width="160" height="25" rx="4" fill="white" opacity="0.3"/>
+      <text x="80" y="17" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Execution Engine</text>
+    </g>
+    <g transform="translate(410, 35)">
+      <rect width="160" height="25" rx="4" fill="white" opacity="0.3"/>
+      <text x="80" y="17" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Treasury & Float</text>
+    </g>
+    <g transform="translate(590, 35)">
+      <rect width="160" height="25" rx="4" fill="white" opacity="0.3"/>
+      <text x="80" y="17" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="white">Compliance & KYC</text>
+    </g>
+  </g>
+  
+  <!-- Arrow -->
+  <path d="M450 735 L450 750" stroke="#94a3b8" stroke-width="2"/>
+  <polygon points="445,750 450,760 455,750" fill="#94a3b8"/>
+  
+  <!-- Layer 6: Settlement Rails -->
+  <g transform="translate(50, 765)">
+    <rect width="800" height="60" rx="12" fill="url(#railsGrad)" filter="url(#shadow)"/>
+    <text x="400" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" fill="#1e293b" opacity="0.9">SETTLEMENT RAILS</text>
+    <g transform="translate(100, 30)">
+      <text x="0" y="15" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">Circle USDC (Base)</text>
+    </g>
+    <g transform="translate(300, 30)">
+      <text x="0" y="15" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">Pix (Brazil - BCB)</text>
+    </g>
+    <g transform="translate(500, 30)">
+      <text x="0" y="15" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">SPEI (Mexico - Banxico)</text>
+    </g>
+  </g>
+  
+  <!-- Summary Stats Box -->
+  <g transform="translate(720, 90)">
+    <rect width="120" height="100" rx="8" fill="white" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+    <text x="60" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#1e293b">Summary</text>
+    <text x="60" y="40" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#64748b">8 Epics</text>
+    <text x="60" y="55" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#64748b">158 Story Points</text>
+    <text x="60" y="70" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#64748b">14 Weeks</text>
+    <text x="60" y="85" text-anchor="middle" font-family="system-ui, sans-serif" font-size="9" fill="#64748b">5 Phases</text>
+  </g>
+</svg>

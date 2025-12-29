@@ -1,189 +1,256 @@
 # PayOS Documentation
 
-This directory contains all documentation for the PayOS platform.
+This directory contains all documentation for the PayOS platform - a B2B stablecoin payout operating system with AI-native agent support and money streaming capabilities.
 
-## 📂 Directory Structure
+## Directory Structure
 
 ```
 docs/
-├── README.md                           # This file
-├── GEMINI_START_HERE.md               # Quick start guide for AI assistants
-├── MOCK_TO_API_MIGRATION.md           # Migration guide from mock to real data
-├── GEMINI_REGRESSION_CHECKLIST.md     # Regression testing checklist for AI
-├── INFRASTRUCTURE.md                  # Production infrastructure & deployment
+├── README.md                      # This file - documentation guide
 │
-├── prd/                                # Product Requirements Documents
-│   └── PayOS_PRD_Development.md       # Main PRD with all epics and stories
+├── guides/                        # Developer guides and workflows
+│   ├── README.md                  # Guides overview
+│   ├── onboarding/               # Getting started guides
+│   ├── development/              # Development workflows
+│   ├── testing/                  # Testing procedures
+│   └── deployment/               # Deployment guides
 │
-├── security/                           # Security documentation
-│   ├── RLS_STRATEGY.md                # Row-Level Security implementation
-│   └── RLS_TESTING.md                 # RLS testing procedures
+├── protocols/                     # Payment protocol documentation
+│   ├── README.md                  # Protocol overview
+│   ├── x402/                     # HTTP 402 Payment Protocol
+│   ├── ap2/                      # Agentic Payment Protocol v2
+│   └── acp/                      # Agent Commerce Protocol
 │
-├── reports/                            # Test reports and analysis
-│   ├── README.md                      # Report index
-│   ├── bug_list.md                    # Known bugs and issues
-│   ├── api_migration_test_report.md   # API migration test results
-│   ├── regression_test_report.md      # Regression testing results
-│   └── ...                            # Other test reports
+├── architecture/                  # System architecture
+│   ├── README.md                  # Architecture overview
+│   ├── INFRASTRUCTURE.md          # Production infrastructure
+│   ├── wallet-schema.md           # Wallet database design
+│   ├── data-model-strategy.md     # Data models
+│   └── ml-treasury.md             # ML treasury management
 │
-└── completed/                          # Archived completion documents
-    ├── DOCS_REORGANIZATION_COMPLETE.md
-    ├── EPIC_11_STORY_11.12_COMPLETE.md
-    ├── EPIC_15_FINAL_STATUS.md
-    ├── EPIC_15_STATUS.md
-    ├── EPIC_15_TEST_RESULTS.md
-    └── STORY_11.12_SUMMARY.md
+├── security/                      # Security documentation
+│   ├── README.md                  # Security overview
+│   ├── RLS_STRATEGY.md            # Multi-tenant isolation
+│   ├── RLS_TESTING.md             # RLS testing procedures
+│   └── security-review.md         # Security audit
+│
+├── deployment/                    # Production deployment
+│   ├── README.md                  # Deployment guide
+│   ├── DEPLOYMENT_QUICK_START.md  # Quick deployment
+│   └── ...                       # Detailed deployment docs
+│
+├── prd/                          # Product Requirements Documents
+│   └── PayOS_PRD_Development.md  # Main PRD (all epics)
+│
+├── completed/                    # Archived completion documents
+│   ├── README.md                 # Archive overview
+│   ├── epics/                   # Completed epic summaries
+│   ├── stories/                 # Completed story reports
+│   ├── sessions/                # Development session logs
+│   └── bugfixes/                # Bug fix summaries
+│
+├── reports/                      # Test reports and analysis
+└── testing/                      # Testing documentation
 ```
 
-## 📋 Key Documents
+## Quick Navigation
 
-### Product Requirements
-- **[PayOS_PRD_Development.md](prd/PayOS_PRD_Development.md)** - Main PRD with all 21 epics
-  - Epics 1-16: Core platform features (foundation → security)
-  - Epics 17-20: x402 infrastructure (agentic payments)
-  - Epic 21: Code coverage improvement (quality & testing)
+### I need to...
 
-### Infrastructure & Deployment
-- **[INFRASTRUCTURE.md](INFRASTRUCTURE.md)** - Production infrastructure, deployment platforms, monitoring
-  - Vercel (Dashboard), Railway (API), Supabase (Database)
-  - Environment variables, health checks, CORS configuration
-  - Troubleshooting guides and performance metrics
+| Task | Documentation |
+|------|---------------|
+| Get started as a new developer | [guides/onboarding/GEMINI_START_HERE.md](guides/onboarding/GEMINI_START_HERE.md) |
+| Understand the system architecture | [architecture/README.md](architecture/README.md) |
+| Learn about payment protocols | [protocols/README.md](protocols/README.md) |
+| Implement x402 protocol | [protocols/x402/README.md](protocols/x402/README.md) |
+| Work with AP2 or ACP | [protocols/ap2/README.md](protocols/ap2/README.md), [protocols/acp/README.md](protocols/acp/README.md) |
+| Understand security & RLS | [security/README.md](security/README.md) |
+| Deploy to production | [deployment/README.md](deployment/README.md) |
+| Migrate from mock to real data | [guides/development/MOCK_TO_API_MIGRATION.md](guides/development/MOCK_TO_API_MIGRATION.md) |
+| Test the SDK | [guides/development/SDK_TESTING_GUIDE.md](guides/development/SDK_TESTING_GUIDE.md) |
+| Test the UI | [guides/testing/UI_VALIDATION_GUIDE.md](guides/testing/UI_VALIDATION_GUIDE.md) |
+| Run regression tests | [guides/onboarding/GEMINI_REGRESSION_CHECKLIST.md](guides/onboarding/GEMINI_REGRESSION_CHECKLIST.md) |
+| Review product requirements | [prd/PayOS_PRD_Development.md](prd/PayOS_PRD_Development.md) |
 
-### Security
-- **[RLS_STRATEGY.md](security/RLS_STRATEGY.md)** - Row-Level Security implementation guide
-- **[RLS_TESTING.md](security/RLS_TESTING.md)** - How to test RLS policies
+## Key Documentation by Category
 
-### Epic Status Documents
-- **[completed/](completed/)** - Archived epic completion and status documents
-  - Epic 11, Epic 15 completions
-  - Story summaries and test results
+### For New Developers
 
-### Quick Start
-- **[GEMINI_START_HERE.md](GEMINI_START_HERE.md)** - Guide for AI assistants working on PayOS
-- **[MOCK_TO_API_MIGRATION.md](MOCK_TO_API_MIGRATION.md)** - Migrating from mock data to real APIs
+**Start here:**
+1. [guides/onboarding/GEMINI_START_HERE.md](guides/onboarding/GEMINI_START_HERE.md) - Quick start guide
+2. [architecture/README.md](architecture/README.md) - System architecture overview
+3. [guides/development/MOCK_TO_API_MIGRATION.md](guides/development/MOCK_TO_API_MIGRATION.md) - Development workflow
 
-## 📝 Documentation Standards
+**Then explore:**
+- [protocols/README.md](protocols/README.md) - Payment protocols (x402, AP2, ACP)
+- [security/README.md](security/README.md) - Security practices
+- [guides/testing/VALIDATION_GUIDE.md](guides/testing/VALIDATION_GUIDE.md) - Testing guide
 
-### When Creating New Documentation
+### For Protocol Integration
 
-1. **Location Guidelines:**
-   - PRD documents → `docs/prd/`
-   - Security docs → `docs/security/`
-   - Test reports → `docs/reports/`
-   - Active guides → `docs/` (root: GEMINI_START_HERE.md, MOCK_TO_API_MIGRATION.md, etc.)
-   - Completed epic docs → `docs/completed/` (archive when epic is done)
+**x402 Protocol (HTTP Micropayments):**
+- [protocols/x402/README.md](protocols/x402/README.md) - Protocol overview
+- [protocols/x402/X402_SDK_GUIDE.md](protocols/x402/X402_SDK_GUIDE.md) - SDK integration
+- [protocols/x402/X402_MANUAL_TESTING_GUIDE.md](protocols/x402/X402_MANUAL_TESTING_GUIDE.md) - Testing
 
-2. **Naming Conventions:**
-   - PRD documents: `PayOS_PRD_*.md`
-   - Epic docs: `EPIC_##_*.md`
-   - Story docs: `STORY_##.##_*.md`
-   - Reports: `descriptive_name_report.md`
-   - Guides: `DESCRIPTIVE_NAME.md` (uppercase for important guides)
+**AP2 Protocol (Advanced Agent Payments):**
+- [protocols/ap2/README.md](protocols/ap2/README.md) - Protocol overview
+- [protocols/ap2/AP2_FOUNDATION_COMPLETE.md](protocols/ap2/AP2_FOUNDATION_COMPLETE.md) - Implementation
 
-3. **Document Structure:**
-   - Start with clear title and metadata (version, date, status)
-   - Include table of contents for documents >100 lines
-   - Use consistent heading hierarchy (# → ## → ### → ####)
-   - Include acceptance criteria checklists where applicable
-   - End with "Next Steps" or "Conclusion" section
+**ACP Protocol (Agent Commerce):**
+- [protocols/acp/README.md](protocols/acp/README.md) - Protocol overview
+- [protocols/acp/ACP_FOUNDATION_IMPLEMENTATION_COMPLETE.md](protocols/acp/ACP_FOUNDATION_IMPLEMENTATION_COMPLETE.md) - Implementation
 
-4. **Cross-References:**
-   - Use relative paths: `[Link](../security/RLS_STRATEGY.md)`
-   - Reference specific sections: `[Link](prd/PayOS_PRD_Development.md#epic-11-authentication--user-management)`
+### For Architecture & Design
 
-### Before Creating a New Document
+- [architecture/README.md](architecture/README.md) - System architecture overview
+- [architecture/INFRASTRUCTURE.md](architecture/INFRASTRUCTURE.md) - Production infrastructure
+- [architecture/wallet-schema.md](architecture/wallet-schema.md) - Wallet database design
+- [architecture/data-model-strategy.md](architecture/data-model-strategy.md) - Data models
 
-1. **Check if it already exists** in:
-   - `docs/` root
-   - `docs/prd/`
-   - `docs/reports/`
-   - `docs/security/`
-   - `docs/completed/` (archived docs)
+### For Security & Compliance
 
-2. **Prefer editing existing documents** when:
-   - Adding to PRD → Update `PayOS_PRD_Development.md`
-   - Reporting test results → Add to `docs/reports/`
-   - Documenting security → Update files in `docs/security/`
+- [security/README.md](security/README.md) - Security overview
+- [security/RLS_STRATEGY.md](security/RLS_STRATEGY.md) - Multi-tenant isolation strategy
+- [security/RLS_TESTING.md](security/RLS_TESTING.md) - RLS testing procedures
+- [security/security-review.md](security/security-review.md) - Security audit
 
-3. **Create new document only when:**
-   - Writing a new standalone guide → `docs/` root
-   - Completing an epic → Create in `docs/completed/`
-   - Creating a new report type → `docs/reports/`
+### For Testing
 
-4. **Archive completed documents:**
-   - When an epic is done, move status docs to `docs/completed/`
-   - This keeps the root clean and focused on active work
+- [guides/testing/VALIDATION_GUIDE.md](guides/testing/VALIDATION_GUIDE.md) - Complete validation guide
+- [guides/testing/UI_VALIDATION_GUIDE.md](guides/testing/UI_VALIDATION_GUIDE.md) - UI testing
+- [guides/testing/PAGINATION_TESTING_GUIDE.md](guides/testing/PAGINATION_TESTING_GUIDE.md) - Pagination testing
+- [guides/onboarding/GEMINI_TESTING_INSTRUCTIONS.md](guides/onboarding/GEMINI_TESTING_INSTRUCTIONS.md) - AI-assisted testing
 
-## 🎯 Current Status (December 19, 2025)
+### For Deployment
+
+- [deployment/README.md](deployment/README.md) - Deployment guide
+- [deployment/DEPLOYMENT_QUICK_START.md](deployment/DEPLOYMENT_QUICK_START.md) - Quick deployment
+- [deployment/DEPLOYMENT_PREPARATION.md](deployment/DEPLOYMENT_PREPARATION.md) - Comprehensive guide
+- [deployment/ENVIRONMENT_VARIABLES.md](deployment/ENVIRONMENT_VARIABLES.md) - Configuration reference
+
+### For Product Requirements
+
+- [prd/PayOS_PRD_Development.md](prd/PayOS_PRD_Development.md) - Main PRD
+  - Epics 1-16: Core platform features
+  - Epic 17: x402 Gateway Infrastructure
+  - Epic 18: AP2 Foundation
+  - Epic 19: ACP Foundation
+  - Epic 20: Streaming Payments
+  - Epic 21: Code Coverage
+  - Epic 22+: UI & Quality
+
+## Documentation Standards
+
+### Creating New Documentation
+
+**Location guidelines:**
+- Protocol docs → `protocols/{protocol-name}/`
+- Development guides → `guides/development/`
+- Testing guides → `guides/testing/`
+- Architecture docs → `architecture/`
+- Security docs → `security/`
+- Deployment docs → `deployment/`
+- PRD updates → `prd/`
+- Completed work → `completed/`
+
+**Naming conventions:**
+- Protocol docs: `PROTOCOL_FEATURE.md`
+- Guides: `FEATURE_GUIDE.md`
+- Status reports: `FEATURE_STATUS.md`
+- Test reports: `FEATURE_TEST_REPORT.md`
+
+**Document structure:**
+- Clear title and purpose
+- Table of contents for long docs (>100 lines)
+- Consistent heading hierarchy (# → ## → ### → ####)
+- Code examples where applicable
+- Cross-references to related docs
+- "Last updated" date
+
+### README Requirements
+
+Every major directory should have a README.md with:
+- Directory purpose and overview
+- Index of documents with descriptions
+- Quick start guide or navigation
+- Links to related documentation
+- Last updated date
+
+## Current Status (December 29, 2025)
 
 ### Completed Epics
-- ✅ Epic 1-13: Core platform (foundation → advanced auth)
-- ✅ Epic 11: Authentication & User Management (12/12 stories, including 11.12)
-- ✅ Epic 14: Compliance & Dispute Management (3/3 stories) - **COMPLETE Dec 19, 2025**
-- ✅ Epic 15: Row-Level Security Hardening (10/10 stories)
 
-### Recently Completed
-- ✅ Epic 16: Database Function Security & Performance (18/18 stories) - **COMPLETE Dec 19, 2025**
-- ✅ **Production Deployment** - API (Railway), Dashboard (Vercel), Database (Supabase) - **LIVE Dec 19, 2025**
+- ✅ Epic 1-16: Core platform (foundation → security)
+- ✅ Epic 17: x402 Gateway Infrastructure (production-ready)
+- ✅ Epic 22: Seed Data & Final UI Integration
 
 ### In Progress
-- 🔄 Epic 23: Dashboard Performance & API Optimization (1/7 stories, 18 points)
-  - Story 23.1 COMPLETE: Rate limit increased ✅
-  - Addresses 429 rate limit errors
-  - React Query caching implementation
-  - Server-side filtering optimization
 
-### Planned (x402 Infrastructure)
-- 📋 Epic 17: x402 Gateway Infrastructure (26 points)
-- 📋 Epic 18: Agent Wallets & Spending Policies (23 points)
-- 📋 Epic 19: PayOS x402 Services (22 points)
-- 📋 Epic 20: Streaming Payments & Agent Registry (18 points)
+- 🔄 Epic 18-20: Multi-protocol foundation (AP2, ACP complete, x402 optimizations)
+- 🔄 Epic 23: Dashboard Performance & API Optimization
 
-### Completed (Quality & Polish)
-- ✅ Epic 22: Seed Data & Final UI Integration (21 points, 1 week) - **COMPLETE Dec 18, 2025**
-  - Dashboard uses real data
-  - Payment methods tab real data
-  - Master seed script created
-  - Active streams seeding
-  - Agent activity seeding
-  - Webhooks page stub
+### Protocol Status
 
-### Completed (Quality & Testing)
-- ✅ Epic 22 Continuation: Power User Seed Data (16 points, 4 batches) - **COMPLETE Dec 19, 2024**
-  - Story 22.7: Batch 1 complete (6,400 transfers) ✅
-  - Story 22.8: Batch 2 complete (6,400 transfers) ✅
-  - Story 22.9: Batch 3 complete (6,399 transfers) ✅
-  - Story 22.10: Batch 4 complete (6,400 transfers) ✅
-  - **Total:** 25,600+ transfers for pagination/performance testing
-  - **Completion:** See [EPIC_22_CONTINUATION_COMPLETE.md](./EPIC_22_CONTINUATION_COMPLETE.md)
+| Protocol | Status | Documentation |
+|----------|--------|---------------|
+| x402 | Production | [protocols/x402/](protocols/x402/) |
+| AP2 | Foundation Complete | [protocols/ap2/](protocols/ap2/) |
+| ACP | Foundation Complete | [protocols/acp/](protocols/acp/) |
 
-### Planned (Quality & Infrastructure)
-- 📋 Epic 21: Code Coverage Improvement (112 points, 3-4 weeks)
+## Project Overview
 
-## 📦 Completed Documents Archive
+**PayOS** is a B2B stablecoin payout operating system for LATAM with:
 
-The `completed/` directory contains archived epic completion and status documents. These are historical records of completed work:
+- **Multi-Tenant Architecture**: Row-Level Security (RLS) for data isolation
+- **Triple Authentication**: API keys, JWT sessions, agent tokens
+- **Payment Protocols**: x402, AP2, ACP for various use cases
+- **AI-Native Design**: First-class support for AI agents
+- **Money Streaming**: Real-time per-second payment flows
+- **KYA Framework**: Know Your Agent verification tiers
 
-- **Epic completion docs** - Final status when an epic is done
-- **Story summaries** - Detailed summaries of individual stories
-- **Test results** - Test execution reports for completed epics
-- **Reorganization logs** - Historical reorganization records
+**Tech Stack:**
+- Backend: Hono + Node.js + PostgreSQL (Supabase)
+- Frontend: Next.js + Vite + React + TypeScript
+- Deployment: Railway (API) + Vercel (UI) + Supabase (DB)
 
-**When to archive:**
-- Epic is marked complete in PRD → Move status docs to `completed/`
-- Story is finished → Archive summary to `completed/`
-- Keeps root directory focused on active work
+See [architecture/README.md](architecture/README.md) for complete architecture details.
 
-## 🔄 Updating This Document
+## Contributing to Documentation
 
-When the repo structure changes:
-1. Update the directory tree above
-2. Update the key documents list
-3. Update the current status section
-4. Keep naming conventions current
-5. Archive completed epic docs to `completed/`
+When updating documentation:
+
+1. Find the appropriate directory using the structure above
+2. Create or update the relevant document
+3. Update the directory's README.md if needed
+4. Add cross-references to related documentation
+5. Update this main README if adding new categories
+6. Include "Last updated" date in your document
+
+## Documentation Maintenance
+
+**Regular updates:**
+- Update status sections when epics complete
+- Archive completed documents to `completed/`
+- Update protocol documentation with new features
+- Keep README files current with directory contents
+- Update cross-references when files move
+
+**Quality checks:**
+- All links work (no broken references)
+- Code examples are tested and working
+- Screenshots and diagrams are current
+- Consistent formatting and style
+- Clear and concise writing
 
 ---
 
-*For the main Product Requirements Document, see [prd/PayOS_PRD_Development.md](prd/PayOS_PRD_Development.md)*
+**Last Updated:** December 29, 2025
+**Maintained By:** PayOS Team
 
+**For questions or contributions, see the appropriate subdirectory README:**
+- [guides/README.md](guides/README.md) - Developer guides
+- [protocols/README.md](protocols/README.md) - Protocol documentation
+- [architecture/README.md](architecture/README.md) - Architecture docs
+- [security/README.md](security/README.md) - Security documentation
+- [deployment/README.md](deployment/README.md) - Deployment guides

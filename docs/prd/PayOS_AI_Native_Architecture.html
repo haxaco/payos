@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PayOS AI-Native Infrastructure Architecture</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    
+    .header h1 {
+      font-size: 28px;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+    
+    .header p {
+      color: #666;
+      font-size: 16px;
+    }
+    
+    .layer {
+      margin-bottom: 20px;
+      position: relative;
+    }
+    
+    .layer::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      bottom: -15px;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 12px solid transparent;
+      border-right: 12px solid transparent;
+      border-top: 12px solid #94a3b8;
+    }
+    
+    .layer:last-child::after {
+      display: none;
+    }
+    
+    .layer-box {
+      border-radius: 16px;
+      padding: 20px 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    
+    .layer-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .layer-title .points {
+      font-size: 11px;
+      opacity: 0.8;
+      font-weight: 500;
+    }
+    
+    .items-row {
+      display: grid;
+      gap: 12px;
+    }
+    
+    .items-row.four-col { grid-template-columns: repeat(4, 1fr); }
+    .items-row.three-col { grid-template-columns: repeat(3, 1fr); }
+    .items-row.two-col { grid-template-columns: repeat(2, 1fr); }
+    .items-row.one-col { grid-template-columns: 1fr; }
+    
+    .item {
+      background: rgba(255,255,255,0.25);
+      border-radius: 10px;
+      padding: 14px 16px;
+      text-align: center;
+    }
+    
+    .item-title {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    
+    .item-desc {
+      font-size: 11px;
+      opacity: 0.9;
+      line-height: 1.4;
+    }
+    
+    .item-meta {
+      font-size: 10px;
+      opacity: 0.7;
+      margin-top: 8px;
+    }
+    
+    /* Layer Colors */
+    .layer-partners .layer-box {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    
+    .layer-discovery .layer-box {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+    }
+    
+    .layer-ai-native .layer-box {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      color: white;
+    }
+    
+    .layer-enrichment .layer-box {
+      background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+      color: #1a1a2e;
+    }
+    
+    .layer-core .layer-box {
+      background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+      color: white;
+    }
+    
+    .layer-rails .layer-box {
+      background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+      color: #1a1a2e;
+    }
+    
+    .workflow-steps {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .workflow-step {
+      background: rgba(255,255,255,0.3);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    
+    .summary-box {
+      background: white;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-top: 30px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    
+    .summary-box h3 {
+      font-size: 16px;
+      color: #1a1a2e;
+      margin-bottom: 16px;
+    }
+    
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+    
+    .summary-stat {
+      text-align: center;
+    }
+    
+    .summary-stat .value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #4facfe;
+    }
+    
+    .summary-stat .label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    
+    .phases-section {
+      margin-top: 30px;
+    }
+    
+    .phases-section h3 {
+      font-size: 16px;
+      color: #1a1a2e;
+      margin-bottom: 16px;
+    }
+    
+    .phases-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+    
+    .phase-card {
+      background: white;
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    
+    .phase-card .phase-num {
+      font-size: 11px;
+      font-weight: 600;
+      color: #4facfe;
+      margin-bottom: 6px;
+    }
+    
+    .phase-card .phase-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+    
+    .phase-card .phase-weeks {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    
+    .phase-card .phase-points {
+      font-size: 12px;
+      font-weight: 600;
+      color: #43e97b;
+    }
+    
+    @media (max-width: 900px) {
+      .items-row.four-col { grid-template-columns: repeat(2, 1fr); }
+      .items-row.three-col { grid-template-columns: repeat(2, 1fr); }
+      .summary-grid { grid-template-columns: repeat(2, 1fr); }
+      .phases-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    
+    @media (max-width: 600px) {
+      .items-row.four-col,
+      .items-row.three-col,
+      .items-row.two-col { grid-template-columns: 1fr; }
+      .phases-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>PayOS AI-Native Infrastructure Architecture</h1>
+      <p>Composable Primitives for Agentic Payments • Version 1.14</p>
+    </div>
+    
+    <!-- Layer 1: Partner Applications -->
+    <div class="layer layer-partners">
+      <div class="layer-box">
+        <div class="layer-title">
+          <span>Partner Applications</span>
+        </div>
+        <div class="items-row four-col">
+          <div class="item">
+            <div class="item-title">🤖 Procurement Agent</div>
+            <div class="item-desc">AI-powered sourcing & purchasing</div>
+          </div>
+          <div class="item">
+            <div class="item-title">💰 Payroll Platform</div>
+            <div class="item-desc">Batch employee payments</div>
+          </div>
+          <div class="item">
+            <div class="item-title">📊 Accounting Software</div>
+            <div class="item-desc">Financial reconciliation</div>
+          </div>
+          <div class="item">
+            <div class="item-title">🎧 CS/Support Agent</div>
+            <div class="item-desc">Refunds & dispute handling</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Layer 2: Tool Discovery -->
+    <div class="layer layer-discovery">
+      <div class="layer-box">
+        <div class="layer-title">
+          <span>🧭 Tool Discovery Layer</span>
+          <span class="points">Epic 32 • 11 pts • P0</span>
+        </div>
+        <div class="items-row one-col">
+          <div class="item">
+            <div class="item-title">"What can PayOS do?"</div>
+            <div class="item-desc">
+              Machine-readable capability catalog • OpenAPI specs • Function-calling schemas (OpenAI/Anthropic format) • 
+              Rate limits & permissions • Versioned capabilities
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Layer 3: AI-Native Layer -->
+    <div class="layer layer-ai-native">
+      <div class="layer-box">
+        <div class="layer-title">
+          <span>🧠 AI-Native Layer</span>
+          <span class="points">108 pts total</span>
+        </div>
+        <div class="items-row three-col">
+          <div class="item">
+            <div class="item-title">📋 Structured Responses</div>
+            <div class="item-desc">
+              Machine-parseable errors with taxonomy<br>
+              Suggested actions & retry guidance<br>
+              Error codes: BALANCE_, VALIDATION_, LIMITS_
+            </div>
+            <div class="item-meta">Epic 30 • 26 pts • P0</div>
+          </div>
+          <div class="item">
+            <div class="item-title">🔮 Simulation Engine</div>
+            <div class="item-desc">
+              Dry-run any action before execution<br>
+              Preview: FX, fees, timing, compliance<br>
+              Batch validation & execute flow
+            </div>
+            <div class="item-meta">Epic 28 • 24 pts • P0</div>
+          </div>
+          <div class="item">
+            <div class="item-title">🔍 Context API</div>
+            <div class="item-desc">
+              "Tell me everything about X"<br>
+              Rich context: Account, Transfer, Agent<br>
+              Reduces API calls, aids agent reasoning
+            </div>
+            <div class="item-meta">Epic 31 • 16 pts • P0</div>
+          </div>
+        </div>
+        
+        <div class="items-row one-col" style="margin-top: 12px;">
+          <div class="item">
+            <div class="item-title">⚙️ Workflow Engine</div>
+            <div class="item-desc">
+              Composable multi-step processes configured per-partner<br>
+              Approval chains • Conditional routing • Timeout handling • Notifications
+            </div>
+            <div class="workflow-steps">
+              <span class="workflow-step">Approval Step</span>
+              <span class="workflow-step">Condition Step</span>
+              <span class="workflow-step">Action Step</span>
+              <span class="workflow-step">Wait Step</span>
+              <span class="workflow-step">Notification</span>
+            </div>
+            <div class="item-meta">Epic 29 • 42 pts • P0/P1</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Layer 4: Data Enrichment -->
+    <div class="layer layer-enrichment">
+      <div class="layer-box">
+        <div class="layer-title">
+          <span>📦 Data Enrichment Layer</span>
+          <span class="points">39 pts total • P1</span>
+        </div>
+        <div class="items-row three-col">
+          <div class="item">
+            <div class="item-title">🏷️ Metadata Schema</div>
+            <div class="item-desc">
+              Partner-defined custom fields<br>
+              GL codes, PO#s, employee IDs<br>
+              Flows through to exports
+            </div>
+            <div class="item-meta">Epic 33 • 11 pts</div>
+          </div>
+          <div class="item">
+            <div class="item-title">📦 Transaction Decomposition</div>
+            <div class="item-desc">
+              Line-item level operations<br>
+              Partial refunds by item<br>
+              Split payment tracking
+            </div>
+            <div class="item-meta">Epic 34 • 14 pts</div>
+          </div>
+          <div class="item">
+            <div class="item-title">🚀 Entity Onboarding API</div>
+            <div class="item-desc">
+              Single-call vendor/customer setup<br>
+              Pix & CLABE verification<br>
+              Document processing
+            </div>
+            <div class="item-meta">Epic 35 • 14 pts</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Layer 5: Core Settlement -->
+    <div class="layer layer-core">
+      <div class="layer-box">
+        <div class="layer-title">
+          <span>⚡ Core Settlement Layer</span>
+          <span class="points">Existing Infrastructure</span>
+        </div>
+        <div class="items-row four-col">
+          <div class="item">
+            <div class="item-title">Protocol Orchestrator</div>
+            <div class="item-desc">x402 / AP2 / ACP</div>
+          </div>
+          <div class="item">
+            <div class="item-title">Execution Engine</div>
+            <div class="item-desc">Transfer processing</div>
+          </div>
+          <div class="item">
+            <div class="item-title">Treasury & Float</div>
+            <div class="item-desc">Liquidity management</div>
+          </div>
+          <div class="item">
+            <div class="item-title">Compliance & KYC/KYA</div>
+            <div class="item-desc">Identity verification</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Layer 6: Settlement Rails -->
+    <div class="layer layer-rails">
+      <div class="layer-box">
+        <div class="layer-title">
+          <span>🛤️ Settlement Rails</span>
+        </div>
+        <div class="items-row three-col">
+          <div class="item">
+            <div class="item-title">Circle USDC</div>
+            <div class="item-desc">Base Chain • Instant settlement</div>
+          </div>
+          <div class="item">
+            <div class="item-title">Pix (Brazil)</div>
+            <div class="item-desc">BCB • Real-time 24/7</div>
+          </div>
+          <div class="item">
+            <div class="item-title">SPEI (Mexico)</div>
+            <div class="item-desc">Banxico • Real-time</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Summary Stats -->
+    <div class="summary-box">
+      <h3>📊 AI-Native Infrastructure Summary</h3>
+      <div class="summary-grid">
+        <div class="summary-stat">
+          <div class="value">8</div>
+          <div class="label">New Epics (28-35)</div>
+        </div>
+        <div class="summary-stat">
+          <div class="value">158</div>
+          <div class="label">Story Points</div>
+        </div>
+        <div class="summary-stat">
+          <div class="value">14</div>
+          <div class="label">Weeks Timeline</div>
+        </div>
+        <div class="summary-stat">
+          <div class="value">48</div>
+          <div class="label">User Stories</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Implementation Phases -->
+    <div class="phases-section">
+      <h3>🗓️ Implementation Roadmap</h3>
+      <div class="phases-grid">
+        <div class="phase-card">
+          <div class="phase-num">Phase 1</div>
+          <div class="phase-title">Foundation</div>
+          <div class="phase-weeks">Weeks 1-3</div>
+          <div class="phase-points">30 pts</div>
+          <div class="item-desc" style="margin-top: 8px; font-size: 10px; color: #666;">
+            Structured responses, Tool discovery, Context API basics
+          </div>
+        </div>
+        <div class="phase-card">
+          <div class="phase-num">Phase 2</div>
+          <div class="phase-title">Simulation</div>
+          <div class="phase-weeks">Weeks 4-5</div>
+          <div class="phase-points">14 pts</div>
+          <div class="item-desc" style="margin-top: 8px; font-size: 10px; color: #666;">
+            Dry-run actions, Preview outcomes, Batch validation
+          </div>
+        </div>
+        <div class="phase-card">
+          <div class="phase-num">Phase 3</div>
+          <div class="phase-title">Workflows</div>
+          <div class="phase-weeks">Weeks 6-9</div>
+          <div class="phase-points">34 pts</div>
+          <div class="item-desc" style="margin-top: 8px; font-size: 10px; color: #666;">
+            Approval chains, Conditional logic, Multi-step processes
+          </div>
+        </div>
+        <div class="phase-card">
+          <div class="phase-num">Phase 4</div>
+          <div class="phase-title">Industry</div>
+          <div class="phase-weeks">Weeks 10-12</div>
+          <div class="phase-points">31 pts</div>
+          <div class="item-desc" style="margin-top: 8px; font-size: 10px; color: #666;">
+            Metadata, Decomposition, Onboarding APIs
+          </div>
+        </div>
+        <div class="phase-card">
+          <div class="phase-num">Phase 5</div>
+          <div class="phase-title">Polish</div>
+          <div class="phase-weeks">Weeks 13-14</div>
+          <div class="phase-points">18 pts</div>
+          <div class="item-desc" style="margin-top: 8px; font-size: 10px; color: #666;">
+            UI builders, Analytics, Documentation
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
