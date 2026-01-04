@@ -794,3 +794,282 @@ export interface X402VerifyPaymentResponse {
   transfer: Transfer;
 }
 
+// ============================================
+// AP2 Types (Agent Payment Protocol)
+// ============================================
+
+export type MandateStatus = 'active' | 'completed' | 'cancelled' | 'expired';
+export type MandateType = 'intent' | 'cart' | 'payment';
+
+export interface MandateExecution {
+  id: string;
+  executionIndex: number;
+  amount: number;
+  currency: string;
+  status: string;
+  transferId: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface Mandate {
+  id: string;
+  tenantId: string;
+  mandateId: string;
+  type: MandateType;
+  agent: {
+    id: string;
+    name: string;
+  };
+  account: {
+    id: string;
+    name: string;
+  };
+  amount: {
+    authorized: number;
+    used: number;
+    remaining: number;
+    currency: string;
+  };
+  executionCount: number;
+  status: MandateStatus;
+  expiresAt?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  executions?: MandateExecution[];
+}
+
+export interface CreateMandateInput {
+  mandateId: string; // The external AP2 ID
+  type: MandateType;
+  agentId: string;
+  accountId: string;
+  authorizedAmount: number;
+  currency?: string;
+  expiresAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateMandateInput {
+  status?: MandateStatus;
+  expiresAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecuteMandatePaymentInput {
+  amount: number;
+  currency: string;
+  description?: string;
+  authorizationProof?: string;
+}
+
+export interface MandatesListParams extends PaginationParams {
+  status?: MandateStatus;
+  agentId?: string;
+  accountId?: string;
+  search?: string;
+}
+
+// ============================================
+// ACP Types (Agentic Commerce Protocol)
+// ============================================
+
+export type CheckoutStatus = 'pending' | 'completed' | 'cancelled' | 'expired' | 'failed';
+
+export interface ACPCheckout {
+  id: string;
+  checkout_id: string;
+  session_id?: string;
+  agent_id: string;
+  agent_name?: string;
+  customer_id?: string;
+  customer_email?: string;
+  account_id: string;
+  merchant_id: string;
+  merchant_name?: string;
+  merchant_url?: string;
+  subtotal: number;
+  tax_amount: number;
+  shipping_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  currency: string;
+  status: CheckoutStatus;
+  shared_payment_token?: string;
+  payment_method?: string;
+  transfer_id?: string;
+  items?: ACPCheckoutItem[];
+  shipping_address?: Record<string, any>;
+  checkout_data?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+  cancelled_at?: string;
+  expires_at?: string;
+}
+
+export interface ACPCheckoutItem {
+  id: string;
+  item_id?: string;
+  name: string;
+  description?: string;
+  image_url?: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  currency: string;
+  item_data?: Record<string, any>;
+  created_at: string;
+}
+
+export interface ACPAnalytics {
+  period: string;
+  summary: {
+    totalRevenue: number;
+    totalFees: number;
+    netRevenue: number;
+    transactionCount: number;
+    completedCheckouts: number;
+    pendingCheckouts: number;
+    averageOrderValue: number;
+    uniqueMerchants: number;
+    uniqueAgents: number;
+  };
+  checkoutsByStatus: {
+    pending: number;
+    completed: number;
+    cancelled: number;
+    expired: number;
+    failed: number;
+  };
+  startDate: string;
+  endDate: string;
+}
+
+export interface CreateCheckoutInput {
+  checkout_id: string;
+  agent_id: string;
+  agent_name?: string;
+  customer_id?: string;
+  customer_email?: string;
+  account_id: string;
+  merchant_id: string;
+  merchant_name?: string;
+  merchant_url?: string;
+  items: Array<{
+    item_id?: string;
+    name: string;
+    description?: string;
+    image_url?: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+    currency?: string;
+  }>;
+  tax_amount?: number;
+  shipping_amount?: number;
+  discount_amount?: number;
+  currency?: string;
+  expires_at?: string;
+}
+
+export interface CheckoutsListParams extends PaginationParams {
+  status?: CheckoutStatus;
+  merchant_id?: string;
+  agent_id?: string;
+  customer_id?: string;
+}
+
+// ============================================
+// Treasury Types
+// ============================================
+
+export interface DashboardSummary {
+  // Core balance fields (from backend)
+  totalFloat: number;
+  totalAvailable: number;
+  totalPending: number;
+  totalReserved: number;
+  primaryCurrency: string;
+  
+  // Alert fields
+  openAlerts: number;
+  criticalAlerts: number;
+  pendingRecommendations: number;
+  
+  // Health metrics
+  healthScore: number; // 0-100
+  lastUpdated: string;
+  
+  // Flow metrics (24h)
+  inflows24h: number;
+  outflows24h: number;
+  netFlow24h: number;
+  
+  // Legacy aliases for backwards compatibility
+  totalBalance?: number;  // alias for totalFloat
+  alertsCount?: number;   // alias for openAlerts
+  accountsCount?: number;
+}
+
+export interface TreasuryAccount {
+  id: string;
+  tenantId: string;
+  rail: string;
+  currency: string;
+  externalAccountId?: string;
+  accountName?: string;
+  balanceTotal: number;
+  balanceAvailable: number;
+  balancePending: number;
+  balanceReserved: number;
+  minBalanceThreshold: number;
+  targetBalance: number;
+  maxBalance: number;
+  status: 'active' | 'inactive' | 'suspended';
+  lastSyncedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TreasuryTransaction {
+  id: string;
+  accountId: string;
+  type: 'inbound' | 'outbound' | 'rebalance_in' | 'rebalance_out' | 'fee' | 'adjustment';
+  amount: number;
+  currency: string;
+  balanceBefore: number;
+  balanceAfter: number;
+  referenceType?: string;
+  referenceId?: string;
+  externalTxId?: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface TreasuryAlert {
+  id: string;
+  alertType: string;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  message: string;
+  status: 'open' | 'acknowledged' | 'resolved';
+  accountId?: string;
+  acknowledgedBy?: string;
+  acknowledgedAt?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
+}
+
+export interface Recommendation {
+  id: string;
+  sourceAccountId: string;
+  targetAccountId: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'executed';
+  createdAt: string;
+}

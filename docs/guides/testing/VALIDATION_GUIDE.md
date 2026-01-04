@@ -87,11 +87,11 @@ LIMIT 5;
 ```bash
 # Get current balances
 curl "http://localhost:4000/v1/wallets/d199d814-5f53-4300-b1c8-81bd6ce5f00a" \
-  -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+  -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
   | jq '.data.balance'
 
 curl "http://localhost:4000/v1/wallets/7a1fa1b0-95a7-4b68-812c-fd7cf3504c13" \
-  -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+  -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
   | jq '.data.balance'
 ```
 

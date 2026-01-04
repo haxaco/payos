@@ -52,9 +52,19 @@ export default function AgentDetailPage() {
           api.agents.getLimits(agentId),
         ]);
 
-        setAgent(agentData);
-        setStreams(streamsData.data || []);
-        setLimits(limitsData);
+        // Handle potential double-nesting for agent data
+        const rawAgent = agentData as any;
+        const processedAgent = rawAgent.data?.data || rawAgent.data || rawAgent;
+        setAgent(processedAgent);
+
+        // Handle both array and object responses for streams
+        const rawStreams = streamsData?.data;
+        const streamsArray = Array.isArray(rawStreams) ? rawStreams : (Array.isArray((rawStreams as any)?.data) ? (rawStreams as any).data : []);
+        setStreams(streamsArray);
+
+        // Handle limits nesting if needed
+        const rawLimits = limitsData as any;
+        setLimits(rawLimits.data?.data || rawLimits.data || rawLimits);
       } catch (error) {
         console.error('Failed to fetch agent:', error);
       } finally {
@@ -107,7 +117,7 @@ export default function AgentDetailPage() {
   const handleRotateToken = async () => {
     if (!api || !agent) return;
     if (!confirm('Are you sure you want to rotate the token? The current token will be revoked.')) return;
-    
+
     setActionLoading(true);
     try {
       const result = await api.agents.rotateToken(agentId);
@@ -152,7 +162,7 @@ export default function AgentDetailPage() {
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Bot },
-    { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
+    { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: Array.isArray(streams) ? streams.length : 0 },
     { id: 'kya' as TabType, label: 'KYA', icon: Shield },
     { id: 'activity' as TabType, label: 'Activity', icon: History },
   ];
@@ -219,17 +229,16 @@ export default function AgentDetailPage() {
         {/* Actions */}
         <div className="flex items-center gap-3">
           {/* Quick Actions */}
-          <AgentQuickActions 
-            agent={{ id: agent.id, name: agent.name, status: agent.status }} 
+          <AgentQuickActions
+            agent={{ id: agent.id, name: agent.name, status: agent.status }}
           />
 
-          <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${
-            agent.status === 'active'
-              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-              : agent.status === 'paused'
+          <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${agent.status === 'active'
+            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+            : agent.status === 'paused'
               ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
               : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-          }`}>
+            }`}>
             {agent.status}
           </span>
 
@@ -309,11 +318,11 @@ export default function AgentDetailPage() {
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Active Streams</div>
           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-            {streams.filter(s => s.status === 'active').length}
+            {(Array.isArray(streams) ? streams : []).filter(s => s.status === 'active').length}
           </div>
         </div>
         <Link
-          href={`/dashboard/accounts/${agent.parentAccount.id}`}
+          href={`/dashboard/accounts/${agent.parentAccount?.id || (agent as any).parent_account_id || '#'}`}
           className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 hover:shadow-lg transition-shadow"
         >
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Parent Account</div>
@@ -325,7 +334,7 @@ export default function AgentDetailPage() {
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Daily Limit</div>
           <div className="text-2xl font-bold text-gray-900 dark:text-white">
-            ${limits?.effectiveLimits?.daily.toLocaleString() || '0'}
+            ${limits?.effectiveLimits?.daily?.toLocaleString() || '0'}
           </div>
         </div>
       </div>
@@ -337,11 +346,10 @@ export default function AgentDetailPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
             >
               <tab.icon className="h-4 w-4" />
               {tab.label}
@@ -521,19 +529,19 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
           <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
             <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Daily Limit</div>
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              ${limits?.effectiveLimits?.daily.toLocaleString() || '0'}
+              ${limits?.effectiveLimits?.daily?.toLocaleString() || '0'}
             </div>
           </div>
           <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
             <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Monthly Limit</div>
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              ${limits?.effectiveLimits?.monthly.toLocaleString() || '0'}
+              ${limits?.effectiveLimits?.monthly?.toLocaleString() || '0'}
             </div>
           </div>
           <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
             <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Per Transaction</div>
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              ${limits?.effectiveLimits?.perTransaction.toLocaleString() || '0'}
+              ${limits?.effectiveLimits?.perTransaction?.toLocaleString() || '0'}
             </div>
           </div>
         </div>
@@ -548,7 +556,7 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-500 dark:text-gray-400">Daily Usage</span>
               <span className="text-gray-900 dark:text-white">
-                ${limits?.usage?.daily.toLocaleString() || '0'} / ${limits?.effectiveLimits?.daily.toLocaleString() || '0'}
+                ${limits?.usage?.daily?.toLocaleString() || '0'} / ${limits?.effectiveLimits?.daily?.toLocaleString() || '0'}
               </span>
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -564,7 +572,7 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-500 dark:text-gray-400">Monthly Usage</span>
               <span className="text-gray-900 dark:text-white">
-                ${limits?.usage?.monthly.toLocaleString() || '0'} / ${limits?.effectiveLimits?.monthly.toLocaleString() || '0'}
+                ${limits?.usage?.monthly?.toLocaleString() || '0'} / ${limits?.effectiveLimits?.monthly?.toLocaleString() || '0'}
               </span>
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">

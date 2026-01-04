@@ -1,7 +1,8 @@
 {
   "name": "@payos/x402-provider-sdk",
   "version": "0.1.0",
-  "description": "Provider SDK for monetizing APIs with x402 - HTTP 402 Payment Required middleware",
+  "deprecated": "This package is deprecated. Please use @payos/sdk instead. See https://docs.payos.ai/migration for migration guide.",
+  "description": "[DEPRECATED] Provider SDK for monetizing APIs with x402 - HTTP 402 Payment Required middleware. Use @payos/sdk instead.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

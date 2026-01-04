@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Bot, Plus, Search, Filter, Wallet as WalletIcon, Settings, MoreVertical } from 'lucide-react';
@@ -13,7 +15,7 @@ interface AgentWithWallet extends Agent {
 
 export default function X402AgentsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const [agents, setAgents] = useState<AgentWithWallet[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -29,15 +31,27 @@ export default function X402AgentsPage() {
       try {
         // Fetch agents
         const agentsResponse = await api.agents.list({ limit: 50 });
-        const agentsData = agentsResponse.data || [];
+        // Fetch agents
+        const rawAgents = (agentsResponse as any).data;
+        const agentsData = Array.isArray(rawAgents)
+          ? rawAgents
+          : (Array.isArray((rawAgents as any)?.data)
+            ? (rawAgents as any).data
+            : []);
 
         // Fetch wallets
         const walletsResponse = await api.wallets.list({ limit: 100 });
-        const walletsData = walletsResponse.data || [];
+        // Fetch wallets
+        const rawWallets = (walletsResponse as any).data;
+        const walletsData = Array.isArray(rawWallets)
+          ? rawWallets
+          : (Array.isArray((rawWallets as any)?.data)
+            ? (rawWallets as any).data
+            : []);
 
         // Match agents with their wallets
-        const agentsWithWallets = agentsData.map(agent => {
-          const wallet = walletsData.find(w => w.managedByAgentId === agent.id);
+        const agentsWithWallets = agentsData.map((agent: any) => {
+          const wallet = walletsData.find((w: any) => w.managedByAgentId === agent.id);
           return { ...agent, wallet };
         });
 
@@ -59,6 +73,22 @@ export default function X402AgentsPage() {
   // Calculate stats
   const agentsWithWallets = agents.filter(a => a.wallet).length;
   const totalWalletBalance = agents.reduce((sum, a) => sum + (a.wallet?.balance || 0), 0);
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Agent x402 Configuration</h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Manage autonomous agents with x402 payment capabilities
+            </p>
+          </div>
+        </div>
+        <CardListSkeleton count={6} />
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -183,7 +213,7 @@ export default function X402AgentsPage() {
             )}
           </div>
         ) : (
-          filteredAgents.map((agent) => (
+          filteredAgents.map((agent: any) => (
             <div
               key={agent.id}
               className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
@@ -193,13 +223,12 @@ export default function X402AgentsPage() {
                   <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                    agent.status === 'active'
-                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                      : agent.status === 'paused'
+                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${agent.status === 'active'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                    : agent.status === 'paused'
                       ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
                       : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                  }`}>
+                    }`}>
                     {agent.status}
                   </span>
                   <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">

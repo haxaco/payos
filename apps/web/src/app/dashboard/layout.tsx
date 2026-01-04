@@ -12,10 +12,10 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const user = await getUser();
-  
-  if (!user) {
-    redirect('/auth/login');
-  }
+
+  // Middleware handles auth redirection, so we don't need to double-check here
+  // which can cause race conditions if the session cookie is being updated
+  await getUser();
 
   return (
     <LocaleProvider>

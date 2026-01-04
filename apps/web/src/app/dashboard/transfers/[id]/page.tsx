@@ -34,6 +34,10 @@ export default function TransferDetailPage() {
     enabled: !!api && isConfigured,
   });
 
+  // Handle potential nested response
+  const transferData = transfer as any;
+  const safeTransfer = transferData?.data || transferData;
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
@@ -103,7 +107,7 @@ export default function TransferDetailPage() {
     );
   }
 
-  if (error || !transfer) {
+  if (error || !safeTransfer) {
     return (
       <div className="p-8 max-w-[1600px] mx-auto">
         <Link
@@ -124,7 +128,7 @@ export default function TransferDetailPage() {
     );
   }
 
-  const isX402 = transfer.type === 'x402';
+  const isX402 = safeTransfer.type === 'x402';
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto">
@@ -140,29 +144,28 @@ export default function TransferDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
-            transfer.status === 'completed' 
-              ? 'bg-emerald-100 dark:bg-emerald-950' 
-              : transfer.status === 'pending'
-              ? 'bg-yellow-100 dark:bg-yellow-950'
-              : 'bg-red-100 dark:bg-red-950'
-          }`}>
-            {getStatusIcon(transfer.status)}
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${safeTransfer.status === 'completed'
+              ? 'bg-emerald-100 dark:bg-emerald-950'
+              : safeTransfer.status === 'pending'
+                ? 'bg-yellow-100 dark:bg-yellow-950'
+                : 'bg-red-100 dark:bg-red-950'
+            }`}>
+            {getStatusIcon(safeTransfer.status)}
           </div>
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                ${transfer.amount.toFixed(4)} {transfer.currency}
+                ${(safeTransfer.amount || 0).toFixed(4)} {safeTransfer.currency}
               </h1>
-              <span className={`px-3 py-1 text-xs font-medium rounded-full ${getTypeColor(transfer.type)}`}>
-                {transfer.type.toUpperCase()}
+              <span className={`px-3 py-1 text-xs font-medium rounded-full ${getTypeColor(safeTransfer.type)}`}>
+                {safeTransfer.type.toUpperCase()}
               </span>
-              <span className={`px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(transfer.status)}`}>
-                {transfer.status}
+              <span className={`px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(safeTransfer.status)}`}>
+                {safeTransfer.status}
               </span>
             </div>
             <p className="text-gray-500 dark:text-gray-400">
-              {new Date(transfer.createdAt).toLocaleString()}
+              {new Date(safeTransfer.createdAt).toLocaleString()}
             </p>
           </div>
         </div>
@@ -181,13 +184,13 @@ export default function TransferDetailPage() {
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">From</p>
                 <p className="font-medium text-gray-900 dark:text-white">
-                  {transfer.from?.accountName || 'Unknown Account'}
+                  {safeTransfer.from?.accountName || 'Unknown Account'}
                 </p>
-                <Link 
-                  href={`/dashboard/accounts/${transfer.from?.accountId}`}
+                <Link
+                  href={`/dashboard/accounts/${safeTransfer.from?.accountId}`}
                   className="text-xs text-blue-600 hover:underline font-mono"
                 >
-                  {transfer.from?.accountId?.slice(0, 8)}...
+                  {safeTransfer.from?.accountId?.slice(0, 8)}...
                 </Link>
               </div>
             </div>
@@ -201,7 +204,7 @@ export default function TransferDetailPage() {
               <div className="h-px w-12 bg-gray-300 dark:bg-gray-700"></div>
             </div>
             <p className="text-center text-sm font-medium text-gray-900 dark:text-white mt-1">
-              ${transfer.amount.toFixed(4)}
+              ${(safeTransfer.amount || 0).toFixed(4)}
             </p>
           </div>
 
@@ -211,13 +214,13 @@ export default function TransferDetailPage() {
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">To</p>
                 <p className="font-medium text-gray-900 dark:text-white">
-                  {transfer.to?.accountName || 'Unknown Account'}
+                  {safeTransfer.to?.accountName || 'Unknown Account'}
                 </p>
-                <Link 
-                  href={`/dashboard/accounts/${transfer.to?.accountId}`}
+                <Link
+                  href={`/dashboard/accounts/${safeTransfer.to?.accountId}`}
                   className="text-xs text-blue-600 hover:underline font-mono"
                 >
-                  {transfer.to?.accountId?.slice(0, 8)}...
+                  {safeTransfer.to?.accountId?.slice(0, 8)}...
                 </Link>
               </div>
               <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center">
@@ -238,56 +241,56 @@ export default function TransferDetailPage() {
           <dl className="space-y-4">
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Transfer ID</dt>
-              <dd className="font-mono text-sm text-gray-900 dark:text-white">{transfer.id}</dd>
+              <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.id}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Type</dt>
-              <dd className="text-gray-900 dark:text-white capitalize">{transfer.type}</dd>
+              <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.type}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Status</dt>
-              <dd className="text-gray-900 dark:text-white capitalize">{transfer.status}</dd>
+              <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.status}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Amount</dt>
               <dd className="font-mono text-gray-900 dark:text-white">
-                {transfer.amount.toFixed(8)} {transfer.currency}
+                {(safeTransfer.amount || 0).toFixed(8)} {safeTransfer.currency}
               </dd>
             </div>
-            {transfer.fees?.amount && transfer.fees.amount > 0 && (
+            {safeTransfer.fees?.amount && safeTransfer.fees.amount > 0 && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Fees</dt>
                 <dd className="font-mono text-gray-900 dark:text-white">
-                  {transfer.fees.amount.toFixed(8)} {transfer.fees.currency || transfer.currency}
+                  {safeTransfer.fees.amount.toFixed(8)} {safeTransfer.fees.currency || safeTransfer.currency}
                 </dd>
               </div>
             )}
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Created</dt>
               <dd className="text-gray-900 dark:text-white">
-                {new Date(transfer.createdAt).toLocaleString()}
+                {new Date(safeTransfer.createdAt).toLocaleString()}
               </dd>
             </div>
-            {transfer.completedAt && (
+            {safeTransfer.completedAt && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Completed</dt>
                 <dd className="text-gray-900 dark:text-white">
-                  {new Date(transfer.completedAt).toLocaleString()}
+                  {new Date(safeTransfer.completedAt).toLocaleString()}
                 </dd>
               </div>
             )}
-            {transfer.failedAt && (
+            {safeTransfer.failedAt && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Failed</dt>
                 <dd className="text-red-600">
-                  {new Date(transfer.failedAt).toLocaleString()}
+                  {new Date(safeTransfer.failedAt).toLocaleString()}
                 </dd>
               </div>
             )}
-            {transfer.failureReason && (
+            {safeTransfer.failureReason && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Failure Reason</dt>
-                <dd className="text-red-600">{transfer.failureReason}</dd>
+                <dd className="text-red-600">{safeTransfer.failureReason}</dd>
               </div>
             )}
           </dl>
@@ -302,22 +305,22 @@ export default function TransferDetailPage() {
           <dl className="space-y-4">
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Actor Type</dt>
-              <dd className="text-gray-900 dark:text-white capitalize">{transfer.initiatedBy?.type || 'Unknown'}</dd>
+              <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.initiatedBy?.type || 'Unknown'}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500 dark:text-gray-400">Actor ID</dt>
-              <dd className="font-mono text-sm text-gray-900 dark:text-white">{transfer.initiatedBy?.id || 'N/A'}</dd>
+              <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.initiatedBy?.id || 'N/A'}</dd>
             </div>
-            {transfer.initiatedBy?.name && (
+            {safeTransfer.initiatedBy?.name && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Actor Name</dt>
-                <dd className="text-gray-900 dark:text-white">{transfer.initiatedBy.name}</dd>
+                <dd className="text-gray-900 dark:text-white">{safeTransfer.initiatedBy.name}</dd>
               </div>
             )}
-            {transfer.idempotencyKey && (
+            {safeTransfer.idempotencyKey && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Idempotency Key</dt>
-                <dd className="font-mono text-sm text-gray-900 dark:text-white">{transfer.idempotencyKey}</dd>
+                <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.idempotencyKey}</dd>
               </div>
             )}
           </dl>
@@ -325,7 +328,7 @@ export default function TransferDetailPage() {
       </div>
 
       {/* x402 Metadata Section */}
-      {isX402 && transfer.x402Metadata && (
+      {isX402 && safeTransfer.x402Metadata && (
         <div className="bg-purple-50 dark:bg-gray-900 rounded-2xl border border-purple-200 dark:border-purple-500/30 p-6 mb-6">
           <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-300 mb-4 flex items-center gap-2">
             <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
@@ -339,31 +342,31 @@ export default function TransferDetailPage() {
                 Endpoint Information
               </h4>
               <dl className="space-y-3">
-                {transfer.x402Metadata.endpoint_path && (
+                {safeTransfer.x402Metadata.endpoint_path && (
                   <div className="flex justify-between">
                     <dt className="text-purple-600 dark:text-gray-400">Path</dt>
                     <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      {transfer.x402Metadata.endpoint_path}
+                      {safeTransfer.x402Metadata.endpoint_path}
                     </dd>
                   </div>
                 )}
-                {transfer.x402Metadata.endpoint_method && (
+                {safeTransfer.x402Metadata.endpoint_method && (
                   <div className="flex justify-between">
                     <dt className="text-purple-600 dark:text-gray-400">Method</dt>
                     <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      {transfer.x402Metadata.endpoint_method}
+                      {safeTransfer.x402Metadata.endpoint_method}
                     </dd>
                   </div>
                 )}
-                {transfer.x402Metadata.endpoint_id && (
+                {safeTransfer.x402Metadata.endpoint_id && (
                   <div className="flex justify-between">
                     <dt className="text-purple-600 dark:text-gray-400">Endpoint ID</dt>
                     <dd className="font-mono text-xs text-purple-900 dark:text-white">
-                      <Link 
-                        href={`/dashboard/x402/endpoints/${transfer.x402Metadata.endpoint_id}`}
+                      <Link
+                        href={`/dashboard/x402/endpoints/${safeTransfer.x402Metadata.endpoint_id}`}
                         className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
                       >
-                        {transfer.x402Metadata.endpoint_id.slice(0, 8)}...
+                        {safeTransfer.x402Metadata.endpoint_id.slice(0, 8)}...
                         <ExternalLink className="h-3 w-3" />
                       </Link>
                     </dd>
@@ -379,41 +382,41 @@ export default function TransferDetailPage() {
                 Wallet & Settlement
               </h4>
               <dl className="space-y-3">
-                {transfer.x402Metadata.wallet_id && (
+                {safeTransfer.x402Metadata.wallet_id && (
                   <div className="flex justify-between">
                     <dt className="text-purple-600 dark:text-gray-400">Wallet ID</dt>
                     <dd className="font-mono text-xs text-purple-900 dark:text-white">
-                      <Link 
-                        href={`/dashboard/wallets?search=${transfer.x402Metadata.wallet_id}`}
+                      <Link
+                        href={`/dashboard/wallets?search=${safeTransfer.x402Metadata.wallet_id}`}
                         className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
                       >
-                        {transfer.x402Metadata.wallet_id.slice(0, 8)}...
+                        {safeTransfer.x402Metadata.wallet_id.slice(0, 8)}...
                         <ExternalLink className="h-3 w-3" />
                       </Link>
                     </dd>
                   </div>
                 )}
-                {transfer.x402Metadata.price_calculated !== undefined && (
+                {safeTransfer.x402Metadata.price_calculated !== undefined && (
                   <div className="flex justify-between">
                     <dt className="text-purple-600 dark:text-gray-400">Price</dt>
                     <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      ${transfer.x402Metadata.price_calculated?.toFixed(4)}
+                      ${safeTransfer.x402Metadata.price_calculated?.toFixed(4)}
                     </dd>
                   </div>
                 )}
-                {transfer.x402Metadata.settlement_fee !== undefined && (
+                {safeTransfer.x402Metadata.settlement_fee !== undefined && (
                   <div className="flex justify-between">
                     <dt className="text-purple-600 dark:text-gray-400">Settlement Fee</dt>
                     <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      ${transfer.x402Metadata.settlement_fee?.toFixed(4)}
+                      ${safeTransfer.x402Metadata.settlement_fee?.toFixed(4)}
                     </dd>
                   </div>
                 )}
-                {transfer.x402Metadata.settlement_net_amount !== undefined && (
+                {safeTransfer.x402Metadata.settlement_net_amount !== undefined && (
                   <div className="flex justify-between">
                     <dt className="text-purple-600 dark:text-gray-400">Net Amount</dt>
                     <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      ${transfer.x402Metadata.settlement_net_amount?.toFixed(4)}
+                      ${safeTransfer.x402Metadata.settlement_net_amount?.toFixed(4)}
                     </dd>
                   </div>
                 )}
@@ -428,27 +431,27 @@ export default function TransferDetailPage() {
               Request Details
             </h4>
             <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {transfer.x402Metadata.request_id && (
+              {safeTransfer.x402Metadata.request_id && (
                 <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
                   <dt className="text-purple-600 dark:text-gray-400 text-sm">Request ID</dt>
                   <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
-                    {transfer.x402Metadata.request_id}
+                    {safeTransfer.x402Metadata.request_id}
                   </dd>
                 </div>
               )}
-              {transfer.x402Metadata.timestamp && (
+              {safeTransfer.x402Metadata.timestamp && (
                 <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
                   <dt className="text-purple-600 dark:text-gray-400 text-sm">Timestamp</dt>
                   <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
-                    {transfer.x402Metadata.timestamp}
+                    {safeTransfer.x402Metadata.timestamp}
                   </dd>
                 </div>
               )}
-              {transfer.x402Metadata.volume_tier !== undefined && (
+              {safeTransfer.x402Metadata.volume_tier !== undefined && (
                 <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
                   <dt className="text-purple-600 dark:text-gray-400 text-sm">Volume Tier</dt>
                   <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
-                    {transfer.x402Metadata.volume_tier} calls
+                    {safeTransfer.x402Metadata.volume_tier} calls
                   </dd>
                 </div>
               )}
@@ -456,7 +459,7 @@ export default function TransferDetailPage() {
           </div>
 
           {/* Fee Calculation Breakdown */}
-          {transfer.x402Metadata.fee_calculation && (
+          {safeTransfer.x402Metadata.fee_calculation && (
             <div className="mt-6 pt-6 border-t border-purple-200 dark:border-gray-700">
               <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
                 <DollarSign className="h-4 w-4" />
@@ -466,25 +469,25 @@ export default function TransferDetailPage() {
                 <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
                   <dt className="text-purple-600 dark:text-gray-400 text-sm">Gross Amount</dt>
                   <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
-                    ${transfer.x402Metadata.fee_calculation.grossAmount?.toFixed(4)}
+                    ${safeTransfer.x402Metadata.fee_calculation.grossAmount?.toFixed(4)}
                   </dd>
                 </div>
                 <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
                   <dt className="text-purple-600 dark:text-gray-400 text-sm">Fee Amount</dt>
                   <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
-                    ${transfer.x402Metadata.fee_calculation.feeAmount?.toFixed(4)}
+                    ${safeTransfer.x402Metadata.fee_calculation.feeAmount?.toFixed(4)}
                   </dd>
                 </div>
                 <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
                   <dt className="text-purple-600 dark:text-gray-400 text-sm">Net Amount</dt>
                   <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
-                    ${transfer.x402Metadata.fee_calculation.netAmount?.toFixed(4)}
+                    ${safeTransfer.x402Metadata.fee_calculation.netAmount?.toFixed(4)}
                   </dd>
                 </div>
                 <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
                   <dt className="text-purple-600 dark:text-gray-400 text-sm">Fee Type</dt>
                   <dd className="text-sm text-purple-900 dark:text-white capitalize mt-1">
-                    {transfer.x402Metadata.fee_calculation.feeType}
+                    {safeTransfer.x402Metadata.fee_calculation.feeType}
                   </dd>
                 </div>
               </dl>
@@ -494,26 +497,26 @@ export default function TransferDetailPage() {
       )}
 
       {/* Cross-Border Details */}
-      {(transfer.destinationAmount || transfer.fxRate) && (
+      {(safeTransfer.destinationAmount || safeTransfer.fxRate) && (
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <Globe className="h-5 w-5" />
             Cross-Border Details
           </h3>
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {transfer.destinationAmount && (
+            {safeTransfer.destinationAmount && (
               <div>
                 <dt className="text-gray-500 dark:text-gray-400 text-sm">Destination Amount</dt>
                 <dd className="font-mono text-gray-900 dark:text-white">
-                  {transfer.destinationAmount.toFixed(2)} {transfer.destinationCurrency}
+                  {safeTransfer.destinationAmount.toFixed(2)} {safeTransfer.destinationCurrency}
                 </dd>
               </div>
             )}
-            {transfer.fxRate && (
+            {safeTransfer.fxRate && (
               <div>
                 <dt className="text-gray-500 dark:text-gray-400 text-sm">Exchange Rate</dt>
                 <dd className="font-mono text-gray-900 dark:text-white">
-                  {transfer.fxRate.toFixed(4)}
+                  {safeTransfer.fxRate.toFixed(4)}
                 </dd>
               </div>
             )}
@@ -522,11 +525,11 @@ export default function TransferDetailPage() {
       )}
 
       {/* Stream Link */}
-      {transfer.streamId && (
+      {safeTransfer.streamId && (
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Related Stream</h3>
-          <Link 
-            href={`/dashboard/streams/${transfer.streamId}`}
+          <Link
+            href={`/dashboard/streams/${safeTransfer.streamId}`}
             className="inline-flex items-center gap-2 text-blue-600 hover:underline"
           >
             View Stream

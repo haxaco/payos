@@ -9,7 +9,7 @@ import { CardListSkeleton } from '@/components/ui/skeletons';
 
 export default function CompliancePage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
 
   // Fetch total count
   const { data: countData } = useQuery({
@@ -24,7 +24,7 @@ export default function CompliancePage() {
 
   // Initialize pagination
   const pagination = usePagination({
-    totalItems: countData?.pagination?.total || 0,
+    totalItems: (countData as any)?.data?.pagination?.total || (countData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
@@ -38,15 +38,46 @@ export default function CompliancePage() {
         offset: (pagination.page - 1) * pagination.pageSize,
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const flags = flagsData?.data || [];
+  // Handle both array and object responses - API may return { data: [...] } or [...]
+  const rawFlags = (flagsData as any)?.data;
+  const flags = Array.isArray(rawFlags) ? rawFlags : (Array.isArray((rawFlags as any)?.data) ? (rawFlags as any).data : []);
 
-  const highRisk = flags.filter((f: any) => f.riskLevel === 'high' || f.riskLevel === 'critical').length;
-  const mediumRisk = flags.filter((f: any) => f.riskLevel === 'medium').length;
-  const lowRisk = flags.filter((f: any) => f.riskLevel === 'low').length;
+  // Fetch stats (global counts)
+  const { data: statsData } = useQuery({
+    queryKey: ['compliance', 'stats'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.compliance.getStats();
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
+
+  const stats = (statsData as any)?.data || {};
+
+  const highRisk = stats?.by_risk_level?.high + (stats?.by_risk_level?.critical || 0) || 0;
+  const mediumRisk = stats?.by_risk_level?.medium || 0;
+  const lowRisk = stats?.by_risk_level?.low || 0;
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Compliance</h1>
+            <p className="text-gray-600 dark:text-gray-400">Monitor and manage compliance flags</p>
+          </div>
+        </div>
+        <div className="p-6">
+          <CardListSkeleton count={5} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto space-y-8">
@@ -150,46 +181,53 @@ export default function CompliancePage() {
                 key={flag.id}
                 className="p-6 hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors cursor-pointer flex items-start gap-4"
               >
-                <div className={`w-2 h-2 rounded-full mt-2 ${
-                  flag.riskLevel === 'high' || flag.riskLevel === 'critical'
-                    ? 'bg-red-500'
-                    : flag.riskLevel === 'medium'
+                <div className={`w-2 h-2 rounded-full mt-2 ${flag.riskLevel === 'high' || flag.riskLevel === 'critical'
+                  ? 'bg-red-500'
+                  : flag.riskLevel === 'medium'
                     ? 'bg-amber-500'
                     : 'bg-blue-500'
-                }`} />
+                  }`} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-4 mb-1">
-                    <h3 className="font-medium text-gray-900 dark:text-white">
-                      {flag.reasonCode?.replace(/_/g, ' ') || 'Unknown reason'}
-                    </h3>
-                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
-                      flag.riskLevel === 'high' || flag.riskLevel === 'critical'
-                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'
-                        : flag.riskLevel === 'medium'
+                  <div className="flex items-start justify-between gap-4 mb-2">
+                    <div className="space-y-1">
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        {(flag.reasonCode || flag.reason_code || 'Unknown reason').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                      </h3>
+                      {Array.isArray(flag.reasons) && flag.reasons.length > 0 ? (
+                        <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 pl-1">
+                          {flag.reasons.map((reason: string, idx: number) => (
+                            <li key={idx}>{reason}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        flag.description && (
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {flag.description}
+                          </p>
+                        )
+                      )}
+                    </div>
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap flex-shrink-0 ${flag.riskLevel === 'high' || flag.riskLevel === 'critical'
+                      ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'
+                      : flag.riskLevel === 'medium'
                         ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
                         : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400'
-                    }`}>
+                      }`}>
                       {flag.riskLevel}
                     </span>
                   </div>
-                  {flag.description && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                      {flag.description}
-                    </p>
-                  )}
                   <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {new Date(flag.createdAt).toLocaleString()}
+                      {new Date(flag.createdAt || flag.created_at || Date.now()).toLocaleString()}
                     </span>
                     {flag.status && (
-                      <span className={`px-2 py-0.5 rounded-full ${
-                        flag.status === 'resolved'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
-                          : flag.status === 'under_investigation'
+                      <span className={`px-2 py-0.5 rounded-full ${flag.status === 'resolved'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
+                        : flag.status === 'under_investigation'
                           ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400'
                           : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                      }`}>
+                        }`}>
                         {flag.status?.replace(/_/g, ' ') || flag.status}
                       </span>
                     )}

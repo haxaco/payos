@@ -6,7 +6,7 @@
  * Setup:
  *   1. Create an agent in PayOS dashboard
  *   2. Agent automatically gets: API key + wallet
- *   3. Set environment variable: PAYOS_API_KEY=ak_xxx
+ *   3. Create .env file with: PAYOS_API_KEY, PAYOS_AGENT_ID, PAYOS_WALLET_ID
  *   4. Run: pnpm dev
  * 
  * Usage:
@@ -17,6 +17,7 @@
  *   pnpm dev --status           # Check wallet/spending status
  */
 
+import 'dotenv/config';
 import { X402Client } from '@payos/x402-client-sdk';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -25,11 +26,11 @@ import ora from 'ora';
 // Configuration
 // ============================================
 
-const WEATHER_API_URL = process.env.WEATHER_API_URL || 'http://localhost:4000';
+const WEATHER_API_URL = process.env.PROVIDER_API_URL || 'http://localhost:4001';
 const DEBUG = process.env.DEBUG === 'true';
 
 // Validate required environment variables
-if (!process.env.PAYOS_API_KEY || !process.env.PAYOS_AGENT_ID) {
+if (!process.env.PAYOS_API_KEY || !process.env.PAYOS_AGENT_ID || !process.env.PAYOS_WALLET_ID) {
   console.error(`
 ${chalk.red('╔══════════════════════════════════════════════════════════════════╗')}
 ${chalk.red('║')}  ${chalk.red('❌ Missing required environment variables')}                       ${chalk.red('║')}
@@ -60,7 +61,9 @@ ${chalk.red('╚═════════════════════�
 
 const x402 = new X402Client({
   apiKey: process.env.PAYOS_API_KEY,
-  agentId: process.env.PAYOS_AGENT_ID,  // Wallet is looked up from agent
+  agentId: process.env.PAYOS_AGENT_ID,
+  walletId: process.env.PAYOS_WALLET_ID,  // Explicit wallet ID (workaround)
+  apiUrl: process.env.PAYOS_API_URL,
   
   // Safety limits (optional)
   maxAutoPayAmount: 0.10,   // Don't auto-pay more than $0.10 per request

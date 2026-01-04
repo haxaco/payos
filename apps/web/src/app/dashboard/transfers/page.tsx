@@ -3,12 +3,12 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { 
-  ArrowLeftRight, 
-  Plus, 
-  Search, 
-  Filter, 
-  ArrowUpRight, 
+import {
+  ArrowLeftRight,
+  Plus,
+  Search,
+  Filter,
+  ArrowUpRight,
   Download,
   FileText,
   FileSpreadsheet,
@@ -31,14 +31,16 @@ import { RefundModal } from '@/components/transfers/refund-modal';
 import { ExportModal } from '@/components/transfers/export-modal';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
+import { ProtocolBadge } from '@/components/agentic-payments/protocol-badge';
 
 export default function TransfersPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [protocolFilter, setProtocolFilter] = useState<string>('all');
   const [initiatedByFilter, setInitiatedByFilter] = useState<string>('all');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -59,7 +61,7 @@ export default function TransfersPage() {
 
   // Initialize pagination
   const pagination = usePagination({
-    totalItems: countData?.pagination?.total || 0,
+    totalItems: (countData as any)?.data?.pagination?.total || (countData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
@@ -80,13 +82,19 @@ export default function TransfersPage() {
         limit: pagination.pageSize,
         status: statusFilter !== 'all' ? (statusFilter as TransferStatus) : undefined,
         type: typeFilter !== 'all' ? (typeFilter as TransferType) : undefined,
+        // Protocol filtering would happen here ideally, or client side
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const transfers = transfersData?.data || [];
+  const rawData = (transfersData as any)?.data;
+  const transfers = Array.isArray(rawData)
+    ? rawData
+    : (Array.isArray((rawData as any)?.data)
+      ? (rawData as any).data
+      : []);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -99,20 +107,25 @@ export default function TransfersPage() {
   };
 
   // Client-side filtering for search and initiatedBy (not yet supported by API)
-  const filteredTransfers = transfers.filter(transfer => {
-    const matchesSearch = 
+  const filteredTransfers = transfers.filter((transfer: any) => {
+    const matchesSearch =
       !search ||
       transfer.from?.accountName?.toLowerCase().includes(search.toLowerCase()) ||
       transfer.to?.accountName?.toLowerCase().includes(search.toLowerCase()) ||
       transfer.id.toLowerCase().includes(search.toLowerCase());
-    
+
     const matchesInitiatedBy = initiatedByFilter === 'all' || transfer.initiatedBy?.type === initiatedByFilter;
-    
-    return matchesSearch && matchesInitiatedBy;
+
+    // Mock protocol check (assuming type maps to protocol or metadata)
+    const matchesProtocol = protocolFilter === 'all'
+      || (transfer.type === 'x402' && protocolFilter === 'x402')
+      || ((transfer as any).protocolMetadata?.protocol === protocolFilter);
+
+    return matchesSearch && matchesInitiatedBy && matchesProtocol;
   });
 
   const exportData = (format: 'csv' | 'json' | 'pdf') => {
-    const data = filteredTransfers.map(t => ({
+    const data = filteredTransfers.map((t: any) => ({
       id: t.id,
       type: t.type,
       from: t.from?.accountName || 'External',
@@ -125,8 +138,8 @@ export default function TransfersPage() {
 
     if (format === 'csv') {
       const headers = ['ID', 'Type', 'From', 'To', 'Amount', 'Currency', 'Status', 'Date'];
-      const rows = data.map(d => [d.id, d.type, d.from, d.to, d.amount, d.currency, d.status, d.createdAt]);
-      const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+      const rows = data.map((d: any) => [d.id, d.type, d.from, d.to, d.amount, d.currency, d.status, d.createdAt]);
+      const csv = [headers, ...rows].map((r: any) => r.join(',')).join('\n');
       downloadFile(csv, 'transactions.csv', 'text/csv');
     } else if (format === 'json') {
       const json = JSON.stringify(data, null, 2);
@@ -153,6 +166,22 @@ export default function TransfersPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Transactions</h1>
+            <p className="text-gray-600 dark:text-gray-400">View and manage all transfers</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+          <TableSkeleton rows={8} columns={6} />
+        </div>
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -185,7 +214,7 @@ export default function TransfersPage() {
         <div className="flex items-center gap-2">
           {/* Export Dropdown */}
           <div className="relative">
-            <button 
+            <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
             >
@@ -275,6 +304,17 @@ export default function TransfersPage() {
           <option value="agent">🤖 Agent</option>
           <option value="user">👤 Manual</option>
         </select>
+        {/* Protocol Filter */}
+        <select
+          value={protocolFilter}
+          onChange={(e) => setProtocolFilter(e.target.value)}
+          className="px-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Protocols</option>
+          <option value="x402">⚡ x402</option>
+          <option value="ap2">🤖 AP2</option>
+          <option value="acp">🛒 ACP</option>
+        </select>
       </div>
 
       {/* Results count */}
@@ -313,14 +353,14 @@ export default function TransfersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-              {filteredTransfers.map((transfer) => (
-                <tr 
-                  key={transfer.id} 
+              {filteredTransfers.map((transfer: any) => (
+                <tr
+                  key={transfer.id}
                   onClick={() => setSelectedTransfer(transfer)}
                   className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer"
                 >
                   <td className="px-6 py-4">
-                    <Link 
+                    <Link
                       href={`/dashboard/transfers/${transfer.id}`}
                       onClick={(e) => e.stopPropagation()}
                       className="flex items-center gap-2 hover:opacity-80"
@@ -399,27 +439,25 @@ export default function TransfersPage() {
           <div className="bg-white dark:bg-gray-950 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Transfer Details</h2>
-              <button 
+              <button
                 onClick={() => setSelectedTransfer(null)}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
               >
                 <X className="h-5 w-5 text-gray-500" />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-6">
               {/* Status Banner */}
-              <div className={`p-4 rounded-xl ${
-                selectedTransfer.status === 'completed' ? 'bg-emerald-50 dark:bg-emerald-950' :
+              <div className={`p-4 rounded-xl ${selectedTransfer.status === 'completed' ? 'bg-emerald-50 dark:bg-emerald-950' :
                 selectedTransfer.status === 'failed' ? 'bg-red-50 dark:bg-red-950' :
-                'bg-yellow-50 dark:bg-yellow-950'
-              }`}>
+                  'bg-yellow-50 dark:bg-yellow-950'
+                }`}>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className={`h-5 w-5 ${
-                    selectedTransfer.status === 'completed' ? 'text-emerald-600' :
+                  <CheckCircle className={`h-5 w-5 ${selectedTransfer.status === 'completed' ? 'text-emerald-600' :
                     selectedTransfer.status === 'failed' ? 'text-red-600' :
-                    'text-yellow-600'
-                  }`} />
+                      'text-yellow-600'
+                    }`} />
                   <span className="font-medium capitalize">{selectedTransfer.status}</span>
                 </div>
               </div>
@@ -442,7 +480,11 @@ export default function TransfersPage() {
                     <code className="text-sm font-mono text-gray-900 dark:text-white">
                       {selectedTransfer.id.slice(0, 8)}...
                     </code>
-                    <button 
+                    {/* Show protocol badge in detail if available */}
+                    {(selectedTransfer as any).protocolMetadata?.protocol && (
+                      <ProtocolBadge protocol={(selectedTransfer as any).protocolMetadata.protocol} />
+                    )}
+                    <button
                       onClick={() => copyToClipboard(selectedTransfer.id)}
                       className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
                     >
@@ -466,7 +508,7 @@ export default function TransfersPage() {
                   <dd>
                     {selectedTransfer.initiatedBy ? (
                       selectedTransfer.initiatedBy.type === 'agent' ? (
-                        <Link 
+                        <Link
                           href={`/dashboard/agents/${selectedTransfer.initiatedBy.id}`}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 text-xs font-medium hover:bg-purple-200 dark:hover:bg-purple-900 transition-colors"
                         >
@@ -491,7 +533,7 @@ export default function TransfersPage() {
                   <dt className="text-gray-500 dark:text-gray-400">From</dt>
                   <dd>
                     {selectedTransfer.from?.accountId ? (
-                      <Link 
+                      <Link
                         href={`/dashboard/accounts/${selectedTransfer.from.accountId}`}
                         className="text-blue-600 hover:underline flex items-center gap-1"
                       >
@@ -507,7 +549,7 @@ export default function TransfersPage() {
                   <dt className="text-gray-500 dark:text-gray-400">To</dt>
                   <dd>
                     {selectedTransfer.to?.accountId ? (
-                      <Link 
+                      <Link
                         href={`/dashboard/accounts/${selectedTransfer.to.accountId}`}
                         className="text-blue-600 hover:underline flex items-center gap-1"
                       >
@@ -546,7 +588,7 @@ export default function TransfersPage() {
               {/* Actions */}
               <div className="pt-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
                 {selectedTransfer.status === 'completed' && (
-                  <button 
+                  <button
                     onClick={() => {
                       setRefundTransfer(selectedTransfer);
                       setSelectedTransfer(null);

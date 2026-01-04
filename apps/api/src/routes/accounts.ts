@@ -12,6 +12,7 @@ import {
   paginationResponse,
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
+import { ErrorCode } from '@payos/types';
 
 const accounts = new Hono();
 
@@ -69,7 +70,7 @@ accounts.get('/', async (c) => {
   
   if (error) {
     console.error('Error fetching accounts:', error);
-    return c.json({ error: 'Failed to fetch accounts' }, 500);
+    throw new Error('Failed to fetch accounts from database');
   }
   
   // Get agent counts for each account
@@ -157,7 +158,7 @@ accounts.post('/', async (c) => {
   
   if (error) {
     console.error('Error creating account:', error);
-    return c.json({ error: 'Failed to create account' }, 500);
+    throw new Error('Failed to create account in database');
   }
   
   // Audit log
@@ -173,7 +174,32 @@ accounts.post('/', async (c) => {
   });
   
   const account = mapAccountFromDb(data);
-  return c.json({ data: account }, 201);
+  return c.json({ 
+    data: account,
+    links: {
+      self: `/v1/accounts/${data.id}`,
+      balances: `/v1/accounts/${data.id}/balances`,
+      transfers: `/v1/accounts/${data.id}/transfers`,
+      agents: `/v1/accounts/${data.id}/agents`,
+    },
+    next_actions: [
+      {
+        action: 'add_funds',
+        description: 'Fund this account to start making transfers',
+        endpoint: `/v1/accounts/${data.id}/deposits`,
+      },
+      {
+        action: 'create_agent',
+        description: 'Create an AI agent for this account',
+        endpoint: `/v1/agents`,
+      },
+      {
+        action: 'verify_account',
+        description: 'Complete KYC/KYB verification to increase limits',
+        endpoint: `/v1/accounts/${data.id}/verify`,
+      },
+    ],
+  }, 201);
 });
 
 // ============================================
@@ -211,7 +237,17 @@ accounts.get('/:id', async (c) => {
   const account = mapAccountFromDb(data);
   account.agents = { count: agentCount, active: activeAgentCount };
   
-  return c.json({ data: account });
+  return c.json({ 
+    data: account,
+    links: {
+      self: `/v1/accounts/${id}`,
+      balances: `/v1/accounts/${id}/balances`,
+      transfers: `/v1/accounts/${id}/transfers`,
+      agents: `/v1/accounts/${id}/agents`,
+      streams: `/v1/accounts/${id}/streams`,
+      transactions: `/v1/accounts/${id}/transactions`,
+    },
+  });
 });
 
 // ============================================
@@ -286,7 +322,7 @@ accounts.patch('/:id', async (c) => {
   
   if (error) {
     console.error('Error updating account:', error);
-    return c.json({ error: 'Failed to update account' }, 500);
+    throw new Error('Failed to update account in database');
   }
   
   // Audit log
@@ -304,7 +340,13 @@ accounts.patch('/:id', async (c) => {
     },
   });
   
-  return c.json({ data: mapAccountFromDb(data) });
+  return c.json({ 
+    data: mapAccountFromDb(data),
+    links: {
+      self: `/v1/accounts/${id}`,
+      balances: `/v1/accounts/${id}/balances`,
+    },
+  });
 });
 
 // ============================================
@@ -376,7 +418,7 @@ accounts.delete('/:id', async (c) => {
   
   if (error) {
     console.error('Error deleting account:', error);
-    return c.json({ error: 'Failed to delete account' }, 500);
+    throw new Error('Failed to delete account from database');
   }
   
   // Audit log
@@ -429,14 +471,15 @@ accounts.get('/:id/balances', async (c) => {
   
   const outflowPerMonth = outgoingStreams.reduce((sum, s) => sum + parseFloat(s.flow_rate_per_month), 0);
   const inflowPerMonth = incomingStreams.reduce((sum, s) => sum + parseFloat(s.flow_rate_per_month), 0);
+  const availableBalance = parseFloat(data.balance_available) || 0;
   
-  return c.json({
+  const responseBody: any = {
     data: {
       accountId: data.id,
       accountName: data.name,
       balance: {
         total: parseFloat(data.balance_total) || 0,
-        available: parseFloat(data.balance_available) || 0,
+        available: availableBalance,
         inStreams: {
           total: parseFloat(data.balance_in_streams) || 0,
           buffer: parseFloat(data.balance_buffer) || 0,
@@ -456,7 +499,26 @@ accounts.get('/:id/balances', async (c) => {
         netFlowPerMonth: inflowPerMonth - outflowPerMonth,
       },
     },
-  });
+    links: {
+      self: `/v1/accounts/${id}/balances`,
+      account: `/v1/accounts/${id}`,
+      streams: `/v1/accounts/${id}/streams`,
+      transactions: `/v1/accounts/${id}/transactions`,
+    },
+  };
+  
+  // Add next actions based on balance state
+  if (availableBalance < 100) {
+    responseBody.next_actions = [
+      {
+        action: 'add_funds',
+        description: 'Add funds to this account',
+        endpoint: `/v1/accounts/${id}/deposits`,
+      }
+    ];
+  }
+  
+  return c.json(responseBody);
 });
 
 // ============================================
@@ -493,7 +555,7 @@ accounts.get('/:id/agents', async (c) => {
   
   if (error) {
     console.error('Error fetching agents:', error);
-    return c.json({ error: 'Failed to fetch agents' }, 500);
+    throw new Error('Failed to fetch agents from database');
   }
   
   const agents = (data || []).map(row => {
@@ -562,7 +624,7 @@ accounts.get('/:id/streams', async (c) => {
   
   if (error) {
     console.error('Error fetching streams:', error);
-    return c.json({ error: 'Failed to fetch streams' }, 500);
+    throw new Error('Failed to fetch streams from database');
   }
   
   const streams = (data || []).map(row => mapStreamFromDb(row));
@@ -616,7 +678,7 @@ accounts.get('/:id/transactions', async (c) => {
   
   if (error) {
     console.error('Error fetching transactions:', error);
-    return c.json({ error: 'Failed to fetch transactions' }, 500);
+    throw new Error('Failed to fetch transactions from database');
   }
   
   // Map ledger entries to transaction format
@@ -697,7 +759,7 @@ accounts.get('/:id/transfers', async (c) => {
   
   if (error) {
     console.error('Error fetching transfers:', error);
-    return c.json({ error: 'Failed to fetch transfers' }, 500);
+    throw new Error('Failed to fetch transfers from database');
   }
   
   // Map transfers to response format
@@ -718,8 +780,10 @@ accounts.get('/:id/transfers', async (c) => {
     failureReason: transfer.failure_reason,
     // Include direction from perspective of this account
     direction: transfer.from_account_id === id ? 'sent' : 'received',
-    // Include x402 metadata if present
-    x402Metadata: transfer.x402_metadata || undefined,
+    // Include protocol metadata if present
+    protocolMetadata: transfer.protocol_metadata || undefined,
+    // @deprecated - for backward compatibility
+    x402Metadata: transfer.protocol_metadata || transfer.x402_metadata || undefined,
   }));
   
   return c.json(paginationResponse(transfers, count || 0, { page, limit }));
@@ -796,7 +860,7 @@ accounts.post('/:id/verify', async (c) => {
   
   if (error) {
     console.error('Error verifying account:', error);
-    return c.json({ error: 'Failed to verify account' }, 500);
+    throw new Error('Failed to verify account in database');
   }
   
   // Update effective limits for all agents under this account
@@ -874,7 +938,7 @@ accounts.post('/:id/suspend', async (c) => {
   
   if (updateError) {
     console.error('Error suspending account:', updateError);
-    return c.json({ error: 'Failed to suspend account' }, 500);
+    throw new Error('Failed to suspend account in database');
   }
   
   // CASCADE: Suspend all agents under this account
@@ -951,7 +1015,7 @@ accounts.post('/:id/activate', async (c) => {
   
   if (updateError) {
     console.error('Error activating account:', updateError);
-    return c.json({ error: 'Failed to activate account' }, 500);
+    throw new Error('Failed to activate account in database');
   }
   
   // Note: Agents remain suspended - must be reactivated individually for security

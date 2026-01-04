@@ -14,7 +14,7 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AccountsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const [search, setSearch] = useState('');
   const { formatCurrency } = useLocale();
 
@@ -30,12 +30,14 @@ export default function AccountsPage() {
   });
 
   // Initialize pagination
+  // Note: API response is double-nested: data.data.pagination
   const pagination = usePagination({
-    totalItems: accountsData?.pagination?.total || 0,
+    totalItems: (accountsData as any)?.data?.pagination?.total || (accountsData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
   // Fetch accounts for current page
+  // Note: We fetch even if totalItems is 0 to handle cases where initial count query didn't return data correctly
   const { data: accountsPageData, isLoading: pageLoading } = useQuery({
     queryKey: ['accounts', 'page', pagination.page, pagination.pageSize, search],
     queryFn: async () => {
@@ -46,13 +48,38 @@ export default function AccountsPage() {
         search: search || undefined,
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const accounts = accountsPageData?.data || [];
+  // Note: API response may be double-nested: data.data or just data
+  // Handle both nested (data.data) and flat (data) response structures
+  const rawData = (accountsPageData as any)?.data;
+  const accounts = Array.isArray(rawData) 
+    ? rawData 
+    : (Array.isArray((rawData as any)?.data) 
+        ? (rawData as any).data 
+        : []);
+  
   // Filter out agent-type accounts (they have their own dedicated page)
-  const filteredAccounts = accounts.filter(account => account.type !== 'agent');
+  const filteredAccounts = accounts.filter((account: any) => account.type !== 'agent');
+
+  // Show loading state while auth is initializing
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Accounts</h1>
+            <p className="text-gray-600 dark:text-gray-400">Manage all account holders</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+          <TableSkeleton rows={8} columns={5} />
+        </div>
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -136,9 +163,9 @@ export default function AccountsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-              {filteredAccounts.map((account) => (
-                <tr 
-                  key={account.id} 
+              {filteredAccounts.map((account: any) => (
+                <tr
+                  key={account.id}
                   onClick={() => window.location.href = `/dashboard/accounts/${account.id}`}
                   className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer"
                 >
@@ -149,22 +176,20 @@ export default function AccountsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                      account.type === 'business' 
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${account.type === 'business'
                         ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400'
                         : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
-                    }`}>
+                      }`}>
                       {account.type}
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                      account.verificationStatus === 'verified'
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${account.verificationStatus === 'verified'
                         ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
                         : account.verificationStatus === 'pending'
-                        ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
-                    }`}>
+                          ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
+                      }`}>
                       {account.verificationStatus}
                     </span>
                   </td>

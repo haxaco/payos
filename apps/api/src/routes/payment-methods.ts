@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { 
+import {
   logAudit,
   isValidUUID,
   getPaginationParams,
@@ -50,7 +50,7 @@ const updatePaymentMethodSchema = z.object({
 paymentMethods.get('/', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
-  
+
   const typeFilter = c.req.query('type'); // Optional filter: card, bank_account, wallet
   const { page, limit, offset } = getPaginationParams(c);
   const safeOffset = offset || 0; // Ensure offset is never undefined
@@ -73,7 +73,7 @@ paymentMethods.get('/', async (c) => {
   }
 
   return c.json({
-    payment_methods: data || [],
+    data: data || [],
     pagination: paginationResponse(page, limit, count || 0),
   });
 });
@@ -111,11 +111,11 @@ paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
   const accountId = c.req.param('accountId');
-  
+
   if (!isValidUUID(accountId)) {
     throw new ValidationError('Invalid account ID format');
   }
-  
+
   // Verify account belongs to tenant
   const { data: account, error: accountError } = await supabase
     .from('accounts')
@@ -123,11 +123,11 @@ paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {
     .eq('id', accountId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (accountError || !account) {
     throw new NotFoundError('Account', accountId);
   }
-  
+
   const { data: methods, error } = await supabase
     .from('payment_methods')
     .select('*')
@@ -135,12 +135,12 @@ paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {
     .eq('tenant_id', ctx.tenantId)
     .order('is_default', { ascending: false })
     .order('created_at', { ascending: false });
-  
+
   if (error) {
     console.error('Error fetching payment methods:', error);
     return c.json({ error: 'Failed to fetch payment methods' }, 500);
   }
-  
+
   return c.json({ data: methods || [] });
 });
 
@@ -151,11 +151,11 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
   const accountId = c.req.param('accountId');
-  
+
   if (!isValidUUID(accountId)) {
     throw new ValidationError('Invalid account ID format');
   }
-  
+
   // Verify account belongs to tenant
   const { data: account, error: accountError } = await supabase
     .from('accounts')
@@ -163,23 +163,23 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
     .eq('id', accountId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (accountError || !account) {
     throw new NotFoundError('Account', accountId);
   }
-  
+
   let body;
   try {
     body = await c.req.json();
   } catch {
     throw new ValidationError('Invalid JSON body');
   }
-  
+
   const parsed = createPaymentMethodSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('Validation failed', parsed.error.flatten());
   }
-  
+
   const {
     type,
     label,
@@ -196,7 +196,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
     cardLastFour,
     metadata,
   } = parsed.data;
-  
+
   // Validate type-specific fields
   if (type === 'bank_account') {
     if (!bankAccountLastFour || !bankName) {
@@ -211,7 +211,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
       throw new ValidationError('Card requires cardLastFour');
     }
   }
-  
+
   // If setting as default, unset other defaults
   if (isDefault) {
     await supabase
@@ -220,7 +220,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
       .eq('account_id', accountId)
       .eq('tenant_id', ctx.tenantId);
   }
-  
+
   // Create payment method (STUB: no real verification)
   const { data: method, error: createError } = await supabase
     .from('payment_methods')
@@ -245,12 +245,12 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
     })
     .select()
     .single();
-  
+
   if (createError) {
     console.error('Error creating payment method:', createError);
     return c.json({ error: 'Failed to create payment method' }, 500);
   }
-  
+
   // STUB: In production, trigger verification process here
   // For now, we'll mark it as verified after a delay (mock)
   setTimeout(async () => {
@@ -262,7 +262,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
       })
       .eq('id', method.id);
   }, 2000); // Mock 2-second verification delay
-  
+
   // Audit log
   await logAudit(supabase, {
     tenantId: ctx.tenantId,
@@ -277,7 +277,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
       accountId,
     },
   });
-  
+
   return c.json({ data: method }, 201);
 });
 
@@ -288,11 +288,11 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
   const methodId = c.req.param('id');
-  
+
   if (!isValidUUID(methodId)) {
     throw new ValidationError('Invalid payment method ID format');
   }
-  
+
   // Verify payment method belongs to tenant
   const { data: method, error: fetchError } = await supabase
     .from('payment_methods')
@@ -300,25 +300,25 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (fetchError || !method) {
     throw new NotFoundError('Payment method', methodId);
   }
-  
+
   let body;
   try {
     body = await c.req.json();
   } catch {
     throw new ValidationError('Invalid JSON body');
   }
-  
+
   const parsed = updatePaymentMethodSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('Validation failed', parsed.error.flatten());
   }
-  
+
   const { label, isDefault, metadata } = parsed.data;
-  
+
   // If setting as default, unset other defaults
   if (isDefault && !method.is_default) {
     await supabase
@@ -328,27 +328,27 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .neq('id', methodId);
   }
-  
+
   const updates: any = {
     updated_at: new Date().toISOString(),
   };
-  
+
   if (label !== undefined) updates.label = label;
   if (isDefault !== undefined) updates.is_default = isDefault;
   if (metadata !== undefined) updates.metadata = metadata;
-  
+
   const { data: updated, error: updateError } = await supabase
     .from('payment_methods')
     .update(updates)
     .eq('id', methodId)
     .select()
     .single();
-  
+
   if (updateError) {
     console.error('Error updating payment method:', updateError);
     return c.json({ error: 'Failed to update payment method' }, 500);
   }
-  
+
   await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'payment_method',
@@ -358,7 +358,7 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
     actorId: ctx.actorId,
     actorName: ctx.actorName,
   });
-  
+
   return c.json({ data: updated });
 });
 
@@ -369,11 +369,11 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
   const methodId = c.req.param('id');
-  
+
   if (!isValidUUID(methodId)) {
     throw new ValidationError('Invalid payment method ID format');
   }
-  
+
   // Verify payment method belongs to tenant
   const { data: method, error: fetchError } = await supabase
     .from('payment_methods')
@@ -381,11 +381,11 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (fetchError || !method) {
     throw new NotFoundError('Payment method', methodId);
   }
-  
+
   // Check if it's being used in any active schedules
   const { data: schedules } = await supabase
     .from('transfer_schedules')
@@ -393,22 +393,22 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
     .eq('to_payment_method_id', methodId)
     .eq('status', 'active')
     .limit(1);
-  
+
   if (schedules && schedules.length > 0) {
     throw new ValidationError('Cannot delete payment method that is used in active scheduled transfers');
   }
-  
+
   const { error: deleteError } = await supabase
     .from('payment_methods')
     .delete()
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId);
-  
+
   if (deleteError) {
     console.error('Error deleting payment method:', deleteError);
     return c.json({ error: 'Failed to delete payment method' }, 500);
   }
-  
+
   await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'payment_method',
@@ -418,7 +418,7 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
     actorId: ctx.actorId,
     actorName: ctx.actorName,
   });
-  
+
   return c.json({ data: { id: methodId, deleted: true } });
 });
 
@@ -429,22 +429,22 @@ paymentMethods.get('/payment-methods/:id', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
   const methodId = c.req.param('id');
-  
+
   if (!isValidUUID(methodId)) {
     throw new ValidationError('Invalid payment method ID format');
   }
-  
+
   const { data: method, error } = await supabase
     .from('payment_methods')
     .select('*')
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (error || !method) {
     throw new NotFoundError('Payment method', methodId);
   }
-  
+
   return c.json({ data: method });
 });
 
@@ -455,13 +455,13 @@ cardTransactionsRouter.get('/', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
   const methodId = c.req.param('id');
-  
+
   if (!isValidUUID(methodId)) {
     throw new ValidationError('Invalid payment method ID format');
   }
-  
+
   const { limit, offset } = getPaginationParams(c.req.query(), { defaultLimit: 20, maxLimit: 100 });
-  
+
   // Verify payment method exists and belongs to tenant
   const { data: method, error: methodError } = await supabase
     .from('payment_methods')
@@ -469,30 +469,30 @@ cardTransactionsRouter.get('/', async (c) => {
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (methodError || !method) {
     throw new NotFoundError('Payment method', methodId);
   }
-  
-  // Get transactions using the database function
+
+  // Get transactions using direct table query instead of RPC
   const { data: transactions, error: txError } = await supabase
-    .rpc('get_card_activity', {
-      p_payment_method_id: methodId,
-      p_limit: limit,
-      p_offset: offset,
-    });
-  
+    .from('card_transactions')
+    .select('id, type, status, amount, currency, merchant_name, merchant_category, transaction_time, created_at, is_disputed, card_last_four, description:merchant_name') // Added description alias for frontend compatibility if needed, though frontend uses merchant?.name
+    .eq('payment_method_id', methodId)
+    .order('transaction_time', { ascending: false })
+    .range(offset, offset + limit - 1);
+
   if (txError) {
     console.error('Error fetching card transactions:', txError);
     return c.json({ error: 'Failed to fetch card transactions' }, 500);
   }
-  
+
   // Get total count for pagination
   const { count } = await supabase
     .from('card_transactions')
     .select('id', { count: 'exact', head: true })
     .eq('payment_method_id', methodId);
-  
+
   return c.json(paginationResponse(transactions || [], count || 0, limit, offset));
 });
 
@@ -504,11 +504,11 @@ cardTransactionsRouter.get('/spending-summary', async (c) => {
   const supabase = createClient();
   const methodId = c.req.param('id');
   const days = parseInt(c.req.query('days') || '30', 10);
-  
+
   if (!isValidUUID(methodId)) {
     throw new ValidationError('Invalid payment method ID format');
   }
-  
+
   // Verify payment method exists and belongs to tenant
   const { data: method, error: methodError } = await supabase
     .from('payment_methods')
@@ -516,28 +516,28 @@ cardTransactionsRouter.get('/spending-summary', async (c) => {
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (methodError || !method) {
     throw new NotFoundError('Payment method', methodId);
   }
-  
+
   // Get spending summary using the database function
   const { data: summary, error: summaryError } = await supabase
     .rpc('get_card_spending_summary', {
       p_payment_method_id: methodId,
       p_days: Math.min(Math.max(days, 1), 365), // Clamp between 1 and 365
     });
-  
+
   if (summaryError) {
     console.error('Error fetching spending summary:', summaryError);
     return c.json({ error: 'Failed to fetch spending summary' }, 500);
   }
-  
+
   return c.json({ data: summary?.[0] || {} });
 });
 
 // Mount card transactions routes
-paymentMethods.route('/payment-methods/:id/transactions', cardTransactionsRouter);
+paymentMethods.route('/:id/transactions', cardTransactionsRouter);
 
 export default paymentMethods;
 

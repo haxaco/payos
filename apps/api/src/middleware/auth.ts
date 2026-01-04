@@ -178,6 +178,8 @@ export async function authMiddleware(c: Context, next: Next) {
       c.set('ctx', {
         tenantId: tenant.id,
         actorType: 'api_key',
+        actorId: apiKey.id, // Use API key ID as actor ID
+        actorName: apiKey.name || 'API Key',
         apiKeyId: apiKey.id,
         apiKeyEnvironment: apiKey.environment,
       });
@@ -231,6 +233,8 @@ export async function authMiddleware(c: Context, next: Next) {
     c.set('ctx', {
       tenantId: tenant.id,
       actorType: 'api_key',
+      actorId: 'legacy_api_key', // Placeholder for legacy keys
+      actorName: tenant.name || 'Legacy API Key',
       apiKeyEnvironment: token.startsWith('pk_live_') ? 'live' : 'test',
     });
 

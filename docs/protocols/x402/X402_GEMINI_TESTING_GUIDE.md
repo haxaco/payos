@@ -57,7 +57,7 @@ curl http://localhost:4001/health
 
 **API Key for Testing:**
 ```
-pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc
+pk_test_YOUR_API_KEY_HERE
 ```
 
 **Tenant ID:** `da500003-4de9-416b-aebc-61cfcba914c9`  
@@ -305,7 +305,7 @@ done
 ```bash
 # Get quote first
 curl -X GET "http://localhost:4000/v1/x402/quote/ea6ff54b-a427-40f9-8ea6-30c937d9fbed" \
-  -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+  -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
   -H "Content-Type: application/json"
 ```
 
@@ -545,7 +545,7 @@ WHERE tenant_id = 'da500003-4de9-416b-aebc-61cfcba914c9';
 2. **If no policy, set one:**
    ```bash
    curl -X PATCH "http://localhost:4000/v1/wallets/{wallet_id}" \
-     -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+     -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
      -H "Content-Type: application/json" \
      -d '{"spending_policy": {"dailySpendLimit": 0.05, "perTransactionLimit": 0.10}}'
    ```
@@ -574,7 +574,7 @@ WHERE tenant_id = 'da500003-4de9-416b-aebc-61cfcba914c9';
    ```bash
    # First payment
    curl -X POST "http://localhost:4000/v1/x402/pay" \
-     -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+     -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
      -H "Content-Type: application/json" \
      -H "X-Request-Id: test-idempotency-12345" \
      -d '{
@@ -588,7 +588,7 @@ WHERE tenant_id = 'da500003-4de9-416b-aebc-61cfcba914c9';
    ```bash
    # Second payment (same X-Request-Id)
    curl -X POST "http://localhost:4000/v1/x402/pay" \
-     -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+     -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
      -H "Content-Type: application/json" \
      -H "X-Request-Id: test-idempotency-12345" \
      -d '{

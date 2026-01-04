@@ -317,7 +317,8 @@ app.post('/', async (c) => {
           type: 'internal',
           status: 'completed',
           description: 'Initial wallet funding',
-          x402_metadata: {
+          protocol_metadata: {
+            protocol: 'x402',
             wallet_id: wallet.id,
             operation: 'initial_deposit'
           }
@@ -664,9 +665,9 @@ app.get('/:id', async (c) => {
     // Fetch recent transactions involving this wallet
     const { data: recentTxs } = await supabase
       .from('transfers')
-      .select('id, from_account_id, to_account_id, amount, currency, status, type, created_at, x402_metadata')
+      .select('id, from_account_id, to_account_id, amount, currency, status, type, created_at, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
-      .or(`x402_metadata->>wallet_id.eq.${id}`)
+      .or(`protocol_metadata->>wallet_id.eq.${id}`)
       .order('created_at', { ascending: false })
       .limit(20);
 
@@ -681,7 +682,7 @@ app.get('/:id', async (c) => {
         currency: tx.currency,
         status: tx.status,
         type: tx.type,
-        operation: tx.x402_metadata?.operation,
+        operation: tx.protocol_metadata?.operation,
         createdAt: tx.created_at
       })) || []
     };
@@ -834,7 +835,8 @@ app.post('/:id/deposit', async (c) => {
         type: 'internal',
         status: 'completed',
         description: validated.reference || 'Wallet deposit',
-        x402_metadata: {
+        protocol_metadata: {
+          protocol: 'x402',
           wallet_id: wallet.id,
           operation: 'deposit'
         }
@@ -961,7 +963,8 @@ app.post('/:id/withdraw', async (c) => {
         type: 'internal',
         status: 'completed',
         description: validated.reference || 'Wallet withdrawal',
-        x402_metadata: {
+        protocol_metadata: {
+          protocol: 'x402',
           wallet_id: wallet.id,
           operation: 'withdrawal'
         }

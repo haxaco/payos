@@ -8,7 +8,12 @@ import {
   paginationResponse,
 } from '../utils/helpers.js';
 import { createBalanceService } from '../services/balances.js';
-import { ValidationError, NotFoundError } from '../middleware/error.js';
+import { 
+  ValidationError, 
+  NotFoundError,
+  InsufficientBalanceError,
+} from '../middleware/error.js';
+import { ErrorCode } from '@payos/types';
 
 const refunds = new Hono();
 
@@ -61,7 +66,7 @@ refunds.get('/', async (c) => {
   
   if (error) {
     console.error('Error fetching refunds:', error);
-    return c.json({ error: 'Failed to fetch refunds' }, 500);
+    throw new Error('Failed to fetch refunds from database');
   }
   
   return c.json(paginationResponse(data || [], count || 0, { page, limit }));
@@ -131,7 +136,16 @@ refunds.post('/', async (c) => {
   const daysSinceTransfer = Math.floor((Date.now() - completedAt.getTime()) / (1000 * 60 * 60 * 24));
   
   if (daysSinceTransfer > refundWindowDays) {
-    throw new ValidationError(`Refund window expired (${refundWindowDays} days)`);
+    const error: any = new ValidationError(`Refund window expired (${refundWindowDays} days)`);
+    error.code = ErrorCode.REFUND_WINDOW_EXPIRED;
+    error.details = {
+      transfer_id: originalTransferId,
+      completed_at: transfer.completed_at,
+      days_since_transfer: daysSinceTransfer,
+      window_days: refundWindowDays,
+      expired_on: new Date(completedAt.getTime() + refundWindowDays * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    throw error;
   }
   
   // Calculate refund amount (default to full if not specified)
@@ -148,9 +162,19 @@ refunds.post('/', async (c) => {
   const transferAmount = parseFloat(transfer.amount);
   
   if (totalRefunded + refundAmount > transferAmount) {
-    throw new ValidationError(
-      `Refund amount exceeds remaining refundable amount. Remaining: ${transferAmount - totalRefunded}`
+    const error: any = new ValidationError(
+      `Refund amount exceeds remaining refundable amount`
     );
+    error.code = ErrorCode.REFUND_EXCEEDS_ORIGINAL;
+    error.details = {
+      transfer_id: originalTransferId,
+      original_amount: transferAmount.toString(),
+      already_refunded: totalRefunded.toString(),
+      requested_amount: refundAmount.toString(),
+      remaining_refundable: (transferAmount - totalRefunded).toString(),
+      currency: transfer.currency,
+    };
+    throw error;
   }
   
   // Check source account balance (the account that received the original transfer)
@@ -158,7 +182,12 @@ refunds.post('/', async (c) => {
   const sourceBalance = await balanceService.getBalance(transfer.to_account_id);
   
   if (sourceBalance.available < refundAmount) {
-    throw new ValidationError(`Insufficient balance for refund. Available: ${sourceBalance.available}`);
+    throw new InsufficientBalanceError(
+      transfer.to_account_id,
+      sourceBalance.available.toString(),
+      refundAmount.toString(),
+      transfer.currency
+    );
   }
   
   // Create refund record
@@ -181,7 +210,7 @@ refunds.post('/', async (c) => {
   
   if (createError) {
     console.error('Error creating refund:', createError);
-    return c.json({ error: 'Failed to create refund' }, 500);
+    throw new Error('Failed to create refund in database');
   }
   
   // Process refund (reverse the transfer)
@@ -237,7 +266,27 @@ refunds.post('/', async (c) => {
     throw error;
   }
   
-  return c.json({ data: refund }, 201);
+  return c.json({ 
+    data: refund,
+    links: {
+      self: `/v1/refunds/${refund.id}`,
+      original_transfer: `/v1/transfers/${originalTransferId}`,
+      from_account: `/v1/accounts/${refund.from_account_id}`,
+      to_account: `/v1/accounts/${refund.to_account_id}`,
+    },
+    next_actions: [
+      {
+        action: 'view_original_transfer',
+        description: 'View the original transfer that was refunded',
+        endpoint: `/v1/transfers/${originalTransferId}`,
+      },
+      {
+        action: 'check_balance',
+        description: 'Check updated account balance',
+        endpoint: `/v1/accounts/${refund.to_account_id}/balances`,
+      },
+    ],
+  }, 201);
 });
 
 // ============================================
@@ -263,7 +312,15 @@ refunds.get('/:id', async (c) => {
     throw new NotFoundError('Refund', refundId);
   }
   
-  return c.json({ data: refund });
+  return c.json({ 
+    data: refund,
+    links: {
+      self: `/v1/refunds/${refundId}`,
+      original_transfer: `/v1/transfers/${refund.original_transfer_id}`,
+      from_account: `/v1/accounts/${refund.from_account_id}`,
+      to_account: `/v1/accounts/${refund.to_account_id}`,
+    },
+  });
 });
 
 export default refunds;

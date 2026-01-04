@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { 
-  Calendar, 
-  Plus, 
-  Search, 
+import {
+  Calendar,
+  Plus,
+  Search,
   Filter,
   Play,
   Pause,
@@ -29,7 +29,7 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function SchedulesPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -49,7 +49,7 @@ export default function SchedulesPage() {
 
   // Initialize pagination
   const pagination = usePagination({
-    totalItems: countData?.pagination?.total || 0,
+    totalItems: (countData as any)?.data?.pagination?.total || (countData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
@@ -64,11 +64,16 @@ export default function SchedulesPage() {
         status: statusFilter !== 'all' ? (statusFilter as ScheduleStatus) : undefined,
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const schedules = schedulesData?.data || [];
+  const rawData = (schedulesData as any)?.data;
+  const schedules = Array.isArray(rawData)
+    ? rawData
+    : (Array.isArray((rawData as any)?.data)
+      ? (rawData as any).data
+      : []);
 
   const fetchSchedules = () => {
     queryClient.invalidateQueries({ queryKey: ['schedules'] });
@@ -146,12 +151,23 @@ export default function SchedulesPage() {
     }
   };
 
-  const filteredSchedules = schedules.filter(schedule => {
+  const filteredSchedules = schedules.filter((schedule: any) => {
     const matchesSearch = schedule.description?.toLowerCase().includes(search.toLowerCase()) ||
       schedule.id.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'all' || schedule.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Scheduled Transfers</h1>
+        </div>
+        <TableSkeleton rows={5} columns={6} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -211,7 +227,7 @@ export default function SchedulesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {schedules.filter(s => s.status === 'active').length}
+                {schedules.filter((s: any) => s.status === 'active').length}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
             </div>
@@ -224,7 +240,7 @@ export default function SchedulesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {schedules.filter(s => s.status === 'paused').length}
+                {schedules.filter((s: any) => s.status === 'paused').length}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Paused</p>
             </div>
@@ -237,7 +253,7 @@ export default function SchedulesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {schedules.reduce((acc, s) => acc + s.occurrencesCompleted, 0)}
+                {schedules.reduce((acc: number, s: any) => acc + (s.occurrencesCompleted || 0), 0)}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Executions</p>
             </div>
@@ -250,7 +266,7 @@ export default function SchedulesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {schedules.filter(s => s.nextExecution && s.status === 'active').length}
+                {schedules.filter((s: any) => s.nextExecution && s.status === 'active').length}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Scheduled</p>
             </div>
@@ -287,13 +303,15 @@ export default function SchedulesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredSchedules.map((schedule) => (
+              {filteredSchedules.map((schedule: any) => (
                 <tr key={schedule.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-6 py-4">
                     <div>
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {schedule.description || `Schedule #${schedule.id.slice(0, 8)}`}
-                      </p>
+                      <Link href={`/dashboard/schedules/${schedule.id}`} className="block group">
+                        <p className="font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                          {schedule.description || `Schedule #${schedule.id.slice(0, 8)}`}
+                        </p>
+                      </Link>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {schedule.occurrencesCompleted} executions
                       </p>

@@ -3,12 +3,12 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { 
-  FileText, 
-  Plus, 
-  Download, 
-  Clock, 
-  CheckCircle, 
+import {
+  FileText,
+  Plus,
+  Download,
+  Clock,
+  CheckCircle,
   AlertCircle,
   Table2,
   Braces,
@@ -24,11 +24,11 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogDescription,
   Button,
   Label,
@@ -72,11 +72,11 @@ const formatOptions = [
 
 export default function ReportsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const queryClient = useQueryClient();
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generating, setGenerating] = useState(false);
-  
+
   // Form state
   const [reportType, setReportType] = useState('transactions');
   const [reportFormat, setReportFormat] = useState('csv');
@@ -96,7 +96,7 @@ export default function ReportsPage() {
 
   // Initialize pagination
   const pagination = usePagination({
-    totalItems: countData?.pagination?.total || 0,
+    totalItems: (countData as any)?.data?.pagination?.total || (countData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
@@ -110,26 +110,31 @@ export default function ReportsPage() {
         limit: pagination.pageSize,
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const reports = reportsData?.data || [];
+  const rawData = (reportsData as any)?.data;
+  const reports = Array.isArray(rawData)
+    ? rawData
+    : (Array.isArray((rawData as any)?.data)
+      ? (rawData as any).data
+      : []);
 
   async function handleGenerateReport() {
     if (!api) return;
-    
+
     setGenerating(true);
     try {
       const input: any = {
         type: reportType,
         format: reportFormat,
       };
-      
+
       if (dateFrom && dateTo) {
         input.dateRange = { from: dateFrom, to: dateTo };
       }
-      
+
       const result = await api.reports.create(input);
       toast.success(`Report generated successfully!`);
       setShowGenerateModal(false);
@@ -145,13 +150,13 @@ export default function ReportsPage() {
 
   async function handleDownload(report: Report) {
     if (!api || !report.downloadUrl) return;
-    
+
     try {
       const data = await api.reports.download(report.id);
-      
+
       let content: string;
       let mimeType: string;
-      
+
       if (report.format === 'csv') {
         // For CSV, the API returns raw CSV text or we need to convert
         if (typeof data === 'string') {
@@ -165,7 +170,7 @@ export default function ReportsPage() {
             const headers = Object.keys(rows[0]);
             const csvLines = [
               headers.join(','),
-              ...rows.map(row => 
+              ...rows.map(row =>
                 headers.map(h => {
                   const val = row[h];
                   if (val === null || val === undefined) return '';
@@ -187,7 +192,7 @@ export default function ReportsPage() {
         content = JSON.stringify(data, null, 2);
         mimeType = 'application/json';
       }
-      
+
       // Create download link
       const blob = new Blob([content], { type: mimeType });
       const url = window.URL.createObjectURL(blob);
@@ -198,7 +203,7 @@ export default function ReportsPage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
+
       toast.success('Report downloaded!');
     } catch (error: any) {
       console.error('Failed to download report:', error);
@@ -223,7 +228,7 @@ export default function ReportsPage() {
 
   const formatSummary = (summary: Record<string, any> | undefined) => {
     if (!summary) return null;
-    
+
     const highlights = [];
     if (summary.totalTransactions !== undefined) highlights.push(`${summary.totalTransactions} transactions`);
     if (summary.totalStreams !== undefined) highlights.push(`${summary.totalStreams} streams`);
@@ -231,9 +236,31 @@ export default function ReportsPage() {
     if (summary.totalAgents !== undefined) highlights.push(`${summary.totalAgents} agents`);
     if (summary.totalBalance !== undefined) highlights.push(`$${summary.totalBalance.toLocaleString()} total`);
     if (summary.totalAmount !== undefined) highlights.push(`$${summary.totalAmount.toLocaleString()} volume`);
-    
+
     return highlights.slice(0, 2).join(' • ');
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Reports</h1>
+            <p className="text-gray-600 dark:text-gray-400">Generate and download reports</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 animate-pulse">
+              <div className="h-10 w-10 bg-gray-200 dark:bg-gray-800 rounded-xl mb-4"></div>
+              <div className="h-4 w-32 bg-gray-200 dark:bg-gray-800 rounded mb-2"></div>
+              <div className="h-3 w-48 bg-gray-200 dark:bg-gray-800 rounded"></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -263,7 +290,7 @@ export default function ReportsPage() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Reports</h1>
           <p className="text-gray-600 dark:text-gray-400">Generate and download reports</p>
         </div>
-        <button 
+        <button
           onClick={() => setShowGenerateModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
         >
@@ -309,7 +336,7 @@ export default function ReportsPage() {
       {/* Generated Reports */}
       <div>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Generated Reports</h2>
-        
+
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[...Array(6)].map((_, i) => (
@@ -327,7 +354,7 @@ export default function ReportsPage() {
             <p className="text-gray-500 dark:text-gray-400 mt-2 mb-6">
               Generate your first report to get started
             </p>
-            <button 
+            <button
               onClick={() => setShowGenerateModal(true)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
             >
@@ -337,7 +364,7 @@ export default function ReportsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {reports.map((report) => (
+            {reports.map((report: any) => (
               <div key={report.id} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-start justify-between mb-4">
                   <div className="w-10 h-10 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center text-blue-600 dark:text-blue-400">
@@ -345,26 +372,26 @@ export default function ReportsPage() {
                   </div>
                   {getStatusIcon(report.status)}
                 </div>
-                
+
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 truncate" title={report.name}>
                   {report.name}
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-2 capitalize">
                   {report.type?.replace('_', ' ')} • {report.format?.toUpperCase()}
                 </p>
-                
+
                 {report.summary && (
                   <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
                     {formatSummary(report.summary)}
                   </p>
                 )}
-                
+
                 <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-800">
                   <span className="text-xs text-gray-500 dark:text-gray-400">
                     {report.generatedAt ? new Date(report.generatedAt).toLocaleDateString() : new Date(report.createdAt).toLocaleDateString()}
                   </span>
                   {report.status === 'ready' && (
-                    <button 
+                    <button
                       onClick={() => handleDownload(report)}
                       className="flex items-center gap-1 text-blue-600 dark:text-blue-400 text-sm hover:underline"
                     >
@@ -396,7 +423,7 @@ export default function ReportsPage() {
               Choose the type of report and format you want to generate.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="grid gap-6 py-4">
             {/* Report Type */}
             <div className="grid gap-2">
@@ -428,18 +455,15 @@ export default function ReportsPage() {
                     <button
                       key={format.value}
                       onClick={() => setReportFormat(format.value)}
-                      className={`p-3 rounded-lg border-2 transition-colors ${
-                        reportFormat === format.value
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/50'
-                          : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-                      }`}
+                      className={`p-3 rounded-lg border-2 transition-colors ${reportFormat === format.value
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/50'
+                        : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
+                        }`}
                     >
-                      <Icon className={`h-5 w-5 mx-auto mb-1 ${
-                        reportFormat === format.value ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'
-                      }`} />
-                      <div className={`text-xs font-medium ${
-                        reportFormat === format.value ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'
-                      }`}>
+                      <Icon className={`h-5 w-5 mx-auto mb-1 ${reportFormat === format.value ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500'
+                        }`} />
+                      <div className={`text-xs font-medium ${reportFormat === format.value ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'
+                        }`}>
                         {format.label}
                       </div>
                     </button>

@@ -1,40 +1,32 @@
 # Epic 28: Simulation Engine 🔮
 
-**Status:** Pending
-**Phase:** AI-Native Infrastructure
-**Priority:** P0
-**Total Points:** 24
-**Stories:** 0/8 Complete
-**Dates:** TBD
+**Status:** 📋 Pending  
+**Phase:** AI-Native Infrastructure  
+**Priority:** P0  
+**Total Points:** 24  
+**Stories:** 0/8 Complete  
+**Dependencies:** Epic 30 (Structured Responses)  
+**Enables:** AI agent decision-making, Batch validation, Risk-free testing
 
-[← Back to Master PRD](../PayOS_PRD_v1.15.md)
+[← Back to Epic List](./README.md)
 
 ---
 
 ## Overview
 
-Build a comprehensive simulation engine that allows dry-run execution of any PayOS action before committing. This is a critical primitive for AI-native infrastructure, enabling agents to reason about outcomes and validate operations before execution.
+Build a comprehensive simulation engine that allows dry-run execution of any PayOS action before committing. This is a critical primitive for AI-native infrastructure.
 
-**Strategic Context:**
+**Why This Matters:**
 
-> **"AI agents need to see the future before making decisions."**
+> "AI agents need to see the future before making decisions."
 
-Unlike human users who can review a form before submitting, AI agents need machine-readable previews of what will happen if they execute an action. The Simulation Engine provides this capability across all PayOS operations.
-
-**Key Capabilities:**
-- Dry-run any transfer with FX rate, fees, and timing preview
-- Simulate batch operations to validate before execution
-- Preview refund impacts on balances and accounting
-- Project stream costs over time
-- Validate operations without side effects
-- Execute simulations directly via API
+Unlike human users who can review a form before submitting, AI agents need machine-readable previews of what will happen. The Simulation Engine lets agents ask "what if?" before committing real money.
 
 **Use Cases:**
 - **Agent Decision Making:** "Should I execute this transfer or wait for better rates?"
 - **Batch Validation:** "Will all 500 payroll transfers succeed with current balances?"
 - **Cost Projection:** "How much will this stream cost over 30 days?"
 - **Refund Preview:** "What will the customer's balance be after this refund?"
-- **Compliance Checks:** "Does this transfer violate any spending limits?"
 
 ---
 
@@ -42,617 +34,633 @@ Unlike human users who can review a form before submitting, AI agents need machi
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/v1/simulate` | POST | Simulate any action |
-| `/v1/simulate/batch` | POST | Simulate multiple actions |
-| `/v1/simulate/{id}` | GET | Get simulation result |
-| `/v1/simulate/{id}/execute` | POST | Execute a simulation |
-
----
-
-## Example: Transfer Simulation
-
-**Request:**
-```json
-POST /v1/simulate
-{
-  "action": "transfer",
-  "payload": {
-    "from_account_id": "acc_123",
-    "to_account_id": "acc_456",
-    "amount": "5000.00",
-    "currency": "USD",
-    "destination_currency": "BRL",
-    "destination_rail": "pix"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "simulation_id": "sim_789",
-  "status": "completed",
-  "can_execute": true,
-  "preview": {
-    "source": {
-      "account_id": "acc_123",
-      "amount": "5000.00",
-      "currency": "USD",
-      "balance_after": "7500.00"
-    },
-    "destination": {
-      "amount": "24750.00",
-      "currency": "BRL"
-    },
-    "fx": {
-      "rate": "4.95",
-      "spread": "0.35%"
-    },
-    "fees": {
-      "total": "50.00"
-    },
-    "timing": {
-      "estimated_duration_seconds": 120
-    }
-  },
-  "warnings": [],
-  "errors": [],
-  "execute_url": "/v1/simulate/sim_789/execute"
-}
-```
-
----
-
-## Data Model
-
-### Simulations Table
-
-```sql
-CREATE TABLE simulations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES tenants(id),
-
-  -- Request
-  action_type TEXT NOT NULL,  -- 'transfer', 'refund', 'stream', etc.
-  action_payload JSONB NOT NULL,
-
-  -- Initiator
-  initiated_by UUID,
-  initiated_by_type TEXT,  -- 'user', 'agent', 'api_key'
-
-  -- Results
-  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'completed', 'failed'
-  can_execute BOOLEAN DEFAULT false,
-  preview JSONB,
-  warnings JSONB DEFAULT '[]',
-  errors JSONB DEFAULT '[]',
-
-  -- Execution tracking
-  executed BOOLEAN DEFAULT false,
-  executed_at TIMESTAMPTZ,
-  execution_result_id UUID,  -- e.g., transfer_id
-  execution_result_type TEXT,  -- e.g., 'transfer'
-
-  -- Lifecycle
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '1 hour'),
-  completed_at TIMESTAMPTZ
-);
-
-CREATE INDEX idx_simulations_tenant ON simulations(tenant_id);
-CREATE INDEX idx_simulations_status ON simulations(status)
-  WHERE status = 'pending';
-CREATE INDEX idx_simulations_expires ON simulations(expires_at)
-  WHERE status = 'completed' AND executed = false;
-
--- RLS
-ALTER TABLE simulations ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY simulations_tenant_isolation ON simulations
-  FOR ALL USING (tenant_id = current_setting('app.tenant_id')::uuid);
-```
+| `POST /v1/simulate` | Simulate any action |
+| `POST /v1/simulate/batch` | Simulate multiple actions |
+| `GET /v1/simulate/{id}` | Get simulation result |
+| `POST /v1/simulate/{id}/execute` | Execute a simulation |
 
 ---
 
 ## Stories
 
-### Story 28.1: Simulation Data Model and Base API Structure
+### Story 28.1: Simulation Data Model and Base API
 
-**Priority:** P0
-**Points:** 3
-**Effort:** 2-3 hours
-**Status:** Pending
+**Points:** 3  
+**Priority:** P0  
+**Assignee:** Cursor  
+**Dependencies:** Epic 30 (structured responses)
 
-**Description:**
-Build the foundational data model and base API structure for the simulation engine.
+#### Description
 
-**Database Migration:**
-- Create `simulations` table
-- Add RLS policies
-- Add indexes for performance
+Create the foundational data model and base API structure for the simulation engine.
 
-**Base API:**
-```typescript
-POST /v1/simulate
-GET  /v1/simulate/:id
-POST /v1/simulate/:id/execute
-```
+#### Requirements
 
-**Acceptance Criteria:**
+1. **Database Schema:**
+   - Create `simulations` table
+   - Fields: id, tenant_id, action_type, action_payload, status, can_execute, preview, warnings, errors, executed, executed_at, execution_result_id, expires_at, created_at
+   - RLS policies for tenant isolation
+   - Indexes for performance
+
+2. **Simulation Lifecycle:**
+   - `pending` — Being processed
+   - `completed` — Ready for review/execution
+   - `failed` — Could not simulate
+   - `executed` — Simulation was executed
+   - `expired` — TTL passed without execution
+
+3. **Base API Endpoints:**
+   - `POST /v1/simulate` — Create simulation
+   - `GET /v1/simulate/:id` — Get simulation
+   - `POST /v1/simulate/:id/execute` — Execute simulation
+
+4. **Request Validation:**
+   - Validate action type is supported
+   - Validate payload matches action schema
+   - Return structured error if invalid
+
+5. **Response Structure:**
+   ```json
+   {
+     "success": true,
+     "data": {
+       "simulation_id": "sim_123",
+       "status": "completed",
+       "can_execute": true,
+       "preview": { ... },
+       "warnings": [],
+       "errors": [],
+       "expires_at": "2025-12-30T11:00:00Z",
+       "execute_url": "/v1/simulate/sim_123/execute"
+     }
+   }
+   ```
+
+#### Acceptance Criteria
+
 - [ ] Simulations table created with RLS
-- [ ] Base API endpoints defined
-- [ ] TypeScript types in `@payos/types`
-- [ ] Request/response validation schemas
-- [ ] Simulation lifecycle (pending → completed → expired)
-- [ ] Database migration tested
+- [ ] Base API endpoints return correct structure
+- [ ] Simulation lifecycle states work correctly
+- [ ] Request validation catches invalid payloads
+- [ ] TypeScript types defined for simulation
+- [ ] Simulations expire after 1 hour
 
-**Files to Create:**
-- `apps/api/supabase/migrations/YYYYMMDD_simulation_engine.sql`
-- `packages/types/src/simulation.ts`
-- `apps/api/src/routes/simulate.ts`
-- `apps/api/src/services/simulation.ts`
+#### Test Expectations
+
+- Test simulation creation returns ID
+- Test get simulation returns correct data
+- Test invalid action type returns error
+- Test expired simulation cannot be executed
 
 ---
 
 ### Story 28.2: Transfer Simulation with FX/Fee Preview
 
-**Priority:** P0
-**Points:** 5
-**Effort:** 5-6 hours
-**Status:** Pending
+**Points:** 5  
+**Priority:** P0  
+**Assignee:** Cursor  
+**Dependencies:** 28.1
 
-**Description:**
+#### Description
+
 Implement full transfer simulation including FX rate lookup, fee calculation, balance validation, and timing estimates.
 
-**Simulation Logic:**
-1. Validate source account exists and has sufficient balance
-2. Validate destination account exists
-3. Look up FX rate (if cross-currency)
-4. Calculate all fees (platform, FX spread, rail fees)
-5. Calculate final amounts
-6. Estimate settlement time
-7. Check for warnings (low balance, rate volatility, etc.)
-8. Return comprehensive preview
+#### Requirements
 
-**Preview Structure:**
-```typescript
-interface TransferSimulationPreview {
-  source: {
-    account_id: string;
-    amount: string;
-    currency: string;
-    balance_before: string;
-    balance_after: string;
-  };
-  destination: {
-    account_id: string;
-    amount: string;
-    currency: string;
-  };
-  fx?: {
-    rate: string;
-    spread: string;
-    rate_locked: boolean;
-    expires_at?: string;
-  };
-  fees: {
-    platform_fee: string;
-    fx_fee?: string;
-    rail_fee?: string;
-    total: string;
-  };
-  timing: {
-    estimated_duration_seconds: number;
-    estimated_arrival: string;
-  };
-}
-```
+1. **Simulation Logic:**
+   - Validate source account exists and is active
+   - Check source account has sufficient balance
+   - Validate destination account exists
+   - Look up current FX rate (if cross-currency)
+   - Calculate all fees (platform, FX spread, rail fees)
+   - Estimate settlement time based on rail
 
-**Warnings:**
-- "Source balance will be below $100 after transfer"
-- "FX rate is 2% worse than 24h average"
-- "Destination rail may have delays (holiday)"
+2. **Preview Structure:**
+   ```json
+   {
+     "source": {
+       "account_id": "acc_123",
+       "amount": "5000.00",
+       "currency": "USD",
+       "balance_before": "12500.00",
+       "balance_after": "7500.00"
+     },
+     "destination": {
+       "account_id": "acc_456",
+       "amount": "24750.00",
+       "currency": "BRL"
+     },
+     "fx": {
+       "rate": "4.95",
+       "spread": "0.35%",
+       "rate_locked": false,
+       "rate_expires_at": null
+     },
+     "fees": {
+       "platform_fee": "25.00",
+       "fx_fee": "17.50",
+       "rail_fee": "7.50",
+       "total": "50.00"
+     },
+     "timing": {
+       "estimated_duration_seconds": 120,
+       "estimated_arrival": "2025-12-30T10:02:00Z",
+       "rail": "pix"
+     }
+   }
+   ```
 
-**Acceptance Criteria:**
-- [ ] Transfer simulation endpoint working
-- [ ] FX rate lookup integrated
-- [ ] Fee calculation accurate
-- [ ] Balance validation working
-- [ ] Timing estimates provided
-- [ ] Warnings generated appropriately
-- [ ] Can execute simulation via `/execute`
-- [ ] Unit tests for all scenarios
+3. **Warnings:**
+   - Balance will be below threshold after transfer
+   - FX rate is worse than 24h average
+   - Destination rail may have delays (holiday, maintenance)
+   - Transfer is unusually large
+   - Velocity limit will be reached
 
-**Files to Modify:**
-- `apps/api/src/services/simulation.ts`
-- `apps/api/src/services/transfers.ts` (reuse logic)
+4. **Errors:**
+   - Insufficient balance (with shortfall amount)
+   - Account not found
+   - Account inactive/suspended
+   - Limit exceeded (which limit, by how much)
+   - Compliance block
+
+5. **can_execute Logic:**
+   - `true` if no errors
+   - `false` if any errors
+   - Warnings don't prevent execution
+
+#### Acceptance Criteria
+
+- [ ] Transfer simulation returns complete preview
+- [ ] FX rate lookup works correctly
+- [ ] Fee calculation matches actual transfer fees
+- [ ] Balance validation catches insufficient funds
+- [ ] Warnings generated for edge cases
+- [ ] Errors prevent can_execute=true
+- [ ] Timing estimates are realistic
+
+#### Test Expectations
+
+- Test successful simulation returns all preview fields
+- Test insufficient balance returns correct shortfall
+- Test FX rate is included for cross-currency
+- Test warnings generated for low balance
+- Test can_execute=false when errors present
 
 ---
 
 ### Story 28.3: Batch Simulation Endpoint
 
-**Priority:** P0
-**Points:** 3
-**Effort:** 3-4 hours
-**Status:** Pending
+**Points:** 3  
+**Priority:** P0  
+**Assignee:** Cursor  
+**Dependencies:** 28.2
 
-**Description:**
-Enable simulation of multiple transfers in a single request, critical for payroll and batch payout validation.
+#### Description
 
-**API:**
-```typescript
-POST /v1/simulate/batch
-{
-  "simulations": [
-    { "action": "transfer", "payload": { ... } },
-    { "action": "transfer", "payload": { ... } },
-    // ... up to 1000
-  ]
-}
-```
+Enable simulation of multiple transfers in a single request. Critical for payroll and batch payout validation.
 
-**Response:**
-```json
-{
-  "batch_id": "batch_sim_123",
-  "total_count": 500,
-  "successful": 495,
-  "failed": 5,
-  "can_execute_all": false,
-  "total_amount": "125000.00",
-  "total_fees": "2500.00",
-  "simulations": [
-    { "index": 0, "status": "completed", "can_execute": true, ... },
-    { "index": 1, "status": "completed", "can_execute": true, ... },
-    { "index": 4, "status": "failed", "errors": ["insufficient_balance"], ... }
-  ],
-  "summary": {
-    "by_currency": {
-      "USD": { "count": 300, "total": "75000.00" },
-      "BRL": { "count": 200, "total": "50000.00" }
-    },
-    "by_rail": {
-      "pix": { "count": 200, "total": "50000.00" },
-      "spei": { "count": 100, "total": "25000.00" }
-    }
-  }
-}
-```
+#### Requirements
 
-**Performance:**
-- Process 1000 simulations in < 5 seconds
-- Parallel execution where possible
-- Stop-on-first-error option
+1. **API:**
+   ```json
+   POST /v1/simulate/batch
+   {
+     "simulations": [
+       { "action": "transfer", "payload": { ... } },
+       { "action": "transfer", "payload": { ... } }
+     ]
+   }
+   ```
 
-**Acceptance Criteria:**
-- [ ] Batch simulation endpoint working
-- [ ] Processes up to 1000 simulations
-- [ ] Returns summary statistics
-- [ ] Identifies failures with details
-- [ ] Performance target met (<5s for 1000)
-- [ ] Can execute entire batch if all valid
-- [ ] Unit and integration tests
+2. **Response Structure:**
+   ```json
+   {
+     "batch_id": "batch_sim_123",
+     "total_count": 500,
+     "successful": 495,
+     "failed": 5,
+     "can_execute_all": false,
+     "totals": {
+       "amount": { "USD": "125000.00" },
+       "fees": { "USD": "2500.00" }
+     },
+     "simulations": [
+       { "index": 0, "status": "completed", "can_execute": true, "preview": {...} },
+       { "index": 4, "status": "failed", "errors": [...] }
+     ],
+     "summary": {
+       "by_currency": {
+         "USD": { "count": 300, "total": "75000.00" },
+         "BRL": { "count": 200, "total": "50000.00" }
+       },
+       "by_rail": {
+         "pix": { "count": 200, "total": "50000.00" },
+         "spei": { "count": 100, "total": "25000.00" }
+       }
+     }
+   }
+   ```
 
-**Files to Modify:**
-- `apps/api/src/routes/simulate.ts`
-- `apps/api/src/services/simulation.ts`
+3. **Performance:**
+   - Process up to 1000 simulations per request
+   - Target: < 5 seconds for 1000 simulations
+   - Parallel processing where possible
+   - Option to stop on first error
+
+4. **Balance Accumulation:**
+   - Account for cumulative balance changes
+   - If transfer 1 uses $1000 and transfer 2 uses $500, check both against initial balance
+   - Correctly identify when accumulated transfers exceed balance
+
+5. **Summary Statistics:**
+   - Group by currency
+   - Group by rail
+   - Total success/failure count
+
+#### Acceptance Criteria
+
+- [ ] Batch endpoint accepts up to 1000 simulations
+- [ ] Performance target met (< 5s for 1000)
+- [ ] Balance accumulation is correct
+- [ ] Summary statistics accurate
+- [ ] Individual failures don't block others
+- [ ] can_execute_all reflects whether all can execute
+
+#### Test Expectations
+
+- Test batch of 100 simulations completes quickly
+- Test balance accumulation catches overdraw
+- Test summary statistics are accurate
+- Test single failure doesn't stop batch
 
 ---
 
 ### Story 28.4: Simulation-to-Execution Flow
 
-**Priority:** P1
-**Points:** 3
-**Effort:** 3 hours
-**Status:** Pending
+**Points:** 3  
+**Priority:** P1  
+**Assignee:** Cursor  
+**Dependencies:** 28.2
 
-**Description:**
-Enable seamless execution of validated simulations, preventing race conditions and ensuring simulation results remain valid.
+#### Description
 
-**Flow:**
-1. Client calls `POST /v1/simulate` → gets `simulation_id`
-2. Client reviews preview
-3. Client calls `POST /v1/simulate/:id/execute` within TTL
-4. System re-validates simulation is still valid
-5. Executes actual operation
-6. Returns result with reference to simulation
+Enable seamless execution of validated simulations, with re-validation to prevent race conditions.
 
-**Validation on Execute:**
-- Simulation not expired (< 1 hour old)
-- Simulation not already executed
-- Source balance still sufficient
-- FX rate still within threshold (if rate-locked)
-- No policy changes since simulation
+#### Requirements
 
-**Response:**
-```json
-{
-  "simulation_id": "sim_789",
-  "execution_result": {
-    "type": "transfer",
-    "id": "transfer_123",
-    "status": "processing",
-    "created_at": "2025-12-29T10:30:00Z"
-  },
-  "variance": {
-    "fx_rate_change": "0.02%",
-    "fee_change": "0.00",
-    "timing_change": "0s"
-  }
-}
-```
+1. **Execution Flow:**
+   - Client calls `POST /v1/simulate` → receives simulation_id
+   - Client reviews preview
+   - Client calls `POST /v1/simulate/:id/execute` within TTL
+   - System re-validates simulation is still valid
+   - Executes actual operation
+   - Returns result with link to created resource
 
-**Acceptance Criteria:**
-- [ ] Execute endpoint implemented
-- [ ] Re-validation logic working
-- [ ] Prevents double-execution
-- [ ] Handles expired simulations
-- [ ] Reports variance from simulation
-- [ ] Links execution to simulation record
-- [ ] Integration tests for full flow
+2. **Re-Validation on Execute:**
+   - Simulation not expired (< 1 hour old)
+   - Simulation not already executed
+   - Source balance still sufficient
+   - FX rate still within acceptable variance (if rate-locked)
+   - No policy changes since simulation
 
-**Files to Modify:**
-- `apps/api/src/routes/simulate.ts`
-- `apps/api/src/services/simulation.ts`
+3. **Variance Reporting:**
+   - If executed rate differs from simulated, report variance:
+   ```json
+   {
+     "simulation_id": "sim_789",
+     "execution_result": {
+       "type": "transfer",
+       "id": "txn_123",
+       "status": "processing"
+     },
+     "variance": {
+       "fx_rate_change": "+0.02%",
+       "fee_change": "0.00",
+       "timing_change": "0s"
+     }
+   }
+   ```
+
+4. **Idempotency:**
+   - Executing same simulation twice returns same result
+   - Second execution returns already-executed status
+
+5. **Atomic Execution:**
+   - Mark simulation as executed atomically
+   - Prevent double-execution race conditions
+
+#### Acceptance Criteria
+
+- [ ] Execute endpoint creates actual resource
+- [ ] Re-validation prevents stale execution
+- [ ] Expired simulations return error
+- [ ] Already-executed simulations return existing result
+- [ ] Variance is calculated and reported
+- [ ] No double-execution possible
+
+#### Test Expectations
+
+- Test execution creates real transfer
+- Test expired simulation returns error
+- Test re-execution returns same result
+- Test variance calculated correctly
+- Test concurrent execution prevented
 
 ---
 
 ### Story 28.5: Refund Simulation
 
-**Priority:** P1
-**Points:** 2
-**Effort:** 2-3 hours
-**Status:** Pending
+**Points:** 2  
+**Priority:** P1  
+**Assignee:** Cursor  
+**Dependencies:** 28.1
 
-**Description:**
-Enable simulation of refunds to preview balance impacts and validate refund eligibility.
+#### Description
 
-**Simulation Logic:**
-1. Validate original transfer exists
-2. Check refund eligibility (status, time limits)
-3. Calculate refund amount (full or partial)
-4. Preview balance changes
-5. Check for warnings (will overdraft, etc.)
+Enable simulation of refunds to preview balance impacts and validate eligibility.
 
-**Preview:**
-```json
-{
-  "refund": {
-    "original_transfer_id": "transfer_123",
-    "refund_amount": "100.00",
-    "refund_currency": "USD",
-    "refund_type": "full"
-  },
-  "impact": {
-    "source_account": {
-      "balance_before": "500.00",
-      "balance_after": "600.00"
-    },
-    "destination_account": {
-      "balance_before": "1000.00",
-      "balance_after": "900.00"
-    }
-  },
-  "eligibility": {
-    "can_refund": true,
-    "reasons": []
-  }
-}
-```
+#### Requirements
 
-**Acceptance Criteria:**
-- [ ] Refund simulation working
-- [ ] Validates refund eligibility
-- [ ] Previews balance impacts
-- [ ] Supports partial refunds
-- [ ] Warns on potential issues
-- [ ] Can execute via `/execute`
+1. **Refund Simulation Request:**
+   ```json
+   POST /v1/simulate
+   {
+     "action": "refund",
+     "payload": {
+       "transfer_id": "txn_123",
+       "amount": "100.00",
+       "reason": "customer_request"
+     }
+   }
+   ```
 
-**Files to Modify:**
-- `apps/api/src/services/simulation.ts`
-- `apps/api/src/services/refunds.ts`
+2. **Eligibility Checks:**
+   - Original transfer exists
+   - Transfer is in refundable state
+   - Refund window not expired
+   - Amount doesn't exceed original (or remaining)
+   - Destination account can receive refund
+
+3. **Preview:**
+   ```json
+   {
+     "refund": {
+       "original_transfer_id": "txn_123",
+       "refund_amount": "100.00",
+       "refund_currency": "USD",
+       "refund_type": "partial"
+     },
+     "impact": {
+       "source_account": {
+         "id": "acc_123",
+         "balance_before": "500.00",
+         "balance_after": "600.00"
+       },
+       "destination_account": {
+         "id": "acc_456",
+         "balance_before": "1000.00",
+         "balance_after": "900.00"
+       }
+     },
+     "original_transfer": {
+       "amount": "500.00",
+       "already_refunded": "200.00",
+       "remaining_refundable": "300.00"
+     },
+     "eligibility": {
+       "can_refund": true,
+       "window_expires": "2025-01-29T10:00:00Z",
+       "reasons": []
+     }
+   }
+   ```
+
+4. **Ineligibility Reasons:**
+   - Transfer already fully refunded
+   - Refund window expired
+   - Transfer not in refundable state
+   - Amount exceeds refundable amount
+   - Destination account issue
+
+#### Acceptance Criteria
+
+- [ ] Refund simulation validates eligibility
+- [ ] Balance impacts shown for both accounts
+- [ ] Already-refunded amount tracked
+- [ ] Window expiry shown
+- [ ] Ineligibility reasons are clear
+- [ ] Can execute valid refund simulation
+
+#### Test Expectations
+
+- Test eligible refund shows can_refund=true
+- Test over-amount refund shows error
+- Test expired window shows ineligible
+- Test already-refunded amount is accurate
 
 ---
 
 ### Story 28.6: Stream Simulation (Cost Projection)
 
-**Priority:** P1
-**Points:** 3
-**Effort:** 3-4 hours
-**Status:** Pending
+**Points:** 3  
+**Priority:** P1  
+**Assignee:** Cursor  
+**Dependencies:** 28.1
 
-**Description:**
-Simulate stream creation and project costs over time.
+#### Description
 
-**Simulation Logic:**
-1. Validate stream configuration
-2. Calculate flow rate costs
-3. Project total cost over duration
-4. Estimate runway with current balance
-5. Warn on potential depletion
+Simulate stream creation and project costs over time. Helps agents understand long-term financial commitments.
 
-**Preview:**
-```json
-{
-  "stream": {
-    "rate_per_second": "0.001",
-    "duration_seconds": 2592000,
-    "projected_total": "2592.00",
-    "currency": "USDC"
-  },
-  "cost_projection": {
-    "1_day": "86.40",
-    "7_days": "604.80",
-    "30_days": "2592.00"
-  },
-  "runway": {
-    "current_balance": "5000.00",
-    "estimated_runway_seconds": 5000000,
-    "estimated_runway_days": 57.87,
-    "depletion_date": "2026-02-24T10:30:00Z"
-  }
-}
-```
+#### Requirements
 
-**Acceptance Criteria:**
-- [ ] Stream simulation working
-- [ ] Cost projections accurate
-- [ ] Runway calculations correct
-- [ ] Warns on insufficient balance
-- [ ] Can execute via `/execute`
+1. **Stream Simulation Request:**
+   ```json
+   POST /v1/simulate
+   {
+     "action": "stream",
+     "payload": {
+       "from_account_id": "acc_123",
+       "to_account_id": "acc_456",
+       "rate_per_second": "0.001",
+       "currency": "USDC",
+       "duration_seconds": 2592000
+     }
+   }
+   ```
 
-**Files to Modify:**
-- `apps/api/src/services/simulation.ts`
-- `apps/api/src/services/streams.ts`
+2. **Cost Projections:**
+   - Calculate cost at various time intervals
+   - Project when balance will be depleted
+   - Show runway with current balance
+
+3. **Preview:**
+   ```json
+   {
+     "stream": {
+       "rate_per_second": "0.001",
+       "currency": "USDC",
+       "duration_seconds": 2592000,
+       "total_cost": "2592.00"
+     },
+     "projections": {
+       "1_day": { "cost": "86.40", "balance_after": "4913.60" },
+       "7_days": { "cost": "604.80", "balance_after": "4395.20" },
+       "30_days": { "cost": "2592.00", "balance_after": "2408.00" }
+     },
+     "runway": {
+       "current_balance": "5000.00",
+       "estimated_runway_days": 57.87,
+       "depletion_date": "2026-02-26T10:00:00Z",
+       "will_complete": true
+     },
+     "warnings": []
+   }
+   ```
+
+4. **Warnings:**
+   - Balance insufficient for full duration
+   - High rate relative to balance
+   - Destination account issues
+
+#### Acceptance Criteria
+
+- [ ] Stream simulation calculates projections
+- [ ] Runway calculation is accurate
+- [ ] Depletion date is correct
+- [ ] Warnings for insufficient balance
+- [ ] Can execute valid stream simulation
+
+#### Test Expectations
+
+- Test cost projection matches rate × time
+- Test runway calculation is accurate
+- Test insufficient balance shows warning
+- Test will_complete is correct
 
 ---
 
 ### Story 28.7: Simulation Expiration and Cleanup
 
-**Priority:** P2
-**Points:** 2
-**Effort:** 2 hours
-**Status:** Pending
+**Points:** 2  
+**Priority:** P2  
+**Assignee:** Cursor  
+**Dependencies:** 28.1
 
-**Description:**
+#### Description
+
 Implement automatic expiration and cleanup of old simulations.
 
-**Lifecycle:**
-- Simulations valid for 1 hour after creation
-- Auto-expire if not executed
-- Cleanup worker runs daily
-- Delete simulations > 7 days old
+#### Requirements
 
-**Worker:**
-```typescript
-// apps/api/src/workers/simulation-cleanup.ts
-async function cleanupExpiredSimulations() {
-  const { data } = await supabase
-    .from('simulations')
-    .delete()
-    .lt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-    .select();
+1. **Expiration Logic:**
+   - Simulations valid for 1 hour after creation
+   - After 1 hour, status becomes `expired`
+   - Expired simulations cannot be executed
 
-  console.log(`Cleaned up ${data?.length || 0} old simulations`);
-}
-```
+2. **Cleanup Worker:**
+   - Background job runs daily (or more frequently)
+   - Delete simulations older than 7 days
+   - Don't delete executed simulations that are referenced
 
-**Acceptance Criteria:**
+3. **Database Indexes:**
+   - Index on expires_at for efficient cleanup
+   - Index on status for pending queries
+
+4. **Monitoring:**
+   - Log cleanup statistics
+   - Track simulation creation rate
+   - Alert on unusual patterns
+
+#### Acceptance Criteria
+
 - [ ] Simulations expire after 1 hour
-- [ ] Cleanup worker implemented
-- [ ] Runs on schedule (daily)
-- [ ] Logs cleanup stats
-- [ ] Doesn't delete executed simulations referenced elsewhere
+- [ ] Expired simulations return error on execute
+- [ ] Cleanup worker deletes old simulations
+- [ ] Referenced simulations preserved
+- [ ] Cleanup logged
 
-**Files to Create:**
-- `apps/api/src/workers/simulation-cleanup.ts`
+#### Test Expectations
+
+- Test simulation expires after TTL
+- Test expired simulation returns error
+- Test cleanup removes old simulations
+- Test executed simulations not deleted
 
 ---
 
-### Story 28.8: Dashboard Simulation UI
+### Story 28.8: Simulation Preview Modal (UI)
 
-**Priority:** P2
-**Points:** 3
-**Effort:** 3-4 hours
-**Status:** Pending
+**Points:** 3  
+**Priority:** P1  
+**Assignee:** Gemini  
+**Dependencies:** 28.1, 28.2
 
-**Description:**
+#### Description
+
 Add simulation preview capabilities to dashboard transfer and refund forms.
 
-**Features:**
-1. **Transfer Form:**
-   - "Preview Transfer" button
-   - Shows simulation results in modal
-   - Displays fees, FX rates, timing
-   - "Confirm & Execute" proceeds with transfer
+#### Requirements
 
-2. **Refund Form:**
-   - Auto-simulates on amount change
-   - Shows balance impact
-   - Validates eligibility
+1. **Transfer Form Enhancement:**
+   - Add "Preview Transfer" button
+   - Button triggers simulation API call
+   - Show modal with simulation results
 
-3. **Batch Upload:**
-   - Simulates entire CSV before execution
-   - Shows success/failure breakdown
-   - Highlights problematic rows
+2. **Preview Modal Contents:**
+   - Source and destination summary
+   - FX rate and conversion
+   - Fee breakdown
+   - Estimated timing
+   - Balance after transfer
+   - Warnings (highlighted)
+   - Errors (if any)
 
-**Components:**
-```tsx
-<SimulationPreviewModal
-  simulation={simulation}
-  onExecute={() => executeSimulation(simulation.id)}
-  onCancel={() => setShowPreview(false)}
-/>
+3. **Modal Actions:**
+   - "Cancel" — Close modal
+   - "Confirm & Execute" — Call execute API
+   - "Edit" — Return to form
 
-<TransferSimulationCard preview={preview} />
-<RefundSimulationCard preview={preview} />
-<BatchSimulationSummary simulations={batchResults} />
-```
+4. **Refund Form Enhancement:**
+   - Auto-simulate on amount change (debounced)
+   - Show inline preview of balance impacts
+   - Eligibility status visible
 
-**Acceptance Criteria:**
-- [ ] Transfer form has preview
-- [ ] Refund form has auto-simulation
+5. **Batch Upload Enhancement:**
+   - "Validate All" button before execution
+   - Show summary of success/failure
+   - Highlight problematic rows
+   - Download error report
+
+6. **Loading States:**
+   - Show spinner while simulating
+   - Disable execute during simulation
+   - Handle errors gracefully
+
+#### Acceptance Criteria
+
+- [ ] Transfer form has Preview button
+- [ ] Preview modal shows all simulation data
+- [ ] Confirm & Execute works correctly
+- [ ] Refund form shows inline preview
 - [ ] Batch upload validates before execution
-- [ ] Simulation results displayed clearly
-- [ ] Execute button works correctly
-- [ ] Warnings highlighted
-
-**Files to Create:**
-- `apps/web/src/components/simulation/SimulationPreviewModal.tsx`
-- `apps/web/src/components/simulation/TransferSimulationCard.tsx`
-- `apps/web/src/components/simulation/RefundSimulationCard.tsx`
-- `apps/web/src/components/simulation/BatchSimulationSummary.tsx`
+- [ ] Loading and error states handled
 
 ---
 
 ## Story Summary
 
-| Story | Points | Priority | Description |
-|-------|--------|----------|-------------|
-| 28.1 | 3 | P0 | Simulation data model and base API structure |
-| 28.2 | 5 | P0 | Transfer simulation with FX/fee preview |
-| 28.3 | 3 | P0 | Batch simulation endpoint |
-| 28.4 | 3 | P1 | Simulation-to-execution flow |
-| 28.5 | 2 | P1 | Refund simulation |
-| 28.6 | 3 | P1 | Stream simulation (cost projection) |
-| 28.7 | 2 | P2 | Simulation expiration and cleanup |
-| 28.8 | 3 | P2 | Dashboard simulation UI |
-| **Total** | **24** | | |
-
----
-
-## Technical Deliverables
-
-**Backend:**
-- 1 new database table (`simulations`)
-- Simulation service with action-specific logic
-- API endpoints for simulate, batch, execute
-- Background worker for cleanup
-- Integration with existing services (transfers, refunds, streams)
-
-**Frontend:**
-- Simulation preview components
-- Transfer/refund form integration
-- Batch validation UI
-- Execution confirmation flows
-
-**SDK:**
-- Simulation methods in API client
-- TypeScript types for all simulation responses
-
----
-
-## Dependencies
-
-**Prerequisites:**
-- Epic 9 (Quotes & FX) for rate lookups
-- Epic 10 (Refunds) for refund simulation
-- Existing transfer and stream infrastructure
-
-**Enables:**
-- Epic 27 (Batch Payouts) uses batch simulation
-- Epic 29 (Workflow Engine) can simulate workflow outcomes
-- Epic 31 (Context API) can include simulation results
+| Story | Points | Priority | Assignee | Description |
+|-------|--------|----------|----------|-------------|
+| 28.1 | 3 | P0 | Cursor | Data model and base API |
+| 28.2 | 5 | P0 | Cursor | Transfer simulation |
+| 28.3 | 3 | P0 | Cursor | Batch simulation |
+| 28.4 | 3 | P1 | Cursor | Simulation-to-execution |
+| 28.5 | 2 | P1 | Cursor | Refund simulation |
+| 28.6 | 3 | P1 | Cursor | Stream simulation |
+| 28.7 | 2 | P2 | Cursor | Expiration and cleanup |
+| 28.8 | 3 | P1 | **Gemini** | Preview modal UI |
+| **Total** | **24** | | | |
 
 ---
 
@@ -665,31 +673,11 @@ Add simulation preview capabilities to dashboard transfer and refund forms.
 - [ ] Dashboard shows simulation preview on all forms
 - [ ] Agents can use simulations for decision making
 - [ ] All operations < 500ms latency
-- [ ] Simulation-to-execution flow seamless
-
----
-
-## Strategic Impact
-
-The Simulation Engine is a fundamental primitive for AI-native infrastructure:
-
-1. **Enables Agent Reasoning:** AI agents can "think before acting"
-2. **Reduces Failed Transactions:** Validate before execution
-3. **Improves UX:** Users see exactly what will happen
-4. **Supports Batch Operations:** Validate entire payrolls before submission
-5. **Enables Advanced Workflows:** Multi-step processes can simulate each step
-
-**Composability:**
-- Simulation + Workflow Engine = Preview entire approval chain
-- Simulation + Context API = "Show me everything about this transfer, including what would happen if I execute it"
-- Simulation + Tool Discovery = "Here's what PayOS can do, and here's what each action will cost"
 
 ---
 
 ## Related Documentation
 
-TBD - To be created during implementation:
-- Simulation Engine API Documentation
-- Simulation Best Practices Guide
-- Agent Integration Guide for Simulations
-- Dashboard Simulation Features Guide
+- **Epic 30:** Structured Responses (simulations use same format)
+- **Epic 31:** Context API (can include simulation results)
+- **Epic 36:** SDK (exposes simulation methods)

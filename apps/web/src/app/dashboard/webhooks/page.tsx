@@ -5,7 +5,25 @@ import Link from 'next/link';
 import { useApiConfig } from '@/lib/api-client';
 
 export default function WebhooksPage() {
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Webhooks</h1>
+            <p className="text-gray-600 dark:text-gray-400">Configure webhook endpoints for real-time events</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-12 text-center animate-pulse">
+          <div className="h-16 w-16 bg-gray-200 dark:bg-gray-800 rounded-full mx-auto mb-4"></div>
+          <div className="h-6 w-48 bg-gray-200 dark:bg-gray-800 rounded mx-auto mb-2"></div>
+          <div className="h-4 w-64 bg-gray-200 dark:bg-gray-800 rounded mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (

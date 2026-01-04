@@ -8,6 +8,7 @@ import {
   paginationResponse,
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
+import { ErrorCode } from '@payos/types';
 
 const disputes = new Hono();
 
@@ -107,7 +108,7 @@ disputes.get('/', async (c) => {
   
   if (error) {
     console.error('Error fetching disputes:', error);
-    return c.json({ error: 'Failed to fetch disputes' }, 500);
+    throw new Error('Failed to fetch disputes from database');
   }
   
   // Transform to API response format
@@ -184,7 +185,14 @@ disputes.post('/', async (c) => {
   
   // Check if transfer is completed
   if (transfer.status !== 'completed') {
-    throw new ValidationError('Only completed transfers can be disputed');
+    const error: any = new ValidationError('Only completed transfers can be disputed');
+    error.code = ErrorCode.TRANSFER_NOT_COMPLETED;
+    error.details = {
+      transfer_id: transferId,
+      current_status: transfer.status,
+      required_status: 'completed',
+    };
+    throw error;
   }
   
   // Get tenant settings for dispute windows
@@ -199,29 +207,53 @@ disputes.post('/', async (c) => {
   
   // Check filing window
   const completedAt = new Date(transfer.completed_at);
-  const daysSinceTransfer = Math.floor((Date.now() - completedAt.getTime()) / (1000 * 60 * 60 * 24));
+  const daysSinceTransfer = Math.floor((Date.now() - completedAt.getTime()) / (1000 * 60 * 60 * 1000));
   
   if (daysSinceTransfer > filingWindowDays) {
-    throw new ValidationError(`Dispute filing window expired (${filingWindowDays} days)`);
+    const error: any = new ValidationError(`Dispute filing window expired`);
+    error.code = ErrorCode.DISPUTE_WINDOW_EXPIRED;
+    error.details = {
+      transfer_id: transferId,
+      completed_at: transfer.completed_at,
+      days_since_transfer: daysSinceTransfer,
+      filing_window_days: filingWindowDays,
+      expired_on: new Date(completedAt.getTime() + filingWindowDays * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    throw error;
   }
   
   // Check for existing open dispute on this transfer
   const { data: existingDispute } = await supabase
     .from('disputes')
-    .select('id')
+    .select('id, status, due_date')
     .eq('transfer_id', transferId)
     .in('status', ['open', 'under_review'])
     .single();
   
   if (existingDispute) {
-    throw new ValidationError('An open dispute already exists for this transfer');
+    const error: any = new ValidationError('An open dispute already exists for this transfer');
+    error.code = ErrorCode.DISPUTE_ALREADY_EXISTS;
+    error.details = {
+      transfer_id: transferId,
+      existing_dispute_id: existingDispute.id,
+      dispute_status: existingDispute.status,
+      due_date: existingDispute.due_date,
+    };
+    throw error;
   }
   
   // Calculate dispute amount (default to full transfer amount)
   const disputeAmount = amountDisputed || parseFloat(transfer.amount);
   
   if (disputeAmount > parseFloat(transfer.amount)) {
-    throw new ValidationError('Disputed amount cannot exceed transfer amount');
+    const error: any = new ValidationError('Disputed amount cannot exceed transfer amount');
+    error.details = {
+      transfer_id: transferId,
+      transfer_amount: parseFloat(transfer.amount),
+      disputed_amount: disputeAmount,
+      currency: transfer.currency,
+    };
+    throw error;
   }
   
   // Calculate due date (response window from now)
@@ -260,7 +292,7 @@ disputes.post('/', async (c) => {
   
   if (createError) {
     console.error('Error creating dispute:', createError);
-    return c.json({ error: 'Failed to create dispute' }, 500);
+    throw new Error('Failed to create dispute in database');
   }
   
   // Audit log
@@ -300,6 +332,26 @@ disputes.post('/', async (c) => {
       dueDate: dispute.due_date,
       createdAt: dispute.created_at,
     },
+    links: {
+      self: `/v1/disputes/${dispute.id}`,
+      transfer: `/v1/transfers/${transferId}`,
+      claimant_account: `/v1/accounts/${dispute.claimant_account_id}`,
+      respondent_account: `/v1/accounts/${dispute.respondent_account_id}`,
+    },
+    next_actions: [
+      {
+        action: 'add_evidence',
+        description: 'Add supporting evidence to strengthen your case',
+        endpoint: `/v1/disputes/${dispute.id}/evidence`,
+        method: 'POST',
+      },
+      {
+        action: 'check_status',
+        description: 'Monitor dispute resolution progress',
+        endpoint: `/v1/disputes/${dispute.id}`,
+        due_date: dispute.due_date,
+      },
+    ],
   }, 201);
 });
 

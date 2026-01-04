@@ -1,0 +1,27 @@
+{
+  "name": "@payos-examples/x402-micropayments",
+  "version": "1.0.0",
+  "description": "x402 (HTTP 402) micropayments example - client and provider",
+  "type": "module",
+  "scripts": {
+    "dev:client": "tsx src/client.ts",
+    "dev:provider": "tsx src/provider.ts",
+    "dev": "concurrently \"pnpm dev:provider\" \"pnpm dev:client\"",
+    "build": "tsc",
+    "test": "vitest run src/index.test.ts",
+    "test:watch": "vitest src/index.test.ts"
+  },
+  "dependencies": {
+    "@payos/sdk": "workspace:*",
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "concurrently": "^8.2.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.9"
+  }
+}
+

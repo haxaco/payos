@@ -1,148 +1,39 @@
 # Epic 32: Tool Discovery 🧭
 
-**Status:** Pending
-**Phase:** AI-Native Foundation
-**Priority:** P0
-**Total Points:** 11
-**Stories:** 0/4 Complete
-**Dependencies:** None
-**Enables:** Agent platform integrations (LangChain, etc.)
+## ⚠️ DEPRECATED — Merged into Epic 36
 
-[← Back to Master PRD](../PayOS_PRD_Master.md)
+**Status:** DEPRECATED  
+**Merged Into:** [Epic 36: SDK & Developer Experience](./epic-36-sdk-developer-experience.md)  
+**Merge Date:** December 30, 2025  
 
 ---
 
-## Overview
+## Why This Epic Was Merged
 
-Provide a machine-readable capability catalog that agent platforms can consume to understand what PayOS can do.
+Epic 32's tool discovery endpoints are **delivery mechanisms** for Epic 36's agent platform integrations. The `/v1/capabilities` and `/v1/capabilities/function-calling` endpoints exist to enable MCP, LangChain, and OpenAI integrations—which are the core of Epic 36.
 
----
-
-## Endpoints
-
-### GET /v1/capabilities
-
-Returns capability definitions with parameters, return types, and error codes.
-
-```json
-{
-  "api_version": "2025-12-01",
-  "capabilities": [
-    {
-      "name": "create_transfer",
-      "description": "Create a cross-border transfer with automatic FX",
-      "category": "payments",
-      "endpoint": "POST /v1/transfers",
-      "parameters": { ... },
-      "returns": { ... },
-      "errors": ["INSUFFICIENT_BALANCE", "INVALID_ACCOUNT_ID"],
-      "supports_simulation": true,
-      "supports_idempotency": true
-    }
-  ],
-  "limits": { ... },
-  "supported_currencies": ["USD", "BRL", "MXN"],
-  "webhook_events": [...]
-}
-```
-
-### GET /v1/capabilities/openapi
-
-Returns full OpenAPI 3.0 specification.
-
-### GET /v1/capabilities/function-calling
-
-Returns schemas optimized for LLM function calling (OpenAI/Anthropic format).
-
-```json
-{
-  "functions": [
-    {
-      "name": "payos_create_transfer",
-      "description": "Create a cross-border payment...",
-      "parameters": {
-        "type": "object",
-        "required": ["from_account_id", "to_account_id", "amount", "currency"],
-        "properties": { ... }
-      }
-    },
-    {
-      "name": "payos_simulate_transfer",
-      "description": "Preview a transfer before executing...",
-      "parameters": { ... }
-    }
-  ]
-}
-```
+Building them separately would have resulted in:
+- Duplicate effort defining capability structures
+- Inconsistent schemas between capabilities and agent tools
+- More maintenance burden
 
 ---
 
-## Stories
+## Story Mapping
 
-| Story | Points | Priority | Description |
-|-------|--------|----------|-------------|
-| 32.1 | 3 | P0 | Capabilities endpoint with basic structure |
-| 32.2 | 3 | P0 | Function-calling format for LLM agents |
-| 32.3 | 3 | P1 | Full OpenAPI spec generation |
-| 32.4 | 2 | P2 | Capability versioning |
-| **Total** | **11** | | **0/4 Complete** |
+| Epic 32 Story | Merged Into | New Story |
+|---------------|-------------|-----------|
+| 32.1 Capabilities Endpoint (3 pts) | Epic 36 | **36.9** Capabilities API |
+| 32.2 Function-Calling Format (3 pts) | Epic 36 | **36.10** Function-Calling Format |
+| 32.3 OpenAPI Spec (3 pts) | Deferred | Auto-generated from routes |
+| 32.4 Capability Versioning (2 pts) | Epic 36 | Included in 36.9 via `api_version` |
 
----
-
-## Use Cases
-
-### LangChain Integration
-```python
-from langchain.tools import Tool
-import requests
-
-# Fetch PayOS capabilities
-caps = requests.get("https://api.payos.ai/v1/capabilities/function-calling").json()
-
-# Convert to LangChain tools
-tools = [Tool.from_function_definition(f) for f in caps['functions']]
-```
-
-### OpenAI Function Calling
-```typescript
-const capabilities = await fetch('https://api.payos.ai/v1/capabilities/function-calling');
-const { functions } = await capabilities.json();
-
-const completion = await openai.chat.completions.create({
-  model: "gpt-4",
-  messages: [...],
-  tools: functions.map(f => ({ type: "function", function: f }))
-});
-```
+**Total Points Absorbed:** 8 (11 - 3 deferred)
 
 ---
 
-## Technical Deliverables
+## Reference
 
-### API Routes
-- `apps/api/src/routes/capabilities.ts`
+For the original epic content before merging, see git history or the PRD v1.14.
 
-### Schema Generation
-- `apps/api/src/services/openapi-generator.ts` - Auto-generate from route definitions
-- `apps/api/src/services/function-calling-generator.ts` - Convert to LLM format
-
-### Static Files
-- `apps/api/public/openapi.json` - Cached OpenAPI spec
-- Updated on deployment
-
----
-
-## Success Criteria
-
-- ✅ Capabilities endpoint returns all PayOS operations
-- ✅ Function-calling format compatible with OpenAI/Anthropic
-- ✅ OpenAPI spec passes validation
-- ✅ LangChain integration tested
-- ✅ Documentation includes integration examples
-
----
-
-## Related Documentation
-
-- **Epic 30:** Structured Response System (defines error codes)
-- **Epic 28:** Simulation System (advertised as capability)
+**New Location:** [Epic 36: SDK & Developer Experience](./epic-36-sdk-developer-experience.md)

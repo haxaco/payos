@@ -9,7 +9,7 @@
 ## 🔑 API Key (User-Scoped)
 
 ```bash
-PAYOS_API_KEY=pk_test_pDIlJq3V3eMNdnBw2FTf10wVj1fUUzvnaaPKbK3StNg
+PAYOS_API_KEY=pk_test_YOUR_API_KEY_HERE
 ```
 
 ---
@@ -56,7 +56,7 @@ PAYOS_WALLET_ID=d199d814-5f53-4300-b1c8-81bd6ce5f00a
 
 ```bash
 cd /Users/haxaco/Dev/PayOS/apps/sample-provider
-PAYOS_API_KEY=pk_test_pDIlJq3V3eMNdnBw2FTf10wVj1fUUzvnaaPKbK3StNg \
+PAYOS_API_KEY=pk_test_YOUR_API_KEY_HERE \
 PAYOS_ACCOUNT_ID=054ad8f1-78b5-41ae-98b7-c84802ed52ae \
 pnpm dev
 ```
@@ -71,7 +71,7 @@ Expected output:
 
 ```bash
 cd /Users/haxaco/Dev/PayOS/apps/sample-consumer
-PAYOS_API_KEY=pk_test_pDIlJq3V3eMNdnBw2FTf10wVj1fUUzvnaaPKbK3StNg \
+PAYOS_API_KEY=pk_test_YOUR_API_KEY_HERE \
 PAYOS_AGENT_ID=7549e236-5a42-41fa-86b7-cc70fec64e8c \
 PAYOS_WALLET_ID=d199d814-5f53-4300-b1c8-81bd6ce5f00a \
 pnpm dev

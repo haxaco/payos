@@ -281,10 +281,10 @@ app.get('/:id', async (c) => {
     // Fetch recent transactions (from transfers table where type='x402')
     const { data: recentTxs } = await supabase
       .from('transfers')
-      .select('id, from_account_id, amount, currency, status, created_at, x402_metadata')
+      .select('id, from_account_id, amount, currency, status, created_at, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
       .eq('type', 'x402')
-      .contains('x402_metadata', { endpoint_id: id })
+      .contains('protocol_metadata', { endpoint_id: id })
       .order('created_at', { ascending: false })
       .limit(10);
     
@@ -297,7 +297,7 @@ app.get('/:id', async (c) => {
         amount: parseFloat(tx.amount),
         currency: tx.currency,
         status: tx.status,
-        requestId: tx.x402_metadata?.request_id,
+        requestId: tx.protocol_metadata?.request_id,
         createdAt: tx.created_at
       })) || []
     };

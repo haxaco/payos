@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { 
-  ArrowLeft, 
-  Search, 
+import {
+  ArrowLeft,
+  Search,
   Filter,
   Clock,
   CheckCircle,
@@ -30,7 +30,7 @@ const REASON_LABELS: Record<string, string> = {
 
 export default function RefundsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -47,7 +47,7 @@ export default function RefundsPage() {
 
   // Initialize pagination
   const pagination = usePagination({
-    totalItems: countData?.pagination?.total || 0,
+    totalItems: (countData as any)?.data?.pagination?.total || (countData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
@@ -61,11 +61,16 @@ export default function RefundsPage() {
         limit: pagination.pageSize,
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const refunds = refundsData?.data || [];
+  const rawData = (refundsData as any)?.data;
+  const refunds = Array.isArray(rawData)
+    ? rawData
+    : (Array.isArray((rawData as any)?.data)
+      ? (rawData as any).data
+      : []);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -83,12 +88,23 @@ export default function RefundsPage() {
     }
   };
 
-  const filteredRefunds = refunds.filter(refund => {
+  const filteredRefunds = refunds.filter((refund: any) => {
     const matchesSearch = refund.id.toLowerCase().includes(search.toLowerCase()) ||
-      refund.originalTransferId.toLowerCase().includes(search.toLowerCase());
+      (refund.originalTransferId || refund.original_transfer_id || '').toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'all' || refund.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Refunds</h1>
+        </div>
+        <TableSkeleton rows={5} columns={6} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -131,7 +147,7 @@ export default function RefundsPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {refunds.filter(r => r.status === 'completed').length}
+                {refunds.filter((r: any) => r.status === 'completed').length}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Completed</p>
             </div>
@@ -144,7 +160,7 @@ export default function RefundsPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {refunds.filter(r => r.status === 'pending').length}
+                {refunds.filter((r: any) => r.status === 'pending').length}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Pending</p>
             </div>
@@ -158,7 +174,7 @@ export default function RefundsPage() {
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {formatCurrency(
-                  refunds.filter(r => r.status === 'completed').reduce((acc, r) => acc + r.amount, 0),
+                  refunds.filter((r: any) => r.status === 'completed').reduce((acc: number, r: any) => acc + r.amount, 0),
                   'USDC'
                 )}
               </p>
@@ -224,19 +240,21 @@ export default function RefundsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredRefunds.map((refund) => (
+              {filteredRefunds.map((refund: any) => (
                 <tr key={refund.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-6 py-4">
-                    <code className="text-sm font-mono text-gray-900 dark:text-white">
-                      {refund.id.slice(0, 8)}...
-                    </code>
+                    <Link href={`/dashboard/refunds/${refund.id}`} className="block group">
+                      <code className="text-sm font-mono text-blue-600 dark:text-blue-400 group-hover:underline">
+                        {refund.id.slice(0, 8)}...
+                      </code>
+                    </Link>
                   </td>
                   <td className="px-6 py-4">
                     <Link
-                      href={`/dashboard/transfers?id=${refund.originalTransferId}`}
+                      href={`/dashboard/transfers/${refund.originalTransferId || refund.original_transfer_id || ''}`}
                       className="text-sm text-blue-600 hover:underline flex items-center gap-1"
                     >
-                      {refund.originalTransferId.slice(0, 8)}...
+                      {(refund.originalTransferId || refund.original_transfer_id)?.slice(0, 8) || 'N/A'}...
                       <ExternalLink className="h-3 w-3" />
                     </Link>
                   </td>
@@ -246,18 +264,22 @@ export default function RefundsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">
-                      {REASON_LABELS[refund.reason] || refund.reason}
+                    <span className="text-sm text-gray-700 dark:text-gray-300 capitalize">
+                      {(REASON_LABELS[refund.reason] || refund.reason || 'Unknown').replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="px-6 py-4">
                     <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1', getStatusColor(refund.status))}>
                       {getStatusIcon(refund.status)}
-                      {refund.status}
+                      <span className="capitalize">{refund.status}</span>
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                    {new Date(refund.createdAt).toLocaleDateString()}
+                    {new Date(refund.createdAt || refund.created_at || Date.now()).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}
                   </td>
                 </tr>
               ))}

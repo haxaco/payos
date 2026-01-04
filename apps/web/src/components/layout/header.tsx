@@ -12,7 +12,7 @@ import { NotificationsCenter } from '@/components/notifications/notifications-ce
 type Environment = 'sandbox' | 'production';
 
 interface HeaderProps {
-  user: SupabaseUser;
+  user: SupabaseUser | null;
 }
 
 export function Header({ user }: HeaderProps) {
@@ -35,11 +35,11 @@ export function Header({ user }: HeaderProps) {
     // TODO: In the future, this would switch API endpoints
   };
 
-  const initials = user.email
+  const initials = user?.email
     ? user.email.substring(0, 2).toUpperCase()
     : 'U';
 
-  const userName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
 
   return (
     <>
@@ -64,15 +64,13 @@ export function Header({ user }: HeaderProps) {
           <div className="relative">
             <button
               onClick={() => setShowEnvMenu(!showEnvMenu)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                environment === 'sandbox'
-                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                  : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800'
-              }`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${environment === 'sandbox'
+                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800'
+                }`}
             >
-              <span className={`w-2 h-2 rounded-full ${
-                environment === 'sandbox' ? 'bg-emerald-500' : 'bg-orange-500'
-              }`} />
+              <span className={`w-2 h-2 rounded-full ${environment === 'sandbox' ? 'bg-emerald-500' : 'bg-orange-500'
+                }`} />
               {environment === 'sandbox' ? 'SANDBOX' : 'PRODUCTION'}
               <ChevronDown className="w-4 h-4" />
             </button>
@@ -149,7 +147,7 @@ export function Header({ user }: HeaderProps) {
                       {userName}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {user.email}
+                      {user?.email || 'No email'}
                     </div>
                   </div>
                   <div className="py-1">
@@ -157,7 +155,7 @@ export function Header({ user }: HeaderProps) {
                       <User className="w-4 h-4" />
                       Profile
                     </button>
-                    <button 
+                    <button
                       onClick={() => {
                         setShowUserMenu(false);
                         router.push('/dashboard/settings');

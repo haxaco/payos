@@ -81,7 +81,7 @@ After adding environment variables and redeploying:
 
 3. **Test API Connection:**
    - Go to: https://payos-web.vercel.app/dashboard/api-keys
-   - Enter your test API key: `pk_test_AmAFezlpd-QlbPVtXlrj1wG8lLGAB51c9RtQ2w3fakQ`
+   - Enter your test API key: `pk_test_YOUR_API_KEY_HERE`
    - Click **Save**
    - If successful, you should see a success message ✅
 

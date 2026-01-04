@@ -9,7 +9,13 @@ import {
   paginationResponse,
 } from '../utils/helpers.js';
 import { createBalanceService } from '../services/balances.js';
-import { ValidationError, NotFoundError } from '../middleware/error.js';
+import { 
+  ValidationError, 
+  NotFoundError, 
+  InsufficientBalanceError 
+} from '../middleware/error.js';
+import { storeIdempotencyResponse } from '../middleware/idempotency.js';
+import { ErrorCode } from '@payos/types';
 
 const transfers = new Hono();
 
@@ -79,9 +85,9 @@ transfers.get('/', async (c) => {
     dbQuery = dbQuery.lte('amount', maxAmount);
   }
   
-  // x402-specific filters using JSONB metadata
+  // Protocol-specific filters using JSONB metadata
   if (endpointId && isValidUUID(endpointId)) {
-    dbQuery = dbQuery.contains('x402_metadata', { endpoint_id: endpointId });
+    dbQuery = dbQuery.contains('protocol_metadata', { endpoint_id: endpointId });
   }
   if (providerId && isValidUUID(providerId)) {
     dbQuery = dbQuery.eq('to_account_id', providerId);
@@ -94,7 +100,7 @@ transfers.get('/', async (c) => {
   
   if (error) {
     console.error('Error fetching transfers:', error);
-    return c.json({ error: 'Failed to fetch transfers' }, 500);
+    throw new Error('Failed to fetch transfers from database');
   }
   
   const transfers = (data || []).map(row => mapTransferFromDb(row));
@@ -109,11 +115,12 @@ transfers.post('/', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
   
-  // Check for idempotency key
-  const idempotencyKey = c.req.header('X-Idempotency-Key');
+  // Get idempotency key from middleware context or header (fallback)
+  const idempotencyKey = c.get('idempotencyKey') || c.req.header('X-Idempotency-Key');
+  const requestHash = c.get('idempotencyRequestHash');
   
   if (idempotencyKey) {
-    // Check for existing transfer with this key
+    // Check for existing transfer with this key (legacy check in transfers table)
     const { data: existing } = await supabase
       .from('transfers')
       .select('*')
@@ -168,10 +175,12 @@ transfers.post('/', async (c) => {
   // Check sender has sufficient balance
   const availableBalance = parseFloat(fromAccount.balance_available) || 0;
   if (availableBalance < amount) {
-    throw new ValidationError('Insufficient balance', {
-      available: availableBalance,
-      required: amount,
-    });
+    throw new InsufficientBalanceError(
+      fromAccountId,
+      availableBalance.toString(),
+      amount.toString(),
+      'USD'
+    );
   }
   
   // Determine transfer type
@@ -192,17 +201,19 @@ transfers.post('/', async (c) => {
       .single();
     
     if (quoteError || !quote) {
-      throw new ValidationError('Invalid quote ID');
+      throw new NotFoundError('Quote', quoteId);
     }
     
     // Check quote is not expired
     if (new Date(quote.expires_at) < new Date()) {
-      throw new ValidationError('Quote has expired');
+      throw new QuoteExpiredError(quoteId, quote.expires_at);
     }
     
     // Check quote is not already used
     if (quote.used_at) {
-      throw new ValidationError('Quote has already been used');
+      const error: any = new ValidationError('Quote has already been used');
+      error.details = { quote_id: quoteId, used_at: quote.used_at };
+      throw error;
     }
     
     fxRate = parseFloat(quote.fx_rate);
@@ -246,7 +257,7 @@ transfers.post('/', async (c) => {
   
   if (createError) {
     console.error('Error creating transfer:', createError);
-    return c.json({ error: 'Failed to create transfer' }, 500);
+    throw new Error('Failed to create transfer in database');
   }
   
   // For internal transfers, execute immediately
@@ -305,7 +316,45 @@ transfers.post('/', async (c) => {
     },
   });
   
-  return c.json({ data: mapTransferFromDb(transfer) }, 201);
+  const responseBody = { 
+    data: mapTransferFromDb(transfer),
+    links: {
+      self: `/v1/transfers/${transfer.id}`,
+      from_account: `/v1/accounts/${fromAccountId}`,
+      to_account: `/v1/accounts/${toAccountId}`,
+    },
+    next_actions: isInternal 
+      ? [
+          {
+            action: 'view_account',
+            description: 'View updated account balance',
+            endpoint: `/v1/accounts/${toAccountId}/balances`,
+          }
+        ]
+      : [
+          {
+            action: 'check_status',
+            description: 'Poll for transfer completion status',
+            endpoint: `/v1/transfers/${transfer.id}`,
+            recommended_interval_seconds: 30,
+          }
+        ],
+  };
+  
+  // Store in idempotency infrastructure for future duplicate detection
+  if (idempotencyKey && requestHash) {
+    storeIdempotencyResponse(
+      ctx.tenantId,
+      idempotencyKey,
+      requestHash,
+      '/v1/transfers',
+      'POST',
+      201,
+      responseBody
+    ).catch((err) => console.error('Failed to store idempotency response:', err));
+  }
+  
+  return c.json(responseBody, 201);
 });
 
 // ============================================
@@ -331,7 +380,42 @@ transfers.get('/:id', async (c) => {
     throw new NotFoundError('Transfer', id);
   }
   
-  return c.json({ data: mapTransferFromDb(data) });
+  const transfer = mapTransferFromDb(data);
+  const responseBody: any = { 
+    data: transfer,
+    links: {
+      self: `/v1/transfers/${id}`,
+      from_account: `/v1/accounts/${data.from_account_id}`,
+      to_account: `/v1/accounts/${data.to_account_id}`,
+    },
+  };
+  
+  // Add next actions based on transfer status
+  if (data.status === 'processing') {
+    responseBody.next_actions = [
+      {
+        action: 'check_status',
+        description: 'Poll for transfer completion status',
+        endpoint: `/v1/transfers/${id}`,
+        recommended_interval_seconds: 30,
+      }
+    ];
+  } else if (data.status === 'pending') {
+    responseBody.next_actions = [
+      {
+        action: 'cancel_transfer',
+        description: 'Cancel this pending transfer',
+        endpoint: `/v1/transfers/${id}/cancel`,
+      },
+      {
+        action: 'check_status',
+        description: 'Check transfer status',
+        endpoint: `/v1/transfers/${id}`,
+      }
+    ];
+  }
+  
+  return c.json(responseBody);
 });
 
 // ============================================
@@ -359,7 +443,13 @@ transfers.post('/:id/cancel', async (c) => {
   
   // Can only cancel pending transfers
   if (transfer.status !== 'pending') {
-    throw new ValidationError(`Cannot cancel transfer with status: ${transfer.status}`);
+    const error: any = new ValidationError(`Cannot cancel transfer with status: ${transfer.status}`);
+    error.details = {
+      transfer_id: id,
+      current_status: transfer.status,
+      cancellable_statuses: ['pending'],
+    };
+    throw error;
   }
   
   // Update status
@@ -376,7 +466,7 @@ transfers.post('/:id/cancel', async (c) => {
   
   if (error) {
     console.error('Error cancelling transfer:', error);
-    return c.json({ error: 'Failed to cancel transfer' }, 500);
+    throw new Error('Failed to cancel transfer in database');
   }
   
   // Audit log
@@ -390,7 +480,14 @@ transfers.post('/:id/cancel', async (c) => {
     actorName: ctx.actorName,
   });
   
-  return c.json({ data: mapTransferFromDb(data) });
+  return c.json({ 
+    data: mapTransferFromDb(data),
+    links: {
+      self: `/v1/transfers/${id}`,
+      from_account: `/v1/accounts/${data.from_account_id}`,
+      to_account: `/v1/accounts/${data.to_account_id}`,
+    },
+  });
 });
 
 export default transfers;

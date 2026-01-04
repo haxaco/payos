@@ -12,6 +12,7 @@ import {
 import { createLimitService } from '../services/limits.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { generateAgentToken, hashApiKey, getKeyPrefix } from '../utils/crypto.js';
+import { ErrorCode } from '@payos/types';
 
 const agents = new Hono();
 
@@ -112,7 +113,7 @@ agents.get('/', async (c) => {
   
   if (error) {
     console.error('Error fetching agents:', error);
-    return c.json({ error: 'Failed to fetch agents' }, 500);
+    throw new Error('Failed to fetch agents from database');
   }
   
   // Map to response format
@@ -168,7 +169,13 @@ agents.post('/', async (c) => {
   
   // Only business accounts can have agents
   if (parentAccount.type !== 'business') {
-    throw new ValidationError('Only business accounts can have agents');
+    const error: any = new ValidationError('Only business accounts can have agents');
+    error.details = {
+      account_id: parentAccountId,
+      account_type: parentAccount.type,
+      required_type: 'business',
+    };
+    throw error;
   }
   
   // Generate auth credentials (plaintext token - only returned once!)
@@ -213,7 +220,7 @@ agents.post('/', async (c) => {
   
   if (error) {
     console.error('Error creating agent:', error);
-    return c.json({ error: 'Failed to create agent' }, 500);
+    throw new Error('Failed to create agent in database');
   }
   
   // Audit log
@@ -257,7 +264,12 @@ agents.get('/:id', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   const { data, error } = await supabase
@@ -298,7 +310,12 @@ agents.patch('/:id', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   // Check agent exists
@@ -358,7 +375,7 @@ agents.patch('/:id', async (c) => {
   
   if (error) {
     console.error('Error updating agent:', error);
-    return c.json({ error: 'Failed to update agent' }, 500);
+    throw new Error('Failed to update agent in database');
   }
   
   // Audit log
@@ -398,7 +415,12 @@ agents.delete('/:id', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   // Check agent exists
@@ -422,10 +444,13 @@ agents.delete('/:id', async (c) => {
     .eq('status', 'active');
   
   if (streamCount && streamCount > 0) {
-    throw new ValidationError('Cannot delete agent with active managed streams', {
-      activeStreams: streamCount,
+    const error: any = new ValidationError('Cannot delete agent with active managed streams');
+    error.details = {
+      agent_id: id,
+      active_streams: streamCount,
       message: 'Transfer stream management or cancel streams before deleting',
-    });
+    };
+    throw error;
   }
   
   // Delete agent
@@ -437,7 +462,7 @@ agents.delete('/:id', async (c) => {
   
   if (error) {
     console.error('Error deleting agent:', error);
-    return c.json({ error: 'Failed to delete agent' }, 500);
+    throw new Error('Failed to delete agent from database');
   }
   
   // Audit log
@@ -464,7 +489,12 @@ agents.post('/:id/suspend', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   const { data: existing, error: fetchError } = await supabase
@@ -479,7 +509,12 @@ agents.post('/:id/suspend', async (c) => {
   }
   
   if (existing.status === 'suspended') {
-    throw new ValidationError('Agent is already suspended');
+    const error: any = new ValidationError('Agent is already suspended');
+    error.details = {
+      agent_id: id,
+      current_status: existing.status,
+    };
+    throw error;
   }
   
   const { data, error } = await supabase
@@ -496,7 +531,7 @@ agents.post('/:id/suspend', async (c) => {
   
   if (error) {
     console.error('Error suspending agent:', error);
-    return c.json({ error: 'Failed to suspend agent' }, 500);
+    throw new Error('Failed to suspend agent in database');
   }
   
   // Audit log
@@ -533,7 +568,12 @@ agents.post('/:id/activate', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   const { data: existing, error: fetchError } = await supabase
@@ -548,7 +588,12 @@ agents.post('/:id/activate', async (c) => {
   }
   
   if (existing.status === 'active') {
-    throw new ValidationError('Agent is already active');
+    const error: any = new ValidationError('Agent is already active');
+    error.details = {
+      agent_id: id,
+      current_status: existing.status,
+    };
+    throw error;
   }
   
   const { data, error } = await supabase
@@ -565,7 +610,7 @@ agents.post('/:id/activate', async (c) => {
   
   if (error) {
     console.error('Error activating agent:', error);
-    return c.json({ error: 'Failed to activate agent' }, 500);
+    throw new Error('Failed to activate agent in database');
   }
   
   // Audit log
@@ -602,7 +647,12 @@ agents.get('/:id/streams', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   // Verify agent exists
@@ -628,7 +678,7 @@ agents.get('/:id/streams', async (c) => {
   
   if (error) {
     console.error('Error fetching agent streams:', error);
-    return c.json({ error: 'Failed to fetch streams' }, 500);
+    throw new Error('Failed to fetch agent streams from database');
   }
   
   const streams = (data || []).map(row => mapStreamFromDb(row));
@@ -645,7 +695,12 @@ agents.get('/:id/limits', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   // Verify agent exists
@@ -675,7 +730,12 @@ agents.post('/:id/verify', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   // Parse body for tier
@@ -688,7 +748,12 @@ agents.post('/:id/verify', async (c) => {
   
   const tier = body.tier ?? 1; // Default to tier 1
   if (tier < 0 || tier > 3) {
-    throw new ValidationError('KYA tier must be between 0 and 3');
+    const error: any = new ValidationError('KYA tier must be between 0 and 3');
+    error.details = {
+      provided_tier: tier,
+      valid_range: '0-3',
+    };
+    throw error;
   }
   
   const { data: existing, error: fetchError } = await supabase
@@ -721,7 +786,7 @@ agents.post('/:id/verify', async (c) => {
   
   if (error) {
     console.error('Error verifying agent:', error);
-    return c.json({ error: 'Failed to verify agent' }, 500);
+    throw new Error('Failed to verify agent in database');
   }
   
   // Audit log
@@ -761,7 +826,12 @@ agents.post('/:id/rotate-token', async (c) => {
   const supabase = createClient();
   
   if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid agent ID format');
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
   }
   
   // Get existing agent
@@ -778,7 +848,12 @@ agents.post('/:id/rotate-token', async (c) => {
   
   // Only users (API key holders) can rotate tokens, not agents themselves
   if (ctx.actorType !== 'user') {
-    return c.json({ error: 'Only API key holders can rotate agent tokens' }, 403);
+    const error: any = new ValidationError('Only API key holders can rotate agent tokens');
+    error.details = {
+      actor_type: ctx.actorType,
+      required_actor_type: 'user',
+    };
+    throw error;
   }
   
   // Generate new token
@@ -798,7 +873,7 @@ agents.post('/:id/rotate-token', async (c) => {
   
   if (updateError) {
     console.error('Error rotating token:', updateError);
-    return c.json({ error: 'Failed to rotate token' }, 500);
+    throw new Error('Failed to rotate token in database');
   }
   
   // Audit log

@@ -23,26 +23,62 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronDown,
-  ChevronRight as ChevronRightIcon,
-  AlertTriangle,
-  ScrollText,
-  Layers,
-  UserCheck,
-  Calendar,
-  RotateCcw,
-  DollarSign,
+  LayoutDashboard,
   Zap,
   BarChart3,
+  Globe,
   Code,
+  FileCheck,
+  ShoppingCart,
+  Terminal,
+  ScrollText,
+  RotateCcw,
+  Calendar,
+  UserCheck
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useState } from 'react';
 
-const x402Nav = [
-  { href: '/dashboard/x402', label: 'x402 Overview', icon: Zap },
-  { href: '/dashboard/x402/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/dashboard/x402/endpoints', label: 'Endpoints', icon: DollarSign },
-  { href: '/dashboard/x402/integration', label: 'Integration', icon: Code },
+const agenticPaymentsNav = [
+  {
+    href: '/dashboard/agentic-payments',
+    label: 'Overview',
+    icon: LayoutDashboard
+  },
+  {
+    href: '/dashboard/agentic-payments/analytics',
+    label: 'Analytics',
+    icon: BarChart3
+  },
+  {
+    label: 'x402',
+    icon: Zap,
+    children: [
+      { href: '/dashboard/agentic-payments/x402/endpoints', label: 'Endpoints', icon: Globe },
+      { href: '/dashboard/agentic-payments/x402/integration', label: 'Integration', icon: Code },
+    ]
+  },
+  {
+    label: 'AP2',
+    icon: Bot,
+    children: [
+      { href: '/dashboard/agentic-payments/ap2/mandates', label: 'Mandates', icon: FileCheck },
+      { href: '/dashboard/agentic-payments/ap2/integration', label: 'Integration', icon: Code },
+    ]
+  },
+  {
+    label: 'ACP',
+    icon: ShoppingCart,
+    children: [
+      { href: '/dashboard/agentic-payments/acp/checkouts', label: 'Checkouts', icon: CreditCard },
+      { href: '/dashboard/agentic-payments/acp/integration', label: 'Integration', icon: Code },
+    ]
+  },
+  {
+    href: '/dashboard/agentic-payments/developers',
+    label: 'Developers',
+    icon: Terminal
+  },
 ];
 
 const configurationNav = [
@@ -100,25 +136,26 @@ export function Sidebar() {
   ];
 
   const isActive = (href: string) => {
-    if (href === '/dashboard') {
+    if (href === '/dashboard' || href === '#') {
       return pathname === '/dashboard';
     }
     return pathname.startsWith(href);
   };
 
-  const NavItem = ({ item }: { item: NavItemProps }) => {
+  const NavItem = ({ item, className }: { item: NavItemProps; className?: string }) => {
     const Icon = item.icon;
     const active = isActive(item.href);
-    
+
     return (
       <Link
         href={item.href}
         className={cn(
           'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
           active
-            ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400' 
+            ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400'
             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
-          collapsed && 'justify-center'
+          collapsed && 'justify-center',
+          className
         )}
         title={collapsed ? item.label : undefined}
       >
@@ -153,13 +190,13 @@ export function Sidebar() {
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
               <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
               </svg>
             </div>
             <span className="text-xl font-bold text-gray-900 dark:text-white">PayOS</span>
           </Link>
         )}
-        
+
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
@@ -177,16 +214,39 @@ export function Sidebar() {
           <NavItem key={item.href} item={item} />
         ))}
 
-        {/* x402 Section - Moved above Configuration for better visibility */}
+        {/* Agentic Payments Section */}
         <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
           {!collapsed && (
             <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              x402 Payments
+              Agentic Payments
             </div>
           )}
-          {x402Nav.map((item) => (
-            <NavItem key={item.href} item={item} />
-          ))}
+
+          {agenticPaymentsNav.map((item: any) => {
+            if (item.children && !collapsed) {
+              return (
+                <div key={item.label} className="space-y-1 mb-2">
+                  <div className="px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                    <item.icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {item.children.map((child: any) => (
+                      <NavItem key={child.href} item={child} className="pl-9" />
+                    ))}
+                  </div>
+                </div>
+              );
+            } else if (item.children && collapsed) {
+              // In collapsed mode, we can only show the parent icon?
+              // Or we show children? 
+              // Showing parent icon as a link to the first child or just header is ambiguous.
+              // For now, let's just show the parent icon formatted as a nav item that does nothing or goes to first child.
+              const firstChild = item.children[0];
+              return <NavItem key={item.label} item={{ ...item, href: firstChild.href }} />;
+            }
+            return <NavItem key={item.href} item={item} />;
+          })}
         </div>
 
         {/* Configuration Section - Collapsible */}

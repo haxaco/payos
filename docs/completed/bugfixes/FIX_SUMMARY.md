@@ -41,7 +41,7 @@ Fix critical blockers preventing x402 SDK from working:
 **Test:** ✅ WORKING
 ```bash
 curl http://localhost:4000/v1/auth/me \
-  -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc"
+  -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE"
 # Returns 200 with user data including accountId
 ```
 
@@ -203,7 +203,7 @@ X-Payment-Network: base-mainnet
 ### Test /v1/auth/me
 ```bash
 curl -s http://localhost:4000/v1/auth/me \
-  -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" | jq
+  -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" | jq
 ```
 
 ### Test Provider 402 Response

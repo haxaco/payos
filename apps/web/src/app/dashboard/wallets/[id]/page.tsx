@@ -1,0 +1,342 @@
+'use client';
+
+import { useParams, useRouter } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useApiClient } from '@/lib/api-client';
+import { Card, Button, Badge as UIBadge, Progress } from '@payos/ui';
+import {
+    ArrowLeft,
+    Wallet,
+    CreditCard,
+    ArrowUpRight,
+    ArrowDownLeft,
+    Clock,
+    ExternalLink,
+    Copy,
+    MoreVertical,
+    Shield,
+    Activity,
+    Calendar,
+    DollarSign,
+    AlertTriangle
+} from 'lucide-react';
+import { toast } from 'sonner';
+import Link from 'next/link';
+import { useState } from 'react';
+import { formatCurrency } from '@payos/ui';
+
+// Custom Badge for Wallet Status
+function StatusBadge({ status }: { status: string }) {
+    const styles: Record<string, string> = {
+        active: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400',
+        frozen: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
+        depleted: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400',
+    };
+
+    return (
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
+            {status}
+        </span>
+    );
+}
+
+export default function WalletDetailPage() {
+    const { id } = useParams<{ id: string }>();
+    const router = useRouter();
+    const api = useApiClient();
+    const queryClient = useQueryClient();
+    const [timeRange, setTimeRange] = useState('30d');
+
+    // Fetch wallet details
+    const { data: walletResponse, isLoading, error } = useQuery({
+        queryKey: ['wallet', id],
+        queryFn: async () => {
+            if (!api) throw new Error('API client not initialized');
+            return api.wallets.get(id);
+        },
+        enabled: !!api && !!id,
+    });
+
+    const wallet = (walletResponse as any)?.data || walletResponse;
+
+    // Fetch transactions (using transfers filtered by wallet id)
+    const { data: transactionsResponse, isLoading: txLoading } = useQuery({
+        queryKey: ['wallet-transactions', id],
+        queryFn: async () => {
+            if (!api) throw new Error('API client not initialized');
+            // Fallback/Workaround: use transfers.list with x402_wallet_id
+            return api.transfers.list({ x402_wallet_id: id, limit: 20 });
+        },
+        enabled: !!api && !!id,
+    });
+
+    const transactions = (transactionsResponse as any)?.data || [];
+
+    const handleCopyAddress = () => {
+        if (wallet?.walletAddress) {
+            navigator.clipboard.writeText(wallet.walletAddress);
+            toast.success('Wallet address copied to clipboard');
+        }
+    };
+
+    if (isLoading) {
+        return (
+            <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-pulse">
+                <div className="h-8 bg-gray-200 dark:bg-gray-800 rounded w-1/4 mb-8" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="h-40 bg-gray-200 dark:bg-gray-800 rounded-xl" />
+                    <div className="h-40 bg-gray-200 dark:bg-gray-800 rounded-xl" />
+                    <div className="h-40 bg-gray-200 dark:bg-gray-800 rounded-xl" />
+                </div>
+            </div>
+        );
+    }
+
+    if (error || !wallet) {
+        return (
+            <div className="p-8 max-w-[1600px] mx-auto flex flex-col items-center justify-center min-h-[400px]">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
+                    <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Wallet not found</h2>
+                <Button variant="outline" onClick={() => router.push('/dashboard/wallets')}>
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Wallets
+                </Button>
+            </div>
+        );
+    }
+
+    // Calculate simulated spending percentages for UI demo
+    const dailyLimit = wallet.spendingPolicy?.dailyLimit || 1000;
+    const monthlyLimit = wallet.spendingPolicy?.monthlyLimit || 5000;
+    // Mock usage data
+    const dailyUsed = 450;
+    const monthlyUsed = 2100;
+    const dailyPercent = (dailyUsed / dailyLimit) * 100;
+    const monthlyPercent = (monthlyUsed / monthlyLimit) * 100;
+
+    return (
+        <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+            {/* Top Navigation */}
+            <div className="flex items-center justify-between">
+                <Button variant="ghost" className="pl-0 gap-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white" onClick={() => router.push('/dashboard/wallets')}>
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to Wallets
+                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => toast.info('Freeze feature coming soon')}>
+                        <Shield className="w-4 h-4 mr-2" />
+                        Freeze
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => toast.info('Deposit feature coming soon')}>
+                        <ArrowDownLeft className="w-4 h-4 mr-2" />
+                        Deposit
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => toast.info('Withdraw feature coming soon')}>
+                        <ArrowUpRight className="w-4 h-4 mr-2" />
+                        Withdraw
+                    </Button>
+                </div>
+            </div>
+
+            {/* Header Info */}
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-xl">
+                            <Wallet className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{wallet.name || 'Untitled Wallet'}</h1>
+                            <div className="flex items-center gap-3 mt-1">
+                                <StatusBadge status={wallet.status} />
+                                <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                                    {wallet.network || 'Network Unknown'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex flex-col items-end">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Wallet Information</div>
+                    <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition" onClick={handleCopyAddress}>
+                        <span className="text-sm font-mono text-gray-700 dark:text-gray-300">
+                            {wallet.walletAddress ? `${wallet.walletAddress.slice(0, 6)}...${wallet.walletAddress.slice(-4)}` : 'No Address'}
+                        </span>
+                        <Copy className="w-3.5 h-3.5 text-gray-500" />
+                    </div>
+                </div>
+            </div>
+
+
+            {/* Main Grid */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+
+                {/* Left Column (Details & Transactions) */}
+                <div className="xl:col-span-2 space-y-8">
+
+                    {/* Balance Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Card className="p-6 bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-0 shadow-xl">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <p className="text-blue-100 text-sm font-medium mb-1">Total Balance</p>
+                                    <h3 className="text-4xl font-bold">
+                                        {formatCurrency(wallet.balance || 0, wallet.currency || 'USD')}
+                                    </h3>
+                                </div>
+                                <Activity className="w-6 h-6 text-blue-200" />
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-blue-100">
+                                <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                                Available for use
+                            </div>
+                        </Card>
+
+                        <Card className="p-6">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Spending Policy</h3>
+
+                            <div className="space-y-6">
+                                <div>
+                                    <div className="flex justify-between text-sm mb-2">
+                                        <span className="text-gray-500 dark:text-gray-400">Daily Limit</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">
+                                            ${dailyUsed.toLocaleString()} / ${dailyLimit.toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <Progress value={dailyPercent} className="h-2" />
+                                </div>
+                                <div>
+                                    <div className="flex justify-between text-sm mb-2">
+                                        <span className="text-gray-500 dark:text-gray-400">Monthly Limit</span>
+                                        <span className="font-medium text-gray-900 dark:text-white">
+                                            ${monthlyUsed.toLocaleString()} / ${monthlyLimit.toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <Progress value={monthlyPercent} className="h-2" />
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+
+                    {/* Transactions List */}
+                    <Card className="overflow-hidden">
+                        <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
+                            <Button variant="ghost" size="sm" className="text-blue-600">View All</Button>
+                        </div>
+
+                        {txLoading ? (
+                            <div className="p-8 text-center text-gray-500">Loading transactions...</div>
+                        ) : transactions.length === 0 ? (
+                            <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+                                <Clock className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                <p>No transactions found for this wallet.</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gray-50 dark:bg-gray-800/50 text-gray-500 dark:text-gray-400 font-medium">
+                                        <tr>
+                                            <th className="px-6 py-3">Type</th>
+                                            <th className="px-6 py-3">Amount</th>
+                                            <th className="px-6 py-3">Status</th>
+                                            <th className="px-6 py-3">Date</th>
+                                            <th className="px-6 py-3"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                                        {transactions.map((tx: any) => (
+                                            <tr key={tx.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`p-2 rounded-lg ${tx.amount > 0 ? 'bg-green-100 dark:bg-green-900/20 text-green-600' : 'bg-gray-100 dark:bg-gray-800 text-gray-600'}`}>
+                                                            {tx.amount > 0 ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                                                        </div>
+                                                        <span className="font-medium text-gray-900 dark:text-white capitalize truncate max-w-[150px]">
+                                                            {tx.type.replace(/_/g, ' ')}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`font-medium ${tx.amount > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}`}>
+                                                        {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount || 0, tx.currency || 'USD')}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${tx.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400' :
+                                                            tx.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400' :
+                                                                'bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400'
+                                                        }`}>
+                                                        {tx.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
+                                                    {new Date(tx.createdAt || tx.created_at).toLocaleDateString()}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <Link href={`/dashboard/transfers/${tx.id}`} className="text-gray-400 hover:text-blue-600 transition-colors">
+                                                        <ExternalLink className="w-4 h-4" />
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </Card>
+                </div>
+
+                {/* Right Column (Info & Stats) */}
+                <div className="space-y-6">
+                    <Card className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Wallet Details</h3>
+                        <div className="space-y-4">
+                            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                <span className="text-sm text-gray-500">ID</span>
+                                <span className="text-sm font-mono text-gray-900 dark:text-white truncate max-w-[150px]" title={wallet.id}>
+                                    {wallet.id}
+                                </span>
+                            </div>
+                            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                <span className="text-sm text-gray-500">Created</span>
+                                <span className="text-sm text-gray-900 dark:text-white">
+                                    {new Date(wallet.createdAt || wallet.created_at).toLocaleDateString()}
+                                </span>
+                            </div>
+                            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                <span className="text-sm text-gray-500">Purpose</span>
+                                <span className="text-sm text-gray-900 dark:text-white capitalize">
+                                    {wallet.purpose || 'General'}
+                                </span>
+                            </div>
+                            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                <span className="text-sm text-gray-500">Owner Account</span>
+                                <Link href={`/dashboard/accounts/${wallet.ownerAccountId}`} className="text-sm text-blue-600 hover:underline truncate max-w-[150px]">
+                                    {wallet.ownerAccountId || 'N/A'}
+                                </Link>
+                            </div>
+                        </div>
+                    </Card>
+
+                    <Card className="p-6 bg-gray-900 text-white border-0">
+                        <h3 className="text-lg font-semibold mb-4 text-blue-100">Quick Stats</h3>
+                        <div className="grid grid-cols-2 gap-4 text-center">
+                            <div className="p-4 rounded-xl bg-gray-800/50">
+                                <div className="text-3xl font-bold mb-1">${(transactions.reduce((acc: number, t: any) => acc + (t.amount > 0 ? t.amount : 0), 0) / 1000).toFixed(1)}k</div>
+                                <div className="text-xs text-gray-400">Inflow (30d)</div>
+                            </div>
+                            <div className="p-4 rounded-xl bg-gray-800/50">
+                                <div className="text-3xl font-bold mb-1">{transactions.length}</div>
+                                <div className="text-xs text-gray-400">Transactions</div>
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+
+            </div>
+        </div>
+    );
+}

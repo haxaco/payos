@@ -24,6 +24,57 @@
  * Spec: https://www.x402.org/x402-whitepaper.pdf
  */
 
+import { createHmac } from 'crypto';
+
+// ============================================
+// JWT Verification (Phase 2 Optimization)
+// ============================================
+
+interface JWTPayload {
+  transferId: string;
+  requestId: string;
+  endpointId: string;
+  amount: number;
+  currency: string;
+  iat: number;
+  exp: number;
+}
+
+function verifyJWT(token: string, secret: string): JWTPayload | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    
+    const [headerB64, payloadB64, signatureB64] = parts;
+    
+    // Verify signature
+    const expectedSignature = createHmac('sha256', secret)
+      .update(`${headerB64}.${payloadB64}`)
+      .digest('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+    
+    if (signatureB64 !== expectedSignature) {
+      return null;
+    }
+    
+    // Decode payload
+    const payload = JSON.parse(
+      Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()
+    ) as JWTPayload;
+    
+    // Check expiry
+    if (payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 // ============================================
 // Types
 // ============================================
@@ -43,6 +94,12 @@ export interface X402ProviderConfig {
   
   /** Optional: Enable debug logging */
   debug?: boolean;
+  
+  /** Optional: JWT secret for local verification (Phase 2 optimization) */
+  jwtSecret?: string;
+  
+  /** Optional: Prefer local JWT verification over API calls (default: true if jwtSecret set) */
+  preferLocalVerification?: boolean;
 }
 
 export interface X402EndpointConfig {
@@ -113,11 +170,12 @@ export interface X402Payment {
   requestId: string;
   amount: number;
   currency: string;
-  from: string;
-  to: string;
+  from?: string;          // Optional: not available in JWT-only verification
+  to?: string;            // Optional: not available in JWT-only verification
   endpointId: string;
-  timestamp: string;
-  status: string;
+  timestamp?: string;     // Optional: not available in JWT-only verification
+  status?: string;        // Optional: not available in JWT-only verification
+  verifiedAt?: string;    // Optional: when verification occurred
 }
 
 export interface X402Analytics {
@@ -145,6 +203,8 @@ export class X402Provider {
     accountId?: string;
     fetcher: typeof fetch;
     debug: boolean;
+    jwtSecret?: string;
+    preferLocalVerification?: boolean;
   };
   
   private resolvedAccountId?: string;
@@ -160,7 +220,9 @@ export class X402Provider {
       apiUrl: config.apiUrl || 'http://localhost:3456',
       accountId: config.accountId,
       fetcher: config.fetcher || fetch,
-      debug: config.debug || false
+      debug: config.debug || false,
+      jwtSecret: config.jwtSecret,
+      preferLocalVerification: config.preferLocalVerification
     };
   }
   
@@ -188,20 +250,20 @@ export class X402Provider {
       throw new Error('Failed to authenticate. Check your API key.');
     }
     
-    const result = await response.json() as { accountId?: string };
+    const result = await response.json() as { data?: { accountId?: string; type?: string } };
     
-    if (!result.accountId) {
+    if (!result.data?.accountId) {
       throw new Error('No account associated with this API key. Please provide accountId explicitly.');
     }
     
-    this.resolvedAccountId = result.accountId;
+    this.resolvedAccountId = result.data.accountId;
     this.log(`Account resolved: ${this.resolvedAccountId}`);
     
     return this.resolvedAccountId;
   }
   
   /**
-   * Register an endpoint with PayOS
+   * Register an endpoint with PayOS (creates new)
    * 
    * @param path - The API path (e.g., '/api/weather/premium')
    * @param config - Endpoint configuration
@@ -262,6 +324,46 @@ export class X402Provider {
   }
   
   /**
+   * Ensure an endpoint exists (idempotent - safe to call on every startup)
+   * 
+   * This is the RECOMMENDED method for app initialization.
+   * - If endpoint exists: returns existing endpoint (optionally updates config)
+   * - If endpoint doesn't exist: creates it
+   * 
+   * @param path - The API path (e.g., '/api/weather/premium')
+   * @param config - Endpoint configuration  
+   * @param method - HTTP method (default: GET)
+   * @param updateIfExists - Update config if endpoint exists (default: false)
+   */
+  async ensureEndpoint(
+    path: string,
+    config: X402EndpointConfig,
+    method: string = 'GET',
+    updateIfExists: boolean = false
+  ): Promise<X402Endpoint> {
+    const key = `${method.toUpperCase()}:${path}`;
+    
+    // Check if endpoint already exists
+    const existing = await this.getEndpoint(path, method);
+    
+    if (existing) {
+      this.log(`Endpoint already exists: ${existing.id} (${path})`);
+      
+      // Optionally update the config
+      if (updateIfExists) {
+        this.log(`Updating endpoint config...`);
+        // TODO: Implement update endpoint API call
+      }
+      
+      return existing;
+    }
+    
+    // Endpoint doesn't exist, create it
+    this.log(`Endpoint not found, creating: ${path}`);
+    return this.register(path, config, method);
+  }
+  
+  /**
    * Get endpoint by path and method
    */
   async getEndpoint(path: string, method: string = 'GET'): Promise<X402Endpoint | null> {
@@ -305,11 +407,33 @@ export class X402Provider {
   }
   
   /**
-   * Verify payment
+   * Verify payment using JWT (local, fast) or API (fallback)
+   * 
+   * Phase 2 optimization: If jwtSecret is configured and JWT proof is provided,
+   * verification happens locally (~1ms) instead of API call (~140ms)
    */
-  async verifyPayment(requestId: string, transferId: string): Promise<X402Payment | null> {
+  async verifyPayment(requestId: string, transferId: string, jwt?: string): Promise<X402Payment | null> {
     this.log(`Verifying payment: ${transferId}`);
     
+    // Phase 2: Try local JWT verification first (if configured)
+    if (jwt && this.config.jwtSecret && this.config.preferLocalVerification !== false) {
+      const payload = verifyJWT(jwt, this.config.jwtSecret);
+      if (payload && payload.requestId === requestId && payload.transferId === transferId) {
+        this.log('Payment verified locally via JWT (~1ms)');
+        return {
+          transferId: payload.transferId,
+          requestId: payload.requestId,
+          endpointId: payload.endpointId,
+          amount: payload.amount,
+          currency: payload.currency,
+          verified: true,
+          verifiedAt: new Date().toISOString()
+        } as X402Payment;
+      }
+      this.log('JWT verification failed, falling back to API');
+    }
+    
+    // Fallback: API verification
     const response = await this.config.fetcher(
       `${this.config.apiUrl}/v1/x402/verify`,
       {
@@ -318,7 +442,7 @@ export class X402Provider {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.config.apiKey}`
         },
-        body: JSON.stringify({ requestId, transferId })
+        body: JSON.stringify(jwt ? { jwt } : { requestId, transferId })
       }
     );
     
@@ -334,7 +458,7 @@ export class X402Provider {
       return null;
     }
     
-    this.log('Payment verified successfully');
+    this.log('Payment verified via API (~140ms)');
     return result.data || null;
   }
   
@@ -392,6 +516,7 @@ export class X402Provider {
         // Check for payment proof in headers
         const paymentId = req.headers?.['x-payment-id'] || req.header?.('X-Payment-ID');
         const paymentProof = req.headers?.['x-payment-proof'] || req.header?.('X-Payment-Proof');
+        const paymentJwt = req.headers?.['x-payment-jwt'] || req.header?.('X-Payment-JWT');
         
         if (!paymentId || !paymentProof) {
           this.log('No payment proof found, returning 402');
@@ -411,7 +536,9 @@ export class X402Provider {
         } else {
           // Default verifier - extract request ID from proof
           const requestId = paymentProof.split(':')[2] || paymentProof;
-          payment = await this.verifyPayment(requestId, paymentId);
+          
+          // Phase 2: Pass JWT for local verification if available
+          payment = await this.verifyPayment(requestId, paymentId, paymentJwt || undefined);
           
           if (!payment) {
             this.log('Payment verification failed');

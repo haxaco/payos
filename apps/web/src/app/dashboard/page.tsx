@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { 
-  Users, 
-  DollarSign, 
-  CreditCard, 
+import {
+  Users,
+  DollarSign,
+  CreditCard,
   AlertTriangle,
   Sparkles,
   ChevronRight,
@@ -46,16 +46,26 @@ export default function DashboardPage() {
   const [chartPeriod, setChartPeriod] = useState<'7D' | '30D' | '90D'>('7D');
 
   // Use React Query to fetch dashboard stats with caching
-  const { data: accountsData, isLoading: accountsLoading } = useQuery({
+  const { data: accountsData, isLoading: accountsLoading, error: accountsError } = useQuery({
     queryKey: ['dashboard', 'accounts'],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       // Fetch accounts count (limit 1 just to get total count from pagination)
-      return api.accounts.list({ limit: 1 });
+      const result = await api.accounts.list({ limit: 1 });
+      console.log('[Dashboard] Accounts API response:', result);
+      return result;
     },
     enabled: !!api && isConfigured,
     staleTime: 30 * 1000, // Cache for 30 seconds
   });
+
+  // Debug logging
+  if (accountsError) {
+    console.error('[Dashboard] Error fetching accounts:', accountsError);
+  }
+  if (accountsData) {
+    console.log('[Dashboard] Accounts data:', accountsData);
+  }
 
   // Fetch compliance flags count
   const { data: complianceCount, isLoading: complianceLoading } = useQuery({
@@ -71,8 +81,9 @@ export default function DashboardPage() {
   const loading = accountsLoading || complianceLoading;
 
   // Stats (mixing real and mock data)
+  // Note: API response is double-nested: data.data.pagination
   const stats: Stats = {
-    accounts: accountsData?.pagination?.total || 12847,
+    accounts: (accountsData as any)?.pagination?.total || 0,
     volume: '$2.4M',
     cards: 8234,
     pendingFlags: complianceCount || 0, // Real compliance count!
@@ -253,11 +264,10 @@ export default function DashboardPage() {
                     <button
                       key={period}
                       onClick={() => setChartPeriod(period)}
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                        chartPeriod === period
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${chartPeriod === period
                           ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
                           : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                      }`}
+                        }`}
                     >
                       {period}
                     </button>
@@ -315,9 +325,9 @@ export default function DashboardPage() {
             {/* Requires Attention */}
             <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Requires Attention</h3>
-              
+
               <div className="space-y-3">
-                <Link 
+                <Link
                   href="/dashboard/compliance"
                   className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
@@ -328,7 +338,7 @@ export default function DashboardPage() {
                   <ChevronRight className="w-4 h-4 text-gray-400" />
                 </Link>
 
-                <Link 
+                <Link
                   href="/dashboard/compliance"
                   className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
@@ -339,7 +349,7 @@ export default function DashboardPage() {
                   <ChevronRight className="w-4 h-4 text-gray-400" />
                 </Link>
 
-                <Link 
+                <Link
                   href="/dashboard/compliance"
                   className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
@@ -363,14 +373,14 @@ export default function DashboardPage() {
             <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
-                <Link 
+                <Link
                   href="/dashboard/transfers"
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   View All
                 </Link>
               </div>
-              
+
               <div className="space-y-4">
                 {recentActivity.map((activity, i) => (
                   <div key={i} className="flex items-center gap-3">

@@ -12,6 +12,16 @@ export { Input } from './components/input';
 export { Label } from './components/label';
 export { Separator } from './components/separator';
 export { Skeleton } from './components/skeleton';
+export {
+  useFormField,
+  Form,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormDescription,
+  FormMessage,
+  FormField,
+} from './components/form';
 
 // Form Components
 export { Checkbox } from './components/checkbox';

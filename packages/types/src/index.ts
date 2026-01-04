@@ -1,4 +1,20 @@
 // ============================================
+// PROTOCOL METADATA (Multi-Protocol Support)
+// ============================================
+
+export * from './protocol-metadata.js';
+export * from './protocol-metadata-schemas.js';
+
+// ============================================
+// ERROR TAXONOMY & STRUCTURED RESPONSES (Epic 30)
+// ============================================
+
+export * from './errors.js';
+export * from './api-responses.js';
+export * from './api-schemas.js';
+export * from './error-helpers.js';
+
+// ============================================
 // CORE TYPES
 // ============================================
 
@@ -19,10 +35,19 @@ export type TransferType =
   | 'stream_cancel'
   | 'wrap'
   | 'unwrap'
-  | 'x402'
+  | 'deposit'
+  | 'withdrawal'
+  // Agentic payment protocols
+  | 'x402'   // Coinbase/Cloudflare HTTP 402
+  | 'ap2'    // Google Agent Payment Protocol
+  | 'acp'    // Stripe/OpenAI Agentic Commerce Protocol
+  // Legacy types
   | 'payout'
   | 'refund'
   | 'wallet_transfer';
+
+/** Protocol-specific transfer types */
+export type ProtocolTransferType = 'x402' | 'ap2' | 'acp';
 
 export type TransferStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
@@ -160,7 +185,11 @@ export interface Transfer {
 
   idempotencyKey?: string;
 
-  // x402 specific metadata
+  // Protocol-specific metadata (x402, AP2, ACP)
+  // See protocol-metadata.ts for type definitions
+  protocolMetadata?: import('./protocol-metadata.js').ProtocolMetadata;
+
+  /** @deprecated Use protocolMetadata instead */
   x402Metadata?: {
     endpoint_id?: string;
     endpoint_path?: string;

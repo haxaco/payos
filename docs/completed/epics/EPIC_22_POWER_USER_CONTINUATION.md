@@ -221,7 +221,7 @@ pnpm seed:power-user --email haxaco@gmail.com --profile crypto-native --months 3
 
 # Check progress in UI
 # Navigate to: http://localhost:5173
-# Login: haxaco@gmail.com / Password123!
+# Login: haxaco@gmail.com / YOUR_PASSWORD_HERE
 
 # View current data counts
 # Dashboard → Transactions → Check total count

@@ -13,7 +13,7 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AgentsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const [search, setSearch] = useState('');
 
   // Fetch total count
@@ -29,7 +29,7 @@ export default function AgentsPage() {
 
   // Initialize pagination
   const pagination = usePagination({
-    totalItems: countData?.pagination?.total || 0,
+    totalItems: (countData as any)?.data?.pagination?.total || (countData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
@@ -43,15 +43,36 @@ export default function AgentsPage() {
         limit: pagination.pageSize,
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const agents = agentsData?.data || [];
+  const rawData = (agentsData as any)?.data;
+  const agents = Array.isArray(rawData)
+    ? rawData
+    : (Array.isArray((rawData as any)?.data)
+      ? (rawData as any).data
+      : []);
 
-  const filteredAgents = agents.filter(agent => 
+  const filteredAgents = agents.filter((agent: any) =>
     agent.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Agents</h1>
+            <p className="text-gray-600 dark:text-gray-400">Manage AI agents and their permissions</p>
+          </div>
+        </div>
+        <div className="col-span-full">
+          <CardListSkeleton count={6} />
+        </div>
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -134,9 +155,9 @@ export default function AgentsPage() {
             )}
           </div>
         ) : (
-          filteredAgents.map((agent) => (
-            <div 
-              key={agent.id} 
+          filteredAgents.map((agent: any) => (
+            <div
+              key={agent.id}
               onClick={() => window.location.href = `/dashboard/agents/${agent.id}`}
               className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer"
             >
@@ -144,13 +165,12 @@ export default function AgentsPage() {
                 <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
                   <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                 </div>
-                <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                  agent.status === 'active'
-                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                    : agent.status === 'paused'
+                <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${agent.status === 'active'
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                  : agent.status === 'paused'
                     ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
                     : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                }`}>
+                  }`}>
                   {agent.status}
                 </span>
               </div>

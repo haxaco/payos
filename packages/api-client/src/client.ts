@@ -40,6 +40,11 @@ import type {
   PaymentMethod,
   CreatePaymentMethodInput,
   PaymentMethodsListParams,
+  Mandate,
+  CreateMandateInput,
+  UpdateMandateInput,
+  ExecuteMandatePaymentInput,
+  MandatesListParams,
   // x402 types
   X402Endpoint,
   CreateX402EndpointInput,
@@ -56,6 +61,18 @@ import type {
   X402PaymentResponse,
   X402VerifyPaymentInput,
   X402VerifyPaymentResponse,
+  // ACP types
+  ACPCheckout,
+  CheckoutStatus,
+  CreateCheckoutInput,
+  CheckoutsListParams,
+  ACPAnalytics,
+  // Treasury types
+  DashboardSummary,
+  TreasuryAccount,
+  TreasuryTransaction,
+  TreasuryAlert,
+  Recommendation,
 } from './types';
 
 export interface PayOSClientConfig {
@@ -213,10 +230,10 @@ export class PayOSClient {
      * Get account transfers (sent & received)
      * More efficient than filtering all transfers client-side
      */
-    getTransfers: (id: string, params?: PaginationParams & { 
-      type?: string; 
-      status?: string; 
-      direction?: 'sent' | 'received' | 'all' 
+    getTransfers: (id: string, params?: PaginationParams & {
+      type?: string;
+      status?: string;
+      direction?: 'sent' | 'received' | 'all'
     }) =>
       this.get<PaginatedResponse<Transfer>>(`/accounts/${id}/transfers`, params),
 
@@ -538,6 +555,12 @@ export class PayOSClient {
       });
       return response.pagination?.total || 0;
     },
+
+    /**
+     * Get compliance statistics
+     */
+    getStats: () =>
+      this.get<{ data: any }>('/compliance/stats').then(r => r.data),
   };
 
   // ============================================
@@ -656,6 +679,12 @@ export class PayOSClient {
       this.get<{ data: PaymentMethod[] }>(`/accounts/${accountId}/payment-methods`, params).then(r => r.data),
 
     /**
+     * List ALL payment methods (for tenant)
+     */
+    listAll: (params?: PaymentMethodsListParams) =>
+      this.get<PaginatedResponse<PaymentMethod>>('/payment-methods', params).then(r => r.data),
+
+    /**
      * Get a single payment method
      */
     get: (id: string) =>
@@ -678,6 +707,18 @@ export class PayOSClient {
      */
     delete: (id: string) =>
       this.delete<{ success: boolean }>(`/payment-methods/${id}`),
+
+    /**
+     * Get transactions for a card
+     */
+    getTransactions: (id: string, params?: PaginationParams) =>
+      this.get<PaginatedResponse<any>>(`/payment-methods/${id}/transactions`, params),
+
+    /**
+     * Get spending summary for a card
+     */
+    getSpendingSummary: (id: string, days?: number) =>
+      this.get<{ data: any }>(`/payment-methods/${id}/spending-summary`, { days }).then(r => r.data),
   };
 
   // ============================================
@@ -830,6 +871,84 @@ export class PayOSClient {
   };
 
   // ============================================
+  // AP2 API (Agent Payment Protocol)
+  // ============================================
+
+  ap2 = {
+    /**
+     * List mandates
+     */
+    list: (params?: MandatesListParams) => {
+      const searchParams = new URLSearchParams();
+      if (params?.page) searchParams.set('page', String(params.page));
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      if (params?.status) searchParams.set('status', params.status);
+      if (params?.agentId) searchParams.set('agent_id', params.agentId);
+      if (params?.accountId) searchParams.set('account_id', params.accountId);
+      if (params?.search) searchParams.set('search', params.search);
+      const query = searchParams.toString();
+      return this.get<any>(`/ap2/mandates${query ? `?${query}` : ''}`).then(response => ({
+        data: Array.isArray(response.data) ? response.data.map(transformMandate) : (response.data?.data || []).map(transformMandate),
+        pagination: response.pagination || response.data?.pagination
+      }));
+    },
+
+    /**
+     * Get a mandate by ID
+     */
+    get: (id: string) =>
+      this.get<{ data: any }>(`/ap2/mandates/${id}`).then(r => transformMandate(r.data)),
+
+    /**
+     * Create a new mandate
+     */
+    create: (input: CreateMandateInput) =>
+      this.post<{ data: any }>('/ap2/mandates', {
+        mandate_id: input.mandateId,
+        mandate_type: input.type,
+        agent_id: input.agentId,
+        account_id: input.accountId,
+        authorized_amount: input.authorizedAmount,
+        currency: input.currency,
+        expires_at: input.expiresAt,
+        metadata: input.metadata,
+      }).then(r => transformMandate(r.data)),
+
+    /**
+     * Update a mandate
+     */
+    update: (id: string, input: UpdateMandateInput) =>
+      this.patch<{ data: any }>(`/ap2/mandates/${id}`, {
+        status: input.status,
+        expires_at: input.expiresAt,
+        metadata: input.metadata,
+      }).then(r => transformMandate(r.data)),
+
+    /**
+     * Cancel a mandate
+     */
+    cancel: (id: string) =>
+      this.patch<{ data: any }>(`/ap2/mandates/${id}/cancel`, {}).then(r => transformMandate(r.data)),
+
+    /**
+     * Execute a payment against a mandate
+     */
+    execute: (id: string, input: ExecuteMandatePaymentInput) =>
+      this.post<{ data: any }>(`/ap2/mandates/${id}/execute`, {
+        amount: input.amount,
+        currency: input.currency,
+        description: input.description,
+        authorization_proof: input.authorizationProof,
+      }).then(r => r.data),
+
+    /**
+     * Get AP2 analytics
+     */
+    getAnalytics: (params?: { period?: string }) =>
+      this.get<{ data: any }>('/ap2/analytics', params).then(r => r.data),
+  };
+
+  // ============================================
   // Settlement API
   // ============================================
 
@@ -864,12 +983,248 @@ export class PayOSClient {
     getStatus: (transferId: string) =>
       this.get<{ data: any }>(`/settlement/status/${transferId}`).then(r => r.data),
   };
+
+  // ============================================
+  // ACP API (Agentic Commerce Protocol)
+  // ============================================
+
+  acp = {
+    /**
+     * List checkouts
+     */
+    list: (params?: CheckoutsListParams) => {
+      const query = new URLSearchParams();
+      if (params?.page) query.set('offset', String((params.page - 1) * (params.limit || 20)));
+      if (params?.limit) query.set('limit', String(params.limit));
+      if (params?.status) query.set('status', params.status);
+      if (params?.merchant_id) query.set('merchant_id', params.merchant_id);
+      if (params?.agent_id) query.set('agent_id', params.agent_id);
+      if (params?.customer_id) query.set('customer_id', params.customer_id);
+
+      return this.get<PaginatedResponse<any>>(`/acp/checkouts${query.toString() ? `?${query.toString()}` : ''}`).then(response => ({
+        ...response,
+        data: response.data.map(transformCheckout),
+      }));
+    },
+
+    /**
+     * Get checkout by ID
+     */
+    get: (id: string) =>
+      this.get<{ data: any }>(`/acp/checkouts/${id}`).then(r => transformCheckout(r.data)),
+
+    /**
+     * Create new checkout
+     */
+    create: (data: CreateCheckoutInput) =>
+      this.post<{ data: any }>('/acp/checkouts', data).then(r => transformCheckout(r.data)),
+
+    /**
+     * Complete checkout
+     */
+    complete: (id: string, data: {
+      shared_payment_token: string;
+      payment_method?: string;
+      idempotency_key?: string;
+    }) =>
+      this.post<{ data: any }>(`/acp/checkouts/${id}/complete`, data).then(r => r.data),
+
+    /**
+     * Cancel checkout
+     */
+    cancel: (id: string) =>
+      this.patch<{ data: any }>(`/acp/checkouts/${id}/cancel`, {}).then(r => transformCheckout(r.data)),
+
+    /**
+     * Get ACP analytics
+     */
+    getAnalytics: (params?: { period?: '24h' | '7d' | '30d' | '90d' | '1y' }) =>
+      this.get<{ data: ACPAnalytics }>('/acp/analytics', params).then(r => r.data),
+  };
+
+  // ============================================
+  // Treasury API
+  // ============================================
+
+  treasury = {
+    /**
+     * Get treasury dashboard
+     */
+    getDashboard: () =>
+      this.get<{ data: DashboardSummary }>('/treasury/dashboard').then(r => r.data),
+
+    /**
+     * Get currency exposure
+     */
+    getExposure: () =>
+      this.get<{ data: any }>('/treasury/exposure').then(r => r.data),
+
+    /**
+     * Get float runway
+     */
+    getRunway: () =>
+      this.get<{ data: any }>('/treasury/runway').then(r => r.data),
+
+    /**
+     * Get settlement velocity
+     */
+    getVelocity: () =>
+      this.get<{ data: any }>('/treasury/velocity').then(r => r.data),
+
+    /**
+     * Get history
+     */
+    getHistory: (params?: { rail?: string; currency?: string; days?: number }) =>
+      this.get<{ data: any }>('/treasury/history', params).then(r => r.data),
+
+    /**
+     * Get partners float allocation
+     */
+    getPartners: () =>
+      this.get<{ data: any }>('/treasury/partners').then(r => r.data),
+
+    /**
+     * List all treasury accounts
+     */
+    getAccounts: () =>
+      this.get<{ data: TreasuryAccount[] }>('/treasury/accounts').then(r => r.data),
+
+    /**
+     * List transactions
+     */
+    getTransactions: (params?: { accountId?: string; limit?: number; offset?: number }) =>
+      this.get<{ data: TreasuryTransaction[] }>('/treasury/transactions', params).then(r => r.data),
+
+    /**
+     * Create manual transaction
+     */
+    createTransaction: (data: any) =>
+      this.post<{ data: TreasuryTransaction }>('/treasury/transactions', data).then(r => r.data),
+
+    /**
+     * List alerts
+     */
+    getAlerts: (params?: { status?: string; severity?: string; limit?: number }) =>
+      this.get<{ data: TreasuryAlert[] }>('/treasury/alerts', params).then(r => r.data),
+
+    /**
+     * Trigger alert check
+     */
+    checkAlerts: () =>
+      this.post<{ success: boolean; alertsCount: number }>('/treasury/alerts/check'),
+
+    /**
+     * Acknowledge alert
+     */
+    acknowledgeAlert: (id: string) =>
+      this.post<{ data: TreasuryAlert }>(`/treasury/alerts/${id}/acknowledge`).then(r => r.data),
+
+    /**
+     * Resolve alert
+     */
+    resolveAlert: (id: string) =>
+      this.post<{ data: TreasuryAlert }>(`/treasury/alerts/${id}/resolve`).then(r => r.data),
+
+    /**
+     * Get recommendations
+     */
+    getRecommendations: (params?: { status?: string; limit?: number }) =>
+      this.get<{ data: Recommendation[] }>('/treasury/recommendations', params).then(r => r.data),
+
+    /**
+     * Generate rebalancing recommendations
+     */
+    generateRecommendations: () =>
+      this.post<{ data: Recommendation[] }>('/treasury/recommendations/generate').then(r => r.data),
+
+    /**
+     * Approve recommendation
+     */
+    approveRecommendation: (id: string) =>
+      this.post<{ data: Recommendation }>(`/treasury/recommendations/${id}/approve`).then(r => r.data),
+
+    /**
+     * Reject recommendation
+     */
+    rejectRecommendation: (id: string) =>
+      this.post<{ data: Recommendation }>(`/treasury/recommendations/${id}/reject`).then(r => r.data),
+
+    /**
+     * Sync balances
+     */
+    sync: () =>
+      this.post<{ success: boolean }>('/treasury/sync'),
+
+    /**
+     * Take snapshot
+     */
+    snapshot: () =>
+      this.post<{ data: any }>('/treasury/snapshot').then(r => r.data),
+  };
 }
+
 
 /**
  * Create a PayOS client instance
  */
 export function createPayOSClient(config: PayOSClientConfig): PayOSClient {
   return new PayOSClient(config);
+}
+
+// Helper to transform backend mandate response to frontend Mandate type
+function transformMandate(data: any): Mandate {
+  return {
+    id: data.id,
+    tenantId: data.tenant_id,
+    mandateId: data.mandate_id,
+    type: data.mandate_type,
+    agent: {
+      id: data.agent_id,
+      name: data.agent?.name || data.agent_name || 'Unknown Agent',
+    },
+    account: {
+      id: data.account_id,
+      name: data.account?.name || 'Unknown Account',
+    },
+    amount: {
+      authorized: Number(data.authorized_amount) || 0,
+      used: Number(data.used_amount) || 0,
+      remaining: Number(data.remaining_amount) || 0,
+      currency: data.currency,
+    },
+    executionCount: data.execution_count || 0,
+    status: data.status,
+    expiresAt: data.expires_at,
+    metadata: data.metadata,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    executions: data.executions?.map((e: any) => ({
+      id: e.id,
+      executionIndex: e.execution_index,
+      amount: Number(e.amount),
+      currency: e.currency,
+      status: e.status,
+      transferId: e.transfer_id,
+      createdAt: e.created_at,
+      completedAt: e.completed_at,
+    })) || [],
+  };
+}
+
+// Helper to transform backend checkout response to frontend ACPCheckout type
+function transformCheckout(checkout: any): ACPCheckout {
+  return {
+    ...checkout,
+    subtotal: parseFloat(checkout.subtotal || '0'),
+    tax_amount: parseFloat(checkout.tax_amount || '0'),
+    shipping_amount: parseFloat(checkout.shipping_amount || '0'),
+    discount_amount: parseFloat(checkout.discount_amount || '0'),
+    total_amount: parseFloat(checkout.total_amount || '0'),
+    items: checkout.items?.map((item: any) => ({
+      ...item,
+      unit_price: parseFloat(item.unit_price || '0'),
+      total_price: parseFloat(item.total_price || '0'),
+    })),
+  };
 }
 

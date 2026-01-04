@@ -39,3 +39,12 @@ jobs:
         run: |
           cd apps/api
           pnpm exec tsx scripts/check-rls-in-migrations.ts
+
+      # Optional: Uncomment to also check live database (requires Supabase credentials)
+      # - name: Check RLS Coverage in Live Database
+      #   env:
+      #     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      #     SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      #   run: |
+      #     cd apps/api
+      #     pnpm exec tsx scripts/check-rls-in-migrations.ts --db

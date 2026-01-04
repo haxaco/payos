@@ -1,0 +1,591 @@
+/**
+ * ACP (Agentic Commerce Protocol) API
+ * 
+ * Stripe/OpenAI's checkout protocol for agentic commerce.
+ * Enables agents to manage shopping carts and complete checkout flows.
+ * 
+ * @module routes/acp
+ */
+
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { createClient } from '../db/client.js';
+import { authMiddleware } from '../middleware/auth.js';
+
+const app = new Hono();
+
+// Apply auth middleware
+app.use('*', authMiddleware);
+
+// ============================================
+// Validation Schemas
+// ============================================
+
+const checkoutItemSchema = z.object({
+  item_id: z.string().optional(),
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+  image_url: z.string().url().optional(),
+  quantity: z.number().int().positive(),
+  unit_price: z.number().positive(),
+  total_price: z.number().positive(),
+  currency: z.string().min(3).max(10).optional().default('USDC'),
+  item_data: z.record(z.any()).optional(),
+});
+
+const createCheckoutSchema = z.object({
+  checkout_id: z.string().min(1).max(255),
+  session_id: z.string().optional(),
+  agent_id: z.string().min(1).max(255),
+  agent_name: z.string().min(1).max(255).optional(),
+  customer_id: z.string().optional(),
+  customer_email: z.string().email().optional(),
+  account_id: z.string().uuid(),
+  merchant_id: z.string().min(1).max(255),
+  merchant_name: z.string().min(1).max(255).optional(),
+  merchant_url: z.string().url().optional(),
+  items: z.array(checkoutItemSchema).min(1),
+  tax_amount: z.number().nonnegative().optional().default(0),
+  shipping_amount: z.number().nonnegative().optional().default(0),
+  discount_amount: z.number().nonnegative().optional().default(0),
+  currency: z.string().min(3).max(10).optional().default('USDC'),
+  shared_payment_token: z.string().optional(),
+  payment_method: z.string().optional(),
+  checkout_data: z.record(z.any()).optional(),
+  shipping_address: z.record(z.any()).optional(),
+  metadata: z.record(z.any()).optional(),
+  expires_at: z.string().datetime().optional(),
+});
+
+const completeCheckoutSchema = z.object({
+  shared_payment_token: z.string().min(1),
+  payment_method: z.string().optional(),
+  idempotency_key: z.string().optional(),
+});
+
+// ============================================
+// Routes
+// ============================================
+
+/**
+ * POST /v1/acp/checkouts
+ * Create a new ACP checkout session
+ */
+app.post('/checkouts', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const body = await c.req.json();
+    const validated = createCheckoutSchema.parse(body);
+
+    const supabase = createClient();
+
+    // Check for duplicate checkout_id
+    const { data: existing } = await supabase
+      .from('acp_checkouts')
+      .select('id')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('checkout_id', validated.checkout_id)
+      .single();
+
+    if (existing) {
+      return c.json({ error: 'Checkout ID already exists' }, 409);
+    }
+
+    // Verify account exists and belongs to tenant
+    const { data: account, error: accountError } = await supabase
+      .from('accounts')
+      .select('id')
+      .eq('id', validated.account_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (accountError || !account) {
+      return c.json({ error: 'Account not found' }, 404);
+    }
+
+    // Calculate totals
+    const subtotal = validated.items.reduce((sum, item) => sum + item.total_price, 0);
+    const total_amount = subtotal + validated.tax_amount + validated.shipping_amount - validated.discount_amount;
+
+    // Create checkout
+    const { data: checkout, error: checkoutError } = await supabase
+      .from('acp_checkouts')
+      .insert({
+        tenant_id: ctx.tenantId,
+        checkout_id: validated.checkout_id,
+        session_id: validated.session_id,
+        agent_id: validated.agent_id,
+        agent_name: validated.agent_name,
+        customer_id: validated.customer_id,
+        customer_email: validated.customer_email,
+        account_id: validated.account_id,
+        merchant_id: validated.merchant_id,
+        merchant_name: validated.merchant_name,
+        merchant_url: validated.merchant_url,
+        subtotal,
+        tax_amount: validated.tax_amount,
+        shipping_amount: validated.shipping_amount,
+        discount_amount: validated.discount_amount,
+        total_amount,
+        currency: validated.currency,
+        shared_payment_token: validated.shared_payment_token,
+        payment_method: validated.payment_method,
+        checkout_data: validated.checkout_data,
+        shipping_address: validated.shipping_address,
+        metadata: validated.metadata,
+        expires_at: validated.expires_at,
+      })
+      .select()
+      .single();
+
+    if (checkoutError) {
+      console.error('[ACP] Create checkout error:', checkoutError);
+      return c.json({ error: 'Failed to create checkout' }, 500);
+    }
+
+    // Create checkout items
+    const itemsToInsert = validated.items.map(item => ({
+      tenant_id: ctx.tenantId,
+      checkout_id: checkout.id,
+      item_id: item.item_id,
+      name: item.name,
+      description: item.description,
+      image_url: item.image_url,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total_price: item.total_price,
+      currency: item.currency,
+      item_data: item.item_data,
+    }));
+
+    const { data: items, error: itemsError } = await supabase
+      .from('acp_checkout_items')
+      .insert(itemsToInsert)
+      .select();
+
+    if (itemsError) {
+      console.error('[ACP] Create checkout items error:', itemsError);
+      // Checkout created but items failed - consider rollback
+      return c.json({ error: 'Failed to create checkout items' }, 500);
+    }
+
+    return c.json({
+      data: {
+        id: checkout.id,
+        checkout_id: checkout.checkout_id,
+        agent_id: checkout.agent_id,
+        agent_name: checkout.agent_name,
+        merchant_id: checkout.merchant_id,
+        merchant_name: checkout.merchant_name,
+        subtotal: parseFloat(checkout.subtotal),
+        tax_amount: parseFloat(checkout.tax_amount),
+        shipping_amount: parseFloat(checkout.shipping_amount),
+        discount_amount: parseFloat(checkout.discount_amount),
+        total_amount: parseFloat(checkout.total_amount),
+        currency: checkout.currency,
+        status: checkout.status,
+        items: items?.map(item => ({
+          id: item.id,
+          item_id: item.item_id,
+          name: item.name,
+          quantity: item.quantity,
+          unit_price: parseFloat(item.unit_price),
+          total_price: parseFloat(item.total_price),
+        })),
+        created_at: checkout.created_at,
+        expires_at: checkout.expires_at,
+      },
+    }, 201);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation failed', details: error.errors }, 400);
+    }
+    console.error('[ACP] Create checkout error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * GET /v1/acp/checkouts
+ * List ACP checkouts with optional filters
+ */
+app.get('/checkouts', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const supabase = createClient();
+
+    // Query parameters
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = parseInt(c.req.query('offset') || '0');
+    const status = c.req.query('status');
+    const agent_id = c.req.query('agent_id');
+    const merchant_id = c.req.query('merchant_id');
+    const customer_id = c.req.query('customer_id');
+
+    let query = supabase
+      .from('acp_checkouts')
+      .select('*', { count: 'exact' })
+      .eq('tenant_id', ctx.tenantId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (status) query = query.eq('status', status);
+    if (agent_id) query = query.eq('agent_id', agent_id);
+    if (merchant_id) query = query.eq('merchant_id', merchant_id);
+    if (customer_id) query = query.eq('customer_id', customer_id);
+
+    const { data: checkouts, error, count } = await query;
+
+    if (error) {
+      console.error('[ACP] List checkouts error:', error);
+      return c.json({ error: 'Failed to list checkouts' }, 500);
+    }
+
+    return c.json({
+      data: checkouts?.map(co => ({
+        id: co.id,
+        checkout_id: co.checkout_id,
+        agent_id: co.agent_id,
+        agent_name: co.agent_name,
+        merchant_id: co.merchant_id,
+        merchant_name: co.merchant_name,
+        customer_id: co.customer_id,
+        customer_email: co.customer_email,
+        total_amount: parseFloat(co.total_amount),
+        currency: co.currency,
+        status: co.status,
+        created_at: co.created_at,
+        completed_at: co.completed_at,
+      })) || [],
+      pagination: {
+        total: count || 0,
+        limit,
+        offset,
+      },
+    });
+  } catch (error) {
+    console.error('[ACP] List checkouts error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * GET /v1/acp/checkouts/:id
+ * Get a specific checkout with items
+ */
+app.get('/checkouts/:id', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const { id } = c.req.param();
+    const supabase = createClient();
+
+    // Fetch checkout
+    const { data: checkout, error: checkoutError } = await supabase
+      .from('acp_checkouts')
+      .select('*')
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (checkoutError || !checkout) {
+      return c.json({ error: 'Checkout not found' }, 404);
+    }
+
+    // Fetch items
+    const { data: items } = await supabase
+      .from('acp_checkout_items')
+      .select('*')
+      .eq('checkout_id', id)
+      .order('created_at');
+
+    return c.json({
+      data: {
+        id: checkout.id,
+        checkout_id: checkout.checkout_id,
+        session_id: checkout.session_id,
+        agent_id: checkout.agent_id,
+        agent_name: checkout.agent_name,
+        customer_id: checkout.customer_id,
+        customer_email: checkout.customer_email,
+        account_id: checkout.account_id,
+        merchant_id: checkout.merchant_id,
+        merchant_name: checkout.merchant_name,
+        merchant_url: checkout.merchant_url,
+        subtotal: parseFloat(checkout.subtotal),
+        tax_amount: parseFloat(checkout.tax_amount),
+        shipping_amount: parseFloat(checkout.shipping_amount),
+        discount_amount: parseFloat(checkout.discount_amount),
+        total_amount: parseFloat(checkout.total_amount),
+        currency: checkout.currency,
+        status: checkout.status,
+        shared_payment_token: checkout.shared_payment_token,
+        payment_method: checkout.payment_method,
+        transfer_id: checkout.transfer_id,
+        checkout_data: checkout.checkout_data,
+        shipping_address: checkout.shipping_address,
+        metadata: checkout.metadata,
+        created_at: checkout.created_at,
+        updated_at: checkout.updated_at,
+        completed_at: checkout.completed_at,
+        cancelled_at: checkout.cancelled_at,
+        expires_at: checkout.expires_at,
+        items: items?.map(item => ({
+          id: item.id,
+          item_id: item.item_id,
+          name: item.name,
+          description: item.description,
+          image_url: item.image_url,
+          quantity: item.quantity,
+          unit_price: parseFloat(item.unit_price),
+          total_price: parseFloat(item.total_price),
+          currency: item.currency,
+          item_data: item.item_data,
+          created_at: item.created_at,
+        })) || [],
+      },
+    });
+  } catch (error) {
+    console.error('[ACP] Get checkout error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * POST /v1/acp/checkouts/:id/complete
+ * Complete a checkout and create transfer
+ */
+app.post('/checkouts/:id/complete', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const { id } = c.req.param();
+    const body = await c.req.json();
+    const validated = completeCheckoutSchema.parse(body);
+
+    const supabase = createClient();
+
+    // Fetch and validate checkout
+    const { data: checkout, error: checkoutError } = await supabase
+      .from('acp_checkouts')
+      .select('*')
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (checkoutError || !checkout) {
+      return c.json({ error: 'Checkout not found' }, 404);
+    }
+
+    // Check checkout validity
+    const { data: isValid } = await supabase
+      .rpc('check_acp_checkout_valid', { p_checkout_id: id });
+
+    if (!isValid) {
+      return c.json({
+        error: 'Checkout invalid or expired',
+        details: {
+          status: checkout.status,
+          expires_at: checkout.expires_at,
+        },
+      }, 400);
+    }
+
+    // Fetch items for protocol metadata
+    const { data: items } = await supabase
+      .from('acp_checkout_items')
+      .select('name, quantity, unit_price')
+      .eq('checkout_id', id);
+
+    // Create transfer
+    const { data: transfer, error: transferError } = await supabase
+      .from('transfers')
+      .insert({
+        tenant_id: ctx.tenantId,
+        from_account_id: checkout.account_id,
+        to_account_id: checkout.account_id, // TODO: Determine recipient from merchant
+        amount: checkout.total_amount,
+        currency: checkout.currency,
+        type: 'acp',
+        status: 'completed', // ACP transfers are pre-authorized
+        description: `ACP checkout: ${checkout.merchant_name || checkout.merchant_id}`,
+        idempotency_key: validated.idempotency_key,
+        protocol_metadata: {
+          protocol: 'acp',
+          checkout_id: checkout.checkout_id,
+          merchant_id: checkout.merchant_id,
+          merchant_name: checkout.merchant_name,
+          agent_id: checkout.agent_id,
+          customer_id: checkout.customer_id,
+          cart_items: items?.map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: parseFloat(i.unit_price),
+          })),
+          shared_payment_token: validated.shared_payment_token,
+        },
+        initiated_by_type: ctx.actorType,
+        initiated_by_id: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
+        initiated_by_name: ctx.userName || ctx.actorName || null,
+      })
+      .select()
+      .single();
+
+    if (transferError) {
+      console.error('[ACP] Transfer creation error:', transferError);
+      return c.json({ error: 'Failed to create transfer' }, 500);
+    }
+
+    // Update checkout status
+    const { data: updatedCheckout, error: updateError } = await supabase
+      .from('acp_checkouts')
+      .update({
+        status: 'completed',
+        transfer_id: transfer.id,
+        shared_payment_token: validated.shared_payment_token,
+        payment_method: validated.payment_method,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('[ACP] Update checkout error:', updateError);
+      // Transfer created but checkout update failed
+      return c.json({ error: 'Failed to update checkout' }, 500);
+    }
+
+    return c.json({
+      data: {
+        checkout_id: updatedCheckout.id,
+        transfer_id: transfer.id,
+        status: updatedCheckout.status,
+        completed_at: updatedCheckout.completed_at,
+        total_amount: parseFloat(updatedCheckout.total_amount),
+        currency: updatedCheckout.currency,
+      },
+    }, 200);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation failed', details: error.errors }, 400);
+    }
+    console.error('[ACP] Complete checkout error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * PATCH /v1/acp/checkouts/:id/cancel
+ * Cancel a checkout
+ */
+app.patch('/checkouts/:id/cancel', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const { id } = c.req.param();
+    const supabase = createClient();
+
+    const { data: checkout, error } = await supabase
+      .from('acp_checkouts')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
+      .select('id, status, cancelled_at')
+      .single();
+
+    if (error || !checkout) {
+      return c.json({ error: 'Checkout not found or already completed' }, 404);
+    }
+
+    return c.json({
+      data: checkout,
+    });
+  } catch (error) {
+    console.error('[ACP] Cancel checkout error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * GET /v1/acp/analytics
+ * ACP-specific analytics
+ */
+app.get('/analytics', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const period = c.req.query('period') || '30d';
+    const supabase = createClient();
+
+    // Calculate date range
+    const end = new Date();
+    const start = new Date();
+    switch (period) {
+      case '24h': start.setHours(start.getHours() - 24); break;
+      case '7d': start.setDate(start.getDate() - 7); break;
+      case '30d': start.setDate(start.getDate() - 30); break;
+      case '90d': start.setDate(start.getDate() - 90); break;
+      case '1y': start.setFullYear(start.getFullYear() - 1); break;
+    }
+
+    // Fetch ACP transfers
+    const { data: transfers } = await supabase
+      .from('transfers')
+      .select('id, amount, fee_amount, created_at, protocol_metadata')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('type', 'acp')
+      .eq('status', 'completed')
+      .gte('created_at', start.toISOString())
+      .lte('created_at', end.toISOString());
+
+    // Fetch checkouts
+    const { data: checkouts } = await supabase
+      .from('acp_checkouts')
+      .select('*')
+      .eq('tenant_id', ctx.tenantId);
+
+    const revenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount), 0) || 0;
+    const fees = transfers?.reduce((sum, t) => sum + parseFloat(t.fee_amount || '0'), 0) || 0;
+
+    const completedCheckouts = checkouts?.filter(c => c.status === 'completed').length || 0;
+    const pendingCheckouts = checkouts?.filter(c => c.status === 'pending').length || 0;
+    const averageOrderValue = completedCheckouts > 0 ? revenue / completedCheckouts : 0;
+
+    // Get unique merchants and agents
+    const uniqueMerchants = new Set(checkouts?.map(c => c.merchant_id)).size;
+    const uniqueAgents = new Set(checkouts?.map(c => c.agent_id)).size;
+
+    return c.json({
+      data: {
+        period,
+        summary: {
+          totalRevenue: parseFloat(revenue.toFixed(8)),
+          totalFees: parseFloat(fees.toFixed(8)),
+          netRevenue: parseFloat((revenue - fees).toFixed(8)),
+          transactionCount: transfers?.length || 0,
+          completedCheckouts,
+          pendingCheckouts,
+          averageOrderValue: parseFloat(averageOrderValue.toFixed(8)),
+          uniqueMerchants,
+          uniqueAgents,
+        },
+        checkoutsByStatus: {
+          pending: checkouts?.filter(c => c.status === 'pending').length || 0,
+          completed: checkouts?.filter(c => c.status === 'completed').length || 0,
+          cancelled: checkouts?.filter(c => c.status === 'cancelled').length || 0,
+          expired: checkouts?.filter(c => c.status === 'expired').length || 0,
+          failed: checkouts?.filter(c => c.status === 'failed').length || 0,
+        },
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('[ACP] Analytics error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+export default app;
+
+

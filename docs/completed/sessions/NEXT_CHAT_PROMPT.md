@@ -168,7 +168,7 @@ Save results to: `/Users/haxaco/Dev/PayOS/docs/X402_TEST_RESULTS.md`
 
 **Test Credentials:**
 ```
-API_KEY: pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc
+API_KEY: pk_test_YOUR_API_KEY_HERE
 PROVIDER_ACCOUNT: cb8071df-b481-4dea-83eb-2f5f86d26335
 CONSUMER_AGENT: 7549e236-5a42-41fa-86b7-cc70fec64e8c
 CONSUMER_WALLET: d199d814-5f53-4300-b1c8-81bd6ce5f00a

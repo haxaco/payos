@@ -39,11 +39,14 @@ export default function AccountDetailPage() {
 
   // Fetch account data with React Query - LAZY LOADING based on active tab
   // Overview tab: Always load account data immediately
-  const { data: account, isLoading: accountLoading } = useQuery({
+  const { data: accountResponse, isLoading: accountLoading } = useQuery({
     queryKey: ['account', accountId],
     queryFn: () => api!.accounts.get(accountId),
     enabled: !!api, // Always load account data
   });
+
+  // Handle double-nested response
+  const account = (accountResponse as any)?.data || accountResponse;
 
   // Agents tab: Only load when tab is active
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
@@ -86,10 +89,10 @@ export default function AccountDetailPage() {
     enabled: !!api && activeTab === 'transactions', // Lazy load only when transactions tab active
   });
 
-  const agents = agentsData?.data || [];
-  const streams = streamsData?.data || [];
-  const transactions = transactionsData?.data || [];
-  const transfers = transfersData?.data || [];
+  const agents = (agentsData as any)?.data?.data || agentsData?.data || [];
+  const streams = (streamsData as any)?.data?.data || streamsData?.data || [];
+  const transactions = (transactionsData as any)?.data?.data || transactionsData?.data || [];
+  const transfers = (transfersData as any)?.data?.data || transfersData?.data || [];
   const loading = accountLoading;
 
   // Mutations with automatic cache invalidation
@@ -195,11 +198,10 @@ export default function AccountDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
-            account.type === 'business' 
-              ? 'bg-purple-100 dark:bg-purple-950' 
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${account.type === 'business'
+              ? 'bg-purple-100 dark:bg-purple-950'
               : 'bg-blue-100 dark:bg-blue-950'
-          }`}>
+            }`}>
             {account.type === 'business' ? (
               <Building2 className="h-8 w-8 text-purple-600 dark:text-purple-400" />
             ) : (
@@ -223,13 +225,12 @@ export default function AccountDetailPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${
-            account.verificationStatus === 'verified'
+          <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${account.verificationStatus === 'verified'
               ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
               : account.verificationStatus === 'suspended'
-              ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-              : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
-          }`}>
+                ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+                : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
+            }`}>
             {account.verificationStatus}
           </span>
 
@@ -327,11 +328,10 @@ export default function AccountDetailPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+                }`}
             >
               <tab.icon className="h-4 w-4" />
               {tab.label}
@@ -366,7 +366,7 @@ export default function AccountDetailPage() {
 function OverviewTab({ account }: { account: Account }) {
   const { formatCurrency, formatDate } = useLocale();
   const currency = account.currency || 'USDC';
-  
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
@@ -439,18 +439,18 @@ function OverviewTab({ account }: { account: Account }) {
 }
 
 // Transactions Tab Component - Shows both ledger entries and transfers
-function TransactionsTab({ 
-  transactions, 
-  transfers, 
-  accountId 
-}: { 
+function TransactionsTab({
+  transactions,
+  transfers,
+  accountId
+}: {
   transactions: LedgerEntry[];
   transfers: Transfer[];
   accountId: string;
 }) {
   const { formatCurrency: formatCurrencyLocale, formatDate: formatDateLocale } = useLocale();
   const router = useRouter();
-  
+
   // Combine and sort by date (most recent first)
   const allTransactions = [
     ...transactions.map(tx => ({ ...tx, _type: 'ledger' as const })),
@@ -488,11 +488,10 @@ function TransactionsTab({
               return (
                 <tr key={`ledger-${tx.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-900">
                   <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                      tx.type === 'credit'
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${tx.type === 'credit'
                         ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
                         : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                    }`}>
+                      }`}>
                       {tx.type}
                     </span>
                   </td>
@@ -516,24 +515,23 @@ function TransactionsTab({
               const tf = item as Transfer & { _type: 'transfer' };
               const isIncoming = tf.to?.accountId === accountId;
               const isOutgoing = tf.from?.accountId === accountId;
-              
+
               return (
-                <tr 
-                  key={`transfer-${tf.id}`} 
+                <tr
+                  key={`transfer-${tf.id}`}
                   onClick={() => router.push(`/dashboard/transfers`)}
                   className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors"
                 >
                   <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                      isIncoming
+                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${isIncoming
                         ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
                         : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                    }`}>
+                      }`}>
                       {isIncoming ? 'Incoming' : 'Outgoing'}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-gray-900 dark:text-white text-sm">
-                    {isIncoming 
+                    {isIncoming
                       ? `From ${tf.from?.accountName || tf.from?.accountId?.slice(0, 8) || 'External'}`
                       : `To ${tf.to?.accountName || tf.to?.accountId?.slice(0, 8) || 'External'}`
                     }
@@ -562,7 +560,7 @@ function TransactionsTab({
 // Streams Tab Component
 function StreamsTab({ streams }: { streams: Stream[] }) {
   const { formatCurrency } = useLocale();
-  
+
   if (streams.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
@@ -589,7 +587,7 @@ function StreamsTab({ streams }: { streams: Stream[] }) {
       {streams.map((stream) => {
         // Streams use supertokens (wrapped USDC), display base currency
         const currency = stream.flowRate?.currency || 'USDCx';
-        
+
         return (
           <Link
             key={stream.id}
@@ -654,11 +652,10 @@ function AgentsTab({ agents }: { agents: Agent[] }) {
             <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
               <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />
             </div>
-            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-              agent.status === 'active'
+            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${agent.status === 'active'
                 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
                 : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-            }`}>
+              }`}>
               {agent.status}
             </span>
           </div>

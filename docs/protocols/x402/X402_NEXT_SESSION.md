@@ -147,7 +147,7 @@ retryHeaders.set('X-Payment-Proof', 'FAKE_SIGNATURE_123');
 
 ```bash
 # API Key
-PAYOS_API_KEY=pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc
+PAYOS_API_KEY=pk_test_YOUR_API_KEY_HERE
 
 # Agent
 PAYOS_AGENT_ID=7549e236-5a42-41fa-86b7-cc70fec64e8c
@@ -166,14 +166,14 @@ PAYOS_ACCOUNT_ID=cb8071df-b481-4dea-83eb-2f5f86d26335
 ### Check Wallet Balance
 ```bash
 curl -s "http://localhost:4000/v1/wallets/d199d814-5f53-4300-b1c8-81bd6ce5f00a" \
-  -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+  -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
   | jq '.data.balance'
 ```
 
 ### List Recent Transfers
 ```bash
 curl -s "http://localhost:4000/v1/transfers?type=x402&limit=10" \
-  -H "Authorization: Bearer pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc" \
+  -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
   | jq '.data[] | {id: .id[0:8], amount, status}'
 ```
 

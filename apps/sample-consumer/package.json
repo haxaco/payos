@@ -1,20 +1,23 @@
 {
   "name": "@payos/sample-consumer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Sample CLI client using x402 Consumer SDK",
+  "description": "Sample multi-protocol consumer using unified PayOS SDK",
   "type": "module",
-  "bin": {
-    "x402-weather": "./dist/index.js"
-  },
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx src/index-new.ts",
+    "dev:x402": "tsx src/index-new.ts x402",
+    "dev:ap2": "tsx src/index-new.ts ap2",
+    "dev:acp": "tsx src/index-new.ts acp",
+    "dev:old": "tsx src/index.ts",
+    "start": "tsx src/index-new.ts",
     "build": "tsc"
   },
   "dependencies": {
+    "@payos/sdk": "workspace:*",
     "@payos/x402-client-sdk": "workspace:*",
     "chalk": "^5.3.0",
+    "dotenv": "^16.4.5",
     "ora": "^8.0.1"
   },
   "devDependencies": {

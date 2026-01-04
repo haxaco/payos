@@ -12,13 +12,13 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function WalletsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Form state
   const [createMode, setCreateMode] = useState<'select' | 'create' | 'external'>('select');
   const [formData, setFormData] = useState({
@@ -62,7 +62,7 @@ export default function WalletsPage() {
 
   // Initialize pagination
   const pagination = usePagination({
-    totalItems: countData?.pagination?.total || 0,
+    totalItems: (countData as any)?.data?.pagination?.total || (countData as any)?.pagination?.total || 0,
     initialPageSize: 50,
   });
 
@@ -76,22 +76,27 @@ export default function WalletsPage() {
         limit: pagination.pageSize,
       });
     },
-    enabled: !!api && isConfigured && pagination.totalItems > 0,
+    enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
 
-  const wallets = walletsData?.data || [];
-  
+  const rawData = (walletsData as any)?.data;
+  const wallets = Array.isArray(rawData)
+    ? rawData
+    : (Array.isArray((rawData as any)?.data)
+      ? (rawData as any).data
+      : []);
+
   const handleCreateWallet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!api) return;
-    
+
     setCreating(true);
     setError(null);
-    
+
     try {
       let newWallet;
-      
+
       if (createMode === 'external') {
         // Add existing external wallet
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/external`, {
@@ -109,12 +114,12 @@ export default function WalletsPage() {
             blockchain: formData.blockchain
           })
         });
-        
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to add external wallet');
         }
-        
+
         const result = await response.json();
         newWallet = result.data;
       } else {
@@ -125,7 +130,7 @@ export default function WalletsPage() {
           purpose: formData.purpose,
           currency: formData.currency
         });
-        
+
         // If initial balance > 0, deposit
         if (parseFloat(formData.initialBalance) > 0) {
           await api.wallets.deposit(newWallet.id, {
@@ -134,10 +139,10 @@ export default function WalletsPage() {
           newWallet.balance = parseFloat(formData.initialBalance);
         }
       }
-      
+
       // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: ['wallets'] });
-      
+
       // Reset form and close modal
       setFormData(prev => ({
         name: '',
@@ -157,21 +162,37 @@ export default function WalletsPage() {
       setCreating(false);
     }
   };
-  
+
   const resetModal = () => {
     setShowCreateModal(false);
     setCreateMode('select');
     setError(null);
   };
 
-  const filteredWallets = wallets.filter(wallet =>
+  const filteredWallets = wallets.filter((wallet: any) =>
     (wallet.name?.toLowerCase() || '').includes(search.toLowerCase()) ||
     (wallet.purpose?.toLowerCase() || '').includes(search.toLowerCase())
   );
 
   // Calculate totals
-  const totalBalance = wallets.reduce((sum, w) => sum + w.balance, 0);
-  const activeWallets = wallets.filter(w => w.status === 'active').length;
+  const totalBalance = wallets.reduce((sum: number, w: any) => sum + w.balance, 0);
+  const activeWallets = wallets.filter((w: any) => w.status === 'active').length;
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Wallets</h1>
+            <p className="text-gray-600 dark:text-gray-400">Manage stablecoin wallets for x402 payments</p>
+          </div>
+        </div>
+        <div className="col-span-full">
+          <CardListSkeleton count={6} />
+        </div>
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -238,7 +259,7 @@ export default function WalletsPage() {
             <WalletIcon className="h-4 w-4 text-purple-600 dark:text-purple-400" />
           </div>
           <div className="text-3xl font-bold text-gray-900 dark:text-white">
-            {wallets.filter(w => w.managedByAgentId).length}
+            {wallets.filter((w: any) => w.managedByAgentId).length}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">With spending policies</div>
         </div>
@@ -294,7 +315,7 @@ export default function WalletsPage() {
             )}
           </div>
         ) : (
-          filteredWallets.map((wallet) => (
+          filteredWallets.map((wallet: any) => (
             <div
               key={wallet.id}
               className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
@@ -304,13 +325,12 @@ export default function WalletsPage() {
                   <WalletIcon className="h-6 w-6 text-white" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                    wallet.status === 'active'
-                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                      : wallet.status === 'frozen'
+                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${wallet.status === 'active'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                    : wallet.status === 'frozen'
                       ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
                       : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                  }`}>
+                    }`}>
                     {wallet.status}
                   </span>
                   <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
@@ -319,9 +339,11 @@ export default function WalletsPage() {
                 </div>
               </div>
 
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                {wallet.name || 'Unnamed Wallet'}
-              </h3>
+              <Link href={`/dashboard/wallets/${wallet.id}`} className="block">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  {wallet.name || 'Unnamed Wallet'}
+                </h3>
+              </Link>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                 {wallet.purpose || 'No description'}
               </p>
@@ -386,14 +408,14 @@ export default function WalletsPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             {/* Step 1: Select Mode */}
             {createMode === 'select' && (
               <div className="space-y-4">
                 <p className="text-gray-600 dark:text-gray-400 text-sm mb-6">
                   How would you like to add a wallet?
                 </p>
-                
+
                 <button
                   onClick={() => setCreateMode('create')}
                   className="w-full p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-left group"
@@ -412,7 +434,7 @@ export default function WalletsPage() {
                     </div>
                   </div>
                 </button>
-                
+
                 <button
                   onClick={() => setCreateMode('external')}
                   className="w-full p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-emerald-500 dark:hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all text-left group"
@@ -431,7 +453,7 @@ export default function WalletsPage() {
                     </div>
                   </div>
                 </button>
-                
+
                 <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mt-4 opacity-60">
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-gray-500 rounded-xl flex items-center justify-center">
@@ -449,7 +471,7 @@ export default function WalletsPage() {
                 </div>
               </div>
             )}
-            
+
             {/* Step 2: Create New Wallet Form */}
             {createMode === 'create' && (
               <form onSubmit={handleCreateWallet} className="space-y-4">
@@ -458,7 +480,7 @@ export default function WalletsPage() {
                     {error}
                   </div>
                 )}
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Wallet Name *
@@ -472,7 +494,7 @@ export default function WalletsPage() {
                     className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Purpose
@@ -485,7 +507,7 @@ export default function WalletsPage() {
                     className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -501,7 +523,7 @@ export default function WalletsPage() {
                       <option value="EURC">EURC</option>
                     </select>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Initial Balance
@@ -516,7 +538,7 @@ export default function WalletsPage() {
                     />
                   </div>
                 </div>
-                
+
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
@@ -536,7 +558,7 @@ export default function WalletsPage() {
                 </div>
               </form>
             )}
-            
+
             {/* Step 2: Link External Wallet Form */}
             {createMode === 'external' && (
               <form onSubmit={handleCreateWallet} className="space-y-4">
@@ -545,7 +567,7 @@ export default function WalletsPage() {
                     {error}
                   </div>
                 )}
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Wallet Address *
@@ -559,7 +581,7 @@ export default function WalletsPage() {
                     className="w-full px-4 py-2 text-sm font-mono bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -576,7 +598,7 @@ export default function WalletsPage() {
                       <option value="polygon">Polygon</option>
                     </select>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Currency *
@@ -592,7 +614,7 @@ export default function WalletsPage() {
                     </select>
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Wallet Name
@@ -605,13 +627,13 @@ export default function WalletsPage() {
                     className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
-                
+
                 <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                   <p className="text-amber-700 dark:text-amber-400 text-sm">
                     <strong>Note:</strong> After linking, you&apos;ll need to verify ownership by signing a message with your wallet.
                   </p>
                 </div>
-                
+
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"

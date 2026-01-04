@@ -1,13 +1,10 @@
 'use client';
 
 import { CreditCard, Plus, Search, AlertCircle } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { useState, useEffect } from 'react';
 import { Button } from '@payos/ui';
 import { CardListSkeleton } from '@/components/ui/skeletons';
-import { usePagination } from '@/hooks/usePagination';
-import { PaginationControls } from '@/components/ui/pagination-controls';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -33,7 +30,7 @@ interface PaymentMethod {
 
 export default function CardsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isApiLoading } = useApiConfig();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [cards, setCards] = useState<PaymentMethod[]>([]);
@@ -42,40 +39,51 @@ export default function CardsPage() {
   // Fetch card transactions since payment methods API doesn't support global list
   useEffect(() => {
     async function fetchCards() {
+      // Wait for API to initialize
+      if (isApiLoading) return;
+
       if (!api || !isConfigured) {
         setLoading(false);
         return;
       }
 
       try {
-        // Use card transactions as a proxy to identify cards in use
-        // This provides a list of card activity which implies cards exist
-        const cardTxResponse = await api.cards.listTransactions({ limit: 100 });
-        const cardTransactions = cardTxResponse?.data || [];
-        
-        // Create unique card entries from transactions
-        const uniqueCards = new Map<string, PaymentMethod>();
-        for (const tx of cardTransactions) {
-          if (tx.cardLast4 && !uniqueCards.has(tx.cardLast4)) {
-            uniqueCards.set(tx.cardLast4, {
-              id: `card-${tx.cardLast4}`,
-              accountId: tx.accountId || '',
-              type: 'card',
-              status: 'active',
-              label: tx.merchantName ? `Card used at ${tx.merchantName}` : undefined,
-              isDefault: false,
-              cardLast4: tx.cardLast4,
-              cardBrand: 'visa', // Default, can be enhanced
-              createdAt: tx.transactionTime || new Date().toISOString(),
-              updatedAt: tx.transactionTime || new Date().toISOString(),
-            });
-          }
+        const response: any = await api.paymentMethods.listAll({ type: 'card' });
+
+        // Handle standard API response format { data: [...] } or legacy { payment_methods: [...] }
+        const cardsData = response.data || response.payment_methods || response || [];
+
+        if (!Array.isArray(cardsData)) {
+          console.error('Invalid cards data received:', cardsData);
+          setCards([]);
+          return;
         }
-        
-        setCards(Array.from(uniqueCards.values()));
+
+        const mappedCards: PaymentMethod[] = cardsData.map((card: any) => ({
+          id: card.id,
+          accountId: card.account_id,
+          type: card.type,
+          status: card.metadata?.status || card.status,
+          label: card.label,
+          isDefault: card.is_default,
+          // Handle both camelCase (if transformed) and snake_case API response
+          bankAccountLast4: card.bank_account_last_four,
+          bankAccountHolder: card.bank_account_holder,
+          bankAccountType: card.bank_account_type,
+          cardLast4: card.card_last_four,
+          // Extract metadata fields or top level
+          cardBrand: card.metadata?.cardBrand || card.card_brand,
+          cardExpMonth: card.metadata?.cardExpMonth || card.card_exp_month,
+          cardExpYear: card.metadata?.cardExpYear || card.card_exp_year,
+          walletAddress: card.wallet_address,
+          walletNetwork: card.wallet_network,
+          createdAt: card.created_at,
+          updatedAt: card.updated_at,
+        }));
+
+        setCards(mappedCards);
       } catch (error) {
         console.error('Failed to fetch cards:', error);
-        // Set empty array on error rather than leaving loading state
         setCards([]);
       } finally {
         setLoading(false);
@@ -95,6 +103,20 @@ export default function CardsPage() {
   });
 
   const activeCards = filteredCards.filter(c => c.status === 'active').length;
+
+  if (isApiLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Cards</h1>
+            <p className="text-gray-600 dark:text-gray-400">Manage payment cards</p>
+          </div>
+        </div>
+        <CardListSkeleton count={6} />
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -190,7 +212,7 @@ export default function CardsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredCards.map((card) => (
+          {filteredCards.map((card: any) => (
             <div
               key={card.id}
               onClick={() => router.push(`/dashboard/cards/${card.id}`)}
@@ -200,15 +222,14 @@ export default function CardsPage() {
                 <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
                   <CreditCard className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                 </div>
-                <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                  card.status === 'active'
-                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
-                }`}>
+                <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${card.status === 'active'
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400'
+                  }`}>
                   {card.status}
                 </span>
               </div>
-              
+
               <div className="mb-4">
                 <div className="text-sm font-mono text-gray-900 dark:text-white mb-1">
                   •••• •••• •••• {card.cardLast4 || card.bankAccountLast4 || '****'}

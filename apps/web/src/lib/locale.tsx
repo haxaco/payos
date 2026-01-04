@@ -157,11 +157,18 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     return `${formatted} ${curr}`;
   };
 
-  const formatDate = (date: string | Date, options?: Intl.DateTimeFormatOptions) => {
+  const formatDate = (date: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions) => {
+    if (!date) return 'N/A';
+    
+    const dateObj = new Date(date);
+    if (isNaN(dateObj.getTime())) {
+      return 'Invalid Date';
+    }
+    
     return new Intl.DateTimeFormat(config.intlLocale, {
       ...config.dateFormat,
       ...options,
-    }).format(new Date(date));
+    }).format(dateObj);
   };
 
   const formatNumber = (value: number, options?: Intl.NumberFormatOptions) => {
@@ -193,5 +200,80 @@ export function useLocale() {
     throw new Error('useLocale must be used within LocaleProvider');
   }
   return context;
+}
+
+/**
+ * Standalone currency formatter - can be used outside of React components
+ * For React components, prefer using the useLocale() hook
+ */
+export function formatCurrencyStandalone(
+  amount: number | null | undefined, 
+  currency?: string | null,
+  locale: string = 'en-US'
+): string {
+  const safeAmount = amount ?? 0;
+  const curr = currency || 'USD';
+  const isCrypto = curr in CRYPTO_SYMBOLS;
+  const isFiat = FIAT_CURRENCIES.has(curr);
+
+  if (isFiat) {
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: curr,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(safeAmount);
+    } catch {
+      // Fallback if currency code is invalid
+      return `${safeAmount.toLocaleString(locale, { minimumFractionDigits: 2 })} ${curr}`;
+    }
+  }
+
+  if (isCrypto) {
+    const symbol = CRYPTO_SYMBOLS[curr];
+    const maxDecimals = curr.endsWith('x') ? 6 : 2;
+    
+    const formatted = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: maxDecimals,
+    }).format(safeAmount);
+
+    if (symbol === '$') {
+      return `${symbol}${formatted} ${curr}`;
+    }
+    return `${symbol}${formatted}`;
+  }
+
+  // Unknown currency - format as number with currency code
+  const formatted = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safeAmount);
+  
+  return `${formatted} ${curr}`;
+}
+
+/**
+ * Standalone date formatter - can be used outside of React components
+ */
+export function formatDateStandalone(
+  date: string | Date | null | undefined,
+  locale: string = 'en-US',
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (!date) return 'N/A';
+  
+  const dateObj = new Date(date);
+  if (isNaN(dateObj.getTime())) {
+    return 'N/A';
+  }
+  
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    ...options,
+  }).format(dateObj);
 }
 

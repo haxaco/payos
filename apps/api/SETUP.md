@@ -71,7 +71,7 @@ You should see:
 curl http://localhost:4000/health
 
 # Test with API key
-curl -H "Authorization: Bearer pk_test_GkRuyZ375fL5YLB6dtdztzQqpGPikXAadLaXGNp-5Kk" \
+curl -H "Authorization: Bearer pk_test_YOUR_API_KEY_HERE" \
   http://localhost:4000/v1/accounts
 ```
 

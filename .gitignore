@@ -43,3 +43,9 @@ coverage/
 # Misc
 *.tsbuildinfo
 
+# Documentation with credentials
+*_CREDENTIALS.md
+*_SECRETS.md
+FINAL_SUMMARY.md
+AUTHENTICATION_FLOW_EXPLAINED.md
+

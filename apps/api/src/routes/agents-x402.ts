@@ -261,7 +261,8 @@ app.post('/register', async (c) => {
           type: 'internal',
           status: 'completed',
           description: 'Initial agent wallet funding',
-          x402_metadata: {
+          protocol_metadata: {
+            protocol: 'x402',
             wallet_id: wallet.id,
             agent_id: agent.id,
             operation: 'initial_deposit'
@@ -505,7 +506,7 @@ app.get('/:id/wallet', async (c) => {
     // Fetch recent transactions
     const { data: recentTxs } = await supabase
       .from('transfers')
-      .select('id, from_account_id, to_account_id, amount, currency, status, type, description, created_at, x402_metadata')
+      .select('id, from_account_id, to_account_id, amount, currency, status, type, description, created_at, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
       .or(`from_account_id.eq.${accountId},to_account_id.eq.${accountId}`)
       .order('created_at', { ascending: false })
@@ -547,7 +548,7 @@ app.get('/:id/wallet', async (c) => {
           status: tx.status,
           type: tx.type,
           description: tx.description,
-          endpointId: tx.x402_metadata?.endpoint_id,
+          endpointId: tx.protocol_metadata?.endpoint_id,
           createdAt: tx.created_at
         })) || [],
         createdAt: wallet.created_at,
@@ -639,7 +640,8 @@ app.post('/:id/wallet/fund', async (c) => {
         type: 'internal',
         status: 'completed',
         description: validated.reference || 'Agent wallet funding',
-        x402_metadata: {
+        protocol_metadata: {
+          protocol: 'x402',
           wallet_id: wallet.id,
           agent_id: agent.id,
           operation: 'fund'

@@ -19,7 +19,7 @@
 ### 3. API Key Generated ✅
 Your test API key for `haxaco@gmail.com`:
 ```
-pk_test_AmAFezlpd-QlbPVtXlrj1wG8lLGAB51c9RtQ2w3fakQ
+pk_test_YOUR_API_KEY_HERE
 ```
 
 ---
@@ -132,7 +132,7 @@ After adding, **redeploy** the Vercel app.
 
 3. **Configure API Key:**
    - Go to: https://payos-web.vercel.app/dashboard/api-keys
-   - Enter the API key: `pk_test_AmAFezlpd-QlbPVtXlrj1wG8lLGAB51c9RtQ2w3fakQ`
+   - Enter the API key: `pk_test_YOUR_API_KEY_HERE`
    - Click **Save**
    - Dashboard should load data ✅
 

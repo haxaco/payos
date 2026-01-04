@@ -95,6 +95,7 @@ export interface X402Payment {
   proof: {
     paymentId: string;
     signature: string;
+    jwt?: string;  // Phase 2: JWT for local verification
   };
   newWalletBalance: number;
   timestamp: string;
@@ -285,6 +286,11 @@ export class X402Client {
         const retryHeaders = new Headers(fetchOptions.headers);
         retryHeaders.set('X-Payment-ID', payment.transferId);
         retryHeaders.set('X-Payment-Proof', payment.proof.signature);
+        
+        // Phase 2: Add JWT for local verification by provider
+        if (payment.proof.jwt) {
+          retryHeaders.set('X-Payment-JWT', payment.proof.jwt);
+        }
         
         retries++;
         fetchOptions.headers = retryHeaders;

@@ -150,3 +150,5 @@ COMMENT ON FUNCTION public.revoke_all_user_sessions(UUID) IS 'Revokes all sessio
 COMMENT ON FUNCTION public.mark_refresh_token_used(TEXT) IS 'Marks a refresh token as used for rotation detection';
 
 
+
+

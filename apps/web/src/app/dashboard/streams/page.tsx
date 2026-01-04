@@ -10,7 +10,7 @@ import { StreamsEmptyState, SearchEmptyState } from '@/components/ui/empty-state
 
 export default function StreamsPage() {
   const api = useApiClient();
-  const { isConfigured } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const [streams, setStreams] = useState<Stream[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -24,7 +24,13 @@ export default function StreamsPage() {
 
       try {
         const response = await api.streams.list({ limit: 50 });
-        setStreams(response.data || []);
+        const rawData = (response as any).data;
+        const streamsList = Array.isArray(rawData)
+          ? rawData
+          : (Array.isArray((rawData as any)?.data)
+            ? (rawData as any).data
+            : []);
+        setStreams(streamsList);
       } catch (error) {
         console.error('Failed to fetch streams:', error);
       } finally {
@@ -35,7 +41,7 @@ export default function StreamsPage() {
     fetchStreams();
   }, [api]);
 
-  const filteredStreams = streams.filter(stream => 
+  const filteredStreams = streams.filter((stream: any) =>
     stream.sender.accountName.toLowerCase().includes(search.toLowerCase()) ||
     stream.receiver.accountName.toLowerCase().includes(search.toLowerCase())
   );
@@ -48,6 +54,20 @@ export default function StreamsPage() {
       default: return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400';
     }
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Streams</h1>
+            <p className="text-gray-600 dark:text-gray-400">Manage money streaming payments</p>
+          </div>
+        </div>
+        <CardListSkeleton count={5} />
+      </div>
+    );
+  }
 
   if (!isConfigured) {
     return (
@@ -112,17 +132,16 @@ export default function StreamsPage() {
             <StreamsEmptyState />
           )
         ) : (
-          filteredStreams.map((stream) => (
-            <div 
-              key={stream.id} 
+          filteredStreams.map((stream: any) => (
+            <div
+              key={stream.id}
               onClick={() => window.location.href = `/dashboard/streams/${stream.id}`}
               className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    stream.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950' : 'bg-gray-100 dark:bg-gray-800'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${stream.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950' : 'bg-gray-100 dark:bg-gray-800'
+                    }`}>
                     {stream.status === 'active' ? (
                       <Play className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                     ) : (

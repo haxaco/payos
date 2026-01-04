@@ -284,7 +284,7 @@ app.get('/top-endpoints', async (c) => {
           .eq('tenant_id', ctx.tenantId)
           .eq('type', 'x402')
           .eq('status', 'completed')
-          .contains('x402_metadata', { endpoint_id: endpoint.id })
+          .contains('protocol_metadata', { endpoint_id: endpoint.id })
           .gte('created_at', start.toISOString())
           .lte('created_at', end.toISOString());
 
@@ -386,7 +386,7 @@ app.get('/endpoint/:endpointId', async (c) => {
       .select('amount, fee_amount, from_account_id, created_at, status')
       .eq('tenant_id', ctx.tenantId)
       .eq('type', 'x402')
-      .contains('x402_metadata', { endpoint_id: endpointId })
+      .contains('protocol_metadata', { endpoint_id: endpointId })
       .gte('created_at', start.toISOString())
       .lte('created_at', end.toISOString())
       .order('created_at', { ascending: false });

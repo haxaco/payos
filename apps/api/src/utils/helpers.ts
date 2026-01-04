@@ -157,7 +157,8 @@ export function mapTransferFromDb(row: any): Transfer {
     streamId: row.stream_id || undefined,
     fees: parseFloat(row.fee_amount) || 0,
     idempotencyKey: row.idempotency_key || undefined,
-    x402Metadata: row.x402_metadata || undefined, // ✅ Include x402 metadata
+    protocolMetadata: row.protocol_metadata || undefined, // Protocol-specific metadata (x402, AP2, ACP)
+    x402Metadata: row.protocol_metadata || row.x402_metadata || undefined, // @deprecated - for backward compatibility
     createdAt: row.created_at,
     completedAt: row.completed_at || undefined,
     failedAt: row.failed_at || undefined,

@@ -1,0 +1,25 @@
+{
+  "name": "@payos-examples/test-runner",
+  "version": "1.0.0",
+  "description": "Test runner for PayOS sample apps",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo": "tsx demo-all.ts",
+    "demo:real": "tsx demo-real.ts",
+    "demo:x402": "cd x402-micropayments && pnpm dev",
+    "demo:ap2": "cd ap2-subscription && pnpm dev",
+    "demo:acp": "cd acp-ecommerce && pnpm dev",
+    "test": "tsx test-runner.ts",
+    "test:ap2": "cd ap2-subscription && pnpm test",
+    "test:acp": "cd acp-ecommerce && pnpm test",
+    "test:x402": "cd x402-micropayments && pnpm test",
+    "test:all": "pnpm test:ap2 && pnpm test:acp && pnpm test:x402"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
+

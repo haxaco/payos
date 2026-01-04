@@ -1,137 +1,157 @@
 'use client';
 
-import { Wallet, TrendingUp, TrendingDown, AlertTriangle, RefreshCw } from 'lucide-react';
-
-const corridors = [
-  { from: 'US', to: 'ARG', balance: 850000, currency: 'ARS', utilization: 78, status: 'healthy' },
-  { from: 'US', to: 'COL', balance: 420000, currency: 'COP', utilization: 45, status: 'healthy' },
-  { from: 'US', to: 'MEX', balance: 125000, currency: 'MXN', utilization: 92, status: 'warning' },
-  { from: 'US', to: 'BRA', balance: 680000, currency: 'BRL', utilization: 34, status: 'healthy' },
-];
+import { useState } from 'react';
+import { RefreshCw, LayoutDashboard, List, Bell } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useApiClient } from '@/lib/api-client';
+import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from '@payos/ui';
+import { toast } from 'sonner';
+import { TreasuryStats } from './components/treasury-stats';
+import { AccountsTable } from './components/accounts-table';
+import { AlertsList } from './components/alerts-list';
 
 export default function TreasuryPage() {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('accounts');
+
+  // Fetch Dashboard Stats
+  const { data: dashboardData, isLoading: statsLoading } = useQuery({
+    queryKey: ['treasury', 'dashboard'],
+    queryFn: async () => {
+      if (!api) throw new Error('API not initialized');
+      return api.treasury.getDashboard();
+    },
+    enabled: !!api,
+  });
+
+  // Fetch Accounts
+  const { data: accountsData, isLoading: accountsLoading } = useQuery({
+    queryKey: ['treasury', 'accounts'],
+    queryFn: async () => {
+      if (!api) throw new Error('API not initialized');
+      return api.treasury.getAccounts();
+    },
+    enabled: !!api,
+  });
+
+  // Fetch Active Alerts
+  const { data: alertsData, isLoading: alertsLoading } = useQuery({
+    queryKey: ['treasury', 'alerts', 'open'],
+    queryFn: async () => {
+      if (!api) throw new Error('API not initialized');
+      return api.treasury.getAlerts({ status: 'open' });
+    },
+    enabled: !!api,
+  });
+
+  // Sync Mutation
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      if (!api) throw new Error('API not initialized');
+      return api.treasury.sync();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      toast.success('Treasury balances synchronized');
+    },
+    onError: () => {
+      toast.error('Failed to sync treasury balances');
+    }
+  });
+
+  // Resolved mutations (passed to AlertsList)
+  const acknowledgeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!api) throw new Error('API not initialized');
+      return api.treasury.acknowledgeAlert(id);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['treasury', 'alerts'] })
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!api) throw new Error('API not initialized');
+      return api.treasury.resolveAlert(id);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['treasury', 'alerts'] })
+  });
+
+  // Ensure data structure safety (handle potential nested data or missing data)
+  const stats = (dashboardData as any)?.data || dashboardData;
+  const accounts = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.data || [];
+  const alerts = Array.isArray(alertsData) ? alertsData : (alertsData as any)?.data || [];
+
   return (
-    <div className="p-8 max-w-[1600px] mx-auto">
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Treasury</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage liquidity and float across corridors</p>
+          <p className="text-gray-600 dark:text-gray-400">Manage liquidity and float across rails</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-          <RefreshCw className="h-4 w-4" />
-          Rebalance
-        </button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+            Sync Balances
+          </Button>
+          <Button>
+            Rebalance
+          </Button>
+        </div>
       </div>
 
       {/* Overview Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+      <TreasuryStats stats={stats} isLoading={statsLoading} />
+
+      {/* Main Content Areas */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+
+        {/* Main Table Area */}
+        <div className="xl:col-span-2 space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <div className="flex items-center justify-between mb-4">
+              <TabsList>
+                <TabsTrigger value="accounts" className="gap-2"><LayoutDashboard className="w-4 h-4" /> Accounts</TabsTrigger>
+                <TabsTrigger value="transactions" className="gap-2"><List className="w-4 h-4" /> Transactions</TabsTrigger>
+              </TabsList>
             </div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">$2.4M</div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Total Float</div>
+
+            <TabsContent value="accounts" className="mt-0">
+              <AccountsTable accounts={accounts} isLoading={accountsLoading} />
+            </TabsContent>
+
+            <TabsContent value="transactions" className="mt-0">
+              {/* Placeholder for future implementation */}
+              <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center text-gray-500">
+                Transaction history view coming soon.
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
 
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">+12%</span>
+        {/* Sidebar Area */}
+        <div className="space-y-6">
+          {/* Alerts */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <Bell className="w-4 h-4" /> Active Alerts
+            </h3>
+            <AlertsList
+              alerts={alerts}
+              isLoading={alertsLoading}
+              onAcknowledge={async (id) => { await acknowledgeMutation.mutateAsync(id); }}
+              onResolve={async (id) => { await resolveMutation.mutateAsync(id); }}
+            />
           </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">$1.8M</div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Inflows (24h)</div>
-        </div>
 
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-950 flex items-center justify-center">
-              <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
-            </div>
-            <span className="text-xs font-medium text-red-600 dark:text-red-400">-8%</span>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">$1.2M</div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Outflows (24h)</div>
+          {/* Add more widgets here like Currency Exposure Pie Chart in Phase 2 */}
         </div>
-
-        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-950 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            </div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">1</div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Corridors Need Attention</div>
-        </div>
-      </div>
-
-      {/* Corridor Balances */}
-      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Corridor Balances</h2>
-        </div>
-        <table className="w-full">
-          <thead className="bg-gray-50 dark:bg-gray-900">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Corridor</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Balance</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Currency</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Utilization</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-            {corridors.map((corridor, i) => (
-              <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900 dark:text-white">{corridor.from}</span>
-                    <span className="text-gray-400">→</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{corridor.to}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                  ${corridor.balance.toLocaleString()}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                  {corridor.currency}
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full ${
-                          corridor.utilization > 80 ? 'bg-red-500' :
-                          corridor.utilization > 60 ? 'bg-amber-500' :
-                          'bg-emerald-500'
-                        }`}
-                        style={{ width: `${corridor.utilization}%` }}
-                      />
-                    </div>
-                    <span className="text-sm text-gray-600 dark:text-gray-400 w-12">
-                      {corridor.utilization}%
-                    </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                    corridor.status === 'warning'
-                      ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400'
-                      : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                  }`}>
-                    {corridor.status === 'warning' ? 'Needs attention' : 'Healthy'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
 }
-

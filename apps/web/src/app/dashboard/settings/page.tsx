@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
-import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe } from 'lucide-react';
+import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe, Zap } from 'lucide-react';
 import { useLocale, type Locale } from '@/lib/locale';
 
 export default function SettingsPage() {
@@ -16,21 +16,21 @@ export default function SettingsPage() {
   });
 
   const localeOptions: Array<{ value: Locale; label: string; description: string; example: string }> = [
-    { 
-      value: 'en-US', 
-      label: 'United States', 
+    {
+      value: 'en-US',
+      label: 'United States',
       description: 'USD, MM/DD/YYYY',
       example: `${formatCurrency(1234.56, 'USD')} • ${formatDate(new Date())}`
     },
-    { 
-      value: 'en-EU', 
-      label: 'Europe', 
+    {
+      value: 'en-EU',
+      label: 'Europe',
       description: 'EUR, DD/MM/YYYY',
       example: `${formatCurrency(1234.56, 'EUR')} • ${formatDate(new Date())}`
     },
-    { 
-      value: 'es-LATAM', 
-      label: 'Latin America', 
+    {
+      value: 'es-LATAM',
+      label: 'Latin America',
       description: 'USD, DD/MM/YYYY',
       example: `${formatCurrency(1234.56, 'USD')} • ${formatDate(new Date())}`
     },
@@ -61,7 +61,7 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Your personal information</p>
             </div>
           </div>
-          
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -99,7 +99,7 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Date and currency formatting</p>
             </div>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               Region
@@ -109,11 +109,10 @@ export default function SettingsPage() {
                 <button
                   key={option.value}
                   onClick={() => setLocale(option.value)}
-                  className={`relative p-4 rounded-xl border-2 transition-all text-left ${
-                    locale === option.value
+                  className={`relative p-4 rounded-xl border-2 transition-all text-left ${locale === option.value
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
                       : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-                  }`}
+                    }`}
                 >
                   {locale === option.value && (
                     <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
@@ -146,7 +145,7 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Customize how PayOS looks</p>
             </div>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               Theme
@@ -156,20 +155,18 @@ export default function SettingsPage() {
                 <button
                   key={option.value}
                   onClick={() => setTheme(option.value)}
-                  className={`relative p-4 rounded-xl border-2 transition-all ${
-                    theme === option.value
+                  className={`relative p-4 rounded-xl border-2 transition-all ${theme === option.value
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
                       : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-                  }`}
+                    }`}
                 >
                   {theme === option.value && (
                     <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
                       <Check className="h-3 w-3 text-white" />
                     </div>
                   )}
-                  <option.icon className={`h-6 w-6 mb-2 ${
-                    theme === option.value ? 'text-blue-600' : 'text-gray-400'
-                  }`} />
+                  <option.icon className={`h-6 w-6 mb-2 ${theme === option.value ? 'text-blue-600' : 'text-gray-400'
+                    }`} />
                   <div className="text-sm font-medium text-gray-900 dark:text-white">
                     {option.label}
                   </div>
@@ -193,7 +190,7 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Configure your notification preferences</p>
             </div>
           </div>
-          
+
           <div className="space-y-4">
             {[
               { key: 'email', label: 'Email Notifications', description: 'Receive updates via email' },
@@ -211,18 +208,16 @@ export default function SettingsPage() {
                     ...prev,
                     [item.key]: !prev[item.key as keyof typeof prev]
                   }))}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${
-                    notifications[item.key as keyof typeof notifications]
+                  className={`relative w-11 h-6 rounded-full transition-colors ${notifications[item.key as keyof typeof notifications]
                       ? 'bg-blue-600'
                       : 'bg-gray-200 dark:bg-gray-700'
-                  }`}
+                    }`}
                 >
                   <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                      notifications[item.key as keyof typeof notifications]
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${notifications[item.key as keyof typeof notifications]
                         ? 'translate-x-5'
                         : 'translate-x-0'
-                    }`}
+                      }`}
                   />
                 </button>
               </div>
@@ -241,7 +236,7 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Manage your security settings</p>
             </div>
           </div>
-          
+
           <div className="space-y-4">
             <button className="w-full px-4 py-3 text-left bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors">
               <div className="text-sm font-medium text-gray-900 dark:text-white">Change Password</div>
@@ -255,6 +250,40 @@ export default function SettingsPage() {
               <div className="text-sm font-medium text-gray-900 dark:text-white">Active Sessions</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">View and manage logged in devices</div>
             </button>
+          </div>
+        </section>
+
+        {/* Agentic Payments Visibility Section */}
+        <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-950 rounded-xl flex items-center justify-center">
+              <Zap className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Agentic Payments</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Configure protocol visibility in dashboard</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {[
+              { key: 'x402', label: 'x402 (Micropayments)', description: 'HTTP 402, API Monetization' },
+              { key: 'ap2', label: 'AP2 (Google Agents)', description: 'Agent Mandates and Authorization' },
+              { key: 'acp', label: 'ACP (Agent Commerce)', description: 'Commerce Checkouts' },
+            ].map((item) => (
+              <div key={item.key} className="flex items-center justify-between py-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">{item.label}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{item.description}</div>
+                </div>
+                <button
+                  className="relative w-11 h-6 rounded-full transition-colors bg-blue-600"
+                  onClick={() => alert("Visibility toggle not yet persistent (Demo)")}
+                >
+                  <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform translate-x-5" />
+                </button>
+              </div>
+            ))}
           </div>
         </section>
       </div>

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { createAdminClient } from '../db/admin-client.js';
 import { ValidationError } from '../middleware/error.js';
+import { authMiddleware } from '../middleware/auth.js';
 import {
   validatePassword,
   generateApiKey,
@@ -592,6 +593,10 @@ auth.post('/login', async (c) => {
 // ============================================
 // GET /v1/auth/me - Get current user from access token
 // ============================================
+/**
+ * GET /v1/auth/me
+ * Supports BOTH session tokens (for dashboard) and API keys (for SDKs)
+ */
 auth.get('/me', async (c) => {
   try {
     const authHeader = c.req.header('Authorization');
@@ -599,39 +604,135 @@ auth.get('/me', async (c) => {
       return c.json({ error: 'Missing or invalid authorization header' }, 401);
     }
 
-    const accessToken = authHeader.slice(7);
-    const supabase = createClient();
-
-    // Use Supabase client to get user from access token
-    const { data: userData, error } = await (supabase as any).auth.getUser(
-      accessToken
-    );
-
-    if (error || !userData?.user) {
-      return c.json({ error: 'Invalid or expired token' }, 401);
-    }
-
-    const userId = userData.user.id;
-
-    // Look up user profile & tenant
-    const { data: profile } = await (supabase
-      .from('user_profiles') as any)
-      .select('tenant_id, role, name')
-      .eq('id', userId)
-      .single();
-
-    let tenant: any = null;
-    if (profile?.tenant_id) {
-      const { data: tenantData } = await (supabase
-        .from('tenants') as any)
-        .select('id, name, status')
-        .eq('id', profile.tenant_id)
+    const token = authHeader.slice(7);
+    
+    // Detect token type: API keys start with pk_ or ak_, session tokens don't
+    const isApiKey = token.startsWith('pk_') || token.startsWith('ak_') || token.startsWith('agent_');
+    
+    if (isApiKey) {
+      // API KEY PATH - for SDKs
+      // Apply auth middleware logic inline
+      const supabase = createAdminClient();
+      
+      // Hash the provided key
+      const keyHash = hashApiKey(token);
+      
+      // Look up API key
+      const { data: apiKeyRecord } = await supabase
+        .from('api_keys')
+        .select('*')
+        .eq('key_hash', keyHash)
+        .eq('status', 'active')
         .single();
-      tenant = tenantData;
-    }
-
-    return c.json(
-      {
+      
+      if (!apiKeyRecord) {
+        return c.json({ error: 'Invalid or expired API key' }, 401);
+      }
+      
+      console.log('[/v1/auth/me] API key found:', { 
+        tenant_id: apiKeyRecord.tenant_id, 
+        created_by_user_id: apiKeyRecord.created_by_user_id 
+      });
+      
+      // Check if it's a user key or agent key
+      if (apiKeyRecord.created_by_user_id) {
+        // USER API KEY (pk_)
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('id, tenant_id, name, role')
+          .eq('id', apiKeyRecord.created_by_user_id)
+          .single();
+        
+        if (!profile) {
+          return c.json({ error: 'User not found', details: profileError?.message }, 404);
+        }
+        
+        // Get user's primary account
+        const { data: accounts } = await supabase
+          .from('accounts')
+          .select('id, type')
+          .eq('tenant_id', apiKeyRecord.tenant_id)
+          .order('created_at', { ascending: true })
+          .limit(1);
+        
+        return c.json({
+          data: {
+            type: 'user',
+            userId: profile.id,
+            accountId: accounts?.[0]?.id || null,
+            organizationId: apiKeyRecord.tenant_id,
+            name: profile.name,
+            role: profile.role
+          }
+        });
+      }
+      
+      // If no user ID, check if it's an agent API key
+      // Look for agent with matching auth_token_prefix
+      const keyPrefix = token.split('_')[0] + '_' + token.split('_')[1]; // e.g., "agent_BPdeBu"
+      
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('id, name, type, status, parent_account_id, tenant_id, x402_enabled')
+        .eq('auth_token_prefix', keyPrefix)
+        .single();
+      
+      if (agent) {
+        // AGENT API KEY (ak_ or agent_)
+        const { data: wallet } = await supabase
+          .from('wallets')
+          .select('id, balance, currency')
+          .eq('managed_by_agent_id', agent.id)
+          .eq('status', 'active')
+          .single();
+        
+        return c.json({
+          data: {
+            type: 'agent',
+            agentId: agent.id,
+            accountId: agent.parent_account_id,
+            walletId: wallet?.id || null,
+            walletBalance: wallet?.balance || 0,
+            walletCurrency: wallet?.currency || 'USDC',
+            organizationId: agent.tenant_id,
+            name: agent.name,
+            status: agent.status,
+            x402Enabled: agent.x402_enabled
+          }
+        });
+      }
+      
+      return c.json({ error: 'API key not associated with user or agent' }, 404);
+      
+    } else {
+      // SESSION TOKEN PATH - for dashboard
+      const supabase = createClient();
+      
+      const { data: userData, error } = await (supabase as any).auth.getUser(token);
+      
+      if (error || !userData?.user) {
+        return c.json({ error: 'Invalid or expired session token' }, 401);
+      }
+      
+      const userId = userData.user.id;
+      
+      const { data: profile } = await (supabase
+        .from('user_profiles') as any)
+        .select('tenant_id, role, name')
+        .eq('id', userId)
+        .single();
+      
+      let tenant: any = null;
+      if (profile?.tenant_id) {
+        const { data: tenantData } = await (supabase
+          .from('tenants') as any)
+          .select('id, name, status')
+          .eq('id', profile.tenant_id)
+          .single();
+        tenant = tenantData;
+      }
+      
+      return c.json({
         user: {
           id: userId,
           email: userData.user.email,
@@ -645,11 +746,11 @@ auth.get('/me', async (c) => {
               status: tenant.status,
             }
           : null,
-      },
-      200
-    );
+      });
+    }
   } catch (error) {
-    return c.json({ error: 'Failed to fetch user' }, 500);
+    console.error('[/v1/auth/me] Error:', error);
+    return c.json({ error: 'Failed to fetch user info' }, 500);
   }
 });
 
@@ -1071,6 +1172,7 @@ auth.post('/sessions/revoke-all', async (c) => {
     );
   }
 });
+
 
 export default auth;
 

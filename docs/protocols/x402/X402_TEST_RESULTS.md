@@ -27,7 +27,7 @@
 ## 🎯 Test Configuration
 
 **Test Credentials:**
-- API Key: `pk_test_2aRry5XHf5e7a2LpeenmGUqWc08amxyhc8WsgIVF9Fc`
+- API Key: `pk_test_YOUR_API_KEY_HERE`
 - Provider Account: `cb8071df-b481-4dea-83eb-2f5f86d26335`
 - Consumer Agent: `7549e236-5a42-41fa-86b7-cc70fec64e8c`
 - Consumer Wallet: `d199d814-5f53-4300-b1c8-81bd6ce5f00a`

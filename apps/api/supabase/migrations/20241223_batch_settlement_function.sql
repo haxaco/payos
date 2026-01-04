@@ -2,8 +2,9 @@
 -- Epic 26, Story 26.3: Batch Settlement Updates
 -- Created: 2024-12-23
 
--- Drop function if exists
+-- Drop function if exists (both TEXT and UUID versions)
 DROP FUNCTION IF EXISTS settle_x402_payment(UUID, UUID, DECIMAL, DECIMAL, UUID, TEXT);
+DROP FUNCTION IF EXISTS settle_x402_payment(UUID, UUID, DECIMAL, DECIMAL, UUID, UUID);
 
 -- Create optimized batch settlement function
 -- This function updates both wallet balances and marks transfer as completed in a single atomic transaction
@@ -13,7 +14,7 @@ CREATE OR REPLACE FUNCTION settle_x402_payment(
   p_gross_amount DECIMAL,
   p_net_amount DECIMAL,
   p_transfer_id UUID,
-  p_tenant_id TEXT
+  p_tenant_id UUID
 ) RETURNS JSON AS $$
 DECLARE
   v_consumer_new_balance DECIMAL;
@@ -79,8 +80,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Grant execute permission to authenticated users
-GRANT EXECUTE ON FUNCTION settle_x402_payment(UUID, UUID, DECIMAL, DECIMAL, UUID, TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION settle_x402_payment(UUID, UUID, DECIMAL, DECIMAL, UUID, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION settle_x402_payment(UUID, UUID, DECIMAL, DECIMAL, UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION settle_x402_payment(UUID, UUID, DECIMAL, DECIMAL, UUID, UUID) TO service_role;
 
 -- Add comment
 COMMENT ON FUNCTION settle_x402_payment IS 'Batch settlement for x402 payments - updates both wallets and transfer status in single atomic transaction';

@@ -8,6 +8,13 @@ import { authMiddleware } from './middleware/auth.js';
 import { errorHandler } from './middleware/error.js';
 import { rateLimiter, authRateLimiter } from './middleware/rate-limit.js';
 import { requestId, securityHeaders } from './middleware/security.js';
+import { idempotencyMiddleware } from './middleware/idempotency.js';
+import { 
+  timingMiddleware, 
+  responseWrapperMiddleware, 
+  structuredErrorHandler 
+} from './middleware/response-wrapper.js';
+import { contextCacheMiddleware } from './middleware/context-cache.js';
 import { createClient } from './db/client.js';
 
 // Import routes
@@ -37,6 +44,18 @@ import x402AnalyticsRouter from './routes/x402-analytics.js';
 import settlementRouter from './routes/settlement.js';
 import agentsX402Router from './routes/agents-x402.js';
 import cardTransactionsRouter from './routes/card-transactions.js';
+import webhooksRouter from './routes/webhooks.js';
+import agenticPaymentsRouter from './routes/agentic-payments.js';
+import ap2Router from './routes/ap2.js';
+import acpRouter from './routes/acp.js';
+import batchTransfersRouter from './routes/batch-transfers.js';
+import reconciliationRouter from './routes/reconciliation.js';
+import settlementWindowsRouter from './routes/settlement-windows.js';
+import treasuryRouter from './routes/treasury.js';
+import contextRouter from './routes/context.js';
+import x402FacilitatorRouter from './routes/x402-facilitator.js';
+import capabilitiesRouter from './routes/capabilities.js';
+import simulationsRouter from './routes/simulations.js';
 
 const app = new Hono();
 
@@ -44,8 +63,17 @@ const app = new Hono();
 // GLOBAL MIDDLEWARE (applies to all routes)
 // ============================================
 
-// Request ID for tracing
+// Request ID for tracing (must be first)
 app.use('*', requestId);
+
+// Timing tracking (must be early to track full request time)
+app.use('*', timingMiddleware);
+
+// Response wrapper (wraps all responses in structured format)
+app.use('*', responseWrapperMiddleware);
+
+// Context caching (caches context endpoint responses)
+app.use('*', contextCacheMiddleware);
 
 // Security headers
 app.use('*', secureHeaders());
@@ -160,9 +188,15 @@ v1.use('*', authRateLimiter);
 // Authentication
 v1.use('*', authMiddleware);
 
+// Idempotency (after auth to have tenant context)
+v1.use('*', idempotencyMiddleware);
+
 // Mount route handlers
+v1.route('/context', contextRouter);
 v1.route('/accounts', accountsRouter);
 v1.route('/agents', agentsRouter);
+// NOTE: Batch transfers must be mounted BEFORE /transfers to avoid route conflicts
+v1.route('/transfers/batch', batchTransfersRouter);
 v1.route('/transfers', transfersRouter);
 v1.route('/internal-transfers', internalTransfersRouter);
 v1.route('/streams', streamsRouter);
@@ -182,6 +216,16 @@ v1.route('/x402', x402PaymentsRouter);
 v1.route('/settlement', settlementRouter);
 v1.route('/wallets', walletsRouter);
 v1.route('/agents/x402', agentsX402Router);
+v1.route('/webhooks', webhooksRouter);
+v1.route('/agentic-payments', agenticPaymentsRouter);
+v1.route('/ap2', ap2Router);
+v1.route('/acp', acpRouter);
+v1.route('/reconciliation', reconciliationRouter);
+v1.route('/settlement-windows', settlementWindowsRouter);
+v1.route('/treasury', treasuryRouter);
+v1.route('/x402/facilitator', x402FacilitatorRouter); // Sandbox facilitator (Story 36.8)
+v1.route('/capabilities', capabilitiesRouter); // Tool discovery (Story 36.9)
+v1.route('/simulate', simulationsRouter); // Simulation engine (Epic 28)
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods
@@ -193,10 +237,23 @@ app.route('/v1', v1);
 // ERROR HANDLING
 // ============================================
 
-// Global error handler
-app.onError(errorHandler);
+// Global error handler (Epic 30 structured errors)
+app.onError(structuredErrorHandler);
 
 // 404 handler
-app.notFound((c) => c.json({ error: 'Not found' }, 404));
+app.notFound((c) => {
+  const requestId = c.get('requestId') || crypto.randomUUID();
+  return c.json({
+    success: false,
+    error: {
+      code: 'ENDPOINT_NOT_FOUND',
+      category: 'resource',
+      message: 'Endpoint not found',
+      documentation_url: 'https://docs.payos.com/errors/ENDPOINT_NOT_FOUND',
+    },
+    request_id: requestId,
+    timestamp: new Date().toISOString(),
+  }, 404);
+});
 
 export default app;

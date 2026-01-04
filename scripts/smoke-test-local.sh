@@ -28,7 +28,7 @@ echo ""
 echo "🔍 Getting auth token..."
 AUTH_RESPONSE=$(curl -s -X POST "$API_URL/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"haxaco@gmail.com","password":"Password123!"}')
+  -d '{"email":"haxaco@gmail.com","password":"YOUR_PASSWORD_HERE"}')
 
 TOKEN=$(echo "$AUTH_RESPONSE" | grep -o '"accessToken":"[^"]*' | cut -d'"' -f4)
 

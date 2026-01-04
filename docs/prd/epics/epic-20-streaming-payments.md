@@ -3,8 +3,8 @@
 **Status:** Pending
 **Phase:** D (Weeks 13-16)
 **Priority:** P2
-**Total Points:** 18
-**Stories:** 0/5 Complete
+**Total Points:** 28 (was 18, +10 for agent identity)
+**Stories:** 0/7 Complete
 
 [← Back to Master PRD](../PayOS_PRD_Master.md)
 
@@ -12,13 +12,14 @@
 
 ## Overview
 
-Build streaming payment infrastructure and agent discovery registry for the emerging agent economy. Enable continuous payment flows and agent-to-agent discovery.
+Build streaming payment infrastructure and agent discovery registry for the emerging agent economy. Enable continuous payment flows, agent-to-agent discovery, and emerging agent identity standards.
 
 **Business Value:**
 - Enable real-time per-second payment flows
 - Support emerging agent-to-agent economy
 - Differentiate from batch-only competitors
 - Create network effects through agent registry
+- Position for emerging agent identity standards (ERC-8004, DIDs)
 
 ---
 
@@ -190,6 +191,217 @@ await client.streams.update(stream.id, flow_rate_per_second="0.02")
 
 ---
 
+### Story 20.6: Agent Identity Standards Integration (5 pts, P2) ⭐ NEW
+
+**Priority:** P2  
+**Points:** 5  
+**Dependencies:** Story 20.3 (Agent Registry API)
+
+#### Background
+
+Emerging standards for AI agent identity are developing:
+- **ERC-8004** — Proposed Ethereum standard for AI agent identity/reputation
+- **DIDs (Decentralized Identifiers)** — W3C standard for self-sovereign identity
+- **Agent Protocol** — Agent-to-agent communication standards
+
+These enable cross-platform agent verification and reputation portability.
+
+#### Description
+
+Integrate with emerging agent identity standards to enable:
+1. Cross-platform agent verification
+2. Portable reputation scores
+3. Capability attestations
+4. Interoperability with other agent registries
+
+#### Features
+
+**1. Agent DID Support:**
+```typescript
+interface AgentIdentity {
+  payos_id: string;           // Internal PayOS ID
+  did?: string;               // Decentralized Identifier (e.g., did:ethr:0x...)
+  erc8004_id?: string;        // ERC-8004 on-chain identity (when standard finalizes)
+  verification_status: 'unverified' | 'self_attested' | 'third_party_verified';
+}
+```
+
+**2. Reputation Portability:**
+- Import reputation from external sources
+- Export PayOS reputation to other platforms
+- Aggregate cross-platform scores
+
+**3. Capability Attestations:**
+```json
+{
+  "capabilities": [
+    {
+      "name": "payment_processing",
+      "attested_by": "payos",
+      "attestation_date": "2025-12-28",
+      "evidence_url": "https://api.payos.ai/attestations/..."
+    }
+  ]
+}
+```
+
+#### API Endpoints
+
+```
+POST /v1/registry/agents/:id/identity - Link external identity
+GET /v1/registry/agents/:id/identity - Get identity details
+POST /v1/registry/agents/:id/attestations - Create capability attestation
+GET /v1/registry/agents/:id/attestations - List attestations
+POST /v1/registry/agents/:id/reputation/import - Import external reputation
+GET /v1/registry/agents/:id/reputation/export - Export reputation proof
+```
+
+#### Database Schema Extension
+
+```sql
+-- Extend agent_registry with identity fields
+ALTER TABLE agent_registry ADD COLUMN did TEXT;
+ALTER TABLE agent_registry ADD COLUMN erc8004_id TEXT;
+ALTER TABLE agent_registry ADD COLUMN identity_verification_status TEXT DEFAULT 'unverified';
+ALTER TABLE agent_registry ADD COLUMN external_reputation_sources JSONB DEFAULT '[]';
+
+-- Capability attestations
+CREATE TABLE agent_attestations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_registry_id UUID NOT NULL REFERENCES agent_registry(id),
+  capability TEXT NOT NULL,
+  attested_by TEXT NOT NULL,  -- 'payos', 'self', or external attester
+  attestation_proof TEXT,      -- Signature or reference
+  evidence_url TEXT,
+  valid_from TIMESTAMPTZ DEFAULT NOW(),
+  valid_until TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_attestations_agent ON agent_attestations(agent_registry_id);
+CREATE INDEX idx_attestations_capability ON agent_attestations(capability);
+```
+
+#### Acceptance Criteria
+
+- [ ] Agents can link DID to PayOS profile
+- [ ] Agents can import reputation from external sources
+- [ ] PayOS can export reputation proofs
+- [ ] Capability attestations can be created and verified
+- [ ] API validates DID format
+- [ ] Backward compatible with existing agent registry
+
+#### Implementation Notes
+
+**Phase 1 (Now):**
+- Add DID field to agent registry
+- Basic attestation storage
+- Export reputation as signed JSON
+
+**Phase 2 (When ERC-8004 finalizes):**
+- On-chain identity linking
+- Cross-chain reputation queries
+- Decentralized attestation verification
+
+#### References
+
+- [ERC-8004 Draft](https://eips.ethereum.org/EIPS/eip-8004) (if/when published)
+- [W3C DIDs](https://www.w3.org/TR/did-core/)
+- [Verifiable Credentials](https://www.w3.org/TR/vc-data-model/)
+
+---
+
+### Story 20.7: Cross-Platform Reputation System (5 pts, P2) ⭐ NEW
+
+**Priority:** P2  
+**Points:** 5  
+**Dependencies:** Story 20.3 (Agent Registry API), Story 20.6 (Identity Standards)
+
+#### Description
+
+Build a reputation system that:
+1. Tracks agent behavior within PayOS
+2. Aggregates reputation from external sources
+3. Provides reputation scores to other platforms
+4. Enables trust-based agent-to-agent interactions
+
+#### Reputation Components
+
+**1. Internal Reputation (PayOS-native):**
+```typescript
+interface InternalReputation {
+  transaction_count: number;
+  transaction_volume: number;
+  success_rate: number;           // % of successful transactions
+  dispute_rate: number;           // % of disputed transactions
+  average_settlement_time: number; // seconds
+  account_age_days: number;
+  kya_tier: number;               // KYA verification level
+}
+```
+
+**2. External Reputation (Imported):**
+```typescript
+interface ExternalReputation {
+  source: string;                 // e.g., 'x402_scan', 'agent_protocol'
+  score: number;
+  last_updated: string;
+  verification_method: 'api' | 'attestation' | 'self_reported';
+}
+```
+
+**3. Composite Score:**
+- Weighted average of internal and external scores
+- Configurable weights per use case
+- Transparency on score components
+
+#### API Endpoints
+
+```
+GET /v1/registry/agents/:id/reputation - Get composite reputation
+GET /v1/registry/agents/:id/reputation/breakdown - Detailed breakdown
+POST /v1/registry/agents/:id/reputation/refresh - Refresh external sources
+GET /v1/registry/agents/:id/reputation/history - Historical scores
+```
+
+#### Use Cases
+
+**1. Trust-Based Spending Limits:**
+```typescript
+// Higher reputation = higher auto-approve limits
+const spendingLimit = calculateLimit(agent.reputation_score);
+```
+
+**2. Facilitator Selection:**
+```typescript
+// Resources can filter by agent reputation
+if (payer.reputation_score < 0.7) {
+  return { error: 'REPUTATION_TOO_LOW' };
+}
+```
+
+**3. Agent Discovery Ranking:**
+```typescript
+// Registry search ranks by reputation
+const agents = await registry.search({
+  capability: 'payment_processing',
+  min_reputation: 0.8,
+  sort: 'reputation_desc'
+});
+```
+
+#### Acceptance Criteria
+
+- [ ] Internal reputation calculated from PayOS transaction history
+- [ ] External reputation importable from configured sources
+- [ ] Composite score algorithm documented and configurable
+- [ ] Reputation history tracked over time
+- [ ] API returns score breakdown
+- [ ] Reputation refreshable on demand
+
+---
+
 ## Story Summary
 
 | Story | Points | Priority | Status |
@@ -199,7 +411,9 @@ await client.streams.update(stream.id, flow_rate_per_second="0.02")
 | 20.3 Agent Registry API | 5 | P2 | Pending |
 | 20.4 Agent Discovery Dashboard | 3 | P2 | Pending |
 | 20.5 Python SDK | 2 | P2 | Pending |
-| **Total** | **18** | | **0/5 Complete** |
+| 20.6 Agent Identity Standards | 5 | P2 | ⭐ NEW |
+| 20.7 Cross-Platform Reputation | 5 | P2 | ⭐ NEW |
+| **Total** | **28** | | **0/7 Complete** |
 
 ---
 
@@ -208,14 +422,19 @@ await client.streams.update(stream.id, flow_rate_per_second="0.02")
 ### API Routes
 - `apps/api/src/routes/streams.ts`
 - `apps/api/src/routes/agent-registry.ts`
+- `apps/api/src/routes/agent-identity.ts` ⭐ NEW
+- `apps/api/src/routes/agent-reputation.ts` ⭐ NEW
 
 ### Background Workers
 - `apps/api/src/workers/stream-processor.ts` - Process active streams every second
+- `apps/api/src/workers/reputation-aggregator.ts` ⭐ NEW - Refresh external reputations
 - Settlement and balance updates
 
 ### Database Migrations
 - `20XX_create_payment_streams.sql`
 - `20XX_create_agent_registry.sql`
+- `20XX_add_agent_identity_fields.sql` ⭐ NEW
+- `20XX_create_agent_attestations.sql` ⭐ NEW
 
 ### SDKs
 - `packages/python-sdk/` - Python SDK package
@@ -240,6 +459,12 @@ await client.streams.update(stream.id, flow_rate_per_second="0.02")
 - ✅ Integration examples for top 10 capabilities
 - ✅ Reputation system working
 
+**Agent Identity (NEW):**
+- ✅ DID linking functional
+- ✅ Attestation creation and verification working
+- ✅ Reputation export produces verifiable proofs
+- ✅ Ready to integrate ERC-8004 when standard finalizes
+
 **Python SDK:**
 - ✅ Published to PyPI
 - ✅ Comprehensive documentation
@@ -252,6 +477,8 @@ await client.streams.update(stream.id, flow_rate_per_second="0.02")
 
 - **Streaming Payments Spec:** To be created
 - **Agent Registry Spec:** To be created
+- **Agent Identity Standards:** [W3C DIDs](https://www.w3.org/TR/did-core/)
 - **Python SDK Guide:** To be created
 - **Epic 2:** Account System (prerequisite)
 - **Epic 3:** Transfers (prerequisite)
+- **Research:** [Obsidian - Agentic Workflow Protocol](../investigations/ground-station-narrative.md)

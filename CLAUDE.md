@@ -318,10 +318,10 @@ return c.json({
 
 ## Documentation
 
-**PRD**: `docs/prd/PayOS_PRD_Development.md` - Full product requirements with Epic/Story breakdown
-**Migration Docs**: `docs/MOCK_TO_API_MIGRATION.md` - Guide for transitioning from mock to real APIs
-**Gemini Start**: `docs/GEMINI_START_HERE.md` - Onboarding guide for Gemini AI context
-**Story Docs**: `docs/EPIC_*_STORY_*.md` - Implementation summaries for completed work
+**PRD**: `docs/prd/PayOS_PRD_Master.md` - Product requirements with Epic Dashboard (see also `docs/prd/`)
+**Migration Docs**: `docs/guides/development/mock-to-api-migration.md` - Guide for transitioning from mock to real APIs
+**Gemini Start**: `docs/guides/onboarding/gemini-start-here.md` - Onboarding guide for Gemini AI context
+**Completed Work**: `docs/completed/` - Epic/Story implementation summaries and session notes
 
 ## Common Issues
 
