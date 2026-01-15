@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useApiClient } from '@/lib/api-client';
+import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Card, Button, Badge as UIBadge, Progress } from '@payos/ui';
 import {
     ArrowLeft,
@@ -24,6 +24,29 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 import { useState } from 'react';
 import { formatCurrency } from '@payos/ui';
+import { formatDistanceToNow } from 'date-fns';
+
+const useWalletBalance = (walletId: string | undefined, authToken: string | null) => {
+    return useQuery({
+        queryKey: ['wallet-balance', walletId],
+        queryFn: async () => {
+            if (!authToken) return null;
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/${walletId}/balance`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                }
+            );
+            if (!response.ok) return null;
+            return response.json();
+        },
+        enabled: !!walletId && !!authToken,
+        staleTime: 60 * 1000,
+        refetchInterval: 60 * 1000,
+    });
+};
 
 // Custom Badge for Wallet Status
 function StatusBadge({ status }: { status: string }) {
@@ -44,6 +67,7 @@ export default function WalletDetailPage() {
     const { id } = useParams<{ id: string }>();
     const router = useRouter();
     const api = useApiClient();
+    const { authToken } = useApiConfig();
     const queryClient = useQueryClient();
     const [timeRange, setTimeRange] = useState('30d');
 
@@ -58,6 +82,10 @@ export default function WalletDetailPage() {
     });
 
     const wallet = (walletResponse as any)?.data || walletResponse;
+
+    // Fetch on-chain balance
+    const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance(id, authToken);
+    const onChain = balanceData?.data?.onChain;
 
     // Fetch transactions (using transfers filtered by wallet id)
     const { data: transactionsResponse, isLoading: txLoading } = useQuery({
@@ -266,8 +294,8 @@ export default function WalletDetailPage() {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${tx.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400' :
-                                                            tx.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400' :
-                                                                'bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400'
+                                                        tx.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400' :
+                                                            'bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400'
                                                         }`}>
                                                         {tx.status}
                                                     </span>
@@ -317,6 +345,74 @@ export default function WalletDetailPage() {
                                 <Link href={`/dashboard/accounts/${wallet.ownerAccountId}`} className="text-sm text-blue-600 hover:underline truncate max-w-[150px]">
                                     {wallet.ownerAccountId || 'N/A'}
                                 </Link>
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* On-Chain Details Card */}
+                    <Card className="p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">On-Chain Details</h3>
+                            <Button variant="ghost" size="sm" onClick={() => refetchBalance()} disabled={balanceLoading}>
+                                <Activity className={`w-4 h-4 text-gray-500 ${balanceLoading ? 'animate-spin' : ''}`} />
+                            </Button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                <span className="text-sm text-gray-500">Network</span>
+                                <span className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                    Base Sepolia
+                                </span>
+                            </div>
+
+                            {onChain ? (
+                                <>
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">Native Balance</span>
+                                        <span className="text-sm font-mono text-gray-900 dark:text-white">
+                                            {parseFloat(onChain.native).toFixed(4)} ETH
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">USDC Balance</span>
+                                        <span className="text-sm font-mono text-gray-900 dark:text-white">
+                                            ${parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">Last Synced</span>
+                                        <span className="text-sm text-gray-500">
+                                            {onChain.lastSyncedAt ? formatDistanceToNow(new Date(onChain.lastSyncedAt)) + ' ago' : 'Never'}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">Block Explorer</span>
+                                        {wallet.walletAddress && (
+                                            <a
+                                                href={`https://sepolia.basescan.org/address/${wallet.walletAddress}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                                            >
+                                                View <ExternalLink className="w-3 h-3" />
+                                            </a>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="py-4 text-center text-gray-500 text-sm italic">
+                                    {balanceLoading ? 'Fetching on-chain data...' : 'On-chain data unavailable'}
+                                </div>
+                            )}
+
+                            {/* Placeholder for on-chain transactions */}
+                            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recent On-Chain Activity</h4>
+                                <div className="text-xs text-gray-500 text-center py-2">
+                                    Only available via Block Explorer
+                                </div>
                             </div>
                         </div>
                     </Card>

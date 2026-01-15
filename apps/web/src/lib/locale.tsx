@@ -276,4 +276,3 @@ export function formatDateStandalone(
     ...options,
   }).format(dateObj);
 }
-

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { ValidationError } from '../middleware/error.js';
 import { getExchangeRate, MOCK_FX_RATES } from '@payos/utils';
+import { getCircleFXService } from '../services/circle/fx.js';
+import { getMultiCurrencyService, SUPPORTED_CORRIDORS, type SupportedCurrency } from '../services/fx/index.js';
 
 const quotes = new Hono();
 
@@ -186,6 +188,361 @@ quotes.get('/rates', async (c) => {
       },
       updatedAt: new Date().toISOString(),
       note: 'Rates are mocked for PoC - real rates would come from exchange provider',
+    },
+  });
+});
+
+// ============================================
+// GET /v1/quotes/fx - Get Circle FX quote (Story 40.6)
+// ============================================
+quotes.get('/fx', async (c) => {
+  const source = c.req.query('source') || 'USD';
+  const destination = c.req.query('destination') || 'BRL';
+  const amount = parseFloat(c.req.query('amount') || '100');
+  
+  const fxService = getCircleFXService();
+  
+  try {
+    const quote = await fxService.getQuote({
+      source_currency: source,
+      destination_currency: destination,
+      source_amount: amount,
+    });
+    
+    return c.json({ data: quote });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 400);
+  }
+});
+
+// ============================================
+// POST /v1/quotes/fx - Create Circle FX quote
+// ============================================
+quotes.post('/fx', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+  
+  const { source_currency, destination_currency, source_amount, destination_amount } = body;
+  
+  if (!source_currency || !destination_currency) {
+    throw new ValidationError('source_currency and destination_currency are required');
+  }
+  
+  if (!source_amount && !destination_amount) {
+    throw new ValidationError('Either source_amount or destination_amount is required');
+  }
+  
+  const fxService = getCircleFXService();
+  
+  try {
+    const quote = await fxService.getQuote({
+      source_currency,
+      destination_currency,
+      source_amount,
+      destination_amount,
+    });
+    
+    // Store quote in database
+    const { data: storedQuote, error } = await supabase
+      .from('quotes')
+      .insert({
+        tenant_id: ctx.tenantId,
+        from_currency: quote.source_currency,
+        to_currency: quote.destination_currency,
+        from_amount: quote.source_amount || 0,
+        to_amount: quote.destination_amount || 0,
+        fx_rate: quote.rate,
+        fee_amount: quote.total_fee,
+        fee_breakdown: [{ 
+          type: 'fx_fee', 
+          amount: quote.total_fee, 
+          description: `FX fee (${quote.fee_percentage}%)` 
+        }],
+        corridor_id: quote.corridor,
+        expires_at: quote.expires_at,
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error storing quote:', error);
+    }
+    
+    return c.json({
+      data: {
+        ...quote,
+        database_id: storedQuote?.id,
+      },
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 400);
+  }
+});
+
+// ============================================
+// POST /v1/quotes/fx/lock - Lock a quote
+// ============================================
+quotes.post('/fx/lock', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+  
+  const { quote_id } = body;
+  
+  if (!quote_id) {
+    throw new ValidationError('quote_id is required');
+  }
+  
+  const fxService = getCircleFXService();
+  
+  try {
+    const lockedQuote = await fxService.lockQuote(quote_id);
+    
+    return c.json({ data: lockedQuote });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 400);
+  }
+});
+
+// ============================================
+// GET /v1/quotes/fx/corridors - Get supported corridors
+// ============================================
+quotes.get('/fx/corridors', async (c) => {
+  const fxService = getCircleFXService();
+  const corridors = fxService.getSupportedCorridors();
+  
+  return c.json({
+    data: {
+      corridors,
+      primary: [
+        { source: 'USD', destination: 'BRL', name: 'Pix (Brazil)', settlement: '2-5 minutes' },
+        { source: 'USD', destination: 'MXN', name: 'SPEI (Mexico)', settlement: '1-3 minutes' },
+      ],
+      cross_latam: [
+        { source: 'BRL', destination: 'MXN', name: 'Brazil → Mexico', settlement: '5-10 minutes', via: 'USD' },
+        { source: 'MXN', destination: 'BRL', name: 'Mexico → Brazil', settlement: '5-10 minutes', via: 'USD' },
+      ],
+    },
+  });
+});
+
+// ============================================
+// Multi-Currency Routes (Story 40.17)
+// ============================================
+
+/**
+ * GET /v1/quotes/multi - Get multi-currency quote
+ */
+quotes.get('/multi', async (c) => {
+  const source = (c.req.query('source') || 'USD') as SupportedCurrency;
+  const destination = (c.req.query('destination') || 'BRL') as SupportedCurrency;
+  const amount = parseFloat(c.req.query('amount') || '100');
+  
+  const mcService = getMultiCurrencyService();
+  
+  if (!mcService.isCorridorSupported(source, destination)) {
+    return c.json({
+      error: `Corridor ${source}→${destination} is not supported`,
+      supported_corridors: SUPPORTED_CORRIDORS.map(c => `${c.source}→${c.destination}`),
+    }, 400);
+  }
+  
+  try {
+    const quote = await mcService.getQuote(source, destination, amount);
+    return c.json({ data: quote });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 400);
+  }
+});
+
+/**
+ * POST /v1/quotes/multi - Create multi-currency quote
+ */
+quotes.post('/multi', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+  
+  const { source_currency, destination_currency, source_amount, destination_amount } = body;
+  
+  if (!source_currency || !destination_currency) {
+    throw new ValidationError('source_currency and destination_currency are required');
+  }
+  
+  if (!source_amount && !destination_amount) {
+    throw new ValidationError('Either source_amount or destination_amount is required');
+  }
+  
+  const mcService = getMultiCurrencyService();
+  
+  if (!mcService.isCorridorSupported(source_currency, destination_currency)) {
+    return c.json({
+      error: `Corridor ${source_currency}→${destination_currency} is not supported`,
+      supported_corridors: SUPPORTED_CORRIDORS.map(c => `${c.source}→${c.destination}`),
+    }, 400);
+  }
+  
+  try {
+    const quote = await mcService.getQuote(
+      source_currency,
+      destination_currency,
+      source_amount || 0
+    );
+    
+    // Store in database
+    const { data: storedQuote, error } = await supabase
+      .from('quotes')
+      .insert({
+        tenant_id: ctx.tenantId,
+        from_currency: quote.source_currency,
+        to_currency: quote.destination_currency,
+        from_amount: quote.source_amount,
+        to_amount: quote.destination_amount,
+        fx_rate: quote.route.total_rate,
+        fee_amount: quote.total_fee,
+        fee_breakdown: quote.route.steps.map(s => ({
+          type: 'fx_step',
+          from: s.from,
+          to: s.to,
+          rate: s.rate,
+          fee_percentage: s.fee_percentage,
+        })),
+        corridor_id: quote.route.via 
+          ? `${quote.source_currency}-${quote.route.via}-${quote.destination_currency}`
+          : `${quote.source_currency}-${quote.destination_currency}`,
+        expires_at: quote.expires_at,
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error storing multi-currency quote:', error);
+    }
+    
+    return c.json({
+      data: {
+        ...quote,
+        database_id: storedQuote?.id,
+      },
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 400);
+  }
+});
+
+/**
+ * GET /v1/quotes/multi/corridors - List all supported corridors
+ */
+quotes.get('/multi/corridors', async (c) => {
+  return c.json({
+    data: {
+      corridors: SUPPORTED_CORRIDORS,
+      direct: SUPPORTED_CORRIDORS.filter(c => c.direct),
+      cross_latam: SUPPORTED_CORRIDORS.filter(c => !c.direct),
+      currencies: ['USD', 'USDC', 'BRL', 'MXN', 'ARS', 'COP'],
+    },
+  });
+});
+
+/**
+ * POST /v1/quotes/multi/simulate - Simulate a transfer
+ */
+quotes.post('/multi/simulate', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+  
+  const { source_currency, destination_currency, amount } = body;
+  
+  if (!source_currency || !destination_currency || !amount) {
+    throw new ValidationError('source_currency, destination_currency, and amount are required');
+  }
+  
+  const mcService = getMultiCurrencyService();
+  
+  if (!mcService.isCorridorSupported(source_currency, destination_currency)) {
+    return c.json({
+      error: `Corridor ${source_currency}→${destination_currency} is not supported`,
+    }, 400);
+  }
+  
+  try {
+    const simulation = await mcService.simulateTransfer(
+      source_currency,
+      destination_currency,
+      amount
+    );
+    
+    return c.json({ data: simulation });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 400);
+  }
+});
+
+/**
+ * POST /v1/quotes/multi/compare - Compare rates across corridors
+ */
+quotes.post('/multi/compare', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+  
+  const { source_currency, amount } = body;
+  
+  if (!source_currency || !amount) {
+    throw new ValidationError('source_currency and amount are required');
+  }
+  
+  const mcService = getMultiCurrencyService();
+  const destinations = ['BRL', 'MXN', 'ARS', 'COP'].filter(
+    d => d !== source_currency && mcService.isCorridorSupported(source_currency as SupportedCurrency, d as SupportedCurrency)
+  );
+  
+  const comparisons = await Promise.all(
+    destinations.map(async (dest) => {
+      try {
+        const simulation = await mcService.simulateTransfer(
+          source_currency as SupportedCurrency,
+          dest as SupportedCurrency,
+          amount
+        );
+        return {
+          destination: dest,
+          ...simulation,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+  
+  return c.json({
+    data: {
+      source: source_currency,
+      amount,
+      comparisons: comparisons.filter(Boolean),
     },
   });
 });

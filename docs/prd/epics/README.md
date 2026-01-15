@@ -26,41 +26,6 @@ Every epic MUST include an SDK Impact Assessment section near the top:
 - [ ] Story 36.Y: Update MCP server with `payos_foo` tool
 ```
 
-### Story Template (Use for All New Stories)
-
-```markdown
-### Story X.Y: [Title]
-
-**Points:** X  
-**Priority:** PX  
-**Dependencies:** Story X.Z (if any)
-
-**Description:**
-[What this story accomplishes]
-
-**Acceptance Criteria:**
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] Tests written and passing
-- [ ] Documentation updated
-
-**SDK Exposure:** ← REQUIRED SECTION
-- **Needs SDK exposure?** Yes / No / Types Only
-- **If yes:**
-  - **Module:** `payos.[module]` (e.g., `payos.settlements`, `payos.x402`)
-  - **Method(s):** `create()`, `get()`, `list()`, etc.
-  - **MCP tool needed?** Yes / No
-  - **LangChain tool needed?** Yes / No
-  - **SDK story:** Link to Epic 36 story or "Create new"
-- **If no, reason:** Internal-only / Admin-only / Refactor / Already covered
-
-**Files to Create:**
-- `path/to/file.ts`
-
-**Files to Modify:**
-- `path/to/existing.ts`
-```
-
 ### Definition of Done (DoD)
 
 Every story must meet these criteria before completion:
@@ -73,162 +38,194 @@ Every story must meet these criteria before completion:
   - [ ] If SDK exposure needed: Story created/updated in Epic 36
   - [ ] If SDK exposure NOT needed: Reason documented
 
-### Quick Reference: When to Expose in SDK
-
-| Change Type | SDK Exposure? | Action |
-|-------------|---------------|--------|
-| New public API endpoint | ✅ Yes | Add to appropriate `payos.*` module |
-| New webhook event type | ⚠️ Types | Add TypeScript types, document in SDK |
-| New query parameters | ✅ Yes | Update SDK method signatures |
-| Internal refactor | ❌ No | No SDK changes needed |
-| Admin-only endpoint | ❌ No | Not for partner SDK |
-| Performance optimization | ❌ No | Transparent to SDK users |
-| New protocol support | ✅ Yes | Add new `payos.[protocol]` module |
-| Database schema change | ❓ Depends | Only if it affects API response shape |
-
 ---
 
 ## Epic Files
 
 ### Foundation & Infrastructure
-- [Epic 17: Multi-Protocol Foundation](./epic-17-multi-protocol.md) - Multi-protocol payment foundation
+- [Epic 17: Multi-Protocol Foundation](./epic-17-multi-protocol.md) ✅ - Multi-protocol payment foundation
 - [Epic 18: Agent Wallets & KYA](./epic-18-agent-wallets.md) - Agent wallets and KYA system
-- [Epic 27: Settlement System](./epic-27-settlement.md) - Settlement infrastructure
+- [Epic 27: Settlement System](./epic-27-settlement.md) ✅ - Settlement infrastructure
 
 ### x402 & Performance
 - [Epic 19: PayOS x402 Services](./epic-19-x402-services.md) 🍾 - PayOS-hosted x402 services
-- [Epic 26: x402 Payment Performance Optimization](./epic-26-x402-performance.md) ⚡ - ✅ PHASE 1 & 2 COMPLETE
+- [Epic 26: x402 Payment Performance Optimization](./epic-26-x402-performance.md) ⚡ ✅ - PHASE 1 & 2 COMPLETE
 
 ### Streaming & Registry
-- [Epic 20: Streaming Payments & Agent Registry](./epic-20-streaming-payments.md) 🌊 - Streaming payments + **Agent Identity (NEW)**
+- [Epic 20: Streaming Payments & Agent Registry](./epic-20-streaming-payments.md) 🌊 - Streaming payments + Agent Identity
 
 ### Developer Experience & SDK
-- [Epic 36: SDK & Developer Experience](./epic-36-sdk-developer-experience.md) 🛠️ - **Unified @payos/sdk with x402/AP2/ACP support**
+- [Epic 36: SDK & Developer Experience](./epic-36-sdk-developer-experience.md) 🛠️ ✅ - Unified @payos/sdk with x402/AP2/ACP support
 
 ### Quality & Operations
 - [Epic 21: Code Coverage Improvement](./epic-21-code-coverage.md) 📊 - Improve test coverage to 70%+
-- [Epic 22: Seed Data & Final UI Integration](./epic-22-seed-data.md) 🌱 - ✅ COMPLETE
-- [Epic 23: Dashboard Performance & API Optimization](./epic-23-dashboard-performance.md) 🚀 - ✅ COMPLETE
+- [Epic 22: Seed Data & Final UI Integration](./epic-22-seed-data.md) 🌱 ✅ - COMPLETE
+- [Epic 23: Dashboard Performance & API Optimization](./epic-23-dashboard-performance.md) 🚀 ✅ - COMPLETE
 
 ### Security & Onboarding
 - [Epic 24: Enhanced API Key Security](./epic-24-api-key-security.md) 🔐 - Agent-specific API keys
 - [Epic 25: User Onboarding & API Improvements](./epic-25-user-onboarding.md) 🚀 - Improve onboarding UX
 
 ### AI-Native Architecture
-- [Epic 28: Simulation API](./epic-28-simulation.md) 🔮 - Transaction simulation
-- [Epic 29: Workflow Engine](./epic-29-workflow-engine.md) ⚙️ - Configurable multi-step workflows + **Agentic Composition (NEW)**
-- [Epic 30: Structured Response System](./epic-30-structured-response.md) 📋 - Machine-readable API responses
-- [Epic 31: Context API](./epic-31-context-api.md) 🔍 - Comprehensive context queries
+- [Epic 28: Simulation API](./epic-28-simulation.md) 🔮 ✅ - Transaction simulation
+- [Epic 29: Workflow Engine](./epic-29-workflow-engine.md) ⚙️ - Multi-step workflows + Agentic Composition
+- [Epic 30: Structured Response System](./epic-30-structured-response.md) 📋 ✅ - Machine-readable API responses
+- [Epic 31: Context API](./epic-31-context-api.md) 🔍 ✅ - Comprehensive context queries
 - [Epic 32: Tool Discovery](./epic-32-tool-discovery.md) 🧭 - Capability catalog for agents
 - [Epic 33: Metadata Schema](./epic-33-metadata-schema.md) 🏷️ - Custom field definitions
 - [Epic 34: Transaction Decomposition](./epic-34-transaction-decomposition.md) 📦 - Line-item level operations
 - [Epic 35: Entity Onboarding API](./epic-35-entity-onboarding.md) 🚀 - Single-call onboarding
 
-### Future Considerations (P2/P3) ⭐ NEW
+### External Integrations (Phase 3.5)
+- [Epic 40: External Sandbox Integrations](./epic-40-sandbox-integrations.md) 🔌 ✅ - Circle, x402, Stripe, AP2
+- [Epic 41: On-Ramp Integrations](./epic-41-onramp-integrations.md) 💳 - Cards, ACH, LATAM banks
+- [Epic 42: Frontend Dashboard Integration](./epic-42-frontend-dashboard.md) 🖥️ ✅ - UI for Epic 40 features
+
+### Protocol Integration ⭐ NEW
+- [Epic 43: UCP (Universal Commerce Protocol)](./epic-43-ucp-integration.md) 🌐 **P0** - Google+Shopify's new standard
+
+### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) 🏭 - x402 facilitator for LATAM ecosystem
 - [Epic 38: Payment-Optimized Chains](./epic-38-payment-optimized-chains.md) ⛓️ - Tempo & future chain integration
 - [Epic 39: Open Issuance](./epic-39-open-issuance.md) 🪙 - Custom stablecoin support
 
+### Production Hardening (P2/P3)
+- [Epic 44: Observability & Monitoring](./epic-44-observability.md) 📊 - Monitoring, alerting, SLAs
+- [Epic 45: Webhook Infrastructure](./epic-45-webhook-infrastructure.md) 🔔 - Guaranteed delivery, DLQ
+- [Epic 46: Multi-Region & Disaster Recovery](./epic-46-disaster-recovery.md) 🌍 - Scale & resilience
+
 ---
 
-## Investigation Documents ⭐ NEW
+## Investigation Documents
 
-These documents explore strategic options before committing to implementation:
+Strategic explorations before committing to implementation:
 
-- [Chargeback-Free Value Proposition](../investigations/chargeback-free-value-prop.md) - How to position settlement finality
-- [Ground Station Narrative](../investigations/ground-station-narrative.md) - Strategic positioning framework
+- [UCP Integration](../investigations/ucp-integration.md) 🔴 **URGENT** - New protocol from Google+Shopify (Jan 11, 2026)
+- [Chargeback-Free Value Proposition](../investigations/chargeback-free-value-prop.md) - Settlement finality positioning
+- [Ground Station Narrative](../investigations/ground-station-narrative.md) - "Starlink for money" marketing
 
 ---
 
 ## Status Summary
 
 ### Completed Epics ✅
-| Epic | Completed | Points |
-|------|-----------|--------|
-| Epic 22: Seed Data & Final UI | Dec 18, 2025 | 15 |
-| Epic 23: Dashboard Performance | Dec 22, 2025 | 18 |
-| Epic 26: x402 Performance (Phase 1 & 2) | Dec 27, 2025 | 18 |
-| **Total Completed** | | **51** |
 
-### In Progress 🚧
-| Epic | Status | Points |
-|------|--------|--------|
-| - | - | - |
+| Epic | Completed | Points | Notes |
+|------|-----------|--------|-------|
+| Epic 17: Multi-Protocol | Dec 28, 2025 | 53 | x402/AP2/ACP foundation |
+| Epic 22: Seed Data | Dec 18, 2025 | 15 | |
+| Epic 23: Dashboard Perf | Dec 22, 2025 | 18 | |
+| Epic 26: x402 Performance | Dec 27, 2025 | 18 | |
+| Epic 27: Settlement | Dec 30, 2025 | 34 | |
+| Epic 28: Simulation | Jan 4, 2026 | 24 | |
+| Epic 30: Structured Response | Jan 1, 2026 | 28 | |
+| Epic 31: Context API | Jan 2, 2026 | 21 | |
+| Epic 36: SDK & DX | Jan 3, 2026 | 66 | |
+| Epic 40: Sandbox | Jan 5, 2026 | ~100 | Circle, Stripe, x402 |
+| Epic 42: Frontend | Jan 6, 2026 | 65 | |
+| **Total Completed** | | **~442** | |
 
-### Planned (P0/P1) 📋
+### Current Focus 🚧
+
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
-| Epic 36: SDK & Developer Experience | P0 | 66 | YC Demo Critical |
-| Epic 29: Workflow Engine | P0 | 52 | +10 for agentic composition |
-| Epic 30: Structured Response | P0 | 26 | |
-| Epic 31: Context API | P0 | 16 | |
+| **Epic 43: UCP Integration** | **P0** | 55 | New protocol - URGENT |
+| Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
+| Epic 29: Workflow Engine | P0 | 52 | |
+
+### Planned (P0/P1) 📋
+
+| Epic | Priority | Points | Notes |
+|------|----------|--------|-------|
 | Epic 32: Tool Discovery | P0 | 11 | |
 | Epic 25: User Onboarding | P0 | 29 | |
 | Epic 33: Metadata Schema | P1 | 11 | |
-| Epic 34: Transaction Decomposition | P1 | 14 | |
+| Epic 34: Transaction Decomp | P1 | 14 | |
 | Epic 35: Entity Onboarding | P1 | 14 | |
-| **Subtotal P0/P1** | | **239** | |
+| **Subtotal P0/P1** | | **~296** | Including Epic 43, 41, 29 |
 
 ### Planned (P2) 📋
-| Epic | Priority | Points | Notes |
-|------|----------|--------|-------|
-| Epic 19: PayOS x402 Services | P2 | 22 | |
-| Epic 20: Streaming Payments | P2 | 28 | +10 for agent identity |
-| Epic 24: API Key Security | P2 | 28 | |
-| **Subtotal P2** | | **78** | |
 
-### Future Consideration (P3) 🔮
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
-| Epic 37: Facilitator-as-a-Service | P3 | TBD | Decision pending |
-| Epic 38: Payment-Optimized Chains | P3 | ~49 | Post-scale |
-| Epic 39: Open Issuance | P3 | ~47 | Post-PMF |
+| Epic 19: x402 Services | P2 | 22 | |
+| Epic 20: Streaming | P2 | 28 | +10 for agent identity |
+| Epic 24: API Key Security | P2 | 28 | |
+| Epic 44: Observability | P2 | ~40 | |
+| Epic 45: Webhooks | P2 | ~35 | |
+| **Subtotal P2** | | **~153** | |
+
+### Future (P3) 🔮
+
+| Epic | Priority | Points | Notes |
+|------|----------|--------|-------|
 | Epic 21: Code Coverage | P3 | 112 | |
-| **Subtotal P3** | | ~208 | |
+| Epic 37: Facilitator | P3 | TBD | Decision pending |
+| Epic 38: Payment Chains | P3 | ~49 | Post-scale |
+| Epic 39: Open Issuance | P3 | ~47 | Post-PMF |
+| Epic 46: DR | P3 | ~60 | |
+| **Subtotal P3** | | **~268** | |
 
 ### Points Summary
-- **Completed:** 51 points
-- **P0/P1 Planned:** 239 points
-- **P2 Planned:** 78 points
-- **P3 Future:** ~208 points
-- **Total:** ~576 points
+
+- **Completed:** ~442 points
+- **Current Focus:** ~217 points (43, 41, 29)
+- **P0/P1 Planned:** ~79 points
+- **P2 Planned:** ~153 points
+- **P3 Future:** ~268 points
+- **Total Defined:** ~1,159 points
 
 ---
 
-## Recent Changes (January 2025)
+## Recent Changes (January 2026)
 
-### New Epics Added
-- **Epic 37: Facilitator-as-a-Service** — Should PayOS be an x402 facilitator for the ecosystem?
-- **Epic 38: Payment-Optimized Chains** — Tempo and payment-specific blockchain integration
-- **Epic 39: Open Issuance** — Custom partner stablecoin support
+### January 15, 2026
+- **Epic 43: UCP Integration** — NEW (55 points, P0)
+  - Google+Shopify's Universal Commerce Protocol launched Jan 11
+  - PayOS to become UCP Payment Handler for LATAM
+- **Epic 44: Observability** — NEW (Placeholder, P2)
+- **Epic 45: Webhook Infrastructure** — NEW (Placeholder, P2)
+- **Epic 46: Multi-Region & DR** — NEW (Placeholder, P3)
+- **UCP Investigation** — Comprehensive analysis at `investigations/ucp-integration.md`
 
-### Epic Updates
-- **Epic 20:** Added Stories 20.6 (Agent Identity Standards) and 20.7 (Cross-Platform Reputation) — P2
-- **Epic 29:** Added Stories 29.12 (Agent-Driven Workflow) and 29.13 (External Step Type) — P2
+### January 6, 2026
+- **Epic 42: Frontend Dashboard** — COMPLETE ✅ (65 points)
 
-### New Investigation Documents
-- **Chargeback-Free Value Prop** — Discussion on positioning settlement finality
-- **Ground Station Narrative** — Strategic positioning framework for marketing
+### January 5, 2026
+- **Epic 40: Sandbox Integrations** — COMPLETE ✅ (~100 points)
+
+---
+
+## Protocol Support Matrix
+
+PayOS supports **FOUR** agentic payment protocols:
+
+| Protocol | Owner | Focus | PayOS Status |
+|----------|-------|-------|--------------|
+| **x402** | Coinbase | Micropayments | ✅ Full support |
+| **AP2** | Google | Agent mandates | ✅ Full support |
+| **ACP** | Stripe/OpenAI | E-commerce | ✅ Full support |
+| **UCP** | Google+Shopify | Full commerce | 🚧 Epic 43 (P0) |
+
+> **"We don't care which protocol wins. PayOS makes them all work."**
 
 ---
 
 ## Navigation
 
 - [← Back to Master PRD](../PayOS_PRD_Master.md)
-- [View Full PRD v1.14](../PayOS_PRD_v1_14.md)
 - [View Investigations](../investigations/)
 
 ---
 
 ## Appendix: SDK Module Reference
 
-When deciding where to expose a feature in the SDK, use this reference:
-
 | Module | Purpose | Examples |
 |--------|---------|----------|
 | `payos.x402` | x402 protocol operations | `fetch()`, `createProvider()` |
 | `payos.ap2` | AP2 mandate operations | `verifyMandate()`, `executePayment()` |
 | `payos.acp` | ACP checkout operations | `createCheckout()`, `completeCheckout()` |
+| `payos.ucp` | UCP protocol operations | `discover()`, `settle()` |
 | `payos.settlements` | Direct settlement API | `quote()`, `create()`, `get()`, `list()` |
 | `payos.compliance` | Compliance checks | `check()`, `screen()` |
 | `payos.accounts` | Account management | `create()`, `get()`, `update()` |
@@ -237,4 +234,4 @@ When deciding where to expose a feature in the SDK, use this reference:
 
 ---
 
-*Last updated: January 1, 2026*
+*Last updated: January 15, 2026*

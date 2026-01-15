@@ -2,17 +2,230 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAccount, useSignMessage } from 'wagmi';
+
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Wallet as WalletIcon, Plus, Search, Filter, TrendingUp, ArrowUp, ArrowDown, MoreVertical, X } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import type { Wallet } from '@payos/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
+import { formatDistanceToNow } from 'date-fns';
+
+const useWalletBalance = (walletId: string | undefined, authToken: string | null) => {
+  return useQuery({
+    queryKey: ['wallet-balance', walletId],
+    queryFn: async () => {
+      if (!authToken) return null;
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/${walletId}/balance`,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+          },
+        }
+      );
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!walletId && !!authToken,
+    staleTime: 60 * 1000, // 1 minute
+    refetchInterval: 60 * 1000, // Refresh every minute
+  });
+};
+
+interface WalletBalanceCardProps {
+  wallet: Wallet;
+  authToken: string | null;
+}
+
+function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
+  const { data: balanceData, isLoading: balanceLoading } = useWalletBalance(wallet.id, authToken);
+  const onChain = balanceData?.data?.onChain;
+  const syncStatus = balanceData?.data?.syncStatus || 'stale';
+  const queryClient = useQueryClient();
+
+  // Wagmi hooks for BYOW verification
+  const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  const [verifying, setVerifying] = useState(false);
+
+  const handleVerify = async () => {
+    if (!wallet.walletAddress || !isConnected || !authToken) return;
+
+    setVerifying(true);
+    try {
+      // Generate challenge message
+      const message = `Verify ownership of wallet ${wallet.walletAddress} for PayOS at ${new Date().toISOString()}`;
+
+      // Sign with MetaMask
+      const signature = await signMessageAsync({ message });
+
+      // Submit to backend
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/${wallet.id}/verify`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ signature, message }),
+        }
+      );
+
+      if (!response.ok) throw new Error('Verification failed');
+
+      // Refresh wallet data
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    } catch (error) {
+      console.error('Verification failed:', error);
+      // In a real app we would show a toast here
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // Sync indicator color
+  const syncColor = {
+    synced: 'bg-emerald-500',
+    pending: 'bg-yellow-500',
+    stale: 'bg-red-500',
+  }[syncStatus as 'synced' | 'pending' | 'stale'] || 'bg-gray-400';
+
+  return (
+    <div
+      className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
+          <WalletIcon className="h-6 w-6 text-white" />
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Sync indicator */}
+          <div className="flex items-center gap-1.5 mr-2 px-2 py-1 bg-gray-50 dark:bg-gray-900 rounded-full border border-gray-100 dark:border-gray-800">
+            <span className={`w-2 h-2 rounded-full ${syncColor}`} />
+            <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+              {syncStatus}
+            </span>
+          </div>
+
+          <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${wallet.status === 'active'
+            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+            : wallet.status === 'frozen'
+              ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
+              : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+            }`}>
+            {wallet.status}
+          </span>
+
+          {/* Verification Button for Unverified Wallets */}
+          {wallet.verificationStatus !== 'verified' && wallet.walletAddress && (
+            <button
+              onClick={handleVerify}
+              disabled={verifying || !isConnected}
+              className={`px-2 py-1 text-xs font-medium rounded-full transition-colors ${isConnected
+                ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400'
+                : 'bg-gray-100 text-gray-500 dark:bg-gray-800'
+                } disabled:opacity-50`}
+              title={!isConnected ? "Connect wallet to verify" : "Verify ownership"}
+            >
+              {verifying ? 'Verifying...' : 'Verify Ownership'}
+            </button>
+          )}
+
+          <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
+            <MoreVertical className="h-4 w-4 text-gray-400" />
+          </button>
+        </div>
+      </div>
+
+      <Link href={`/dashboard/wallets/${wallet.id}`} className="block">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+          {wallet.name || 'Unnamed Wallet'}
+        </h3>
+      </Link>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        {wallet.purpose || 'No description'}
+      </p>
+
+      {/* Ledger Balance */}
+      <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <div className="flex justify-between items-start mb-1">
+          <div className="text-sm text-gray-600 dark:text-gray-400">Available (Ledger)</div>
+        </div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+          ${wallet.balance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{wallet.currency}</div>
+      </div>
+
+      {/* On-Chain Balance */}
+      {onChain ? (
+        <div className="mb-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-widest">On-Chain</span>
+            {wallet.walletAddress && (
+              <a
+                href={`https://sepolia.basescan.org/address/${wallet.walletAddress}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+              >
+                View <span className="text-[10px]">↗</span>
+              </a>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-700 dark:text-gray-300">USDC</span>
+              <span className="font-mono text-sm font-medium text-gray-900 dark:text-white">
+                ${parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            {parseFloat(onChain.native) > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-700 dark:text-gray-300">ETH</span>
+                <span className="font-mono text-sm text-gray-500">
+                  {parseFloat(onChain.native).toFixed(4)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {onChain.lastSyncedAt && (
+            <p className="text-[10px] text-gray-400 mt-2 text-right">
+              Synced {formatDistanceToNow(new Date(onChain.lastSyncedAt))} ago
+            </p>
+          )}
+        </div>
+      ) : balanceLoading ? (
+        <div className="mb-4 pt-4 border-t border-gray-100 dark:border-gray-800 animate-pulse">
+          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-1/3 mb-2"></div>
+          <div className="h-6 bg-gray-200 dark:bg-gray-800 rounded w-full"></div>
+        </div>
+      ) : null}
+
+      <div className="flex gap-2">
+        <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+          <ArrowDown className="h-4 w-4" />
+          Deposit
+        </button>
+        <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+          <ArrowUp className="h-4 w-4" />
+          Withdraw
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function WalletsPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, authToken } = useApiConfig();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -28,7 +241,7 @@ export default function WalletsPage() {
     initialBalance: '0',
     accountId: '',
     walletType: 'internal' as 'internal' | 'circle_custodial',
-    blockchain: 'base' as 'base' | 'eth' | 'polygon',
+    blockchain: 'base' as 'base' | 'ethereum' | 'polygon',
     // For external wallets
     walletAddress: ''
   });
@@ -103,7 +316,7 @@ export default function WalletsPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            'Authorization': `Bearer ${authToken}`
           },
           body: JSON.stringify({
             ownerAccountId: formData.accountId,
@@ -128,11 +341,19 @@ export default function WalletsPage() {
           ownerAccountId: formData.accountId,
           name: formData.name,
           purpose: formData.purpose,
-          currency: formData.currency
+          currency: formData.currency,
+          type: formData.walletType as 'internal' | 'circle_custodial',
+          blockchain: formData.blockchain
         });
 
-        // If initial balance > 0, deposit
-        if (parseFloat(formData.initialBalance) > 0) {
+        // Show success toast for Circle wallets
+        if (formData.walletType === 'circle_custodial') {
+          toast.success('Circle Wallet created!');
+          // In a real scenario we would show a faucet link here
+        }
+
+        // If initial balance > 0, deposit (only for internal or if funding supported)
+        if (parseFloat(formData.initialBalance) > 0 && formData.walletType === 'internal') {
           await api.wallets.deposit(newWallet.id, {
             amount: parseFloat(formData.initialBalance)
           });
@@ -316,70 +537,7 @@ export default function WalletsPage() {
           </div>
         ) : (
           filteredWallets.map((wallet: any) => (
-            <div
-              key={wallet.id}
-              className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
-                  <WalletIcon className="h-6 w-6 text-white" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${wallet.status === 'active'
-                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                    : wallet.status === 'frozen'
-                      ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
-                      : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                    }`}>
-                    {wallet.status}
-                  </span>
-                  <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                    <MoreVertical className="h-4 w-4 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-
-              <Link href={`/dashboard/wallets/${wallet.id}`} className="block">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                  {wallet.name || 'Unnamed Wallet'}
-                </h3>
-              </Link>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                {wallet.purpose || 'No description'}
-              </p>
-
-              <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Balance</div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                  ${wallet.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{wallet.currency}</div>
-              </div>
-
-              {wallet.spendingPolicy && (
-                <div className="mb-4 text-xs text-gray-600 dark:text-gray-400">
-                  <div className="flex items-center gap-2">
-                    <span>Policy:</span>
-                    {wallet.spendingPolicy.dailyLimit && (
-                      <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 rounded">
-                        ${wallet.spendingPolicy.dailyLimit}/day
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">
-                  <ArrowDown className="h-4 w-4" />
-                  Deposit
-                </button>
-                <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-                  <ArrowUp className="h-4 w-4" />
-                  Withdraw
-                </button>
-              </div>
-            </div>
+            <WalletBalanceCard key={wallet.id} wallet={wallet} authToken={authToken} />
           ))
         )}
 
@@ -417,7 +575,10 @@ export default function WalletsPage() {
                 </p>
 
                 <button
-                  onClick={() => setCreateMode('create')}
+                  onClick={() => {
+                    setCreateMode('create');
+                    setFormData(prev => ({ ...prev, walletType: 'internal' }));
+                  }}
                   className="w-full p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-left group"
                 >
                   <div className="flex items-start gap-4">
@@ -454,21 +615,27 @@ export default function WalletsPage() {
                   </div>
                 </button>
 
-                <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mt-4 opacity-60">
+                <button
+                  onClick={() => {
+                    setCreateMode('create');
+                    setFormData(prev => ({ ...prev, walletType: 'circle_custodial', blockchain: 'base' }));
+                  }}
+                  className="w-full p-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-left group"
+                >
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-gray-500 rounded-xl flex items-center justify-center">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
                       <WalletIcon className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-600 dark:text-gray-400">
-                        Circle Wallet (Coming Soon)
+                      <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                        Circle Wallet
                       </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Create a Circle Programmable Wallet with MPC security
                       </p>
                     </div>
                   </div>
-                </div>
+                </button>
               </div>
             )}
 

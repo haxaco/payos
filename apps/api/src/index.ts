@@ -6,6 +6,7 @@ import { startIdempotencyCleanupWorker } from './workers/idempotency-cleanup.js'
 import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
 import { SettlementWindowProcessor } from './workers/settlement-window-processor.js';
 import { TreasuryWorker } from './workers/treasury-worker.js';
+import { environmentManager } from './config/environment.js';
 
 // Railway uses PORT, fallback to API_PORT for local dev
 const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
@@ -24,7 +25,7 @@ console.log(`
 ╠══════════════════════════════════════════════════╣
 ║  🚀 Starting on http://${host}:${port}               ║
 ║  📚 Health: http://${host}:${port}/health            ║
-║  🔒 Environment: ${(process.env.NODE_ENV || 'development').padEnd(20)}║
+║  🔒 NODE_ENV: ${(process.env.NODE_ENV || 'development').padEnd(23)}║
 ╠══════════════════════════════════════════════════╣
 ║  Workers:                                        ║
 ║  ⚙️  Scheduled Transfers: ${(enableScheduledTransfers ? (mockMode ? 'MOCK' : 'REAL') : 'OFF').padEnd(22)}║
@@ -33,6 +34,9 @@ console.log(`
 ║  💰 Treasury Sync: ${(enableTreasuryWorker ? 'ON' : 'OFF').padEnd(28)}║
 ╚══════════════════════════════════════════════════╝
 `);
+
+// Log environment configuration (Story 40.28)
+environmentManager.logStartupInfo();
 
 // Start scheduled transfer worker (only if enabled)
 let worker: ReturnType<typeof getScheduledTransferWorker> | null = null;

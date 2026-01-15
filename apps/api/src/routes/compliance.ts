@@ -3,6 +3,7 @@ import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { NotFoundError, ValidationError } from '../middleware/error.js';
 import { logAudit, isValidUUID } from '../utils/helpers.js';
+import { getComplianceProvider } from '../services/compliance/index.js';
 
 const compliance = new Hono();
 
@@ -470,6 +471,297 @@ compliance.get('/stats', async (c) => {
   };
 
   return c.json({ data: stats });
+});
+
+// ============================================
+// SCREENING ENDPOINTS (Story 40.18)
+// ============================================
+
+/**
+ * POST /compliance/screen/wallet - Screen a cryptocurrency wallet
+ */
+compliance.post('/screen/wallet', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const { address, chain, context } = await c.req.json();
+
+  if (!address || !chain) {
+    throw new ValidationError('Missing required fields: address, chain');
+  }
+
+  // Perform screening
+  const provider = getComplianceProvider();
+  const result = await provider.screenWallet({ address, chain, context });
+
+  // Store screening result
+  const { error } = await supabase
+    .from('compliance_screenings')
+    .insert({
+      tenant_id: ctx.tenantId,
+      type: 'wallet',
+      subject: { address, chain },
+      result: result.result,
+      risk_level: result.result.risk_level,
+      provider: result.result.provider,
+      context,
+    });
+
+  if (error) {
+    console.error('[Compliance] Failed to store screening:', error);
+    // Don't fail the request, just log
+  }
+
+  // Auto-create compliance flag if high risk
+  if (result.result.risk_level === 'HIGH' || result.result.risk_level === 'SEVERE') {
+    await supabase
+      .from('compliance_flags')
+      .insert({
+        tenant_id: ctx.tenantId,
+        flag_type: 'transaction',
+        risk_level: result.result.risk_level.toLowerCase(),
+        reason_code: 'WALLET_SCREENING_ALERT',
+        reasons: result.result.flags,
+        description: `Wallet ${address.slice(0, 10)}... flagged with risk level ${result.result.risk_level}`,
+        ai_analysis: {
+          risk_score: result.result.risk_score,
+          risk_explanation: `Wallet screening returned ${result.result.risk_level} risk`,
+          categories: result.result.categories,
+        },
+        status: 'open',
+      });
+  }
+
+  // Audit log
+  await logAudit({
+    tenantId: ctx.tenantId,
+    entityType: 'compliance_screening',
+    entityId: result.id,
+    action: 'wallet_screened',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    metadata: {
+      address: address.slice(0, 10) + '...',
+      chain,
+      risk_level: result.result.risk_level,
+    },
+  });
+
+  return c.json({ data: result });
+});
+
+/**
+ * POST /compliance/screen/entity - Screen an entity (person/company)
+ */
+compliance.post('/screen/entity', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const { name, type, country, date_of_birth, context } = await c.req.json();
+
+  if (!name || !type) {
+    throw new ValidationError('Missing required fields: name, type');
+  }
+
+  if (!['individual', 'company'].includes(type)) {
+    throw new ValidationError('type must be "individual" or "company"');
+  }
+
+  // Perform screening
+  const provider = getComplianceProvider();
+  const result = await provider.screenEntity({ name, type, country, date_of_birth, context });
+
+  // Store screening result
+  const { error } = await supabase
+    .from('compliance_screenings')
+    .insert({
+      tenant_id: ctx.tenantId,
+      type: 'entity',
+      subject: { name, type, country },
+      result: result.result,
+      risk_level: result.result.risk_level,
+      provider: result.result.provider,
+      context,
+    });
+
+  if (error) {
+    console.error('[Compliance] Failed to store screening:', error);
+  }
+
+  // Auto-create compliance flag if matches found
+  if (result.result.matches.length > 0 || result.result.pep_status) {
+    await supabase
+      .from('compliance_flags')
+      .insert({
+        tenant_id: ctx.tenantId,
+        flag_type: 'account',
+        risk_level: result.result.risk_level.toLowerCase(),
+        reason_code: result.result.matches.length > 0 ? 'SANCTIONS_MATCH' : 'PEP_IDENTIFIED',
+        reasons: result.result.matches.map(m => `${m.list}: ${m.matched_name} (${m.match_score}%)`),
+        description: `Entity "${name}" flagged: ${result.result.matches.length} sanctions matches, PEP: ${result.result.pep_status}`,
+        ai_analysis: {
+          risk_score: result.result.matches.length > 0 ? 95 : 60,
+          risk_explanation: result.result.matches.length > 0 
+            ? `Found ${result.result.matches.length} sanctions list matches`
+            : 'Identified as Politically Exposed Person',
+          matches: result.result.matches,
+        },
+        status: 'open',
+      });
+  }
+
+  // Audit log
+  await logAudit({
+    tenantId: ctx.tenantId,
+    entityType: 'compliance_screening',
+    entityId: result.id,
+    action: 'entity_screened',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    metadata: {
+      name: name.slice(0, 20),
+      type,
+      risk_level: result.result.risk_level,
+      matches_found: result.result.matches.length,
+    },
+  });
+
+  return c.json({ data: result });
+});
+
+/**
+ * POST /compliance/screen/bank - Screen a bank account
+ */
+compliance.post('/screen/bank', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const { account_type, account_id, country, context } = await c.req.json();
+
+  if (!account_type || !account_id || !country) {
+    throw new ValidationError('Missing required fields: account_type, account_id, country');
+  }
+
+  if (!['pix', 'spei', 'wire', 'ach'].includes(account_type)) {
+    throw new ValidationError('account_type must be one of: pix, spei, wire, ach');
+  }
+
+  // Perform screening
+  const provider = getComplianceProvider();
+  const result = await provider.screenBankAccount({ account_type, account_id, country, context });
+
+  // Store screening result
+  const { error } = await supabase
+    .from('compliance_screenings')
+    .insert({
+      tenant_id: ctx.tenantId,
+      type: 'bank',
+      subject: { account_type, account_id: account_id.slice(-4).padStart(account_id.length, '*'), country },
+      result: result.result,
+      risk_level: result.result.risk_level,
+      provider: result.result.provider,
+      context,
+    });
+
+  if (error) {
+    console.error('[Compliance] Failed to store screening:', error);
+  }
+
+  // Auto-create compliance flag if blocked or suspicious
+  if (result.result.account_status === 'blocked' || result.result.account_status === 'suspicious') {
+    await supabase
+      .from('compliance_flags')
+      .insert({
+        tenant_id: ctx.tenantId,
+        flag_type: 'account',
+        risk_level: result.result.risk_level.toLowerCase(),
+        reason_code: 'BANK_ACCOUNT_ALERT',
+        reasons: result.result.flags,
+        description: `Bank account ${account_id.slice(-4)} flagged as ${result.result.account_status}`,
+        ai_analysis: {
+          risk_score: result.result.account_status === 'blocked' ? 95 : 70,
+          risk_explanation: `Bank account status: ${result.result.account_status}`,
+        },
+        status: 'open',
+      });
+  }
+
+  // Audit log
+  await logAudit({
+    tenantId: ctx.tenantId,
+    entityType: 'compliance_screening',
+    entityId: result.id,
+    action: 'bank_screened',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    metadata: {
+      account_type,
+      country,
+      risk_level: result.result.risk_level,
+      status: result.result.account_status,
+    },
+  });
+
+  return c.json({ data: result });
+});
+
+/**
+ * GET /compliance/screenings - List screening history
+ */
+compliance.get('/screenings', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const type = c.req.query('type');
+  const risk_level = c.req.query('risk_level');
+  const limit = parseInt(c.req.query('limit') || '50');
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  let query = supabase
+    .from('compliance_screenings')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (type) query = query.eq('type', type);
+  if (risk_level) query = query.eq('risk_level', risk_level);
+
+  const { data, error, count } = await query;
+
+  if (error) throw error;
+
+  return c.json({
+    data,
+    pagination: {
+      limit,
+      offset,
+      total: count || 0,
+    },
+  });
+});
+
+/**
+ * GET /compliance/screenings/:id - Get a specific screening result
+ */
+compliance.get('/screenings/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const id = c.req.param('id');
+
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid screening ID');
+  }
+
+  const { data, error } = await supabase
+    .from('compliance_screenings')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (error || !data) {
+    throw new NotFoundError('Screening not found');
+  }
+
+  return c.json({ data });
 });
 
 export { compliance };

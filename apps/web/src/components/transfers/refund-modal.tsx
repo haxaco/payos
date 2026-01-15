@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApiClient } from '@/lib/api-client';
-import { X, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { X, AlertCircle, Loader2, ArrowLeft, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Button, Input, Label, cn } from '@payos/ui';
 import type { Transfer, RefundReason } from '@payos/api-client';
 import { formatCurrency } from '@payos/ui';
@@ -30,6 +30,66 @@ export function RefundModal({ transfer, onClose, onSuccess }: RefundModalProps) 
   const [amount, setAmount] = useState(String(transfer.amount));
   const [reason, setReason] = useState<RefundReason>('customer_request');
   const [reasonDetails, setReasonDetails] = useState('');
+  
+  // Simulation state
+  const [simulation, setSimulation] = useState<any>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+
+  // Auto-simulate on amount change (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (isValidAmount) {
+        simulateRefund();
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [amount, isPartial]);
+
+  const simulateRefund = async () => {
+    setIsSimulating(true);
+    setSimulationError(null);
+
+    try {
+      // Get auth token from Supabase session
+      const supabase = await import('@/lib/supabase/client').then(m => m.createSupabaseBrowserClient());
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error('Not authenticated');
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${apiUrl}/v1/simulate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          action: 'refund',
+          payload: {
+            transfer_id: transfer.id,
+            amount: refundAmount.toString(),
+            reason,
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSimulation(data.data);
+      } else {
+        setSimulationError(data.error?.message || 'Simulation failed');
+      }
+    } catch (err: any) {
+      setSimulationError(err.message || 'Failed to simulate refund');
+    } finally {
+      setIsSimulating(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +118,7 @@ export function RefundModal({ transfer, onClose, onSuccess }: RefundModalProps) 
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md shadow-xl">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
           <div className="flex items-center gap-3">
@@ -167,35 +227,21 @@ export function RefundModal({ transfer, onClose, onSuccess }: RefundModalProps) 
 
           {/* Reason */}
           <div>
-            <Label className="text-sm font-medium text-gray-900 dark:text-white mb-2 block">
+            <Label htmlFor="reason" className="text-sm font-medium text-gray-900 dark:text-white mb-2 block">
               Reason
             </Label>
-            <div className="space-y-2">
+            <select
+              id="reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value as RefundReason)}
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
               {REFUND_REASONS.map((r) => (
-                <label
-                  key={r.value}
-                  className={cn(
-                    "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
-                    reason === r.value
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20"
-                      : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="reason"
-                    value={r.value}
-                    checked={reason === r.value}
-                    onChange={() => setReason(r.value)}
-                    className="mt-0.5"
-                  />
-                  <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">{r.label}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{r.description}</div>
-                  </div>
-                </label>
+                <option key={r.value} value={r.value}>
+                  {r.label} - {r.description}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           {/* Additional Details */}
@@ -212,6 +258,113 @@ export function RefundModal({ transfer, onClose, onSuccess }: RefundModalProps) 
               placeholder="Any additional information..."
             />
           </div>
+
+          {/* Simulation Preview */}
+          {isSimulating && (
+            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Validating refund...</span>
+              </div>
+            </div>
+          )}
+
+          {simulation && !isSimulating && (
+            <div className="space-y-3">
+              {/* Eligibility Status */}
+              <div className={cn(
+                "rounded-xl p-4 border",
+                simulation.can_execute
+                  ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900"
+                  : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900"
+              )}>
+                <div className="flex items-center gap-2">
+                  {simulation.can_execute ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  )}
+                  <span className={cn(
+                    "text-sm font-medium",
+                    simulation.can_execute
+                      ? "text-green-900 dark:text-green-200"
+                      : "text-red-900 dark:text-red-200"
+                  )}>
+                    {simulation.can_execute ? 'Refund Eligible' : 'Refund Not Eligible'}
+                  </span>
+                </div>
+                {simulation.preview?.eligibility && (
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                    Window expires in {simulation.preview.eligibility.days_remaining} days
+                  </p>
+                )}
+              </div>
+
+              {/* Warnings */}
+              {simulation.warnings?.length > 0 && (
+                <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-xl p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-yellow-900 dark:text-yellow-200">Warnings</div>
+                      <ul className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 space-y-1">
+                        {simulation.warnings.map((w: any, i: number) => (
+                          <li key={i}>• {w.message}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Errors */}
+              {simulation.errors?.length > 0 && (
+                <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-red-900 dark:text-red-200">Errors</div>
+                      <ul className="text-xs text-red-700 dark:text-red-400 mt-1 space-y-1">
+                        {simulation.errors.map((e: any, i: number) => (
+                          <li key={i}>• {e.message}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Balance Impact */}
+              {simulation.preview?.balance_impact && (
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
+                  <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Balance Impact</div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">Source after refund</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {formatCurrency(parseFloat(simulation.preview.balance_impact.source_balance_after), transfer.currency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">Destination after refund</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {formatCurrency(parseFloat(simulation.preview.balance_impact.destination_balance_after), transfer.currency)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {simulationError && (
+            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
+              <div className="flex items-center gap-2 text-red-700 dark:text-red-400 text-sm">
+                <AlertCircle className="h-4 w-4" />
+                {simulationError}
+              </div>
+            </div>
+          )}
 
           {/* Summary */}
           <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-xl p-4">
@@ -233,7 +386,7 @@ export function RefundModal({ transfer, onClose, onSuccess }: RefundModalProps) 
             </Button>
             <Button 
               type="submit" 
-              disabled={loading || !isValidAmount}
+              disabled={loading || !isValidAmount || (simulation && !simulation.can_execute)}
               className="flex-1 bg-amber-600 hover:bg-amber-700"
             >
               {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

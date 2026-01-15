@@ -4,25 +4,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MoreHorizontal, Copy, Play, Ban, Trash, CreditCard, Calendar } from "lucide-react";
+import { Copy, Play, Calendar } from "lucide-react";
 import { useApiClient } from "@/lib/api-client";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
-
 import {
     Button,
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-    CardFooter,
     Separator,
     Badge,
     Table,
@@ -37,6 +29,8 @@ import { MandateStatusBadge } from "@/components/ap2/mandate-status-badge";
 import { MandateUtilizationBar } from "@/components/ap2/mandate-utilization-bar";
 import { ExecutePaymentDialog } from "@/components/ap2/execute-payment-dialog";
 import { ProtocolBadge } from "@/components/agentic-payments/protocol-badge";
+import { MandateActionsMenu } from "@/components/ap2/mandate-actions-menu";
+import { VirtualCard } from "@/components/ap2/virtual-card";
 
 export default function MandateDetailPage() {
     const { id } = useParams();
@@ -69,14 +63,21 @@ export default function MandateDetailPage() {
         }
     });
 
-    // Fetch Agent details if name is unknown
+    // Helper to check if a string is a valid UUID
+    const isValidUUID = (str: string) => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(str);
+    };
+
+    // Fetch Agent details only if agent_id is a valid UUID (PayOS agent)
+    // AP2 agent_id can be external identifiers like "agent_booking_bot_123"
     const { data: agent } = useQuery({
         queryKey: ["agent", mandate?.agent?.id],
         queryFn: async () => {
             if (!api || !mandate?.agent?.id) return null;
             return api.agents.get(mandate.agent.id);
         },
-        enabled: !!api && !!mandate?.agent?.id,
+        enabled: !!api && !!mandate?.agent?.id && isValidUUID(mandate.agent.id),
     });
 
     // Fetch Account details if name is unknown
@@ -150,27 +151,11 @@ export default function MandateDetailPage() {
                         </Button>
                     )}
 
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span className="sr-only">More</span>
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => navigator.clipboard.writeText(JSON.stringify(mandate, null, 2))}>
-                                Copy JSON
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {mandate.status === "active" && (
-                                <DropdownMenuItem onClick={() => cancelMutation.mutate()} className="text-destructive">
-                                    <Ban className="mr-2 h-4 w-4" />
-                                    Cancel Mandate
-                                </DropdownMenuItem>
-                            )}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    <MandateActionsMenu
+                        mandate={mandate}
+                        variant="button"
+                        showViewDetails={false}
+                    />
                 </div>
             </div>
 
@@ -204,53 +189,57 @@ export default function MandateDetailPage() {
                     </CardContent>
                 </Card>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Details</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div>
-                            <div className="text-sm text-muted-foreground mb-1">Authorized Agent</div>
-                            <div className="font-medium flex items-center gap-2">
-                                <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-xs">A</div>
-                                {agent?.name || mandate.agent.name}
-                            </div>
-                        </div>
-                        <Separator />
-                        <div>
-                            <div className="text-sm text-muted-foreground mb-1">Funding Account</div>
-                            <div className="font-medium flex items-center gap-2">
-                                <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs">F</div>
-                                {account?.name || mandate.account.name}
-                            </div>
-                        </div>
-                        <Separator />
-                        <div>
-                            <div className="text-sm text-muted-foreground mb-1">Type</div>
-                            <Badge variant="outline" className="capitalize">{mandate.type}</Badge>
-                        </div>
-                        <Separator />
-                        <div>
-                            <div className="text-sm text-muted-foreground mb-1">Created At</div>
-                            <div className="font-medium text-sm flex items-center gap-2">
-                                <Calendar className="h-3 w-3" />
-                                {formatDate(mandate.createdAt)}
-                            </div>
-                        </div>
-                        {mandate.expiresAt && (
-                            <>
-                                <Separator />
-                                <div>
-                                    <div className="text-sm text-muted-foreground mb-1">Expires At</div>
-                                    <div className="font-medium text-sm text-amber-600 flex items-center gap-2">
-                                        <Calendar className="h-3 w-3" />
-                                        {formatDate(mandate.expiresAt)}
-                                    </div>
+                <div className="space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Details</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div>
+                                <div className="text-sm text-muted-foreground mb-1">Authorized Agent</div>
+                                <div className="font-medium flex items-center gap-2">
+                                    <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-xs">A</div>
+                                    {agent?.name || mandate.agent.name}
                                 </div>
-                            </>
-                        )}
-                    </CardContent>
-                </Card>
+                            </div>
+                            <Separator />
+                            <div>
+                                <div className="text-sm text-muted-foreground mb-1">Funding Account</div>
+                                <div className="font-medium flex items-center gap-2">
+                                    <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs">F</div>
+                                    {account?.name || mandate.account.name}
+                                </div>
+                            </div>
+                            <Separator />
+                            <div>
+                                <div className="text-sm text-muted-foreground mb-1">Type</div>
+                                <Badge variant="outline" className="capitalize">{mandate.type}</Badge>
+                            </div>
+                            <Separator />
+                            <div>
+                                <div className="text-sm text-muted-foreground mb-1">Created At</div>
+                                <div className="font-medium text-sm flex items-center gap-2">
+                                    <Calendar className="h-3 w-3" />
+                                    {formatDate(mandate.createdAt)}
+                                </div>
+                            </div>
+                            {mandate.expiresAt && (
+                                <>
+                                    <Separator />
+                                    <div>
+                                        <div className="text-sm text-muted-foreground mb-1">Expires At</div>
+                                        <div className="font-medium text-sm text-amber-600 flex items-center gap-2">
+                                            <Calendar className="h-3 w-3" />
+                                            {formatDate(mandate.expiresAt)}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <VirtualCard mandate={mandate} />
+                </div>
             </div>
 
             <Card>

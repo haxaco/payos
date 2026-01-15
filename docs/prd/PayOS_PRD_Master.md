@@ -1,8 +1,8 @@
 # PayOS PoC — Product Requirements Document (PRD)
 
-**Version:** 1.16
-**Date:** December 29, 2025
-**Status:** Modular Epic Structure
+**Version:** 1.20
+**Date:** January 15, 2026
+**Status:** UCP Protocol Integration
 
 ---
 
@@ -12,7 +12,7 @@ PayOS is a **multi-protocol settlement infrastructure** for LATAM, enabling fint
 
 1. **Core settlement infrastructure** — Quotes, transfers, multi-currency payouts
 2. **Agent system** — AI agents as first-class actors with KYA verification
-3. **Multi-protocol support** — x402 (Coinbase), AP2 (Google), ACP (Stripe/OpenAI)
+3. **Multi-protocol support** — x402 (Coinbase), AP2 (Google), ACP (Stripe/OpenAI), UCP (Google+Shopify)
 4. **Money streaming** — Continuous per-second payments
 5. **Partner dashboard** — Full UI for managing accounts, agents, and payments
 
@@ -20,8 +20,8 @@ PayOS is a **multi-protocol settlement infrastructure** for LATAM, enabling fint
 
 > **"We don't care which protocol wins. PayOS makes them all work."**
 
-Three agentic payment protocols are emerging (x402, AP2, ACP). PayOS is the **only settlement layer** that:
-- Supports all three protocols
+Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is the **only settlement layer** that:
+- Supports all four protocols
 - Has native LATAM rails (Pix/SPEI via Circle)
 - Enables partners rather than competing with them
 
@@ -45,6 +45,140 @@ Three agentic payment protocols are emerging (x402, AP2, ACP). PayOS is the **on
 ---
 
 ## Version History
+
+### Version 1.20 (January 15, 2026)
+**UCP Protocol Integration — URGENT Strategic Priority**
+
+**Epic 43: UCP (Universal Commerce Protocol)** (55 points, 14 stories) — **NEW P0:**
+- Google+Shopify launched UCP on January 11, 2026 as THE industry standard for agentic commerce
+- 20+ endorsements: Stripe, Visa, Mastercard, Walmart, Target, Shopify (1M+ merchants)
+- UCP orchestrates existing protocols (AP2, MCP, A2A) rather than replacing them
+- PayOS to become a **UCP Payment Handler** (`com.payos.latam_settlement`)
+- Stories include: Profile endpoint, capability negotiation, payment handler spec, SDK client
+
+**Strategic Impact:**
+- UCP validates PayOS's multi-protocol strategy
+- Not supporting UCP risks irrelevance in agentic commerce
+- PayOS can become THE LATAM settlement layer for entire UCP ecosystem
+
+**Protocol Coverage Update:**
+- x402 (Coinbase) — ✅ Full support
+- AP2 (Google) — ✅ Full support
+- ACP (Stripe/OpenAI) — ✅ Full support
+- **UCP (Google+Shopify) — 🚧 Epic 43 (P0)**
+
+**Documentation:**
+- `docs/prd/epics/epic-43-ucp-integration.md`
+- `docs/prd/investigations/ucp-integration.md`
+- `docs/prd/epics/README.md` (updated with UCP)
+
+**Placeholder Epics Created:**
+- Epic 44: Observability & Monitoring (P2)
+- Epic 45: Webhook Infrastructure (P2)
+- Epic 46: Multi-Region & Disaster Recovery (P3)
+
+---
+
+### Version 1.19 (January 6, 2026)
+**Epic 42 Complete & Epic 43: Cards Infrastructure — NEW**
+
+**Epic 42 (65 points, 19 stories) — COMPLETE:**
+- All 6 parts verified and deployed:
+  1. ✅ Wallet Enhancements (dual balance, BYOW verification, Circle creation)
+  2. ✅ Transfers with FX (calculator page, inline preview, settlement timeline)
+  3. ✅ AP2 Mandate Actions (edit/cancel, VDC visualizer)
+  4. ✅ Compliance Screening (screening tab, run screening action)
+  5. ✅ Dashboard Home (aggregated balance, protocol stats, rate limit card)
+  6. ✅ Real-Time Updates (live indicator, polling with toast notifications)
+
+**Epic 43 (47 points, 12 stories) — NEW:**
+- Virtual Debit Card infrastructure for AP2 mandates
+- Card issuance, lifecycle management (activate/freeze/cancel)
+- PCI-compliant secure card detail retrieval
+- Spend controls (limits, MCC restrictions)
+- Mock authorization flow for testing
+- Wallet deposit API for sandbox testing
+
+**API Feedback Addressed:**
+- VDC stored in mandate metadata → Dedicated cards infrastructure (Epic 43)
+- Wallet deposit missing → Added to Epic 43.12
+- Rate limit headers hidden → Backlog ticket created
+- Type definition sync → Backlog ticket created
+
+**Supabase Performance Issues Fixed:**
+- Fixed 50+ auth_rls_initplan warnings (wrapped auth.uid() in select)
+- Fixed 80+ multiple_permissive_policies warnings (scoped service_all to service_role)
+- Dropped duplicate index on settlement_holidays
+
+**Documentation:**
+- `docs/prd/epics/epic-43-cards-infrastructure.md`
+- `docs/EPIC_42_WALKTHROUGH.md` (Gemini's verification)
+- `docs/API_FEEDBACK.md` (Frontend integration feedback)
+
+---
+
+### Version 1.18 (January 5, 2026)
+**Epic 40 Complete & Epic 42: Frontend Dashboard Integration — NEW**
+
+**Epic 40 (86 points, 28 stories) — COMPLETE:**
+- All external sandbox integrations working
+- Circle Web3 Services for real blockchain balances
+- Pix/SPEI payouts via Circle Payments
+- x402.org facilitator integration
+- Compliance screening (mock provider)
+- Multi-currency FX quotes (USD↔BRL↔MXN)
+
+**Epic 42 (65 points, 19 stories) — NEW:**
+- Frontend integration with Epic 40 backend capabilities
+- Dual balance display (ledger + on-chain)
+- BYOW wallet verification with EIP-191 signatures
+- FX Calculator page + inline transfer form preview
+- Settlement timeline tab on transfer detail
+- Compliance screening interface
+- AP2 mandate actions (activate, suspend, revoke)
+
+**Design Decisions:**
+- Show both internal ledger and blockchain balances
+- FX quotes in both dedicated page and inline in forms
+- Settlement tracking as tab within transfer detail (not separate section)
+- Compliance screening both on dedicated page and contextual buttons
+- Mandate actions in both list view and detail page
+
+**Documentation:**
+- `docs/prd/epics/epic-42-frontend-dashboard.md`
+
+---
+
+### Version 1.17 (January 4-5, 2026)
+**Epic 40: External Sandbox Integrations & Epic 41: On-Ramp Integrations — NEW**
+
+**Epic 40 (86 points, 28 stories):**
+- Connect PayOS to all external sandbox environments
+- Circle, Base Sepolia, x402, Stripe, AP2, compliance (mock)
+- Critical x402 → Circle settlement bridge identified
+
+**Epic 41 (89 points, 24 stories) — NEW:**
+- On-ramp integrations for non-crypto-native customers
+- Stripe (cards, ACH, SEPA), Plaid (US banks), Belvo (LATAM banks)
+- MoonPay/Transak crypto widgets for direct card→USDC
+- Pix/SPEI collection for Brazilian/Mexican funding
+- Fiat→USDC conversion via Circle
+
+**Key Insight:** Without on-ramps, PayOS is limited to crypto-native customers (~5% of market). Epic 41 opens access to traditional fintechs.
+
+**External Services Covered:**
+- Stripe: Cards, ACH, SEPA, Connect
+- Plaid: US bank linking, balance checks
+- Belvo: LATAM banks (Brazil, Mexico, Colombia)
+- MoonPay/Transak: Card→USDC widgets
+- Circle: Fiat→USDC conversion
+
+**Documentation:**
+- `docs/prd/epics/epic-40-sandbox-integrations.md`
+- `docs/prd/epics/epic-41-onramp-integrations.md`
+- `docs/prd/IMPLEMENTATION_SEQUENCE.md` (updated)
+
+---
 
 ### Version 1.16 (December 29, 2025)
 **Epic Dashboard & Modular Structure:**
@@ -180,28 +314,49 @@ PayOS is now the **only settlement infrastructure** supporting all three agentic
 | 33 | Metadata Schema 🏷️ | 6 | P1 | 📋 Pending | 11 | 0/4 | — |
 | 34 | Transaction Decomposition 📦 | 6 | P1 | 📋 Pending | 14 | 0/4 | — |
 | 35 | Entity Onboarding API 🚀 | 6 | P1 | 📋 Pending | 14 | 0/4 | — |
+| 36 | SDK & Developer Experience 🧰 | 3.5 | P0 | 📋 Pending | 66 | 0/17 | [View](./epics/epic-36-sdk-developer-experience.md) |
+| 40 | External Sandbox Integrations 🔌 | 3.5 | P0 | ✅ Complete | 86 | 28/28 | [View](./epics/epic-40-sandbox-integrations.md) |
+| 41 | On-Ramp Integrations 💳 | 3.5 | P1 | 📋 Pending | 110 | 0/29 | [View](./epics/epic-41-onramp-integrations.md) |
+| 42 | Frontend Dashboard Integration 🖥️ | 3.5 | P0 | ✅ Complete | 65 | 19/19 | [View](./epics/epic-42-frontend-dashboard.md) |
+| 43a | Cards Infrastructure & VDC 💳 | 3.5 | P1 | 📋 Planning | 47 | 0/12 | [View](./epics/epic-43-cards-infrastructure.md) |
+| **43** | **UCP (Universal Commerce Protocol) 🌐** | **3.5** | **P0** | **📋 Planning** | **55** | **0/14** | **[View](./epics/epic-43-ucp-integration.md)** |
+| 44 | Observability & Monitoring 📊 | 5 | P2 | 📋 Placeholder | ~40 | 0/TBD | [View](./epics/epic-44-observability.md) |
+| 45 | Webhook Infrastructure 🔔 | 5 | P2 | 📋 Placeholder | ~35 | 0/TBD | [View](./epics/epic-45-webhook-infrastructure.md) |
+| 46 | Multi-Region & DR 🌍 | 5 | P3 | 📋 Placeholder | ~60 | 0/TBD | [View](./epics/epic-46-disaster-recovery.md) |
 
 **Summary:**
 - **Foundation Complete:** Epics 1-16 (Phase 1-2) fully implemented
-- **Current Status:** Epic 17 complete, Epic 27 high priority next
-- **Total Pending Points:** 257 points across 13 pending epics
+- **Epic 40 Complete:** All sandbox integrations (Circle, Stripe, x402, AP2, compliance) working
+- **Epic 42 Complete:** Frontend dashboard integration with all Epic 40 capabilities
+- **⚠️ URGENT: Epic 43 UCP** (55 pts, P0) — Google+Shopify's new protocol standard
+- **Current Focus:** Epic 43 (UCP) + Epic 36 (SDK) — Critical path to multi-protocol positioning
+- **On-Ramp Priority:** Epic 41 enables non-crypto-native customer onboarding
+- **Total Active Points:** 364 points (Epic 43 UCP: 55 + Epic 36: 66 + Epic 41: 110 + Epic 43a Cards: 47 + backlog: 86)
 - **AI-Native Infrastructure:** Epics 28-35 (158 points) planned for Phase 6
+- **Production Hardening:** Epics 44-46 (Observability, Webhooks, DR) — placeholders for scale phase
 
 ---
 
 ## Strategic Context
 
-### The Agentic Payments Landscape (December 2025)
+### The Agentic Payments Landscape (January 2026)
 
-Three major protocols have emerged for AI agent payments:
+Four major protocols have emerged for AI agent payments:
 
 | Protocol | Owner | Focus | Settlement Method | Status |
 |----------|-------|-------|-------------------|--------|
 | **x402** | Coinbase/Cloudflare | Micropayments, API monetization | Stablecoin (USDC on Base) | Production |
 | **AP2** | Google (60+ partners) | Agent authorization, mandates | Multi-rail (cards, banks, x402) | Production |
 | **ACP** | Stripe/OpenAI | Consumer checkout, e-commerce | SharedPaymentToken | Production |
+| **UCP** | Google+Shopify (20+ partners) | Full commerce lifecycle | Multi-handler (AP2, cards, wallets) | **NEW** (Jan 11, 2026) |
 
-**Key Insight:** AP2 includes x402 as a crypto payment extension. ACP is the Stripe/OpenAI alternative. All three need a settlement layer for non-US markets.
+**Key Insight:** UCP is a **superset** protocol that orchestrates x402/AP2/ACP rather than replacing them. It defines the full shopping journey (Discovery → Checkout → Order → Post-purchase) and supports multiple transports (REST, MCP, A2A). PayOS's multi-protocol strategy is validated—we're the settlement layer, not picking winners.
+
+**UCP Ecosystem Impact:**
+- Google AI Mode and Gemini will use UCP for shopping agents
+- Shopify's 1M+ merchants will support UCP natively
+- PayOS can become a **UCP Payment Handler** for LATAM settlement
+- AP2 mandates work inside UCP via the `dev.ucp.shopping.ap2_mandate` extension
 
 ### PayOS Market Position
 
@@ -219,7 +374,7 @@ Three major protocols have emerged for AI agent payments:
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
 │  │   Protocol  │  │  Execution  │  │  Treasury   │  │ Compliance  │    │
 │  │ Orchestrator│  │   Engine    │  │  & Float    │  │  & KYC      │    │
-│  │ x402/AP2/ACP│  │             │  │             │  │             │    │
+│  │x402/AP2/ACP/UCP│  │             │  │             │  │             │    │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
 └────────────────────────────────┬────────────────────────────────────┘
                                 │
@@ -240,7 +395,7 @@ Three major protocols have emerged for AI agent payments:
 | Stream | Mechanism | Take Rate | Notes |
 |--------|-----------|-----------|-------|
 | **Fiat Offramp** (35% of volume) | Settlement fee + FX spread | 0.65% + 0.35% | Only ~35% of B2B stablecoin payments convert to fiat |
-| **Stablecoin Protocol Fees** | Gateway + routing | 0.15% + 0.10% | x402/AP2/ACP protocol handling |
+| **Stablecoin Protocol Fees** | Gateway + routing | 0.15% + 0.10% | x402/AP2/ACP/UCP protocol handling |
 | **Internal Transfers** | Ledger movements | 0.05% | Between accounts on platform |
 
 ### Platform Revenue
@@ -437,7 +592,7 @@ PayOS's Identity 3 positioning as "AI-Native Settlement OS" requires infrastruct
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
 │  │  Protocol   │  │  Execution  │  │  Treasury   │  │ Compliance  │            │
 │  │ Orchestrator│  │   Engine    │  │  & Float    │  │  & KYC/KYA  │            │
-│  │x402/AP2/ACP │  │             │  │             │  │             │            │
+│  │x402/AP2/ACP/UCP│  │             │  │             │  │             │            │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘            │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                         │
@@ -559,10 +714,14 @@ PayOS's Identity 3 positioning as "AI-Native Settlement OS" requires infrastruct
 ## Quick Links
 
 ### Epic Documentation
+- **[Epic 43: UCP Integration](./epics/epic-43-ucp-integration.md)** 🚨 **P0 URGENT** — Google+Shopify protocol
 - [Epic 17: Multi-Protocol Gateway](./epics/epic-17-multi-protocol.md) ✅ Complete
 - [Epic 18: Agent Wallets](./epics/epic-18-agent-wallets.md) 📋 Next
 - [Epic 27: Settlement Hardening](./epics/epic-27-settlement.md) 📋 High Priority
 - [Epic 28: Simulation Engine](./epics/epic-28-simulation.md) 📋 Pending
+
+### Investigations
+- **[UCP Integration Investigation](./investigations/ucp-integration.md)** — Full protocol analysis
 
 ### Testing & Guides
 - [AP2 Testing Guide](/docs/testing/AP2_TESTING_GUIDE.md)

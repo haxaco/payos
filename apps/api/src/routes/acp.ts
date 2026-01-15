@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getStripeClient, isStripeConfigured } from '../services/stripe/index.js';
 
 const app = new Hono();
 
@@ -352,7 +353,10 @@ app.get('/checkouts/:id', async (c) => {
 
 /**
  * POST /v1/acp/checkouts/:id/complete
- * Complete a checkout and create transfer
+ * Complete a checkout with SharedPaymentToken and create transfer
+ * 
+ * This endpoint processes the ACP SharedPaymentToken (SPT) through Stripe
+ * and creates the corresponding PayOS transfer record.
  */
 app.post('/checkouts/:id/complete', async (c) => {
   try {
@@ -395,7 +399,73 @@ app.post('/checkouts/:id/complete', async (c) => {
       .select('name, quantity, unit_price')
       .eq('checkout_id', id);
 
-    // Create transfer
+    // Process SharedPaymentToken through Stripe (if configured)
+    let stripePaymentIntent = null;
+    let paymentStatus = 'completed';
+    
+    if (isStripeConfigured()) {
+      try {
+        const stripe = getStripeClient();
+        
+        // Convert amount to cents for Stripe (assuming USDC amounts are in dollars)
+        const amountInCents = Math.round(parseFloat(checkout.total_amount) * 100);
+        
+        // Map currency (USDC → USD for Stripe)
+        const stripeCurrency = checkout.currency === 'USDC' ? 'usd' : checkout.currency.toLowerCase();
+        
+        stripePaymentIntent = await stripe.processSharedPaymentToken({
+          token: validated.shared_payment_token,
+          amount: amountInCents,
+          currency: stripeCurrency,
+          description: `ACP checkout: ${checkout.merchant_name || checkout.merchant_id}`,
+          metadata: {
+            checkout_id: checkout.checkout_id,
+            payos_checkout_uuid: checkout.id,
+            merchant_id: checkout.merchant_id,
+            agent_id: checkout.agent_id,
+            source: 'acp',
+          },
+          idempotencyKey: validated.idempotency_key || `acp-${checkout.id}`,
+        });
+        
+        console.log(`[ACP] Stripe PaymentIntent created: ${stripePaymentIntent.id} (${stripePaymentIntent.status})`);
+        
+        // Set payment status based on Stripe response
+        if (stripePaymentIntent.status === 'succeeded') {
+          paymentStatus = 'completed';
+        } else if (stripePaymentIntent.status === 'requires_action' || stripePaymentIntent.status === 'requires_confirmation') {
+          paymentStatus = 'pending';
+        } else if (stripePaymentIntent.status === 'processing') {
+          paymentStatus = 'processing';
+        } else {
+          paymentStatus = 'pending';
+        }
+      } catch (stripeError: any) {
+        console.error('[ACP] Stripe payment failed:', stripeError.message);
+        
+        // Update checkout with failure
+        await supabase
+          .from('acp_checkouts')
+          .update({
+            status: 'failed',
+            checkout_data: {
+              ...(checkout.checkout_data || {}),
+              stripe_error: stripeError.message,
+            },
+          })
+          .eq('id', id);
+        
+        return c.json({
+          error: 'Payment processing failed',
+          details: stripeError.message,
+        }, 402);
+      }
+    } else {
+      // No Stripe configured - simulate success for demo purposes
+      console.log('[ACP] Stripe not configured - simulating payment success');
+    }
+
+    // Create transfer record
     const { data: transfer, error: transferError } = await supabase
       .from('transfers')
       .insert({
@@ -405,7 +475,7 @@ app.post('/checkouts/:id/complete', async (c) => {
         amount: checkout.total_amount,
         currency: checkout.currency,
         type: 'acp',
-        status: 'completed', // ACP transfers are pre-authorized
+        status: paymentStatus,
         description: `ACP checkout: ${checkout.merchant_name || checkout.merchant_id}`,
         idempotency_key: validated.idempotency_key,
         protocol_metadata: {
@@ -421,6 +491,7 @@ app.post('/checkouts/:id/complete', async (c) => {
             price: parseFloat(i.unit_price),
           })),
           shared_payment_token: validated.shared_payment_token,
+          stripe_payment_intent_id: stripePaymentIntent?.id,
         },
         initiated_by_type: ctx.actorType,
         initiated_by_id: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
@@ -438,11 +509,16 @@ app.post('/checkouts/:id/complete', async (c) => {
     const { data: updatedCheckout, error: updateError } = await supabase
       .from('acp_checkouts')
       .update({
-        status: 'completed',
+        status: paymentStatus === 'completed' ? 'completed' : 'processing',
         transfer_id: transfer.id,
         shared_payment_token: validated.shared_payment_token,
-        payment_method: validated.payment_method,
-        completed_at: new Date().toISOString(),
+        payment_method: validated.payment_method || 'stripe',
+        completed_at: paymentStatus === 'completed' ? new Date().toISOString() : null,
+        checkout_data: {
+          ...(checkout.checkout_data || {}),
+          stripe_payment_intent_id: stripePaymentIntent?.id,
+          stripe_payment_status: stripePaymentIntent?.status,
+        },
       })
       .eq('id', id)
       .select()
@@ -450,7 +526,6 @@ app.post('/checkouts/:id/complete', async (c) => {
 
     if (updateError) {
       console.error('[ACP] Update checkout error:', updateError);
-      // Transfer created but checkout update failed
       return c.json({ error: 'Failed to update checkout' }, 500);
     }
 
@@ -459,6 +534,8 @@ app.post('/checkouts/:id/complete', async (c) => {
         checkout_id: updatedCheckout.id,
         transfer_id: transfer.id,
         status: updatedCheckout.status,
+        payment_status: paymentStatus,
+        stripe_payment_intent_id: stripePaymentIntent?.id,
         completed_at: updatedCheckout.completed_at,
         total_amount: parseFloat(updatedCheckout.total_amount),
         currency: updatedCheckout.currency,

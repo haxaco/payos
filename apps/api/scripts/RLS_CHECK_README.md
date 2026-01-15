@@ -219,3 +219,5 @@ ALTER TABLE existing_table ENABLE ROW LEVEL SECURITY;
 - [Database Security Best Practices](../../docs/security/RLS_STRATEGY.md)
 - [Migration Guide](../../docs/guides/development/migrations.md)
 
+
+

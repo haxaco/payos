@@ -17,8 +17,12 @@ import Link from 'next/link';
 // Import mock data and new components
 import { mockAiInsights } from '@/lib/mock-data/ai-insights';
 import { mockAgentStats } from '@/lib/mock-data/agent-stats';
+
 import { AiInsightsPanel } from '@/components/dashboard/ai-insights-panel';
 import { AgentPerformanceCard } from '@/components/dashboard/agent-performance-card';
+import { ProtocolStats } from '@/components/dashboard/protocol-stats';
+import { RateLimitCard } from '@/components/dashboard/rate-limit-card';
+import { formatCurrency } from '@payos/ui';
 
 // Mock data for volume by corridor
 const corridorData = [
@@ -35,6 +39,7 @@ const recentActivity = [
 
 interface Stats {
   accounts: number;
+  totalBalance: number;
   volume: string;
   cards: number;
   pendingFlags: number;
@@ -47,16 +52,15 @@ export default function DashboardPage() {
 
   // Use React Query to fetch dashboard stats with caching
   const { data: accountsData, isLoading: accountsLoading, error: accountsError } = useQuery({
-    queryKey: ['dashboard', 'accounts'],
+    queryKey: ['dashboard', 'accounts-aggregated'],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
-      // Fetch accounts count (limit 1 just to get total count from pagination)
-      const result = await api.accounts.list({ limit: 1 });
-      console.log('[Dashboard] Accounts API response:', result);
+      // Fetch up to 50 accounts to aggregate balances client-side for "Real Balance Aggregation" (Story 42.14)
+      const result = await api.accounts.list({ limit: 50 });
       return result;
     },
     enabled: !!api && isConfigured,
-    staleTime: 30 * 1000, // Cache for 30 seconds
+    staleTime: 60 * 1000,
   });
 
   // Debug logging
@@ -82,8 +86,14 @@ export default function DashboardPage() {
 
   // Stats (mixing real and mock data)
   // Note: API response is double-nested: data.data.pagination
+  // Calculate total balance from fetched accounts
+  const aggregatedBalance = (accountsData as any)?.data?.reduce((sum: number, account: any) => {
+    return sum + (Number(account.balanceAvailable) || 0);
+  }, 0) || 0;
+
   const stats: Stats = {
     accounts: (accountsData as any)?.pagination?.total || 0,
+    totalBalance: aggregatedBalance,
     volume: '$2.4M',
     cards: 8234,
     pendingFlags: complianceCount || 0, // Real compliance count!
@@ -155,7 +165,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto" >
       <div className="p-8 max-w-[1600px] mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -181,19 +191,19 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Volume */}
+          {/* Total Balance (Aggregated) */}
           <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
             <div className="flex items-start justify-between mb-4">
               <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950 rounded-xl flex items-center justify-center">
                 <DollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
               </div>
               <span className="px-2.5 py-1 text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-full flex items-center gap-1">
-                ↗ 18% MTD
+                ↗ 12% MTD
               </span>
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Volume</div>
-            <div className="text-3xl font-bold text-gray-900 dark:text-white">
-              {loading ? '...' : stats?.volume}
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Balance</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white truncate" title={loading ? 'Loading...' : formatCurrency(stats.totalBalance, 'USDC')}>
+              {loading ? '...' : formatCurrency(stats.totalBalance, 'USDC')}
             </div>
           </div>
 
@@ -265,8 +275,8 @@ export default function DashboardPage() {
                       key={period}
                       onClick={() => setChartPeriod(period)}
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${chartPeriod === period
-                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                        ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                         }`}
                     >
                       {period}
@@ -321,101 +331,16 @@ export default function DashboardPage() {
           </div>
 
           {/* Right Column - Requires Attention + Recent Activity */}
+          {/* Right Column - New Widgets */}
           <div className="space-y-6">
-            {/* Requires Attention */}
-            <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Requires Attention</h3>
+            {/* Protocol Distribution Widget (Story 42.15) */}
+            <ProtocolStats />
 
-              <div className="space-y-3">
-                <Link
-                  href="/dashboard/compliance"
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
-                    <span className="text-gray-900 dark:text-white font-medium">3 High Risk</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </Link>
-
-                <Link
-                  href="/dashboard/compliance"
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    <span className="text-gray-900 dark:text-white font-medium">12 Medium Risk</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </Link>
-
-                <Link
-                  href="/dashboard/compliance"
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                    <span className="text-gray-900 dark:text-white font-medium">8 Low Risk</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </Link>
-              </div>
-
-              <Link
-                href="/dashboard/compliance"
-                className="w-full mt-4 px-4 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-medium rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors flex items-center justify-center"
-              >
-                View Queue
-              </Link>
-            </div>
-
-            {/* Recent Activity */}
-            <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
-                <Link
-                  href="/dashboard/transfers"
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  View All
-                </Link>
-              </div>
-
-              <div className="space-y-4">
-                {recentActivity.map((activity, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="text-xs text-gray-500 dark:text-gray-400 w-12 flex-shrink-0">
-                      {activity.time}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                        {activity.type}
-                        {/* NEW: Show if initiated by agent */}
-                        {activity.initiatedBy.type === 'agent' && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 rounded-full">
-                            🤖 {activity.initiatedBy.name}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {activity.from} → {activity.to}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {activity.amount}
-                      </span>
-                      {activity.status === 'success' && (
-                        <Check className="w-4 h-4 text-emerald-500" />
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Rate Limit Indicator (Story 42.16) */}
+            <RateLimitCard />
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 }

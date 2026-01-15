@@ -105,3 +105,5 @@ Open DevTools → Network → Filter by "accounts" and check:
 
 **The 12,847 was NOT a security issue** - it was a UI bug with a hardcoded fallback value.
 
+
+

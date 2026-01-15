@@ -715,6 +715,7 @@ export interface Wallet {
   status: WalletStatus;
   name?: string;
   purpose?: string;
+  verificationStatus?: 'verified' | 'unverified';
   createdAt: string;
   updatedAt: string;
 }
@@ -731,6 +732,8 @@ export interface CreateWalletInput {
   };
   name?: string;
   purpose?: string;
+  type?: 'internal' | 'circle_custodial';
+  blockchain?: 'base' | 'polygon' | 'ethereum';
 }
 
 export interface UpdateWalletInput {
@@ -992,21 +995,21 @@ export interface DashboardSummary {
   totalPending: number;
   totalReserved: number;
   primaryCurrency: string;
-  
+
   // Alert fields
   openAlerts: number;
   criticalAlerts: number;
   pendingRecommendations: number;
-  
+
   // Health metrics
   healthScore: number; // 0-100
   lastUpdated: string;
-  
+
   // Flow metrics (24h)
   inflows24h: number;
   outflows24h: number;
   netFlow24h: number;
-  
+
   // Legacy aliases for backwards compatibility
   totalBalance?: number;  // alias for totalFloat
   alertsCount?: number;   // alias for openAlerts

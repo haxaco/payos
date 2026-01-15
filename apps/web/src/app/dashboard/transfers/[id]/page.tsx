@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import Link from 'next/link';
 import {
@@ -18,15 +19,20 @@ import {
   ExternalLink,
   Wallet,
   Globe,
+  RotateCcw,
 } from 'lucide-react';
 import type { Transfer } from '@payos/api-client';
+import { RefundModal } from '@/components/transfers/refund-modal';
 
 export default function TransferDetailPage() {
   const params = useParams();
   const router = useRouter();
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const { isConfigured } = useApiConfig();
   const transferId = params.id as string;
+  const [showRefundModal, setShowRefundModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'settlement'>('overview');
 
   const { data: transfer, isLoading, error } = useQuery({
     queryKey: ['transfer', transferId],
@@ -141,353 +147,444 @@ export default function TransferDetailPage() {
         Back to transfers
       </Link>
 
-      {/* Header */}
-      <div className="flex items-start justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${safeTransfer.status === 'completed'
-              ? 'bg-emerald-100 dark:bg-emerald-950'
-              : safeTransfer.status === 'pending'
-                ? 'bg-yellow-100 dark:bg-yellow-950'
-                : 'bg-red-100 dark:bg-red-950'
-            }`}>
-            {getStatusIcon(safeTransfer.status)}
-          </div>
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                ${(safeTransfer.amount || 0).toFixed(4)} {safeTransfer.currency}
-              </h1>
-              <span className={`px-3 py-1 text-xs font-medium rounded-full ${getTypeColor(safeTransfer.type)}`}>
-                {safeTransfer.type.toUpperCase()}
-              </span>
-              <span className={`px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(safeTransfer.status)}`}>
-                {safeTransfer.status}
-              </span>
-            </div>
-            <p className="text-gray-500 dark:text-gray-400">
-              {new Date(safeTransfer.createdAt).toLocaleString()}
-            </p>
-          </div>
-        </div>
+      {/* Tabs */}
+      <div className="flex items-center gap-1 bg-gray-100/50 dark:bg-gray-800/50 p-1 rounded-xl w-fit mb-8">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'overview'
+            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('settlement')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'settlement'
+            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+        >
+          Settlement
+        </button>
       </div>
 
-      {/* Transfer Flow */}
-      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Transfer Flow</h3>
-        <div className="flex items-center justify-between">
-          {/* From */}
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
-                <User className="h-6 w-6 text-blue-600" />
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Transfer Flow */}
+          <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Transfer Flow</h3>
+            <div className="flex items-center justify-between">
+              {/* From */}
+              <div className="flex-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
+                    <User className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">From</p>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {safeTransfer.from?.accountName || 'Unknown Account'}
+                    </p>
+                    <Link
+                      href={`/dashboard/accounts/${safeTransfer.from?.accountId}`}
+                      className="text-xs text-blue-600 hover:underline font-mono"
+                    >
+                      {safeTransfer.from?.accountId?.slice(0, 8)}...
+                    </Link>
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">From</p>
-                <p className="font-medium text-gray-900 dark:text-white">
-                  {safeTransfer.from?.accountName || 'Unknown Account'}
+
+              {/* Arrow */}
+              <div className="flex-shrink-0 px-8">
+                <div className="flex items-center gap-2">
+                  <div className="h-px w-12 bg-gray-300 dark:bg-gray-700"></div>
+                  <ArrowRight className="h-6 w-6 text-gray-400" />
+                  <div className="h-px w-12 bg-gray-300 dark:bg-gray-700"></div>
+                </div>
+                <p className="text-center text-sm font-medium text-gray-900 dark:text-white mt-1">
+                  ${(safeTransfer.amount || 0).toFixed(4)}
                 </p>
-                <Link
-                  href={`/dashboard/accounts/${safeTransfer.from?.accountId}`}
-                  className="text-xs text-blue-600 hover:underline font-mono"
-                >
-                  {safeTransfer.from?.accountId?.slice(0, 8)}...
-                </Link>
+              </div>
+
+              {/* To */}
+              <div className="flex-1 text-right">
+                <div className="flex items-center gap-3 justify-end">
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">To</p>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {safeTransfer.to?.accountName || 'Unknown Account'}
+                    </p>
+                    <Link
+                      href={`/dashboard/accounts/${safeTransfer.to?.accountId}`}
+                      className="text-xs text-blue-600 hover:underline font-mono"
+                    >
+                      {safeTransfer.to?.accountId?.slice(0, 8)}...
+                    </Link>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center">
+                    <User className="h-6 w-6 text-emerald-600" />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Arrow */}
-          <div className="flex-shrink-0 px-8">
-            <div className="flex items-center gap-2">
-              <div className="h-px w-12 bg-gray-300 dark:bg-gray-700"></div>
-              <ArrowRight className="h-6 w-6 text-gray-400" />
-              <div className="h-px w-12 bg-gray-300 dark:bg-gray-700"></div>
-            </div>
-            <p className="text-center text-sm font-medium text-gray-900 dark:text-white mt-1">
-              ${(safeTransfer.amount || 0).toFixed(4)}
-            </p>
-          </div>
-
-          {/* To */}
-          <div className="flex-1 text-right">
-            <div className="flex items-center gap-3 justify-end">
-              <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">To</p>
-                <p className="font-medium text-gray-900 dark:text-white">
-                  {safeTransfer.to?.accountName || 'Unknown Account'}
-                </p>
-                <Link
-                  href={`/dashboard/accounts/${safeTransfer.to?.accountId}`}
-                  className="text-xs text-blue-600 hover:underline font-mono"
-                >
-                  {safeTransfer.to?.accountId?.slice(0, 8)}...
-                </Link>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center">
-                <User className="h-6 w-6 text-emerald-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Transfer Details */}
-        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Transfer Details
-          </h3>
-          <dl className="space-y-4">
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Transfer ID</dt>
-              <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.id}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Type</dt>
-              <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.type}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Status</dt>
-              <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.status}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Amount</dt>
-              <dd className="font-mono text-gray-900 dark:text-white">
-                {(safeTransfer.amount || 0).toFixed(8)} {safeTransfer.currency}
-              </dd>
-            </div>
-            {safeTransfer.fees?.amount && safeTransfer.fees.amount > 0 && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500 dark:text-gray-400">Fees</dt>
-                <dd className="font-mono text-gray-900 dark:text-white">
-                  {safeTransfer.fees.amount.toFixed(8)} {safeTransfer.fees.currency || safeTransfer.currency}
-                </dd>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Created</dt>
-              <dd className="text-gray-900 dark:text-white">
-                {new Date(safeTransfer.createdAt).toLocaleString()}
-              </dd>
-            </div>
-            {safeTransfer.completedAt && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500 dark:text-gray-400">Completed</dt>
-                <dd className="text-gray-900 dark:text-white">
-                  {new Date(safeTransfer.completedAt).toLocaleString()}
-                </dd>
-              </div>
-            )}
-            {safeTransfer.failedAt && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500 dark:text-gray-400">Failed</dt>
-                <dd className="text-red-600">
-                  {new Date(safeTransfer.failedAt).toLocaleString()}
-                </dd>
-              </div>
-            )}
-            {safeTransfer.failureReason && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500 dark:text-gray-400">Failure Reason</dt>
-                <dd className="text-red-600">{safeTransfer.failureReason}</dd>
-              </div>
-            )}
-          </dl>
-        </div>
-
-        {/* Initiated By */}
-        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Initiated By
-          </h3>
-          <dl className="space-y-4">
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Actor Type</dt>
-              <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.initiatedBy?.type || 'Unknown'}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500 dark:text-gray-400">Actor ID</dt>
-              <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.initiatedBy?.id || 'N/A'}</dd>
-            </div>
-            {safeTransfer.initiatedBy?.name && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500 dark:text-gray-400">Actor Name</dt>
-                <dd className="text-gray-900 dark:text-white">{safeTransfer.initiatedBy.name}</dd>
-              </div>
-            )}
-            {safeTransfer.idempotencyKey && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500 dark:text-gray-400">Idempotency Key</dt>
-                <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.idempotencyKey}</dd>
-              </div>
-            )}
-          </dl>
-        </div>
-      </div>
-
-      {/* x402 Metadata Section */}
-      {isX402 && safeTransfer.x402Metadata && (
-        <div className="bg-purple-50 dark:bg-gray-900 rounded-2xl border border-purple-200 dark:border-purple-500/30 p-6 mb-6">
-          <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-300 mb-4 flex items-center gap-2">
-            <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            x402 Payment Details
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Endpoint Info */}
-            <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4">
-              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                Endpoint Information
-              </h4>
-              <dl className="space-y-3">
-                {safeTransfer.x402Metadata.endpoint_path && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Transfer Details */}
+            <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Transfer Details
+              </h3>
+              <dl className="space-y-4">
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Transfer ID</dt>
+                  <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.id}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Type</dt>
+                  <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.type}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Status</dt>
+                  <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.status}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Amount</dt>
+                  <dd className="font-mono text-gray-900 dark:text-white">
+                    {(safeTransfer.amount || 0).toFixed(8)} {safeTransfer.currency}
+                  </dd>
+                </div>
+                {safeTransfer.fees?.amount && safeTransfer.fees.amount > 0 && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-gray-400">Path</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      {safeTransfer.x402Metadata.endpoint_path}
+                    <dt className="text-gray-500 dark:text-gray-400">Fees</dt>
+                    <dd className="font-mono text-gray-900 dark:text-white">
+                      {safeTransfer.fees.amount.toFixed(8)} {safeTransfer.fees.currency || safeTransfer.currency}
                     </dd>
                   </div>
                 )}
-                {safeTransfer.x402Metadata.endpoint_method && (
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Created</dt>
+                  <dd className="text-gray-900 dark:text-white">
+                    {new Date(safeTransfer.createdAt).toLocaleString()}
+                  </dd>
+                </div>
+                {safeTransfer.completedAt && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-gray-400">Method</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      {safeTransfer.x402Metadata.endpoint_method}
+                    <dt className="text-gray-500 dark:text-gray-400">Completed</dt>
+                    <dd className="text-gray-900 dark:text-white">
+                      {new Date(safeTransfer.completedAt).toLocaleString()}
                     </dd>
                   </div>
                 )}
-                {safeTransfer.x402Metadata.endpoint_id && (
+                {safeTransfer.failedAt && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-gray-400">Endpoint ID</dt>
-                    <dd className="font-mono text-xs text-purple-900 dark:text-white">
-                      <Link
-                        href={`/dashboard/x402/endpoints/${safeTransfer.x402Metadata.endpoint_id}`}
-                        className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
-                      >
-                        {safeTransfer.x402Metadata.endpoint_id.slice(0, 8)}...
-                        <ExternalLink className="h-3 w-3" />
-                      </Link>
+                    <dt className="text-gray-500 dark:text-gray-400">Failed</dt>
+                    <dd className="text-red-600">
+                      {new Date(safeTransfer.failedAt).toLocaleString()}
                     </dd>
+                  </div>
+                )}
+                {safeTransfer.failureReason && (
+                  <div className="flex justify-between">
+                    <dt className="text-gray-500 dark:text-gray-400">Failure Reason</dt>
+                    <dd className="text-red-600">{safeTransfer.failureReason}</dd>
                   </div>
                 )}
               </dl>
             </div>
 
-            {/* Wallet Info */}
-            <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4">
-              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
-                <Wallet className="h-4 w-4" />
-                Wallet & Settlement
-              </h4>
-              <dl className="space-y-3">
-                {safeTransfer.x402Metadata.wallet_id && (
+            {/* Initiated By */}
+            <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <User className="h-5 w-5" />
+                Initiated By
+              </h3>
+              <dl className="space-y-4">
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Actor Type</dt>
+                  <dd className="text-gray-900 dark:text-white capitalize">{safeTransfer.initiatedBy?.type || 'Unknown'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Actor ID</dt>
+                  <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.initiatedBy?.id || 'N/A'}</dd>
+                </div>
+                {safeTransfer.initiatedBy?.name && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-gray-400">Wallet ID</dt>
-                    <dd className="font-mono text-xs text-purple-900 dark:text-white">
-                      <Link
-                        href={`/dashboard/wallets?search=${safeTransfer.x402Metadata.wallet_id}`}
-                        className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
-                      >
-                        {safeTransfer.x402Metadata.wallet_id.slice(0, 8)}...
-                        <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    </dd>
+                    <dt className="text-gray-500 dark:text-gray-400">Actor Name</dt>
+                    <dd className="text-gray-900 dark:text-white">{safeTransfer.initiatedBy.name}</dd>
                   </div>
                 )}
-                {safeTransfer.x402Metadata.price_calculated !== undefined && (
+                {safeTransfer.idempotencyKey && (
                   <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-gray-400">Price</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      ${safeTransfer.x402Metadata.price_calculated?.toFixed(4)}
-                    </dd>
-                  </div>
-                )}
-                {safeTransfer.x402Metadata.settlement_fee !== undefined && (
-                  <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-gray-400">Settlement Fee</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      ${safeTransfer.x402Metadata.settlement_fee?.toFixed(4)}
-                    </dd>
-                  </div>
-                )}
-                {safeTransfer.x402Metadata.settlement_net_amount !== undefined && (
-                  <div className="flex justify-between">
-                    <dt className="text-purple-600 dark:text-gray-400">Net Amount</dt>
-                    <dd className="font-mono text-sm text-purple-900 dark:text-white">
-                      ${safeTransfer.x402Metadata.settlement_net_amount?.toFixed(4)}
-                    </dd>
+                    <dt className="text-gray-500 dark:text-gray-400">Idempotency Key</dt>
+                    <dd className="font-mono text-sm text-gray-900 dark:text-white">{safeTransfer.idempotencyKey}</dd>
                   </div>
                 )}
               </dl>
             </div>
           </div>
 
-          {/* Request Info */}
-          <div className="mt-6 pt-6 border-t border-purple-200 dark:border-gray-700">
-            <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Request Details
-            </h4>
-            <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {safeTransfer.x402Metadata.request_id && (
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
-                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Request ID</dt>
-                  <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
-                    {safeTransfer.x402Metadata.request_id}
-                  </dd>
+          {/* x402 Metadata Section */}
+          {isX402 && safeTransfer.x402Metadata && (
+            <div className="bg-purple-50 dark:bg-gray-900 rounded-2xl border border-purple-200 dark:border-purple-500/30 p-6">
+              <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-300 mb-4 flex items-center gap-2">
+                <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                x402 Payment Details
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Endpoint Info */}
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4">
+                  <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    Endpoint Information
+                  </h4>
+                  <dl className="space-y-3">
+                    {safeTransfer.x402Metadata.endpoint_path && (
+                      <div className="flex justify-between">
+                        <dt className="text-purple-600 dark:text-gray-400">Path</dt>
+                        <dd className="font-mono text-sm text-purple-900 dark:text-white">
+                          {safeTransfer.x402Metadata.endpoint_path}
+                        </dd>
+                      </div>
+                    )}
+                    {safeTransfer.x402Metadata.endpoint_method && (
+                      <div className="flex justify-between">
+                        <dt className="text-purple-600 dark:text-gray-400">Method</dt>
+                        <dd className="font-mono text-sm text-purple-900 dark:text-white">
+                          {safeTransfer.x402Metadata.endpoint_method}
+                        </dd>
+                      </div>
+                    )}
+                    {safeTransfer.x402Metadata.endpoint_id && (
+                      <div className="flex justify-between">
+                        <dt className="text-purple-600 dark:text-gray-400">Endpoint ID</dt>
+                        <dd className="font-mono text-xs text-purple-900 dark:text-white">
+                          <Link
+                            href={`/dashboard/x402/endpoints/${safeTransfer.x402Metadata.endpoint_id}`}
+                            className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
+                          >
+                            {safeTransfer.x402Metadata.endpoint_id.slice(0, 8)}...
+                            <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
                 </div>
-              )}
-              {safeTransfer.x402Metadata.timestamp && (
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
-                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Timestamp</dt>
-                  <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
-                    {safeTransfer.x402Metadata.timestamp}
-                  </dd>
+
+                {/* Wallet Info */}
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4">
+                  <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
+                    <Wallet className="h-4 w-4" />
+                    Wallet & Settlement
+                  </h4>
+                  <dl className="space-y-3">
+                    {safeTransfer.x402Metadata.wallet_id && (
+                      <div className="flex justify-between">
+                        <dt className="text-purple-600 dark:text-gray-400">Wallet ID</dt>
+                        <dd className="font-mono text-xs text-purple-900 dark:text-white">
+                          <Link
+                            href={`/dashboard/wallets?search=${safeTransfer.x402Metadata.wallet_id}`}
+                            className="hover:underline flex items-center gap-1 text-purple-600 dark:text-purple-400"
+                          >
+                            {safeTransfer.x402Metadata.wallet_id.slice(0, 8)}...
+                            <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        </dd>
+                      </div>
+                    )}
+                    {safeTransfer.x402Metadata.price_calculated !== undefined && (
+                      <div className="flex justify-between">
+                        <dt className="text-purple-600 dark:text-gray-400">Price</dt>
+                        <dd className="font-mono text-sm text-purple-900 dark:text-white">
+                          ${safeTransfer.x402Metadata.price_calculated?.toFixed(4)}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
                 </div>
-              )}
-              {safeTransfer.x402Metadata.volume_tier !== undefined && (
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
-                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Volume Tier</dt>
-                  <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
-                    {safeTransfer.x402Metadata.volume_tier} calls
-                  </dd>
+              </div>
+
+              {/* Request Info */}
+              <div className="mt-6 pt-6 border-t border-purple-200 dark:border-gray-700">
+                <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Request Details
+                </h4>
+                <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {safeTransfer.x402Metadata.request_id && (
+                    <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                      <dt className="text-purple-600 dark:text-gray-400 text-sm">Request ID</dt>
+                      <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
+                        {safeTransfer.x402Metadata.request_id}
+                      </dd>
+                    </div>
+                  )}
+                  {safeTransfer.x402Metadata.timestamp && (
+                    <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                      <dt className="text-purple-600 dark:text-gray-400 text-sm">Timestamp</dt>
+                      <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
+                        {safeTransfer.x402Metadata.timestamp}
+                      </dd>
+                    </div>
+                  )}
+                  {safeTransfer.x402Metadata.volume_tier !== undefined && (
+                    <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
+                      <dt className="text-purple-600 dark:text-gray-400 text-sm">Volume Tier</dt>
+                      <dd className="font-mono text-xs text-purple-900 dark:text-white mt-1">
+                        {safeTransfer.x402Metadata.volume_tier} calls
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            </div>
+          )}
+
+          {/* Cross-Border Details */}
+          {(safeTransfer.destinationAmount || safeTransfer.fxRate) && (
+            <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <Globe className="h-5 w-5" />
+                Cross-Border Details
+              </h3>
+              <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {safeTransfer.destinationAmount && (
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-sm">Destination Amount</dt>
+                    <dd className="font-mono text-gray-900 dark:text-white">
+                      {safeTransfer.destinationAmount.toFixed(2)} {safeTransfer.destinationCurrency}
+                    </dd>
+                  </div>
+                )}
+                {safeTransfer.fxRate && (
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400 text-sm">Exchange Rate</dt>
+                    <dd className="font-mono text-gray-900 dark:text-white">
+                      {safeTransfer.fxRate.toFixed(4)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+
+          {/* Stream Link */}
+          {safeTransfer.streamId && (
+            <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Related Stream</h3>
+              <Link
+                href={`/dashboard/streams/${safeTransfer.streamId}`}
+                className="inline-flex items-center gap-2 text-blue-600 hover:underline"
+              >
+                View Stream
+                <ExternalLink className="h-4 w-4" />
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Settlement Tab */}
+      {activeTab === 'settlement' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Settlement Timeline
+            </h3>
+
+            {/* Timeline */}
+            <div className="relative pl-8 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-gray-200 dark:before:bg-gray-800">
+              {/* Created */}
+              <div className="relative">
+                <div className={`absolute -left-[37px] w-[9px] h-[9px] rounded-full border-2 ${safeTransfer.createdAt
+                  ? 'bg-emerald-500 border-emerald-500'
+                  : 'bg-white border-gray-300'
+                  }`}></div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">Transfer Initiated</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {new Date(safeTransfer.createdAt).toLocaleString()}
+                  </p>
                 </div>
-              )}
-            </dl>
+              </div>
+
+              {/* Cleared (Simulated based on status) */}
+              <div className="relative">
+                <div className={`absolute -left-[37px] w-[9px] h-[9px] rounded-full border-2 ${safeTransfer.status === 'completed' || safeTransfer.status === 'processing'
+                  ? 'bg-emerald-500 border-emerald-500'
+                  : 'bg-white dark:bg-gray-950 border-gray-300 dark:border-gray-700'
+                  }`}></div>
+                <div>
+                  <h4 className={`text-sm font-medium ${safeTransfer.status === 'completed' || safeTransfer.status === 'processing'
+                    ? 'text-gray-900 dark:text-white'
+                    : 'text-gray-400 dark:text-gray-600'
+                    }`}>Cleared via Network</h4>
+                  {safeTransfer.status !== 'failed' && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Validating ledger and compliance checks.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Settled */}
+              <div className="relative">
+                <div className={`absolute -left-[37px] w-[9px] h-[9px] rounded-full border-2 ${safeTransfer.status === 'completed'
+                  ? 'bg-emerald-500 border-emerald-500'
+                  : safeTransfer.status === 'failed'
+                    ? 'bg-red-500 border-red-500'
+                    : 'bg-white dark:bg-gray-950 border-gray-300 dark:border-gray-700'
+                  }`}></div>
+                <div>
+                  <h4 className={`text-sm font-medium ${safeTransfer.status === 'completed'
+                    ? 'text-gray-900 dark:text-white'
+                    : safeTransfer.status === 'failed'
+                      ? 'text-red-700 dark:text-red-400'
+                      : 'text-gray-400 dark:text-gray-600'
+                    }`}>
+                    {safeTransfer.status === 'completed' ? 'Settled to Beneficiary' : safeTransfer.status === 'failed' ? 'Settlement Failed' : 'Pending Settlement'}
+                  </h4>
+                  {safeTransfer.completedAt && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {new Date(safeTransfer.completedAt).toLocaleString()}
+                    </p>
+                  )}
+                  {safeTransfer.failedAt && (
+                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                      {new Date(safeTransfer.failedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Fee Calculation Breakdown */}
-          {safeTransfer.x402Metadata.fee_calculation && (
-            <div className="mt-6 pt-6 border-t border-purple-200 dark:border-gray-700">
-              <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Fee Calculation Breakdown
-              </h4>
-              <dl className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
-                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Gross Amount</dt>
-                  <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
-                    ${safeTransfer.x402Metadata.fee_calculation.grossAmount?.toFixed(4)}
+          {isX402 && safeTransfer.x402Metadata && (
+            <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Net Settlement Breakdown</h3>
+              <dl className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <dt className="text-gray-500 dark:text-gray-400 text-sm">Gross Amount</dt>
+                  <dd className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
+                    ${safeTransfer.x402Metadata.fee_calculation?.grossAmount?.toFixed(4) || safeTransfer.amount.toFixed(4)}
                   </dd>
                 </div>
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
-                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Fee Amount</dt>
-                  <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
-                    ${safeTransfer.x402Metadata.fee_calculation.feeAmount?.toFixed(4)}
+                <div>
+                  <dt className="text-gray-500 dark:text-gray-400 text-sm">Total Fees</dt>
+                  <dd className="mt-1 text-2xl font-bold text-red-600 dark:text-red-400">
+                    -${safeTransfer.x402Metadata.fee_calculation?.feeAmount?.toFixed(4) || (safeTransfer.fees?.amount || 0).toFixed(4)}
                   </dd>
                 </div>
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
-                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Net Amount</dt>
-                  <dd className="font-mono text-sm text-purple-900 dark:text-white mt-1">
-                    ${safeTransfer.x402Metadata.fee_calculation.netAmount?.toFixed(4)}
-                  </dd>
-                </div>
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3">
-                  <dt className="text-purple-600 dark:text-gray-400 text-sm">Fee Type</dt>
-                  <dd className="text-sm text-purple-900 dark:text-white capitalize mt-1">
-                    {safeTransfer.x402Metadata.fee_calculation.feeType}
+                <div>
+                  <dt className="text-gray-500 dark:text-gray-400 text-sm">Net Settled</dt>
+                  <dd className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                    ${safeTransfer.x402Metadata.fee_calculation?.netAmount?.toFixed(4) || (safeTransfer.amount - (safeTransfer.fees?.amount || 0)).toFixed(4)}
                   </dd>
                 </div>
               </dl>
@@ -496,48 +593,20 @@ export default function TransferDetailPage() {
         </div>
       )}
 
-      {/* Cross-Border Details */}
-      {(safeTransfer.destinationAmount || safeTransfer.fxRate) && (
-        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Cross-Border Details
-          </h3>
-          <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {safeTransfer.destinationAmount && (
-              <div>
-                <dt className="text-gray-500 dark:text-gray-400 text-sm">Destination Amount</dt>
-                <dd className="font-mono text-gray-900 dark:text-white">
-                  {safeTransfer.destinationAmount.toFixed(2)} {safeTransfer.destinationCurrency}
-                </dd>
-              </div>
-            )}
-            {safeTransfer.fxRate && (
-              <div>
-                <dt className="text-gray-500 dark:text-gray-400 text-sm">Exchange Rate</dt>
-                <dd className="font-mono text-gray-900 dark:text-white">
-                  {safeTransfer.fxRate.toFixed(4)}
-                </dd>
-              </div>
-            )}
-          </dl>
-        </div>
-      )}
-
-      {/* Stream Link */}
-      {safeTransfer.streamId && (
-        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Related Stream</h3>
-          <Link
-            href={`/dashboard/streams/${safeTransfer.streamId}`}
-            className="inline-flex items-center gap-2 text-blue-600 hover:underline"
-          >
-            View Stream
-            <ExternalLink className="h-4 w-4" />
-          </Link>
-        </div>
+      {/* Refund Modal */}
+      {showRefundModal && safeTransfer && (
+        <RefundModal
+          transfer={safeTransfer as Transfer}
+          onClose={() => setShowRefundModal(false)}
+          onSuccess={async () => {
+            setShowRefundModal(false);
+            queryClient.invalidateQueries({ queryKey: ['transfer', transferId] });
+            router.push('/dashboard/refunds');
+          }}
+        />
       )}
     </div>
   );
 }
+
 

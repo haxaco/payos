@@ -63,7 +63,7 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
     const acpData = {
         volume: acpAnalytics?.summary?.totalRevenue || 0,
         transactions: acpAnalytics?.summary?.transactionCount || 0,
-        successRate: acpAnalytics?.summary?.transactionCount > 0 ? 97.8 : 0,
+        successRate: (acpAnalytics?.summary?.transactionCount || 0) > 0 ? 97.8 : 0,
         trend: 0,
     };
 

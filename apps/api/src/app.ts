@@ -56,6 +56,9 @@ import contextRouter from './routes/context.js';
 import x402FacilitatorRouter from './routes/x402-facilitator.js';
 import capabilitiesRouter from './routes/capabilities.js';
 import simulationsRouter from './routes/simulations.js';
+import circleWebhooksRouter from './routes/circle-webhooks.js';
+import stripeWebhooksRouter from './routes/stripe-webhooks.js';
+import x402BridgeRouter from './routes/x402-bridge.js';
 
 const app = new Hono();
 
@@ -173,6 +176,14 @@ app.route('/v1/api-keys', apiKeysRouter);
 // Auth routes (public - no auth middleware)
 app.route('/v1/auth', authRouter);
 
+// Circle webhook receiver (public - verifies Circle signatures internally)
+// Story 40.5: Circle Webhook Handler Implementation
+app.route('/webhooks/circle', circleWebhooksRouter);
+
+// Stripe webhook receiver (public - verifies Stripe signatures internally)
+// Story 40.12: Stripe Test Mode Setup
+app.route('/webhooks/stripe', stripeWebhooksRouter);
+
 // ============================================
 // API v1 ROUTES (auth required)
 // ============================================
@@ -224,6 +235,7 @@ v1.route('/reconciliation', reconciliationRouter);
 v1.route('/settlement-windows', settlementWindowsRouter);
 v1.route('/treasury', treasuryRouter);
 v1.route('/x402/facilitator', x402FacilitatorRouter); // Sandbox facilitator (Story 36.8)
+v1.route('/x402/bridge', x402BridgeRouter); // x402 → Circle bridge (Story 40.10)
 v1.route('/capabilities', capabilitiesRouter); // Tool discovery (Story 36.9)
 v1.route('/simulate', simulationsRouter); // Simulation engine (Epic 28)
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes

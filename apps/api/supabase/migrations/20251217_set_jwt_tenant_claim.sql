@@ -63,3 +63,5 @@ GRANT EXECUTE ON FUNCTION public.get_user_tenant_id() TO authenticated;
 
 
 
+
+

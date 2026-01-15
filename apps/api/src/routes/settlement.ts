@@ -11,6 +11,8 @@ import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { createSettlementService } from '../services/settlement.js';
 import { createSettlementRouter, Protocol, SettlementRail } from '../services/settlement-router.js';
+import { getCirclePayoutsClient, validatePixKey, validateClabe, PixKeyType } from '../services/circle/payouts.js';
+import { getEnvironment, isServiceEnabled } from '../config/environment.js';
 
 const app = new Hono();
 
@@ -492,6 +494,313 @@ app.get('/rails', async (c) => {
   ];
 
   return c.json({ data: rails });
+});
+
+// ============================================
+// Pix Payout Endpoints (Story 40.3)
+// ============================================
+
+const pixPayoutSchema = z.object({
+  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a valid decimal'),
+  pixKey: z.string().min(1),
+  pixKeyType: z.enum(['cpf', 'cnpj', 'email', 'phone', 'evp']),
+  recipientName: z.string().min(1).max(100),
+  taxId: z.string().optional(),
+  reference: z.string().max(100).optional(),
+  transferId: z.string().uuid().optional(),
+});
+
+/**
+ * POST /v1/settlement/pix
+ * Create a Pix payout to Brazil
+ * 
+ * Story 40.3: Circle Pix Payout Integration
+ */
+app.post('/pix', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const body = await c.req.json();
+
+    const request = pixPayoutSchema.parse(body);
+
+    // Validate Pix key format
+    if (!validatePixKey(request.pixKey, request.pixKeyType as PixKeyType)) {
+      return c.json({
+        error: 'Invalid Pix key format',
+        message: `The provided ${request.pixKeyType} key is not valid`,
+      }, 400);
+    }
+
+    // Check if Circle is enabled
+    const env = getEnvironment();
+    if (env === 'mock' || !isServiceEnabled('circle')) {
+      // Return mock response
+      const mockPayoutId = `mock-pix-${Date.now()}`;
+      return c.json({
+        data: {
+          id: mockPayoutId,
+          status: 'pending',
+          amount: {
+            amount: request.amount,
+            currency: 'BRL',
+          },
+          destination: {
+            type: 'pix',
+            pixKey: request.pixKey,
+            pixKeyType: request.pixKeyType,
+            name: request.recipientName,
+          },
+          createDate: new Date().toISOString(),
+          mock: true,
+          message: 'Mock mode - no actual payout created',
+        },
+      }, 201);
+    }
+
+    // Create real Circle payout
+    const client = getCirclePayoutsClient();
+    const payout = await client.createPixPayout({
+      amount: request.amount,
+      pixKey: request.pixKey,
+      pixKeyType: request.pixKeyType as PixKeyType,
+      recipientName: request.recipientName,
+      taxId: request.taxId,
+      metadata: {
+        tenantId: ctx.tenantId,
+        ...(request.transferId && { transferId: request.transferId }),
+        ...(request.reference && { reference: request.reference }),
+      },
+    });
+
+    // Record in database
+    const supabase = createClient();
+    await supabase.from('settlements').insert({
+      tenant_id: ctx.tenantId,
+      transfer_id: request.transferId || null,
+      rail: 'pix',
+      external_id: payout.id,
+      status: payout.status,
+      amount: parseFloat(request.amount),
+      currency: 'BRL',
+      destination_details: {
+        type: 'pix',
+        pixKey: request.pixKey,
+        pixKeyType: request.pixKeyType,
+        name: request.recipientName,
+      },
+      provider_response: payout,
+    });
+
+    return c.json({
+      data: {
+        id: payout.id,
+        status: payout.status,
+        amount: payout.amount,
+        destination: payout.destination,
+        trackingRef: payout.trackingRef,
+        createDate: payout.createDate,
+      },
+    }, 201);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({
+        error: 'Validation failed',
+        details: error.errors,
+      }, 400);
+    }
+
+    console.error('Error in POST /v1/settlement/pix:', error);
+    return c.json({
+      error: 'Failed to create Pix payout',
+      message: error.message,
+    }, 500);
+  }
+});
+
+// ============================================
+// SPEI Payout Endpoints (Story 40.4)
+// ============================================
+
+const speiPayoutSchema = z.object({
+  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a valid decimal'),
+  clabe: z.string().length(18).regex(/^\d+$/, 'CLABE must be 18 digits'),
+  recipientName: z.string().min(1).max(100),
+  taxId: z.string().optional(),
+  bankName: z.string().optional(),
+  reference: z.string().max(100).optional(),
+  transferId: z.string().uuid().optional(),
+});
+
+/**
+ * POST /v1/settlement/spei
+ * Create a SPEI payout to Mexico
+ * 
+ * Story 40.4: Circle SPEI Payout Integration
+ */
+app.post('/spei', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const body = await c.req.json();
+
+    const request = speiPayoutSchema.parse(body);
+
+    // Validate CLABE
+    if (!validateClabe(request.clabe)) {
+      return c.json({
+        error: 'Invalid CLABE number',
+        message: 'The provided CLABE has an invalid checksum',
+      }, 400);
+    }
+
+    // Check if Circle is enabled
+    const env = getEnvironment();
+    if (env === 'mock' || !isServiceEnabled('circle')) {
+      // Return mock response
+      const mockPayoutId = `mock-spei-${Date.now()}`;
+      return c.json({
+        data: {
+          id: mockPayoutId,
+          status: 'pending',
+          amount: {
+            amount: request.amount,
+            currency: 'MXN',
+          },
+          destination: {
+            type: 'spei',
+            clabe: request.clabe,
+            name: request.recipientName,
+          },
+          createDate: new Date().toISOString(),
+          mock: true,
+          message: 'Mock mode - no actual payout created',
+        },
+      }, 201);
+    }
+
+    // Create real Circle payout
+    const client = getCirclePayoutsClient();
+    const payout = await client.createSpeiPayout({
+      amount: request.amount,
+      clabe: request.clabe,
+      recipientName: request.recipientName,
+      taxId: request.taxId,
+      bankName: request.bankName,
+      metadata: {
+        tenantId: ctx.tenantId,
+        ...(request.transferId && { transferId: request.transferId }),
+        ...(request.reference && { reference: request.reference }),
+      },
+    });
+
+    // Record in database
+    const supabase = createClient();
+    await supabase.from('settlements').insert({
+      tenant_id: ctx.tenantId,
+      transfer_id: request.transferId || null,
+      rail: 'spei',
+      external_id: payout.id,
+      status: payout.status,
+      amount: parseFloat(request.amount),
+      currency: 'MXN',
+      destination_details: {
+        type: 'spei',
+        clabe: request.clabe,
+        name: request.recipientName,
+      },
+      provider_response: payout,
+    });
+
+    return c.json({
+      data: {
+        id: payout.id,
+        status: payout.status,
+        amount: payout.amount,
+        destination: payout.destination,
+        trackingRef: payout.trackingRef,
+        createDate: payout.createDate,
+      },
+    }, 201);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({
+        error: 'Validation failed',
+        details: error.errors,
+      }, 400);
+    }
+
+    console.error('Error in POST /v1/settlement/spei:', error);
+    return c.json({
+      error: 'Failed to create SPEI payout',
+      message: error.message,
+    }, 500);
+  }
+});
+
+/**
+ * GET /v1/settlement/payout/:id
+ * Get status of a Pix or SPEI payout
+ */
+app.get('/payout/:id', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const payoutId = c.req.param('id');
+
+    // Check if it's a mock payout
+    if (payoutId.startsWith('mock-')) {
+      return c.json({
+        data: {
+          id: payoutId,
+          status: 'complete',
+          mock: true,
+        },
+      });
+    }
+
+    // Check if Circle is enabled
+    const env = getEnvironment();
+    if (env === 'mock' || !isServiceEnabled('circle')) {
+      return c.json({
+        error: 'Circle is not enabled',
+        message: 'Set PAYOS_CIRCLE_ENV=sandbox to enable Circle payouts',
+      }, 503);
+    }
+
+    const client = getCirclePayoutsClient();
+    const payout = await client.getPayout(payoutId);
+
+    // Update database record
+    const supabase = createClient();
+    await supabase
+      .from('settlements')
+      .update({
+        status: payout.status,
+        provider_response: payout,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('external_id', payoutId)
+      .eq('tenant_id', ctx.tenantId);
+
+    return c.json({
+      data: {
+        id: payout.id,
+        status: payout.status,
+        amount: payout.amount,
+        destination: payout.destination,
+        trackingRef: payout.trackingRef,
+        fees: payout.fees,
+        createDate: payout.createDate,
+        updateDate: payout.updateDate,
+        ...(payout.return && { return: payout.return }),
+        ...(payout.errorCode && { errorCode: payout.errorCode }),
+      },
+    });
+  } catch (error: any) {
+    console.error('Error in GET /v1/settlement/payout/:id:', error);
+    return c.json({
+      error: 'Failed to get payout status',
+      message: error.message,
+    }, 500);
+  }
 });
 
 export default app;

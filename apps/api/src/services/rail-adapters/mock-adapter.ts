@@ -364,45 +364,99 @@ export function createWireMockAdapter(): MockRailAdapter {
 }
 
 // ============================================
+// Internal Rail Adapter
+// ============================================
+
+export function createInternalMockAdapter(): MockRailAdapter {
+  return new MockRailAdapter({
+    railId: 'internal',
+    name: 'Internal Ledger (Sandbox)',
+    avgProcessingTimeMs: 100, // Nearly instant
+    failureRate: 0.001, // 0.1% failure rate
+    feePercentage: 0,
+    fixedFee: 0,
+    supportedCurrencies: ['USD', 'USDC', 'BRL', 'MXN', 'EUR'],
+    simulateDiscrepancies: false,
+    discrepancyRate: 0,
+  });
+}
+
+// ============================================
 // Adapter Registry
 // ============================================
 
-const adapterRegistry = new Map<RailId, RailAdapter>();
+const adapterRegistry = new Map<string, RailAdapter>();
 
-export function getAdapter(railId: RailId): RailAdapter {
-  if (!adapterRegistry.has(railId)) {
+/**
+ * Normalize rail ID to canonical form
+ * Handles both hyphen (database) and underscore (code) formats
+ */
+function normalizeRailId(railId: string): RailId {
+  const normalized = railId.toLowerCase();
+  
+  // Map various formats to canonical IDs
+  switch (normalized) {
+    case 'circle_usdc':
+    case 'circle-usdc':
+      return 'circle_usdc';
+    case 'base_chain':
+    case 'base-chain':
+    case 'base-usdc':
+      return 'base_chain';
+    case 'pix':
+      return 'pix';
+    case 'spei':
+      return 'spei';
+    case 'wire':
+      return 'wire';
+    case 'internal':
+      return 'internal';
+    default:
+      // Return as-is and let getAdapter handle the error
+      return normalized as RailId;
+  }
+}
+
+export function getAdapter(railId: RailId | string): RailAdapter {
+  const normalizedId = normalizeRailId(railId);
+  
+  if (!adapterRegistry.has(normalizedId)) {
     // Auto-initialize mock adapters in sandbox mode
-    switch (railId) {
+    switch (normalizedId) {
       case 'circle_usdc':
-        adapterRegistry.set(railId, createCircleMockAdapter());
+        adapterRegistry.set(normalizedId, createCircleMockAdapter());
         break;
       case 'base_chain':
-        adapterRegistry.set(railId, createBaseMockAdapter());
+        adapterRegistry.set(normalizedId, createBaseMockAdapter());
         break;
       case 'pix':
-        adapterRegistry.set(railId, createPixMockAdapter());
+        adapterRegistry.set(normalizedId, createPixMockAdapter());
         break;
       case 'spei':
-        adapterRegistry.set(railId, createSpeiMockAdapter());
+        adapterRegistry.set(normalizedId, createSpeiMockAdapter());
         break;
       case 'wire':
-        adapterRegistry.set(railId, createWireMockAdapter());
+        adapterRegistry.set(normalizedId, createWireMockAdapter());
+        break;
+      case 'internal':
+        adapterRegistry.set(normalizedId, createInternalMockAdapter());
         break;
       default:
         throw new Error(`Unknown rail: ${railId}`);
     }
   }
   
-  return adapterRegistry.get(railId)!;
+  return adapterRegistry.get(normalizedId)!;
 }
 
 export function registerAdapter(railId: RailId, adapter: RailAdapter): void {
-  adapterRegistry.set(railId, adapter);
+  const normalizedId = normalizeRailId(railId);
+  adapterRegistry.set(normalizedId, adapter);
 }
 
 export function getAllAdapters(): RailAdapter[] {
   // Ensure all mock adapters are initialized
-  const railIds: RailId[] = ['circle_usdc', 'base_chain', 'pix', 'spei', 'wire'];
+  const railIds: RailId[] = ['circle_usdc', 'base_chain', 'pix', 'spei', 'wire', 'internal'];
   for (const railId of railIds) {
     getAdapter(railId);
   }

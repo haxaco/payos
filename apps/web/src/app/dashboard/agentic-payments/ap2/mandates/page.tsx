@@ -29,6 +29,7 @@ import {
 } from "@payos/ui";
 import { MandateStatusBadge } from "@/components/ap2/mandate-status-badge";
 import { MandateStatus } from "@payos/api-client";
+import { MandateActionsMenu } from "@/components/ap2/mandate-actions-menu";
 
 export default function MandatesPage() {
     const api = useApiClient();
@@ -121,8 +122,8 @@ export default function MandatesPage() {
                                 />
                             </div>
                             {(startDate || endDate) && (
-                                <Button 
-                                    variant="outline" 
+                                <Button
+                                    variant="outline"
                                     onClick={() => {
                                         setStartDate("");
                                         setEndDate("");
@@ -148,18 +149,19 @@ export default function MandatesPage() {
                                     <TableHead>Remaining</TableHead>
                                     <TableHead>Status</TableHead>
                                     <TableHead className="text-right">Created</TableHead>
+                                    <TableHead className="w-[80px]"></TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="h-24 text-center">
+                                        <TableCell colSpan={9} className="h-24 text-center">
                                             Loading mandates...
                                         </TableCell>
                                     </TableRow>
                                 ) : mandates?.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="h-24 text-center">
+                                        <TableCell colSpan={9} className="h-24 text-center">
                                             No mandates found.
                                         </TableCell>
                                     </TableRow>
@@ -181,6 +183,11 @@ export default function MandatesPage() {
                                             </TableCell>
                                             <TableCell className="text-right text-muted-foreground">
                                                 {formatDate(mandate.createdAt)}
+                                            </TableCell>
+                                            <TableCell onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex justify-end">
+                                                    <MandateActionsMenu mandate={mandate} />
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))

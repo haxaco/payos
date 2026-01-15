@@ -150,3 +150,5 @@ accounts.get('/', async (c) => {
 
 **Note:** The debug logging will help us identify exactly why the 404 is occurring. Once we see the log output, we can apply the permanent fix.
 
+
+

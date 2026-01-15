@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useApiClient } from '@/lib/api-client';
+import { formatCurrency } from '@payos/ui';
 import {
   X,
   ArrowRight,
@@ -12,10 +13,13 @@ import {
   Building2,
   User,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   Loader2,
+  Eye,
 } from 'lucide-react';
 import type { Account } from '@payos/api-client';
+import { useSimulation } from '@/hooks/use-simulation';
 
 interface NewPaymentModalProps {
   isOpen: boolean;
@@ -35,20 +39,20 @@ export function NewPaymentModal({
   defaultFromAccountId,
 }: NewPaymentModalProps) {
   const api = useApiClient();
-  
+
   // Form state
   const [paymentType, setPaymentType] = useState<PaymentType>(defaultType);
   const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || '');
   const [toAccountId, setToAccountId] = useState('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  
+
   // Stream-specific state
   const [flowRatePerMonth, setFlowRatePerMonth] = useState('');
   const [streamDuration, setStreamDuration] = useState<'ongoing' | 'fixed'>('ongoing');
   const [durationMonths, setDurationMonths] = useState('1');
   const [fundingAmount, setFundingAmount] = useState('');
-  
+
   // UI state
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,6 +63,9 @@ export function NewPaymentModal({
   const [searchTo, setSearchTo] = useState('');
   const [showFromDropdown, setShowFromDropdown] = useState(false);
   const [showToDropdown, setShowToDropdown] = useState(false);
+
+  // Simulation hook
+  const { simulate, simulation, isSimulating, reset: resetSimulation } = useSimulation();
 
   // Fetch accounts
   useEffect(() => {
@@ -96,17 +103,17 @@ export function NewPaymentModal({
 
   // Filter accounts for dropdowns
   const filteredFromAccounts = useMemo(() => {
-    return accounts.filter(a => 
+    return accounts.filter(a =>
       a.name.toLowerCase().includes(searchFrom.toLowerCase()) ||
       a.email?.toLowerCase().includes(searchFrom.toLowerCase())
     );
   }, [accounts, searchFrom]);
 
   const filteredToAccounts = useMemo(() => {
-    return accounts.filter(a => 
+    return accounts.filter(a =>
       a.id !== fromAccountId &&
       (a.name.toLowerCase().includes(searchTo.toLowerCase()) ||
-       a.email?.toLowerCase().includes(searchTo.toLowerCase()))
+        a.email?.toLowerCase().includes(searchTo.toLowerCase()))
     );
   }, [accounts, searchTo, fromAccountId]);
 
@@ -143,10 +150,74 @@ export function NewPaymentModal({
     return `${days} days`;
   }, [fundingAmount, flowRatePerSecond]);
 
-  // Handle submit
+  // Auto-simulate on form changes (debounced)
+  useEffect(() => {
+    // Transfer simulation
+    if (paymentType === 'transfer') {
+      if (!fromAccountId || !toAccountId || !amount || parseFloat(amount) <= 0) {
+        resetSimulation();
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        simulate({
+          action: 'transfer',
+          payload: {
+            from_account_id: fromAccountId,
+            to_account_id: toAccountId,
+            amount: amount,
+            currency: fromAccount?.currency || 'USDC',
+            target_currency: toAccount?.currency,
+            description: description || undefined,
+          },
+        });
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+
+    // Stream simulation
+    if (paymentType === 'stream') {
+      if (!fromAccountId || !toAccountId || !flowRatePerMonth || parseFloat(flowRatePerMonth) <= 0) {
+        resetSimulation();
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        // Convert flow rate per month to rate per second
+        const monthlyRate = parseFloat(flowRatePerMonth);
+        const ratePerSecond = (monthlyRate / (30 * 24 * 60 * 60)).toString();
+
+        // Calculate duration if funding amount is provided
+        let durationSeconds: number | undefined;
+        if (fundingAmount && parseFloat(fundingAmount) > 0) {
+          const funding = parseFloat(fundingAmount);
+          durationSeconds = Math.floor(funding / parseFloat(ratePerSecond));
+        }
+
+        simulate({
+          action: 'stream',
+          payload: {
+            from_account_id: fromAccountId,
+            to_account_id: toAccountId,
+            rate_per_second: ratePerSecond,
+            currency: fromAccount?.currency || 'USDC',
+            duration_seconds: durationSeconds,
+            description: description || undefined,
+          },
+        });
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+
+    resetSimulation();
+  }, [paymentType, fromAccountId, toAccountId, amount, flowRatePerMonth, fundingAmount, fromAccount?.currency, description]);
+
+  // Handle submit (direct, no preview)
   const handleSubmit = async () => {
     if (!api) return;
-    
+
     setError(null);
     setSubmitting(true);
 
@@ -167,7 +238,7 @@ export function NewPaymentModal({
           description: description || undefined,
         });
       }
-      
+
       setSuccess(true);
       setTimeout(() => {
         onSuccess?.();
@@ -183,7 +254,7 @@ export function NewPaymentModal({
   // Validation
   const isValid = useMemo(() => {
     if (!fromAccountId || !toAccountId) return false;
-    
+
     if (paymentType === 'transfer') {
       const amt = parseFloat(amount);
       return amt > 0 && amt <= (fromAccount?.balanceAvailable || 0);
@@ -212,27 +283,25 @@ export function NewPaymentModal({
               <X className="h-5 w-5 text-gray-500" />
             </button>
           </div>
-          
+
           {/* Payment Type Toggle */}
           <div className="mt-4 flex bg-gray-100 dark:bg-gray-900 rounded-xl p-1">
             <button
               onClick={() => setPaymentType('transfer')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
-                paymentType === 'transfer'
-                  ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${paymentType === 'transfer'
+                ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
             >
               <DollarSign className="h-4 w-4" />
               One-time Transfer
             </button>
             <button
               onClick={() => setPaymentType('stream')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
-                paymentType === 'stream'
-                  ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${paymentType === 'stream'
+                ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
             >
               <Zap className="h-4 w-4" />
               Money Stream
@@ -250,7 +319,7 @@ export function NewPaymentModal({
               {paymentType === 'transfer' ? 'Transfer Created!' : 'Stream Started!'}
             </h3>
             <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {paymentType === 'transfer' 
+              {paymentType === 'transfer'
                 ? 'Your transfer is being processed.'
                 : 'Money is now streaming to the recipient.'}
             </p>
@@ -279,9 +348,8 @@ export function NewPaymentModal({
                   >
                     {fromAccount ? (
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          fromAccount.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
-                        }`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${fromAccount.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
+                          }`}>
                           {fromAccount.type === 'business' ? (
                             <Building2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                           ) : (
@@ -302,7 +370,7 @@ export function NewPaymentModal({
                       </div>
                     )}
                   </div>
-                  
+
                   {showFromDropdown && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg z-10 max-h-60 overflow-y-auto">
                       <div className="p-2 border-b border-gray-200 dark:border-gray-800">
@@ -325,9 +393,8 @@ export function NewPaymentModal({
                           }}
                           className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                         >
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                            account.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
-                          }`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${account.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
+                            }`}>
                             {account.type === 'business' ? (
                               <Building2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                             ) : (
@@ -364,9 +431,8 @@ export function NewPaymentModal({
                   >
                     {toAccount ? (
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          toAccount.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
-                        }`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${toAccount.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
+                          }`}>
                           {toAccount.type === 'business' ? (
                             <Building2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                           ) : (
@@ -385,7 +451,7 @@ export function NewPaymentModal({
                       </div>
                     )}
                   </div>
-                  
+
                   {showToDropdown && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg z-10 max-h-60 overflow-y-auto">
                       <div className="p-2 border-b border-gray-200 dark:border-gray-800">
@@ -408,9 +474,8 @@ export function NewPaymentModal({
                           }}
                           className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                         >
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                            account.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
-                          }`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${account.type === 'business' ? 'bg-purple-100 dark:bg-purple-950' : 'bg-blue-100 dark:bg-blue-950'
+                            }`}>
                             {account.type === 'business' ? (
                               <Building2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                             ) : (
@@ -470,7 +535,7 @@ export function NewPaymentModal({
                       />
                       <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">/month</span>
                     </div>
-                    
+
                     {/* Real-time calculations */}
                     {flowRatePerSecond > 0 && (
                       <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950 rounded-xl">
@@ -502,7 +567,7 @@ export function NewPaymentModal({
                       />
                       <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">USDC</span>
                     </div>
-                    
+
                     {minimumFunding > 0 && (
                       <div className="mt-2 flex items-center justify-between text-sm">
                         <span className="text-gray-500">Minimum required:</span>
@@ -511,7 +576,7 @@ export function NewPaymentModal({
                         </span>
                       </div>
                     )}
-                    
+
                     {parseFloat(fundingAmount) > 0 && (
                       <div className="mt-2 flex items-center justify-between text-sm">
                         <span className="text-gray-500 flex items-center gap-1">
@@ -538,36 +603,153 @@ export function NewPaymentModal({
                   className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
+              {/* Inline Simulation Preview */}
+              {paymentType === 'transfer' && simulation && (
+                <div className="mt-4 space-y-3">
+                  {/* Errors */}
+                  {simulation.errors && simulation.errors.length > 0 && (
+                    <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg p-3">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 text-sm">
+                          {simulation.errors.map((error: any, idx: number) => (
+                            <div key={idx} className="text-red-700 dark:text-red-400">{error.message}</div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Warnings */}
+                  {simulation.warnings && simulation.warnings.length > 0 && (
+                    <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-lg p-3">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 text-sm text-yellow-700 dark:text-yellow-400">
+                          {simulation.warnings.map((warning: any, idx: number) => (
+                            <div key={idx}>{warning.message}</div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Success Preview */}
+                  {simulation.can_execute && simulation.preview && (
+                    <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg p-3">
+                      {paymentType === 'transfer' ? (
+                        <div className="space-y-2">
+                          {/* FX Details */}
+                          {simulation.preview.fx_quote && (
+                            <div className="flex items-center justify-between text-sm bg-blue-100 dark:bg-blue-900/30 p-2 rounded">
+                              <span className="text-blue-900 dark:text-blue-200 font-medium">Exchange Rate</span>
+                              <span className="font-mono text-blue-800 dark:text-blue-300">
+                                1 {fromAccount?.currency} = {simulation.preview.fx_quote.rate} {toAccount?.currency}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="flex items-start justify-between gap-3 text-sm">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                              <span className="text-blue-900 dark:text-blue-200 font-medium">
+                                Fee: ${parseFloat(simulation.preview.fees?.total || '0').toFixed(2)}
+                              </span>
+                            </div>
+                            {simulation.preview.timing && (
+                              <div className="flex items-center gap-1 text-blue-700 dark:text-blue-400">
+                                <Clock className="h-3 w-3" />
+                                <span className="text-xs">
+                                  {simulation.preview.timing.estimated_duration_seconds < 60
+                                    ? `${simulation.preview.timing.estimated_duration_seconds}s`
+                                    : `${Math.round(simulation.preview.timing.estimated_duration_seconds / 60)}m`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Final Receive Amount */}
+                          {simulation.preview.fx_quote && (
+                            <div className="flex justify-between items-center text-sm pt-2 border-t border-blue-200 dark:border-blue-800">
+                              <span className="text-blue-900 dark:text-blue-200">Recipient Gets</span>
+                              <span className="font-bold text-blue-900 dark:text-blue-100 font-mono">
+                                {formatCurrency(simulation.preview.fx_quote.to_amount, toAccount?.currency || 'USD')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
+                            <CheckCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            <span className="font-medium">Stream Cost Projection</span>
+                          </div>
+                          {simulation.preview.cost_projection && (
+                            <div className="grid grid-cols-2 gap-2 pl-6 text-xs text-blue-800 dark:text-blue-300">
+                              <div>Daily: ${parseFloat(simulation.preview.cost_projection.per_day || '0').toFixed(2)}</div>
+                              <div>Monthly: ${parseFloat(simulation.preview.cost_projection.per_month || '0').toFixed(2)}</div>
+                              {simulation.preview.runway && (
+                                <div className="col-span-2">
+                                  Runway: {simulation.preview.runway.estimated_days
+                                    ? `${simulation.preview.runway.estimated_days} days`
+                                    : 'Unlimited'}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer */}
             <div className="p-6 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
-              <button
-                onClick={handleSubmit}
-                disabled={!isValid || submitting}
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:dark:bg-gray-700 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Processing...
-                  </>
-                ) : paymentType === 'transfer' ? (
-                  <>
-                    <DollarSign className="h-5 w-5" />
-                    Send ${amount || '0'} USDC
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-5 w-5" />
-                    Start Stream
-                  </>
-                )}
-              </button>
+              {paymentType === 'transfer' ? (
+                <button
+                  onClick={handleSubmit}
+                  disabled={!isValid || submitting || simulation?.can_execute === false}
+                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:dark:bg-gray-700 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <DollarSign className="h-5 w-5" />
+                      Send ${amount || '0'}
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={!isValid || submitting || simulation?.can_execute === false}
+                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:dark:bg-gray-700 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-5 w-5" />
+                      Start Stream
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </>
         )}
       </div>
+
     </div>
   );
 }

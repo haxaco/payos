@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getCircleService, USDC_CONTRACTS, EURC_CONTRACTS } from '../services/circle-mock.js';
+import { getWalletVerificationService } from '../services/wallet/index.js';
 
 const app = new Hono();
 
@@ -1055,6 +1056,154 @@ app.delete('/:id', async (c) => {
 
   } catch (error) {
     console.error('Error in DELETE /v1/wallets/:id:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// ============================================
+// BYOW Endpoints (Story 40.11)
+// ============================================
+
+/**
+ * POST /v1/wallets/external/challenge
+ * Generate a verification challenge for BYOW
+ */
+app.post('/external/challenge', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { walletAddress } = body;
+
+    if (!walletAddress) {
+      return c.json({ error: 'walletAddress is required' }, 400);
+    }
+
+    const verificationService = getWalletVerificationService();
+    const challenge = verificationService.generateChallenge(walletAddress);
+
+    return c.json({ data: challenge });
+  } catch (error) {
+    console.error('Error in POST /v1/wallets/external/challenge:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * POST /v1/wallets/:id/sync
+ * Sync external wallet balance from blockchain
+ */
+app.post('/:id/sync', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const walletId = c.req.param('id');
+    const supabase = createClient();
+
+    // Fetch wallet
+    const { data: wallet, error: fetchError } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('id', walletId)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (fetchError || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+
+    if (!wallet.wallet_address) {
+      return c.json({ error: 'Wallet does not have an on-chain address' }, 400);
+    }
+
+    // Sync balance from chain
+    const verificationService = getWalletVerificationService();
+    
+    // Get wallet info and balance
+    const [walletInfo, tokenBalance] = await Promise.all([
+      verificationService.getWalletInfo(wallet.wallet_address),
+      verificationService.syncBalance(wallet.wallet_address, wallet.token_contract),
+    ]);
+
+    // Calculate formatted balance
+    const formattedBalance = parseFloat(tokenBalance.balance) / Math.pow(10, tokenBalance.decimals);
+
+    // Update wallet in database
+    const { data: updatedWallet, error: updateError } = await supabase
+      .from('wallets')
+      .update({
+        balance: formattedBalance,
+        last_synced_at: new Date().toISOString(),
+        sync_data: {
+          raw_balance: tokenBalance.balance,
+          decimals: tokenBalance.decimals,
+          native_balance: walletInfo.balance,
+          nonce: walletInfo.nonce,
+          is_contract: walletInfo.isContract,
+          chain: walletInfo.chain,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', walletId)
+      .eq('tenant_id', ctx.tenantId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Error updating wallet after sync:', updateError);
+      return c.json({ error: 'Failed to update wallet' }, 500);
+    }
+
+    return c.json({
+      message: 'Wallet synced successfully',
+      data: {
+        id: walletId,
+        address: wallet.wallet_address,
+        balance: formattedBalance,
+        currency: wallet.currency,
+        chain: walletInfo.chain,
+        nativeBalance: walletInfo.balance,
+        isContract: walletInfo.isContract,
+        syncedAt: updatedWallet.last_synced_at,
+      },
+    });
+  } catch (error) {
+    console.error('Error in POST /v1/wallets/:id/sync:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * GET /v1/wallets/external/info
+ * Get info about an external wallet address (no auth required for lookup)
+ */
+app.get('/external/info', async (c) => {
+  try {
+    const address = c.req.query('address');
+
+    if (!address) {
+      return c.json({ error: 'address query parameter is required' }, 400);
+    }
+
+    const verificationService = getWalletVerificationService();
+    const walletInfo = await verificationService.getWalletInfo(address);
+
+    // Also get USDC balance on Base Sepolia
+    const usdcContract = USDC_CONTRACTS.BASE_SEPOLIA;
+    const usdcBalance = await verificationService.syncBalance(address, usdcContract);
+    const formattedUsdcBalance = parseFloat(usdcBalance.balance) / Math.pow(10, usdcBalance.decimals);
+
+    return c.json({
+      data: {
+        address: walletInfo.address,
+        chain: walletInfo.chain,
+        nativeBalance: walletInfo.balance,
+        nativeBalanceFormatted: (parseFloat(walletInfo.balance) / 1e18).toFixed(6) + ' ETH',
+        usdcBalance: usdcBalance.balance,
+        usdcBalanceFormatted: formattedUsdcBalance.toFixed(2) + ' USDC',
+        isContract: walletInfo.isContract,
+        nonce: walletInfo.nonce,
+      },
+    });
+  } catch (error) {
+    console.error('Error in GET /v1/wallets/external/info:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

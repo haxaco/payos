@@ -5,7 +5,14 @@
  * Each rail (Circle, Pix, SPEI, etc.) implements this interface.
  */
 
-export type RailId = 'circle_usdc' | 'base_chain' | 'pix' | 'spei' | 'wire' | 'internal';
+// Rail IDs - support both underscore (code) and hyphen (database) formats
+export type RailId = 
+  | 'circle_usdc' | 'circle-usdc'    // Circle USDC
+  | 'base_chain' | 'base-chain' | 'base-usdc'  // Base L2
+  | 'pix'                            // Brazil Pix
+  | 'spei'                           // Mexico SPEI
+  | 'wire'                           // International wire
+  | 'internal';                      // Internal ledger
 
 export type SettlementStatus = 
   | 'pending'      // Submitted, waiting for confirmation

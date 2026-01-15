@@ -23,7 +23,11 @@ export class PayOSError extends Error {
   }
 
   static fromResponse(
-    response: { error: string; code?: string; details?: unknown }, 
+    response: { 
+      error: string | { message?: string; code?: string; details?: unknown; [key: string]: unknown }; 
+      code?: string; 
+      details?: unknown 
+    }, 
     status: number,
     headers?: Headers
   ) {
@@ -40,7 +44,19 @@ export class PayOSError extends Error {
       }
     }
 
-    return new PayOSError(response.error, status, response.code, response.details, retryAfter);
+    // Handle structured error response (Epic 30 format)
+    // { success: false, error: { code, message, details, ... } }
+    if (typeof response.error === 'object' && response.error !== null) {
+      const errorObj = response.error;
+      const message = errorObj.message || 'Unknown error';
+      const code = errorObj.code || response.code;
+      const details = errorObj.details || response.details;
+      return new PayOSError(message, status, code, details, retryAfter);
+    }
+
+    // Handle simple error response (legacy format)
+    // { error: "message", code: "CODE" }
+    return new PayOSError(response.error || 'Unknown error', status, response.code, response.details, retryAfter);
   }
 
   /**

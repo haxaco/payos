@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import {
@@ -16,7 +17,6 @@ import {
   X,
   ChevronDown,
   ExternalLink,
-  Copy,
   CheckCircle,
   Bot,
   User,
@@ -27,13 +27,16 @@ import type { Transfer, TransferStatus, TransferType } from '@payos/api-client';
 import { InitiatedByBadgeCompact } from '@/components/transactions/initiated-by-badge';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { TransactionsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
-import { RefundModal } from '@/components/transfers/refund-modal';
 import { ExportModal } from '@/components/transfers/export-modal';
+import { NewPaymentModal } from '@/components/modals/new-payment-modal';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { ProtocolBadge } from '@/components/agentic-payments/protocol-badge';
+import { useTransferNotifications } from '@/hooks/use-transfer-notifications';
+import { useRealtime } from '@/providers/realtime-provider';
 
 export default function TransfersPage() {
+  const router = useRouter();
   const api = useApiClient();
   const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const queryClient = useQueryClient();
@@ -44,9 +47,10 @@ export default function TransfersPage() {
   const [initiatedByFilter, setInitiatedByFilter] = useState<string>('all');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null);
-  const [refundTransfer, setRefundTransfer] = useState<Transfer | null>(null);
-  const [copied, setCopied] = useState(false);
+
+  const [showNewTransferModal, setShowNewTransferModal] = useState(false);
+
+  const { isConnected } = useRealtime();
 
   // Fetch total count for pagination
   const { data: countData } = useQuery({
@@ -86,15 +90,19 @@ export default function TransfersPage() {
       });
     },
     enabled: !!api && isConfigured,
-    staleTime: 30 * 1000,
+    staleTime: 5000, // Reduced stale time for live feel
+    refetchInterval: 5000, // Poll every 5 seconds
   });
 
+  // Enable notifications for status changes
   const rawData = (transfersData as any)?.data;
   const transfers = Array.isArray(rawData)
     ? rawData
     : (Array.isArray((rawData as any)?.data)
       ? (rawData as any).data
       : []);
+
+  useTransferNotifications(transfers);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -161,12 +169,6 @@ export default function TransfersPage() {
     URL.revokeObjectURL(url);
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   if (isAuthLoading) {
     return (
       <div className="p-8 max-w-[1600px] mx-auto">
@@ -212,6 +214,13 @@ export default function TransfersPage() {
           <p className="text-gray-600 dark:text-gray-400">View and manage all transfers</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Live Indicator */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-gray-950 rounded-full border border-gray-200 dark:border-gray-800 shadow-sm mr-2">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+              {isConnected ? 'Live Updates' : 'Connecting...'}
+            </span>
+          </div>
           {/* Export Dropdown */}
           <div className="relative">
             <button
@@ -253,7 +262,10 @@ export default function TransfersPage() {
               </div>
             )}
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+          <button
+            onClick={() => setShowNewTransferModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
             <Plus className="h-4 w-4" />
             New Transfer
           </button>
@@ -356,15 +368,11 @@ export default function TransfersPage() {
               {filteredTransfers.map((transfer: any) => (
                 <tr
                   key={transfer.id}
-                  onClick={() => setSelectedTransfer(transfer)}
+                  onClick={() => router.push(`/dashboard/transfers/${transfer.id}`)}
                   className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer"
                 >
                   <td className="px-6 py-4">
-                    <Link
-                      href={`/dashboard/transfers/${transfer.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-2 hover:opacity-80"
-                    >
+                    <div className="flex items-center gap-2">
                       {transfer.type === 'x402' ? (
                         <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 text-xs font-medium">
                           <Zap className="h-3 w-3" />
@@ -381,7 +389,7 @@ export default function TransfersPage() {
                           <span className="text-sm text-gray-900 dark:text-white capitalize">{transfer.type.replace('_', ' ')}</span>
                         </>
                       )}
-                    </Link>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm">
@@ -433,200 +441,22 @@ export default function TransfersPage() {
         />
       )}
 
-      {/* Transfer Detail Modal */}
-      {selectedTransfer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-950 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Transfer Details</h2>
-              <button
-                onClick={() => setSelectedTransfer(null)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-              >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* Status Banner */}
-              <div className={`p-4 rounded-xl ${selectedTransfer.status === 'completed' ? 'bg-emerald-50 dark:bg-emerald-950' :
-                selectedTransfer.status === 'failed' ? 'bg-red-50 dark:bg-red-950' :
-                  'bg-yellow-50 dark:bg-yellow-950'
-                }`}>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className={`h-5 w-5 ${selectedTransfer.status === 'completed' ? 'text-emerald-600' :
-                    selectedTransfer.status === 'failed' ? 'text-red-600' :
-                      'text-yellow-600'
-                    }`} />
-                  <span className="font-medium capitalize">{selectedTransfer.status}</span>
-                </div>
-              </div>
-
-              {/* Amount */}
-              <div className="text-center py-4">
-                <div className="text-4xl font-bold text-gray-900 dark:text-white">
-                  ${selectedTransfer.amount.toLocaleString()}
-                </div>
-                <div className="text-gray-500 dark:text-gray-400 mt-1">
-                  {selectedTransfer.currency}
-                </div>
-              </div>
-
-              {/* Details */}
-              <dl className="space-y-4">
-                <div className="flex justify-between">
-                  <dt className="text-gray-500 dark:text-gray-400">Transfer ID</dt>
-                  <dd className="flex items-center gap-2">
-                    <code className="text-sm font-mono text-gray-900 dark:text-white">
-                      {selectedTransfer.id.slice(0, 8)}...
-                    </code>
-                    {/* Show protocol badge in detail if available */}
-                    {(selectedTransfer as any).protocolMetadata?.protocol && (
-                      <ProtocolBadge protocol={(selectedTransfer as any).protocolMetadata.protocol} />
-                    )}
-                    <button
-                      onClick={() => copyToClipboard(selectedTransfer.id)}
-                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-                    >
-                      {copied ? (
-                        <CheckCircle className="h-4 w-4 text-emerald-500" />
-                      ) : (
-                        <Copy className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500 dark:text-gray-400">Type</dt>
-                  <dd className="capitalize text-gray-900 dark:text-white">
-                    {selectedTransfer.type.replace('_', ' ')}
-                  </dd>
-                </div>
-                {/* NEW: Initiated By in detail modal */}
-                <div className="flex justify-between items-center">
-                  <dt className="text-gray-500 dark:text-gray-400">Initiated By</dt>
-                  <dd>
-                    {selectedTransfer.initiatedBy ? (
-                      selectedTransfer.initiatedBy.type === 'agent' ? (
-                        <Link
-                          href={`/dashboard/agents/${selectedTransfer.initiatedBy.id}`}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 text-xs font-medium hover:bg-purple-200 dark:hover:bg-purple-900 transition-colors"
-                        >
-                          <Bot className="w-3 h-3" />
-                          <span>{selectedTransfer.initiatedBy.name}</span>
-                        </Link>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-medium">
-                          <User className="w-3 h-3" />
-                          Manual
-                        </span>
-                      )
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-medium">
-                        <User className="w-3 h-3" />
-                        Manual
-                      </span>
-                    )}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500 dark:text-gray-400">From</dt>
-                  <dd>
-                    {selectedTransfer.from?.accountId ? (
-                      <Link
-                        href={`/dashboard/accounts/${selectedTransfer.from.accountId}`}
-                        className="text-blue-600 hover:underline flex items-center gap-1"
-                      >
-                        {selectedTransfer.from.accountName}
-                        <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    ) : (
-                      <span className="text-gray-900 dark:text-white">External</span>
-                    )}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-gray-500 dark:text-gray-400">To</dt>
-                  <dd>
-                    {selectedTransfer.to?.accountId ? (
-                      <Link
-                        href={`/dashboard/accounts/${selectedTransfer.to.accountId}`}
-                        className="text-blue-600 hover:underline flex items-center gap-1"
-                      >
-                        {selectedTransfer.to.accountName}
-                        <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    ) : (
-                      <span className="text-gray-900 dark:text-white">External</span>
-                    )}
-                  </dd>
-                </div>
-                {selectedTransfer.feeAmount > 0 && (
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500 dark:text-gray-400">Fee</dt>
-                    <dd className="text-gray-900 dark:text-white">
-                      ${selectedTransfer.feeAmount.toLocaleString()} {selectedTransfer.currency}
-                    </dd>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <dt className="text-gray-500 dark:text-gray-400">Created</dt>
-                  <dd className="text-gray-900 dark:text-white">
-                    {new Date(selectedTransfer.createdAt).toLocaleString()}
-                  </dd>
-                </div>
-                {selectedTransfer.completedAt && (
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500 dark:text-gray-400">Completed</dt>
-                    <dd className="text-gray-900 dark:text-white">
-                      {new Date(selectedTransfer.completedAt).toLocaleString()}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-
-              {/* Actions */}
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
-                {selectedTransfer.status === 'completed' && (
-                  <button
-                    onClick={() => {
-                      setRefundTransfer(selectedTransfer);
-                      setSelectedTransfer(null);
-                    }}
-                    className="w-full px-4 py-2 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900 text-amber-700 dark:text-amber-300 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    <ArrowLeftRight className="h-4 w-4" />
-                    Issue Refund
-                  </button>
-                )}
-                {selectedTransfer.status === 'pending' && (
-                  <button className="w-full px-4 py-2 bg-red-100 hover:bg-red-200 dark:bg-red-950 dark:hover:bg-red-900 text-red-700 dark:text-red-300 rounded-lg transition-colors">
-                    Cancel Transfer
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Refund Modal */}
-      {refundTransfer && (
-        <RefundModal
-          transfer={refundTransfer}
-          onClose={() => setRefundTransfer(null)}
-          onSuccess={async () => {
-            setRefundTransfer(null);
-            // Invalidate transfers queries to refresh data
-            queryClient.invalidateQueries({ queryKey: ['transfers'] });
-          }}
-        />
-      )}
-
       {/* Export Modal */}
       {showExportModal && (
         <ExportModal onClose={() => setShowExportModal(false)} />
       )}
+
+      {/* New Transfer Modal */}
+      <NewPaymentModal
+        isOpen={showNewTransferModal}
+        onClose={() => setShowNewTransferModal(false)}
+        onSuccess={async () => {
+          setShowNewTransferModal(false);
+          // Invalidate transfers queries to refresh data
+          queryClient.invalidateQueries({ queryKey: ['transfers'] });
+        }}
+        defaultType="transfer"
+      />
     </div>
   );
 }

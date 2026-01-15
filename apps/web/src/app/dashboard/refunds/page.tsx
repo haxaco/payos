@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import {
   ArrowLeft,
@@ -11,14 +11,16 @@ import {
   CheckCircle,
   XCircle,
   ExternalLink,
+  Plus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Input, cn } from '@payos/ui';
 import { formatCurrency } from '@payos/ui';
-import type { Refund } from '@payos/api-client';
+import type { Refund, Transfer } from '@payos/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
+import { RefundModal } from '@/components/transfers/refund-modal';
 
 const REASON_LABELS: Record<string, string> = {
   customer_request: 'Customer Request',
@@ -30,9 +32,13 @@ const REASON_LABELS: Record<string, string> = {
 
 export default function RefundsPage() {
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showNewRefundModal, setShowNewRefundModal] = useState(false);
+  const [showTransferSelector, setShowTransferSelector] = useState(false);
+  const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null);
 
   // Fetch total count
   const { data: countData } = useQuery({
@@ -64,6 +70,23 @@ export default function RefundsPage() {
     enabled: !!api && isConfigured,
     staleTime: 30 * 1000,
   });
+
+  // Fetch completed transfers for refund selection (MUST be before any conditional returns!)
+  const { data: transfersData } = useQuery({
+    queryKey: ['transfers', 'completed'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.transfers.list({ status: 'completed', limit: 100 });
+    },
+    enabled: !!api && isConfigured && showTransferSelector,
+    staleTime: 30 * 1000,
+  });
+
+  const completedTransfers = Array.isArray((transfersData as any)?.data?.data)
+    ? (transfersData as any).data.data
+    : Array.isArray((transfersData as any)?.data)
+    ? (transfersData as any).data
+    : [];
 
   const rawData = (refundsData as any)?.data;
   const refunds = Array.isArray(rawData)
@@ -125,6 +148,13 @@ export default function RefundsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Refunds</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Track and manage issued refunds</p>
         </div>
+        <button
+          onClick={() => setShowTransferSelector(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+        >
+          <Plus className="h-5 w-5" />
+          New Refund
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -293,6 +323,71 @@ export default function RefundsPage() {
         <PaginationControls
           pagination={pagination}
           className="mt-6"
+        />
+      )}
+
+      {/* Transfer Selector Modal */}
+      {showTransferSelector && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-950 rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Select Transfer to Refund</h2>
+                <button
+                  onClick={() => setShowTransferSelector(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+                >
+                  <XCircle className="h-5 w-5 text-gray-500" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {completedTransfers.length === 0 ? (
+                <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  No completed transfers available for refund
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {completedTransfers.map((transfer: Transfer) => (
+                    <button
+                      key={transfer.id}
+                      onClick={() => {
+                        setSelectedTransfer(transfer);
+                        setShowTransferSelector(false);
+                      }}
+                      className="w-full p-4 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors text-left"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {formatCurrency(parseFloat(transfer.amount?.toString() || '0'), transfer.currency)}
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {new Date(transfer.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
+                          ID: {transfer.id.slice(0, 8)}...
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Refund Modal */}
+      {selectedTransfer && (
+        <RefundModal
+          transfer={selectedTransfer}
+          onClose={() => setSelectedTransfer(null)}
+          onSuccess={async () => {
+            setSelectedTransfer(null);
+            queryClient.invalidateQueries({ queryKey: ['refunds'] });
+          }}
         />
       )}
     </div>

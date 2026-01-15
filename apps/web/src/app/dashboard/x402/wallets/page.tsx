@@ -12,7 +12,7 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function WalletsPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, authToken } = useApiConfig();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -103,7 +103,7 @@ export default function WalletsPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            'Authorization': `Bearer ${authToken}`
           },
           body: JSON.stringify({
             ownerAccountId: formData.accountId,

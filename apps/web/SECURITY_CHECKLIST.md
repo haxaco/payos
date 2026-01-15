@@ -233,3 +233,5 @@ If you detect active exploitation:
 
 **Next Action**: Check for updates daily until patched
 
+
+

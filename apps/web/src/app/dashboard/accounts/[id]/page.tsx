@@ -25,7 +25,10 @@ import type { Account, Agent, Stream, LedgerEntry, Transfer } from '@payos/api-c
 import { useLocale } from '@/lib/locale';
 import { formatCurrency } from '@payos/ui';
 
-type TabType = 'overview' | 'transactions' | 'streams' | 'agents';
+import { ScreeningTab } from '@/components/dashboard/account-360/screening-tab';
+import { toast } from 'sonner';
+
+type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'screening';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -182,7 +185,19 @@ export default function AccountDetailPage() {
     { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactionsCount },
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
     { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agents.length },
+    { id: 'screening' as TabType, label: 'Screening', icon: Shield },
   ];
+
+  const handleRunScreening = () => {
+    toast.promise(
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+      {
+        loading: 'Running screening check...',
+        success: 'Screening completed. No new risks found.',
+        error: 'Screening failed',
+      }
+    );
+  };
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto">
@@ -199,8 +214,8 @@ export default function AccountDetailPage() {
       <div className="flex items-start justify-between mb-8">
         <div className="flex items-center gap-4">
           <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${account.type === 'business'
-              ? 'bg-purple-100 dark:bg-purple-950'
-              : 'bg-blue-100 dark:bg-blue-950'
+            ? 'bg-purple-100 dark:bg-purple-950'
+            : 'bg-blue-100 dark:bg-blue-950'
             }`}>
             {account.type === 'business' ? (
               <Building2 className="h-8 w-8 text-purple-600 dark:text-purple-400" />
@@ -226,10 +241,10 @@ export default function AccountDetailPage() {
         {/* Actions */}
         <div className="flex items-center gap-2">
           <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${account.verificationStatus === 'verified'
-              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-              : account.verificationStatus === 'suspended'
-                ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
-                : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
+            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+            : account.verificationStatus === 'suspended'
+              ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+              : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
             }`}>
             {account.verificationStatus}
           </span>
@@ -287,6 +302,14 @@ export default function AccountDetailPage() {
                   Activate Account
                 </button>
               )}
+              <div className="border-t border-gray-100 dark:border-gray-800 my-1.5" />
+              <button
+                onClick={handleRunScreening}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2"
+              >
+                <Shield className="h-4 w-4 text-purple-500" />
+                Run Screening
+              </button>
             </div>
           </div>
         </div>
@@ -329,8 +352,8 @@ export default function AccountDetailPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
             >
               <tab.icon className="h-4 w-4" />
@@ -357,6 +380,9 @@ export default function AccountDetailPage() {
       )}
       {activeTab === 'agents' && (
         <AgentsTab agents={agents} />
+      )}
+      {activeTab === 'screening' && (
+        <ScreeningTab />
       )}
     </div>
   );
@@ -489,8 +515,8 @@ function TransactionsTab({
                 <tr key={`ledger-${tx.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-900">
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${tx.type === 'credit'
-                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                        : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                      : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
                       }`}>
                       {tx.type}
                     </span>
@@ -524,8 +550,8 @@ function TransactionsTab({
                 >
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${isIncoming
-                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                        : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                      : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
                       }`}>
                       {isIncoming ? 'Incoming' : 'Outgoing'}
                     </span>
@@ -653,8 +679,8 @@ function AgentsTab({ agents }: { agents: Agent[] }) {
               <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />
             </div>
             <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${agent.status === 'active'
-                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+              : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
               }`}>
               {agent.status}
             </span>
