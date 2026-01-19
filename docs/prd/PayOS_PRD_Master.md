@@ -319,7 +319,7 @@ PayOS is now the **only settlement infrastructure** supporting all three agentic
 | 41 | On-Ramp Integrations 💳 | 3.5 | P1 | 📋 Pending | 110 | 0/29 | [View](./epics/epic-41-onramp-integrations.md) |
 | 42 | Frontend Dashboard Integration 🖥️ | 3.5 | P0 | ✅ Complete | 65 | 19/19 | [View](./epics/epic-42-frontend-dashboard.md) |
 | 43a | Cards Infrastructure & VDC 💳 | 3.5 | P1 | 📋 Planning | 47 | 0/12 | [View](./epics/epic-43-cards-infrastructure.md) |
-| **43** | **UCP (Universal Commerce Protocol) 🌐** | **3.5** | **P0** | **🚧 In Progress** | **55** | **7/14** | **[View](./epics/epic-43-ucp-integration.md)** |
+| **43** | **UCP (Universal Commerce Protocol) 🌐** | **3.5** | **P0** | **✅ Complete** | **55** | **14/14** | **[View](./epics/epic-43-ucp-integration.md)** |
 | 44 | Observability & Monitoring 📊 | 5 | P2 | 📋 Placeholder | ~40 | 0/TBD | [View](./epics/epic-44-observability.md) |
 | 45 | Webhook Infrastructure 🔔 | 5 | P2 | 📋 Placeholder | ~35 | 0/TBD | [View](./epics/epic-45-webhook-infrastructure.md) |
 | 46 | Multi-Region & DR 🌍 | 5 | P3 | 📋 Placeholder | ~60 | 0/TBD | [View](./epics/epic-46-disaster-recovery.md) |

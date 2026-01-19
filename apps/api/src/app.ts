@@ -62,6 +62,7 @@ import x402BridgeRouter from './routes/x402-bridge.js';
 import wellKnownUcpRouter from './routes/well-known-ucp.js';
 import ucpSchemasRouter from './routes/ucp-schemas.js';
 import ucpRouter from './routes/ucp.js';
+import ucpWebhooksRouter from './routes/webhooks/ucp.js';
 
 const app = new Hono();
 
@@ -194,6 +195,10 @@ app.route('/.well-known/ucp', wellKnownUcpRouter);
 // UCP Schemas (public - for capability discovery)
 // Story 43.2: UCP Capability Definitions
 app.route('/ucp', ucpSchemasRouter);
+
+// UCP Webhooks (public - verifies signatures internally)
+// Story 43.11: UCP Webhook Handler
+app.route('/webhooks/ucp', ucpWebhooksRouter);
 
 // ============================================
 // API v1 ROUTES (auth required)

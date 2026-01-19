@@ -18,10 +18,11 @@ import {
   validateRecipient,
   getCorridors,
   executeSettlement,
+  executeSettlementWithMandate,
   getSettlement,
   listSettlements,
 } from '../services/ucp/index.js';
-import type { UCPTokenRequest, UCPSettleRequest } from '../services/ucp/types.js';
+import type { UCPTokenRequest, UCPSettleRequest, UCPMandateSettleRequest } from '../services/ucp/types.js';
 
 const router = new Hono();
 
@@ -66,6 +67,16 @@ const quoteRequestSchema = z.object({
   corridor: z.enum(['pix', 'spei']),
   amount: z.number().positive().max(100000),
   currency: z.enum(['USD', 'USDC']),
+});
+
+// Story 43.6: AP2 Mandate Settlement Schema
+const mandateSettleRequestSchema = z.object({
+  mandate_token: z.string().min(1),
+  amount: z.number().positive().max(100000),
+  currency: z.enum(['USD', 'USDC']),
+  corridor: z.enum(['pix', 'spei']),
+  recipient: recipientSchema,
+  idempotency_key: z.string().max(64).optional(),
 });
 
 // =============================================================================
@@ -164,6 +175,87 @@ router.post('/settle', async (c) => {
           },
         },
         409
+      );
+    }
+    throw new ValidationError(error.message);
+  }
+});
+
+/**
+ * POST /v1/ucp/settle/mandate
+ *
+ * Complete settlement using an AP2 payment mandate.
+ * Supports autonomous agent purchases via dev.ucp.shopping.ap2_mandate extension.
+ *
+ * @see Story 43.6: AP2 Mandate Support in Handler
+ */
+router.post('/settle/mandate', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+  const body = await c.req.json();
+
+  // Validate request
+  const parsed = mandateSettleRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError('Invalid mandate settlement request', parsed.error.flatten());
+  }
+
+  const request: UCPMandateSettleRequest = {
+    mandate_token: parsed.data.mandate_token,
+    amount: parsed.data.amount,
+    currency: parsed.data.currency,
+    corridor: parsed.data.corridor,
+    recipient: parsed.data.recipient as any,
+    idempotency_key: parsed.data.idempotency_key,
+  };
+
+  try {
+    const settlement = await executeSettlementWithMandate(ctx.tenantId, request, supabase);
+    return c.json(settlement);
+  } catch (error: any) {
+    // Handle specific error cases
+    if (error.message.includes('Mandate not found')) {
+      return c.json(
+        {
+          error: {
+            code: 'MANDATE_NOT_FOUND',
+            message: 'AP2 mandate not found',
+          },
+        },
+        404
+      );
+    }
+    if (error.message.includes('Mandate invalid')) {
+      return c.json(
+        {
+          error: {
+            code: 'MANDATE_INVALID',
+            message: error.message,
+          },
+        },
+        400
+      );
+    }
+    if (error.message.includes('exceeds mandate limit')) {
+      return c.json(
+        {
+          error: {
+            code: 'AMOUNT_EXCEEDED',
+            message: error.message,
+          },
+        },
+        400
+      );
+    }
+    if (error.message.includes('does not match mandate currency')) {
+      return c.json(
+        {
+          error: {
+            code: 'CURRENCY_MISMATCH',
+            message: error.message,
+          },
+        },
+        400
       );
     }
     throw new ValidationError(error.message);
