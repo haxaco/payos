@@ -6,6 +6,7 @@ export default defineConfig({
     x402: 'src/protocols/x402/index.ts',
     ap2: 'src/protocols/ap2/index.ts',
     acp: 'src/protocols/acp/index.ts',
+    ucp: 'src/protocols/ucp/index.ts',
     langchain: 'src/langchain/index.ts',
     vercel: 'src/vercel/index.ts',
   },

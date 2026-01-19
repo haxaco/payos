@@ -59,6 +59,9 @@ import simulationsRouter from './routes/simulations.js';
 import circleWebhooksRouter from './routes/circle-webhooks.js';
 import stripeWebhooksRouter from './routes/stripe-webhooks.js';
 import x402BridgeRouter from './routes/x402-bridge.js';
+import wellKnownUcpRouter from './routes/well-known-ucp.js';
+import ucpSchemasRouter from './routes/ucp-schemas.js';
+import ucpRouter from './routes/ucp.js';
 
 const app = new Hono();
 
@@ -184,6 +187,14 @@ app.route('/webhooks/circle', circleWebhooksRouter);
 // Story 40.12: Stripe Test Mode Setup
 app.route('/webhooks/stripe', stripeWebhooksRouter);
 
+// UCP Well-Known endpoint (public - for protocol discovery)
+// Story 43.1: UCP Profile Endpoint
+app.route('/.well-known/ucp', wellKnownUcpRouter);
+
+// UCP Schemas (public - for capability discovery)
+// Story 43.2: UCP Capability Definitions
+app.route('/ucp', ucpSchemasRouter);
+
 // ============================================
 // API v1 ROUTES (auth required)
 // ============================================
@@ -238,6 +249,7 @@ v1.route('/x402/facilitator', x402FacilitatorRouter); // Sandbox facilitator (St
 v1.route('/x402/bridge', x402BridgeRouter); // x402 → Circle bridge (Story 40.10)
 v1.route('/capabilities', capabilitiesRouter); // Tool discovery (Story 36.9)
 v1.route('/simulate', simulationsRouter); // Simulation engine (Epic 28)
+v1.route('/ucp', ucpRouter); // UCP settlement endpoints (Epic 43)
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods

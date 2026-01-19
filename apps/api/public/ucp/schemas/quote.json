@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/quote.json",
+  "title": "PayOS UCP Quote Request",
+  "description": "Schema for requesting FX quotes for LATAM settlement corridors",
+  "type": "object",
+  "required": ["corridor", "amount", "currency"],
+  "properties": {
+    "corridor": {
+      "type": "string",
+      "enum": ["pix", "spei"],
+      "description": "Settlement corridor (pix for Brazil, spei for Mexico)"
+    },
+    "amount": {
+      "type": "number",
+      "minimum": 0.01,
+      "maximum": 1000000,
+      "description": "Amount to settle in source currency"
+    },
+    "currency": {
+      "type": "string",
+      "enum": ["USD", "USDC"],
+      "description": "Source currency"
+    }
+  },
+  "examples": [
+    {
+      "corridor": "pix",
+      "amount": 100.00,
+      "currency": "USDC"
+    },
+    {
+      "corridor": "spei",
+      "amount": 500.00,
+      "currency": "USD"
+    }
+  ]
+}

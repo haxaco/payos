@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/handler_config.json",
+  "title": "PayOS LATAM Settlement Handler Configuration",
+  "description": "Configuration schema for merchants to use PayOS as UCP payment handler",
+  "type": "object",
+  "required": ["api_key"],
+  "properties": {
+    "api_key": {
+      "type": "string",
+      "description": "PayOS API key (pk_test_* or pk_live_*)",
+      "pattern": "^pk_(test|live)_[a-zA-Z0-9]{32}$"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["sandbox", "production"],
+      "default": "sandbox",
+      "description": "PayOS environment"
+    },
+    "default_corridor": {
+      "type": "string",
+      "enum": ["pix", "spei"],
+      "description": "Default settlement corridor if not specified per transaction"
+    },
+    "webhook_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL to receive settlement status webhooks"
+    },
+    "webhook_secret": {
+      "type": "string",
+      "description": "Secret for webhook signature verification"
+    },
+    "settlement_preferences": {
+      "type": "object",
+      "properties": {
+        "auto_settle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically settle on checkout completion"
+        },
+        "min_amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum settlement amount"
+        },
+        "max_amount": {
+          "type": "number",
+          "maximum": 1000000,
+          "description": "Maximum settlement amount per transaction"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Custom metadata for the merchant"
+    }
+  },
+  "examples": [
+    {
+      "api_key": "pk_test_abc123def456ghi789jkl012mno345pq",
+      "environment": "sandbox",
+      "default_corridor": "pix",
+      "webhook_url": "https://merchant.example.com/webhooks/payos",
+      "settlement_preferences": {
+        "auto_settle": true,
+        "min_amount": 10,
+        "max_amount": 50000
+      }
+    }
+  ]
+}

@@ -32,16 +32,18 @@ import { PayOSX402Client } from './protocols/x402/client';
 import { PayOSX402Provider } from './protocols/x402/provider';
 import { AP2Client } from './protocols/ap2/client';
 import { ACPClient } from './protocols/acp/client';
+import { UCPClient } from './protocols/ucp/client';
 import { CapabilitiesClient } from './capabilities';
 import { LangChainTools } from './langchain/tools';
 
 /**
  * Main PayOS SDK class
- * 
+ *
  * Provides unified access to all PayOS settlement protocols:
  * - x402 (micropayments)
  * - AP2 (agent mandates)
  * - ACP (checkout)
+ * - UCP (universal commerce - Google+Shopify)
  * - Direct settlement API
  * - Capabilities discovery for AI agents
  */
@@ -73,6 +75,12 @@ export class PayOS extends PayOSClient {
    * Stripe/OpenAI's checkout-based payment protocol
    */
   public readonly acp: ACPClient;
+
+  /**
+   * UCP (Universal Commerce Protocol) client
+   * Google+Shopify's agentic commerce protocol
+   */
+  public readonly ucp: UCPClient;
 
   /**
    * Capabilities client for tool discovery
@@ -111,9 +119,10 @@ export class PayOS extends PayOSClient {
       },
     };
 
-    // Initialize AP2 and ACP clients
+    // Initialize protocol clients
     this.ap2 = new AP2Client(this);
     this.acp = new ACPClient(this);
+    this.ucp = new UCPClient(this);
 
     // Initialize capabilities client
     this.capabilities = new CapabilitiesClient(this);

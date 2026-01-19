@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/spei_instrument.json",
+  "title": "PayOS SPEI Payment Instrument",
+  "description": "Schema for SPEI recipient details (Mexico)",
+  "type": "object",
+  "required": ["type", "clabe", "name"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "spei",
+      "description": "Instrument type"
+    },
+    "clabe": {
+      "type": "string",
+      "pattern": "^[0-9]{18}$",
+      "description": "CLABE (Clave Bancaria Estandarizada) - 18 digit Mexican bank account number"
+    },
+    "name": {
+      "type": "string",
+      "description": "Recipient name",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "rfc": {
+      "type": "string",
+      "pattern": "^[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}$",
+      "description": "RFC (Registro Federal de Contribuyentes) - Mexican tax ID"
+    },
+    "bank_name": {
+      "type": "string",
+      "description": "Name of the receiving bank (optional, derived from CLABE)"
+    },
+    "reference": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "Payment reference/description"
+    }
+  },
+  "examples": [
+    {
+      "type": "spei",
+      "clabe": "012345678901234567",
+      "name": "Juan Garcia",
+      "rfc": "GAJL850101ABC"
+    },
+    {
+      "type": "spei",
+      "clabe": "014027000010000008",
+      "name": "Empresa ABC SA de CV",
+      "rfc": "EAB201015QR5",
+      "reference": "Invoice #12345"
+    }
+  ]
+}

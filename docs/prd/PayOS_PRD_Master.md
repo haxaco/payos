@@ -319,19 +319,21 @@ PayOS is now the **only settlement infrastructure** supporting all three agentic
 | 41 | On-Ramp Integrations 💳 | 3.5 | P1 | 📋 Pending | 110 | 0/29 | [View](./epics/epic-41-onramp-integrations.md) |
 | 42 | Frontend Dashboard Integration 🖥️ | 3.5 | P0 | ✅ Complete | 65 | 19/19 | [View](./epics/epic-42-frontend-dashboard.md) |
 | 43a | Cards Infrastructure & VDC 💳 | 3.5 | P1 | 📋 Planning | 47 | 0/12 | [View](./epics/epic-43-cards-infrastructure.md) |
-| **43** | **UCP (Universal Commerce Protocol) 🌐** | **3.5** | **P0** | **📋 Planning** | **55** | **0/14** | **[View](./epics/epic-43-ucp-integration.md)** |
+| **43** | **UCP (Universal Commerce Protocol) 🌐** | **3.5** | **P0** | **🚧 In Progress** | **55** | **7/14** | **[View](./epics/epic-43-ucp-integration.md)** |
 | 44 | Observability & Monitoring 📊 | 5 | P2 | 📋 Placeholder | ~40 | 0/TBD | [View](./epics/epic-44-observability.md) |
 | 45 | Webhook Infrastructure 🔔 | 5 | P2 | 📋 Placeholder | ~35 | 0/TBD | [View](./epics/epic-45-webhook-infrastructure.md) |
 | 46 | Multi-Region & DR 🌍 | 5 | P3 | 📋 Placeholder | ~60 | 0/TBD | [View](./epics/epic-46-disaster-recovery.md) |
+| 47 | UCP Merchant Gateway 🏪 | 4 | P2 | 📋 Backlog | 89 | 0/22 | [View](./epics/epic-47-ucp-merchant-gateway.md) |
 
 **Summary:**
 - **Foundation Complete:** Epics 1-16 (Phase 1-2) fully implemented
 - **Epic 40 Complete:** All sandbox integrations (Circle, Stripe, x402, AP2, compliance) working
 - **Epic 42 Complete:** Frontend dashboard integration with all Epic 40 capabilities
-- **⚠️ URGENT: Epic 43 UCP** (55 pts, P0) — Google+Shopify's new protocol standard
+- **🚧 Epic 43 UCP In Progress** (55 pts, 7/14 stories) — Core P0 stories complete, P1 remaining
 - **Current Focus:** Epic 43 (UCP) + Epic 36 (SDK) — Critical path to multi-protocol positioning
 - **On-Ramp Priority:** Epic 41 enables non-crypto-native customer onboarding
-- **Total Active Points:** 364 points (Epic 43 UCP: 55 + Epic 36: 66 + Epic 41: 110 + Epic 43a Cards: 47 + backlog: 86)
+- **NEW Epic 47:** UCP Merchant Gateway (89 pts, P2) — Enable non-Shopify merchants to join UCP
+- **Total Active Points:** 453 points (Epic 43: 55 + Epic 36: 66 + Epic 41: 110 + Epic 43a: 47 + Epic 47: 89 + backlog: 86)
 - **AI-Native Infrastructure:** Epics 28-35 (158 points) planned for Phase 6
 - **Production Hardening:** Epics 44-46 (Observability, Webhooks, DR) — placeholders for scale phase
 
@@ -714,7 +716,8 @@ PayOS's Identity 3 positioning as "AI-Native Settlement OS" requires infrastruct
 ## Quick Links
 
 ### Epic Documentation
-- **[Epic 43: UCP Integration](./epics/epic-43-ucp-integration.md)** 🚨 **P0 URGENT** — Google+Shopify protocol
+- **[Epic 43: UCP Integration](./epics/epic-43-ucp-integration.md)** 🚧 **In Progress** — Google+Shopify protocol (7/14 stories)
+- [Epic 47: UCP Merchant Gateway](./epics/epic-47-ucp-merchant-gateway.md) 📋 Backlog — Non-Shopify merchant support
 - [Epic 17: Multi-Protocol Gateway](./epics/epic-17-multi-protocol.md) ✅ Complete
 - [Epic 18: Agent Wallets](./epics/epic-18-agent-wallets.md) 📋 Next
 - [Epic 27: Settlement Hardening](./epics/epic-27-settlement.md) 📋 High Priority

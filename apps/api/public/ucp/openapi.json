@@ -1,0 +1,554 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PayOS UCP Settlement API",
+    "description": "Universal Commerce Protocol (UCP) settlement endpoints for LATAM payments via Pix and SPEI",
+    "version": "2026-01-11",
+    "contact": {
+      "name": "PayOS Support",
+      "url": "https://docs.payos.com",
+      "email": "support@payos.com"
+    },
+    "license": {
+      "name": "Proprietary"
+    },
+    "x-ucp-version": "2026-01-11",
+    "x-ucp-handler": "com.payos.latam_settlement"
+  },
+  "servers": [
+    {
+      "url": "https://api.payos.com/v1/ucp",
+      "description": "Production"
+    },
+    {
+      "url": "https://api-sandbox.payos.com/v1/ucp",
+      "description": "Sandbox"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/tokens": {
+      "post": {
+        "operationId": "acquireToken",
+        "summary": "Acquire Settlement Token",
+        "description": "Acquire a settlement token for completing a UCP checkout with LATAM settlement",
+        "tags": ["Tokens"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token acquired successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/CorridorUnavailable"
+          }
+        }
+      }
+    },
+    "/settle": {
+      "post": {
+        "operationId": "settle",
+        "summary": "Complete Settlement",
+        "description": "Complete settlement using a previously acquired token",
+        "tags": ["Settlement"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settlement initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settlement"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/TokenNotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/TokenExpired"
+          }
+        }
+      }
+    },
+    "/settlements/{id}": {
+      "get": {
+        "operationId": "getSettlement",
+        "summary": "Get Settlement Status",
+        "description": "Retrieve the status of a settlement",
+        "tags": ["Settlement"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Settlement ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Settlement details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settlement"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/SettlementNotFound"
+          }
+        }
+      }
+    },
+    "/quote": {
+      "post": {
+        "operationId": "getQuote",
+        "summary": "Get Settlement Quote",
+        "description": "Get an FX quote for a settlement corridor",
+        "tags": ["Quotes"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Quote details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/corridors": {
+      "get": {
+        "operationId": "listCorridors",
+        "summary": "List Corridors",
+        "description": "List available settlement corridors",
+        "tags": ["Discovery"],
+        "responses": {
+          "200": {
+            "description": "Available corridors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "corridors": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Corridor"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "PayOS API key (Bearer pk_test_* or pk_live_*)"
+      }
+    },
+    "schemas": {
+      "TokenRequest": {
+        "type": "object",
+        "required": ["corridor", "amount", "currency", "recipient"],
+        "properties": {
+          "corridor": {
+            "type": "string",
+            "enum": ["pix", "spei"],
+            "description": "Settlement corridor"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0.01,
+            "description": "Amount in source currency"
+          },
+          "currency": {
+            "type": "string",
+            "enum": ["USD", "USDC"],
+            "description": "Source currency"
+          },
+          "recipient": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/PixRecipient" },
+              { "$ref": "#/components/schemas/SpeiRecipient" }
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Custom metadata"
+          }
+        }
+      },
+      "Token": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Settlement token"
+          },
+          "settlement_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Pre-allocated settlement ID"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/Quote"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Token expiration time (15 minutes)"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SettleRequest": {
+        "type": "object",
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Settlement token from /tokens"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      },
+      "Settlement": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "processing", "completed", "failed"]
+          },
+          "token": {
+            "type": "string"
+          },
+          "transfer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Internal PayOS transfer ID"
+          },
+          "amount": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "number" },
+              "source_currency": { "type": "string" },
+              "destination": { "type": "number" },
+              "destination_currency": { "type": "string" },
+              "fx_rate": { "type": "number" },
+              "fees": { "type": "number" }
+            }
+          },
+          "recipient": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/PixRecipient" },
+              { "$ref": "#/components/schemas/SpeiRecipient" }
+            ]
+          },
+          "corridor": {
+            "type": "string",
+            "enum": ["pix", "spei"]
+          },
+          "estimated_completion": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "failed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "failure_reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "QuoteRequest": {
+        "type": "object",
+        "required": ["corridor", "amount", "currency"],
+        "properties": {
+          "corridor": {
+            "type": "string",
+            "enum": ["pix", "spei"]
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0.01
+          },
+          "currency": {
+            "type": "string",
+            "enum": ["USD", "USDC"]
+          }
+        }
+      },
+      "Quote": {
+        "type": "object",
+        "properties": {
+          "from_amount": { "type": "number" },
+          "from_currency": { "type": "string" },
+          "to_amount": { "type": "number" },
+          "to_currency": { "type": "string" },
+          "fx_rate": { "type": "number" },
+          "fees": { "type": "number" },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Corridor": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "source_currency": { "type": "string" },
+          "destination_currency": { "type": "string" },
+          "destination_country": { "type": "string" },
+          "rail": {
+            "type": "string",
+            "enum": ["pix", "spei", "wire", "usdc"]
+          },
+          "estimated_settlement": { "type": "string" }
+        }
+      },
+      "PixRecipient": {
+        "type": "object",
+        "required": ["type", "pix_key", "pix_key_type", "name"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "pix"
+          },
+          "pix_key": {
+            "type": "string"
+          },
+          "pix_key_type": {
+            "type": "string",
+            "enum": ["cpf", "cnpj", "email", "phone", "evp"]
+          },
+          "name": {
+            "type": "string"
+          },
+          "tax_id": {
+            "type": "string"
+          }
+        }
+      },
+      "SpeiRecipient": {
+        "type": "object",
+        "required": ["type", "clabe", "name"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "spei"
+          },
+          "clabe": {
+            "type": "string",
+            "pattern": "^[0-9]{18}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rfc": {
+            "type": "string"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "details": { "type": "object" }
+        }
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "VALIDATION_ERROR",
+              "message": "Invalid request parameters",
+              "details": {
+                "amount": "Must be greater than 0"
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "UNAUTHORIZED",
+              "message": "Invalid or missing API key"
+            }
+          }
+        }
+      },
+      "TokenNotFound": {
+        "description": "Token not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "TOKEN_NOT_FOUND",
+              "message": "Settlement token not found"
+            }
+          }
+        }
+      },
+      "TokenExpired": {
+        "description": "Token expired",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "TOKEN_EXPIRED",
+              "message": "Settlement token has expired"
+            }
+          }
+        }
+      },
+      "SettlementNotFound": {
+        "description": "Settlement not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "SETTLEMENT_NOT_FOUND",
+              "message": "Settlement not found"
+            }
+          }
+        }
+      },
+      "CorridorUnavailable": {
+        "description": "Settlement corridor unavailable",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "CORRIDOR_UNAVAILABLE",
+              "message": "Settlement corridor is temporarily unavailable"
+            }
+          }
+        }
+      }
+    }
+  }
+}

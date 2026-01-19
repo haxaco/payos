@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/pix_instrument.json",
+  "title": "PayOS Pix Payment Instrument",
+  "description": "Schema for Pix recipient details (Brazil)",
+  "type": "object",
+  "required": ["type", "pix_key", "pix_key_type", "name"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "pix",
+      "description": "Instrument type"
+    },
+    "pix_key": {
+      "type": "string",
+      "description": "Pix key value",
+      "minLength": 1,
+      "maxLength": 77
+    },
+    "pix_key_type": {
+      "type": "string",
+      "enum": ["cpf", "cnpj", "email", "phone", "evp"],
+      "description": "Type of Pix key"
+    },
+    "name": {
+      "type": "string",
+      "description": "Recipient name",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "tax_id": {
+      "type": "string",
+      "description": "CPF (11 digits) or CNPJ (14 digits)",
+      "pattern": "^[0-9]{11}$|^[0-9]{14}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "pix_key_type": { "const": "cpf" } }
+      },
+      "then": {
+        "properties": {
+          "pix_key": { "pattern": "^[0-9]{11}$" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "pix_key_type": { "const": "cnpj" } }
+      },
+      "then": {
+        "properties": {
+          "pix_key": { "pattern": "^[0-9]{14}$" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "pix_key_type": { "const": "email" } }
+      },
+      "then": {
+        "properties": {
+          "pix_key": { "format": "email" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "pix_key_type": { "const": "phone" } }
+      },
+      "then": {
+        "properties": {
+          "pix_key": { "pattern": "^\\+55[0-9]{10,11}$" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "pix_key_type": { "const": "evp" } }
+      },
+      "then": {
+        "properties": {
+          "pix_key": { "format": "uuid" }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "type": "pix",
+      "pix_key": "12345678901",
+      "pix_key_type": "cpf",
+      "name": "Maria Silva",
+      "tax_id": "12345678901"
+    },
+    {
+      "type": "pix",
+      "pix_key": "maria@example.com",
+      "pix_key_type": "email",
+      "name": "Maria Silva"
+    },
+    {
+      "type": "pix",
+      "pix_key": "550a8400-e29b-41d4-a716-446655440000",
+      "pix_key_type": "evp",
+      "name": "Maria Silva"
+    }
+  ]
+}

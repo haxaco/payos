@@ -26,6 +26,11 @@
       "import": "./dist/acp.mjs",
       "require": "./dist/acp.js"
     },
+    "./ucp": {
+      "types": "./dist/ucp.d.ts",
+      "import": "./dist/ucp.mjs",
+      "require": "./dist/ucp.js"
+    },
     "./langchain": {
       "types": "./dist/langchain.d.ts",
       "import": "./dist/langchain.mjs",
@@ -57,11 +62,13 @@
     "x402",
     "ap2",
     "acp",
+    "ucp",
     "latam",
     "pix",
     "spei",
     "stablecoin",
-    "usdc"
+    "usdc",
+    "agentic-commerce"
   ],
   "dependencies": {
     "@payos/types": "workspace:*",

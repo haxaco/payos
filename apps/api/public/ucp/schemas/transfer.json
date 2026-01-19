@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/transfer.json",
+  "title": "PayOS UCP Settlement Transfer",
+  "description": "Schema for creating settlement transfers via UCP",
+  "type": "object",
+  "required": ["token"],
+  "properties": {
+    "token": {
+      "type": "string",
+      "description": "Settlement token from /v1/ucp/tokens endpoint",
+      "pattern": "^ucp_tok_[a-zA-Z0-9]{32}$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "Unique key for idempotent request handling"
+    }
+  },
+  "examples": [
+    {
+      "token": "ucp_tok_abc123def456ghi789jkl012mno345pq",
+      "idempotency_key": "checkout_12345_payment"
+    }
+  ]
+}
