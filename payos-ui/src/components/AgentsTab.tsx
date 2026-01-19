@@ -130,11 +130,26 @@ export function AgentsTab({ account }: Props) {
                           <Shield className="w-3 h-3 inline mr-1" />
                           KYA T{agent.kya_tier}
                         </span>
-                        {/* X-402 Badge */}
+                        {/* Protocol Badges */}
                         {agent.x402_enabled && (
                           <span className="px-2 py-0.5 bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 rounded text-xs font-medium">
                             <Zap className="w-3 h-3 inline mr-1" />
                             X-402
+                          </span>
+                        )}
+                        {agent.ap2_enabled && (
+                          <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                            AP2
+                          </span>
+                        )}
+                        {agent.acp_enabled && (
+                          <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded text-xs font-medium">
+                            ACP
+                          </span>
+                        )}
+                        {agent.ucp_enabled && (
+                          <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded text-xs font-medium">
+                            UCP
                           </span>
                         )}
                         {/* Status Badge */}

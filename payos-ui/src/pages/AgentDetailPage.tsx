@@ -157,7 +157,22 @@ export function AgentDetailPage() {
                 {agent.x402_enabled && (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 rounded-full text-xs font-medium">
                       <Zap className="w-3 h-3" />
-                      X-402 Enabled
+                      X-402
+                    </span>
+                  )}
+                {agent.ap2_enabled && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium">
+                      AP2
+                    </span>
+                  )}
+                {agent.acp_enabled && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-full text-xs font-medium">
+                      ACP
+                    </span>
+                  )}
+                {agent.ucp_enabled && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-full text-xs font-medium">
+                      UCP
                     </span>
                   )}
                 </div>

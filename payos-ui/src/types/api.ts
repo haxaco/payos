@@ -226,8 +226,11 @@ export interface Agent {
   active_streams_count: number;
   total_stream_outflow: number;
   
-  // X-402 Protocol
+  // Protocol Support
   x402_enabled: boolean;
+  ap2_enabled: boolean;
+  acp_enabled: boolean;
+  ucp_enabled: boolean;
   
   // Transaction statistics
   total_volume: number;
