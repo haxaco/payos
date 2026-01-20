@@ -24,6 +24,25 @@ import type {
   UCPCheckout,
   UCPCompleteCheckoutRequest,
   UCPOrder,
+  // PayOS-hosted types (Phases 2-4)
+  PayOSCheckout,
+  CreatePayOSCheckoutRequest,
+  UpdatePayOSCheckoutRequest,
+  PayOSOrder,
+  PayOSOrderStatus,
+  ListPayOSOrdersOptions,
+  ListPayOSOrdersResponse,
+  PayOSExpectation,
+  PayOSFulfillmentEvent,
+  PayOSAdjustment,
+  RegisterOAuthClientRequest,
+  RegisterOAuthClientResponse,
+  UCPLinkedAccount,
+  UCPTokenResponse,
+  UCPAuthorizationInfo,
+  UCPConsentRequest,
+  UCPConsentResponse,
+  UCPScopeInfo,
 } from './types';
 
 // Profile cache for discovered merchants
@@ -472,6 +491,326 @@ export class UCPClient {
     return {
       type: 'spei',
       ...params,
+    };
+  }
+
+  // ===========================================================================
+  // PayOS-Hosted Checkout Sessions (Phase 2)
+  // ===========================================================================
+
+  /**
+   * Create a PayOS-hosted checkout session
+   *
+   * @example
+   * ```typescript
+   * const checkout = await payos.ucp.checkouts.create({
+   *   currency: 'USD',
+   *   line_items: [
+   *     { id: 'item_1', name: 'Product', quantity: 1, unit_price: 1000, total_price: 1000, currency: 'USD' }
+   *   ],
+   *   buyer: { email: 'buyer@example.com' },
+   * });
+   * ```
+   */
+  public get checkouts() {
+    return {
+      create: async (request: CreatePayOSCheckoutRequest): Promise<PayOSCheckout> => {
+        return this.client.request<PayOSCheckout>('/v1/ucp/checkouts', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+      },
+
+      get: async (checkoutId: string): Promise<PayOSCheckout> => {
+        return this.client.request<PayOSCheckout>(`/v1/ucp/checkouts/${checkoutId}`);
+      },
+
+      update: async (checkoutId: string, request: UpdatePayOSCheckoutRequest): Promise<PayOSCheckout> => {
+        return this.client.request<PayOSCheckout>(`/v1/ucp/checkouts/${checkoutId}`, {
+          method: 'PUT',
+          body: JSON.stringify(request),
+        });
+      },
+
+      complete: async (checkoutId: string): Promise<PayOSCheckout> => {
+        return this.client.request<PayOSCheckout>(`/v1/ucp/checkouts/${checkoutId}/complete`, {
+          method: 'POST',
+        });
+      },
+
+      cancel: async (checkoutId: string): Promise<PayOSCheckout> => {
+        return this.client.request<PayOSCheckout>(`/v1/ucp/checkouts/${checkoutId}/cancel`, {
+          method: 'POST',
+        });
+      },
+
+      addPaymentInstrument: async (
+        checkoutId: string,
+        instrument: { id: string; handler: string; type: string; last4?: string; brand?: string }
+      ): Promise<PayOSCheckout> => {
+        return this.client.request<PayOSCheckout>(`/v1/ucp/checkouts/${checkoutId}/instruments`, {
+          method: 'POST',
+          body: JSON.stringify(instrument),
+        });
+      },
+    };
+  }
+
+  // ===========================================================================
+  // PayOS Orders (Phase 3)
+  // ===========================================================================
+
+  /**
+   * Manage PayOS orders
+   *
+   * @example
+   * ```typescript
+   * const order = await payos.ucp.orders.get('ord_123');
+   * const orders = await payos.ucp.orders.list({ status: 'processing' });
+   * ```
+   */
+  public get orders() {
+    return {
+      get: async (orderId: string): Promise<PayOSOrder> => {
+        return this.client.request<PayOSOrder>(`/v1/ucp/orders/${orderId}`);
+      },
+
+      list: async (options: ListPayOSOrdersOptions = {}): Promise<ListPayOSOrdersResponse> => {
+        const params = new URLSearchParams();
+        if (options.status) params.append('status', options.status);
+        if (options.limit) params.append('limit', options.limit.toString());
+        if (options.offset) params.append('offset', options.offset.toString());
+
+        const queryString = params.toString();
+        const path = queryString ? `/v1/ucp/orders?${queryString}` : '/v1/ucp/orders';
+
+        return this.client.request<ListPayOSOrdersResponse>(path);
+      },
+
+      updateStatus: async (orderId: string, status: PayOSOrderStatus): Promise<PayOSOrder> => {
+        return this.client.request<PayOSOrder>(`/v1/ucp/orders/${orderId}/status`, {
+          method: 'PUT',
+          body: JSON.stringify({ status }),
+        });
+      },
+
+      cancel: async (orderId: string, reason?: string): Promise<PayOSOrder> => {
+        return this.client.request<PayOSOrder>(`/v1/ucp/orders/${orderId}/cancel`, {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        });
+      },
+
+      addExpectation: async (
+        orderId: string,
+        expectation: Omit<PayOSExpectation, 'id'>
+      ): Promise<PayOSOrder> => {
+        return this.client.request<PayOSOrder>(`/v1/ucp/orders/${orderId}/expectations`, {
+          method: 'POST',
+          body: JSON.stringify(expectation),
+        });
+      },
+
+      updateExpectation: async (
+        orderId: string,
+        expectationId: string,
+        updates: Partial<Omit<PayOSExpectation, 'id'>>
+      ): Promise<PayOSOrder> => {
+        return this.client.request<PayOSOrder>(
+          `/v1/ucp/orders/${orderId}/expectations/${expectationId}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify(updates),
+          }
+        );
+      },
+
+      addEvent: async (
+        orderId: string,
+        event: Omit<PayOSFulfillmentEvent, 'id' | 'timestamp'>
+      ): Promise<PayOSOrder> => {
+        return this.client.request<PayOSOrder>(`/v1/ucp/orders/${orderId}/events`, {
+          method: 'POST',
+          body: JSON.stringify(event),
+        });
+      },
+
+      getEvents: async (orderId: string): Promise<{ data: PayOSFulfillmentEvent[] }> => {
+        return this.client.request<{ data: PayOSFulfillmentEvent[] }>(
+          `/v1/ucp/orders/${orderId}/events`
+        );
+      },
+
+      addAdjustment: async (
+        orderId: string,
+        adjustment: Omit<PayOSAdjustment, 'id' | 'created_at'>
+      ): Promise<PayOSOrder> => {
+        return this.client.request<PayOSOrder>(`/v1/ucp/orders/${orderId}/adjustments`, {
+          method: 'POST',
+          body: JSON.stringify(adjustment),
+        });
+      },
+    };
+  }
+
+  // ===========================================================================
+  // Identity Linking (Phase 4)
+  // ===========================================================================
+
+  /**
+   * OAuth 2.0 identity linking for AI agents/platforms
+   *
+   * @example
+   * ```typescript
+   * // Register an OAuth client
+   * const { client, client_secret } = await payos.ucp.identity.registerClient({
+   *   name: 'My AI Agent',
+   *   redirect_uris: ['https://myagent.com/callback'],
+   * });
+   *
+   * // List linked accounts
+   * const accounts = await payos.ucp.identity.listLinkedAccounts({ buyer_id: 'buyer_123' });
+   * ```
+   */
+  public get identity() {
+    return {
+      /**
+       * Register an OAuth client (platform/agent)
+       */
+      registerClient: async (request: RegisterOAuthClientRequest): Promise<RegisterOAuthClientResponse> => {
+        return this.client.request<RegisterOAuthClientResponse>('/v1/ucp/identity/clients', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+      },
+
+      /**
+       * Get authorization info for consent screen
+       */
+      getAuthorizationInfo: async (params: {
+        response_type: 'code';
+        client_id: string;
+        redirect_uri: string;
+        scope: string;
+        state: string;
+        code_challenge?: string;
+        code_challenge_method?: 'S256' | 'plain';
+      }): Promise<UCPAuthorizationInfo> => {
+        const searchParams = new URLSearchParams();
+        searchParams.append('response_type', params.response_type);
+        searchParams.append('client_id', params.client_id);
+        searchParams.append('redirect_uri', params.redirect_uri);
+        searchParams.append('scope', params.scope);
+        searchParams.append('state', params.state);
+        if (params.code_challenge) {
+          searchParams.append('code_challenge', params.code_challenge);
+        }
+        if (params.code_challenge_method) {
+          searchParams.append('code_challenge_method', params.code_challenge_method);
+        }
+
+        return this.client.request<UCPAuthorizationInfo>(
+          `/v1/ucp/identity/authorize?${searchParams.toString()}`
+        );
+      },
+
+      /**
+       * Submit consent decision (after user authenticates)
+       */
+      submitConsent: async (request: UCPConsentRequest): Promise<UCPConsentResponse> => {
+        return this.client.request<UCPConsentResponse>('/v1/ucp/identity/authorize/consent', {
+          method: 'POST',
+          body: JSON.stringify(request),
+        });
+      },
+
+      /**
+       * Exchange authorization code for tokens
+       */
+      exchangeCode: async (params: {
+        client_id: string;
+        client_secret?: string;
+        code: string;
+        redirect_uri: string;
+        code_verifier?: string;
+      }): Promise<UCPTokenResponse> => {
+        return this.client.request<UCPTokenResponse>('/v1/ucp/identity/token', {
+          method: 'POST',
+          body: JSON.stringify({
+            grant_type: 'authorization_code',
+            ...params,
+          }),
+        });
+      },
+
+      /**
+       * Refresh tokens
+       */
+      refreshTokens: async (params: {
+        client_id: string;
+        client_secret?: string;
+        refresh_token: string;
+      }): Promise<UCPTokenResponse> => {
+        return this.client.request<UCPTokenResponse>('/v1/ucp/identity/token', {
+          method: 'POST',
+          body: JSON.stringify({
+            grant_type: 'refresh_token',
+            ...params,
+          }),
+        });
+      },
+
+      /**
+       * Revoke a token
+       */
+      revokeToken: async (params: {
+        token: string;
+        token_type_hint?: 'access_token' | 'refresh_token';
+        client_id: string;
+        client_secret?: string;
+      }): Promise<{ success: boolean }> => {
+        return this.client.request<{ success: boolean }>('/v1/ucp/identity/revoke', {
+          method: 'POST',
+          body: JSON.stringify(params),
+        });
+      },
+
+      /**
+       * List linked accounts
+       */
+      listLinkedAccounts: async (params: {
+        buyer_id?: string;
+        platform_id?: string;
+        limit?: number;
+        offset?: number;
+      }): Promise<{ data: UCPLinkedAccount[]; pagination?: { limit: number; offset: number; total: number } }> => {
+        const searchParams = new URLSearchParams();
+        if (params.buyer_id) searchParams.append('buyer_id', params.buyer_id);
+        if (params.platform_id) searchParams.append('platform_id', params.platform_id);
+        if (params.limit) searchParams.append('limit', params.limit.toString());
+        if (params.offset) searchParams.append('offset', params.offset.toString());
+
+        return this.client.request<{ data: UCPLinkedAccount[]; pagination?: { limit: number; offset: number; total: number } }>(
+          `/v1/ucp/identity/linked-accounts?${searchParams.toString()}`
+        );
+      },
+
+      /**
+       * Unlink an account
+       */
+      unlinkAccount: async (accountId: string, buyerId: string): Promise<{ success: boolean }> => {
+        return this.client.request<{ success: boolean }>(
+          `/v1/ucp/identity/linked-accounts/${accountId}?buyer_id=${buyerId}`,
+          { method: 'DELETE' }
+        );
+      },
+
+      /**
+       * Get available scopes
+       */
+      getScopes: async (): Promise<{ data: UCPScopeInfo[] }> => {
+        return this.client.request<{ data: UCPScopeInfo[] }>('/v1/ucp/identity/scopes');
+      },
     };
   }
 }

@@ -269,3 +269,305 @@ export interface UCPHandlerInfo {
   supported_currencies: string[];
   token_expiry_seconds: number;
 }
+
+// =============================================================================
+// PayOS-Hosted Checkout Types (Phase 2)
+// =============================================================================
+
+/**
+ * Checkout status state machine
+ */
+export type PayOSCheckoutStatus =
+  | 'incomplete'
+  | 'requires_escalation'
+  | 'ready_for_complete'
+  | 'complete_in_progress'
+  | 'completed'
+  | 'canceled';
+
+/**
+ * PayOS-hosted checkout session
+ */
+export interface PayOSCheckout {
+  id: string;
+  tenant_id: string;
+  status: PayOSCheckoutStatus;
+  currency: string;
+  line_items: PayOSLineItem[];
+  totals: PayOSTotal[];
+  buyer?: PayOSBuyer | null;
+  shipping_address?: UCPAddress | null;
+  billing_address?: UCPAddress | null;
+  payment_config: PayOSPaymentConfig;
+  payment_instruments: PayOSPaymentInstrument[];
+  selected_instrument_id?: string | null;
+  messages: PayOSCheckoutMessage[];
+  continue_url?: string | null;
+  cancel_url?: string | null;
+  links: PayOSLink[];
+  metadata: Record<string, unknown>;
+  order_id?: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PayOSLineItem {
+  id: string;
+  name: string;
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  currency: string;
+  image_url?: string;
+  product_url?: string;
+}
+
+export interface PayOSTotal {
+  type: 'subtotal' | 'tax' | 'shipping' | 'discount' | 'total' | string;
+  amount: number;
+  label: string;
+  currency?: string;
+}
+
+export interface PayOSBuyer {
+  email?: string;
+  name?: string;
+  phone?: string;
+}
+
+export interface PayOSPaymentConfig {
+  handlers: string[];
+  default_handler?: string;
+  capture_method?: 'automatic' | 'manual';
+}
+
+export interface PayOSPaymentInstrument {
+  id: string;
+  handler: string;
+  type: string;
+  last4?: string;
+  brand?: string;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PayOSCheckoutMessage {
+  id: string;
+  type: 'error' | 'warning' | 'info';
+  code: string;
+  severity?: 'recoverable' | 'requires_buyer_input' | 'requires_buyer_review';
+  path?: string;
+  content: string;
+  content_type: 'plain' | 'markdown';
+  created_at: string;
+}
+
+export interface PayOSLink {
+  rel: string;
+  href: string;
+  title?: string;
+}
+
+export interface CreatePayOSCheckoutRequest {
+  currency: string;
+  line_items?: PayOSLineItem[];
+  totals?: PayOSTotal[];
+  buyer?: PayOSBuyer;
+  shipping_address?: UCPAddress;
+  billing_address?: UCPAddress;
+  payment_config?: Partial<PayOSPaymentConfig>;
+  continue_url?: string;
+  cancel_url?: string;
+  links?: PayOSLink[];
+  metadata?: Record<string, unknown>;
+  expires_in_hours?: number;
+}
+
+export interface UpdatePayOSCheckoutRequest {
+  line_items?: PayOSLineItem[];
+  totals?: PayOSTotal[];
+  buyer?: PayOSBuyer;
+  shipping_address?: UCPAddress | null;
+  billing_address?: UCPAddress | null;
+  selected_instrument_id?: string | null;
+  continue_url?: string;
+  cancel_url?: string;
+  metadata?: Record<string, unknown>;
+}
+
+// =============================================================================
+// PayOS Order Types (Phase 3)
+// =============================================================================
+
+export type PayOSOrderStatus =
+  | 'confirmed'
+  | 'processing'
+  | 'shipped'
+  | 'delivered'
+  | 'cancelled'
+  | 'refunded';
+
+export interface PayOSOrder {
+  id: string;
+  tenant_id: string;
+  checkout_id: string;
+  status: PayOSOrderStatus;
+  currency: string;
+  line_items: PayOSLineItem[];
+  totals: PayOSTotal[];
+  buyer?: PayOSBuyer | null;
+  shipping_address?: UCPAddress | null;
+  billing_address?: UCPAddress | null;
+  payment: PayOSOrderPayment;
+  expectations: PayOSExpectation[];
+  events: PayOSFulfillmentEvent[];
+  adjustments: PayOSAdjustment[];
+  permalink_url?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PayOSOrderPayment {
+  handler: string;
+  instrument_id?: string;
+  transaction_id?: string;
+  status: 'pending' | 'captured' | 'failed';
+  captured_at?: string;
+}
+
+export interface PayOSExpectation {
+  id: string;
+  type: string;
+  description: string;
+  estimated_date?: string;
+  tracking_url?: string;
+}
+
+export interface PayOSFulfillmentEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  description: string;
+  tracking_number?: string;
+  carrier?: string;
+}
+
+export interface PayOSAdjustment {
+  id: string;
+  type: 'refund' | 'return' | 'credit';
+  amount: number;
+  reason?: string;
+  created_at: string;
+}
+
+export interface ListPayOSOrdersOptions {
+  status?: PayOSOrderStatus;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPayOSOrdersResponse {
+  data: PayOSOrder[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+    total_pages: number;
+  };
+}
+
+// =============================================================================
+// Identity Linking Types (Phase 4)
+// =============================================================================
+
+export type UCPIdentityScope =
+  | 'profile.read'
+  | 'profile.write'
+  | 'addresses.read'
+  | 'addresses.write'
+  | 'payment_methods.read'
+  | 'payment_methods.write'
+  | 'orders.read'
+  | 'checkout.create'
+  | 'checkout.complete';
+
+export interface UCPOAuthClient {
+  id: string;
+  client_id: string;
+  name: string;
+  logo_url?: string;
+  redirect_uris: string[];
+  allowed_scopes: UCPIdentityScope[];
+  client_type: 'public' | 'confidential';
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RegisterOAuthClientRequest {
+  name: string;
+  redirect_uris: string[];
+  allowed_scopes?: UCPIdentityScope[];
+  client_type?: 'public' | 'confidential';
+  logo_url?: string;
+}
+
+export interface RegisterOAuthClientResponse {
+  client: UCPOAuthClient;
+  client_secret?: string;
+}
+
+export interface UCPLinkedAccount {
+  id: string;
+  platform_id: string;
+  platform_name: string;
+  buyer_id?: string;
+  buyer_email?: string;
+  scopes: UCPIdentityScope[];
+  linked_at: string;
+  last_used_at?: string;
+}
+
+export interface UCPTokenResponse {
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+  refresh_token: string;
+  scope: string;
+}
+
+export interface UCPAuthorizationInfo {
+  client: {
+    id: string;
+    name: string;
+    logo_url?: string;
+  };
+  requested_scopes: string[];
+  redirect_uri: string;
+  state: string;
+  code_challenge?: string;
+  code_challenge_method?: 'S256' | 'plain';
+}
+
+export interface UCPConsentRequest {
+  client_id: string;
+  redirect_uri: string;
+  scope: string;
+  state: string;
+  code_challenge?: string;
+  code_challenge_method?: 'S256' | 'plain';
+  buyer_id: string;
+  approved: boolean;
+}
+
+export interface UCPConsentResponse {
+  redirect_uri: string;
+}
+
+export interface UCPScopeInfo {
+  name: UCPIdentityScope;
+  description: string;
+}
