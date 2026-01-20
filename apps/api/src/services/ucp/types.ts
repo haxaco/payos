@@ -275,8 +275,50 @@ export interface UCPMerchantProfile {
   };
 }
 
+// =============================================================================
+// UCP Checkout Types (Phase 2)
+// =============================================================================
+
+/**
+ * Checkout Status
+ */
+export type CheckoutStatus =
+  | 'incomplete'
+  | 'requires_escalation'
+  | 'ready_for_complete'
+  | 'complete_in_progress'
+  | 'completed'
+  | 'canceled';
+
 /**
  * UCP Checkout Session
+ */
+export interface UCPCheckoutSession {
+  id: string;
+  tenant_id: string;
+  status: CheckoutStatus;
+  currency: string;
+  line_items: UCPLineItem[];
+  totals: UCPTotal[];
+  buyer?: UCPBuyer | null;
+  shipping_address?: UCPAddress | null;
+  billing_address?: UCPAddress | null;
+  payment_config: UCPPaymentConfig;
+  payment_instruments: UCPPaymentInstrument[];
+  selected_instrument_id?: string | null;
+  messages: UCPCheckoutMessage[];
+  continue_url?: string | null;
+  cancel_url?: string | null;
+  links: UCPLink[];
+  metadata: Record<string, unknown>;
+  order_id?: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Legacy UCPCheckout interface (for backward compatibility)
  */
 export interface UCPCheckout {
   id: string;
@@ -301,6 +343,101 @@ export interface UCPCheckout {
   updated_at: string;
 }
 
+/**
+ * Buyer information
+ */
+export interface UCPBuyer {
+  email?: string;
+  name?: string;
+  phone?: string;
+}
+
+/**
+ * Checkout total line
+ */
+export interface UCPTotal {
+  type: 'subtotal' | 'tax' | 'shipping' | 'discount' | 'total' | string;
+  amount: number;
+  label: string;
+}
+
+/**
+ * Payment configuration
+ */
+export interface UCPPaymentConfig {
+  handlers: string[];
+  default_handler?: string;
+  capture_method?: 'automatic' | 'manual';
+}
+
+/**
+ * Payment instrument (acquired during checkout)
+ */
+export interface UCPPaymentInstrument {
+  id: string;
+  handler: string;
+  type: string;
+  last4?: string;
+  brand?: string;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Checkout message (error, warning, info)
+ */
+export interface UCPCheckoutMessage {
+  id: string;
+  type: 'error' | 'warning' | 'info';
+  code: string;
+  severity?: 'recoverable' | 'requires_buyer_input' | 'requires_buyer_review';
+  path?: string;
+  content: string;
+  content_type: 'plain' | 'markdown';
+  created_at: string;
+}
+
+/**
+ * Link (terms, privacy, support)
+ */
+export interface UCPLink {
+  rel: string;
+  href: string;
+  title?: string;
+}
+
+/**
+ * Create checkout request
+ */
+export interface CreateCheckoutRequest {
+  currency: string;
+  line_items?: UCPLineItem[];
+  buyer?: UCPBuyer;
+  shipping_address?: UCPAddress;
+  billing_address?: UCPAddress;
+  payment_config?: Partial<UCPPaymentConfig>;
+  continue_url?: string;
+  cancel_url?: string;
+  links?: UCPLink[];
+  metadata?: Record<string, unknown>;
+  expires_in_hours?: number;
+}
+
+/**
+ * Update checkout request
+ */
+export interface UpdateCheckoutRequest {
+  line_items?: UCPLineItem[];
+  buyer?: UCPBuyer;
+  shipping_address?: UCPAddress | null;
+  billing_address?: UCPAddress | null;
+  payment_instruments?: UCPPaymentInstrument[];
+  selected_instrument_id?: string | null;
+  continue_url?: string;
+  cancel_url?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface UCPLineItem {
   id: string;
   name: string;
@@ -314,34 +451,84 @@ export interface UCPLineItem {
 }
 
 /**
+ * Order status
+ */
+export type OrderStatus =
+  | 'confirmed'
+  | 'processing'
+  | 'shipped'
+  | 'delivered'
+  | 'cancelled'
+  | 'refunded';
+
+/**
  * UCP Order (result of completed checkout)
  */
 export interface UCPOrder {
   id: string;
+  tenant_id: string;
   checkout_id: string;
-  merchant_url: string;
-  status: 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded';
+  status: OrderStatus;
+  currency: string;
   line_items: UCPLineItem[];
-  totals: {
-    subtotal: number;
-    tax: number;
-    shipping: number;
-    total: number;
-    currency: string;
-  };
-  payment: {
-    handler_id: string;
-    status: 'pending' | 'completed' | 'failed';
-    settlement_id?: string;
-  };
-  shipping?: {
-    address?: UCPAddress;
-    method?: string;
-    tracking_number?: string;
-    tracking_url?: string;
-  };
+  totals: UCPTotal[];
+  buyer?: UCPBuyer | null;
+  shipping_address?: UCPAddress | null;
+  billing_address?: UCPAddress | null;
+  payment: UCPOrderPayment;
+  expectations: UCPExpectation[];
+  events: UCPFulfillmentEvent[];
+  adjustments: UCPAdjustment[];
+  permalink_url?: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Order payment info
+ */
+export interface UCPOrderPayment {
+  handler_id: string;
+  instrument_id?: string;
+  status: 'pending' | 'completed' | 'failed';
+  settlement_id?: string;
+  amount: number;
+  currency: string;
+}
+
+/**
+ * Fulfillment expectation (delivery promise)
+ */
+export interface UCPExpectation {
+  id: string;
+  type: 'delivery' | 'pickup' | string;
+  description: string;
+  estimated_date?: string;
+  tracking_url?: string;
+}
+
+/**
+ * Fulfillment event
+ */
+export interface UCPFulfillmentEvent {
+  id: string;
+  type: 'shipped' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'returned' | string;
+  timestamp: string;
+  description: string;
+  tracking_number?: string;
+  carrier?: string;
+}
+
+/**
+ * Order adjustment (refund, return, etc.)
+ */
+export interface UCPAdjustment {
+  id: string;
+  type: 'refund' | 'return' | 'credit' | string;
+  amount: number;
+  reason?: string;
+  created_at: string;
 }
 
 export interface UCPAddress {
