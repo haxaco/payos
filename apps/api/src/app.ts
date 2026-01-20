@@ -63,6 +63,7 @@ import wellKnownUcpRouter from './routes/well-known-ucp.js';
 import ucpSchemasRouter from './routes/ucp-schemas.js';
 import ucpRouter from './routes/ucp.js';
 import ucpCheckoutRouter from './routes/ucp-checkout.js';
+import ucpOrdersRouter from './routes/ucp-orders.js';
 import ucpWebhooksRouter from './routes/webhooks/ucp.js';
 import approvalsRouter from './routes/approvals.js';
 
@@ -258,6 +259,7 @@ v1.route('/capabilities', capabilitiesRouter); // Tool discovery (Story 36.9)
 v1.route('/simulate', simulationsRouter); // Simulation engine (Epic 28)
 v1.route('/ucp', ucpRouter); // UCP settlement endpoints (Epic 43)
 v1.route('/ucp/checkouts', ucpCheckoutRouter); // UCP checkout capability (Phase 2)
+v1.route('/ucp/orders', ucpOrdersRouter); // UCP order capability (Phase 3)
 v1.route('/approvals', approvalsRouter); // Agent payment approvals (Story 18.R2)
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
