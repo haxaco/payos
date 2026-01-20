@@ -562,3 +562,194 @@ export type UCPErrorCode =
   | 'amount_exceeded'
   | 'corridor_unavailable'
   | 'recipient_invalid';
+
+// =============================================================================
+// UCP Identity Linking Types (Phase 4)
+// =============================================================================
+
+/**
+ * OAuth 2.0 Scopes for identity linking
+ */
+export type UCPIdentityScope =
+  | 'profile.read'           // Read buyer profile
+  | 'profile.write'          // Update buyer profile
+  | 'addresses.read'         // Read saved addresses
+  | 'addresses.write'        // Manage addresses
+  | 'payment_methods.read'   // Read saved payment methods
+  | 'payment_methods.write'  // Manage payment methods
+  | 'orders.read'            // Read order history
+  | 'checkout.create'        // Create checkouts on behalf of user
+  | 'checkout.complete';     // Complete checkouts on behalf of user
+
+/**
+ * Linked Account - Relationship between platform/agent and buyer
+ */
+export interface UCPLinkedAccount {
+  id: string;
+  tenant_id: string;
+  /** Platform/agent identifier (who is linking) */
+  platform_id: string;
+  /** Platform name for display */
+  platform_name: string;
+  /** PayOS buyer account ID */
+  buyer_id: string;
+  /** Buyer email for reference */
+  buyer_email?: string;
+  /** Granted scopes */
+  scopes: UCPIdentityScope[];
+  /** Current access token hash (for validation) */
+  access_token_hash: string;
+  /** Refresh token hash */
+  refresh_token_hash: string;
+  /** Access token expiration */
+  access_token_expires_at: string;
+  /** Refresh token expiration */
+  refresh_token_expires_at: string;
+  /** Whether the link is currently active */
+  is_active: boolean;
+  /** When the account was linked */
+  linked_at: string;
+  /** When last used */
+  last_used_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * OAuth 2.0 Authorization Request
+ */
+export interface UCPAuthorizationRequest {
+  /** OAuth 2.0 response type (always 'code' for authorization code flow) */
+  response_type: 'code';
+  /** Client/platform identifier */
+  client_id: string;
+  /** Redirect URI for callback */
+  redirect_uri: string;
+  /** Requested scopes (space-separated) */
+  scope: string;
+  /** CSRF protection state */
+  state: string;
+  /** PKCE code challenge */
+  code_challenge?: string;
+  /** PKCE code challenge method */
+  code_challenge_method?: 'S256' | 'plain';
+}
+
+/**
+ * OAuth 2.0 Authorization Response (success)
+ */
+export interface UCPAuthorizationResponse {
+  /** Authorization code */
+  code: string;
+  /** State from request (echoed back) */
+  state: string;
+}
+
+/**
+ * OAuth 2.0 Token Request
+ */
+export interface UCPTokenRequest {
+  /** Grant type */
+  grant_type: 'authorization_code' | 'refresh_token';
+  /** Client/platform identifier */
+  client_id: string;
+  /** Client secret (for confidential clients) */
+  client_secret?: string;
+  /** Authorization code (for authorization_code grant) */
+  code?: string;
+  /** Redirect URI (must match authorization request) */
+  redirect_uri?: string;
+  /** PKCE code verifier */
+  code_verifier?: string;
+  /** Refresh token (for refresh_token grant) */
+  refresh_token?: string;
+}
+
+/**
+ * OAuth 2.0 Token Response
+ */
+export interface UCPTokenResponse {
+  /** Access token */
+  access_token: string;
+  /** Token type (always 'Bearer') */
+  token_type: 'Bearer';
+  /** Expires in seconds */
+  expires_in: number;
+  /** Refresh token */
+  refresh_token: string;
+  /** Granted scopes (space-separated) */
+  scope: string;
+}
+
+/**
+ * OAuth 2.0 Revoke Request
+ */
+export interface UCPRevokeRequest {
+  /** Token to revoke */
+  token: string;
+  /** Token type hint */
+  token_type_hint?: 'access_token' | 'refresh_token';
+  /** Client identifier */
+  client_id: string;
+  /** Client secret */
+  client_secret?: string;
+}
+
+/**
+ * Authorization Code (temporary, stored during OAuth flow)
+ */
+export interface UCPAuthorizationCode {
+  code: string;
+  tenant_id: string;
+  client_id: string;
+  buyer_id: string;
+  redirect_uri: string;
+  scopes: UCPIdentityScope[];
+  code_challenge?: string;
+  code_challenge_method?: 'S256' | 'plain';
+  state: string;
+  expires_at: string;
+  created_at: string;
+  used: boolean;
+}
+
+/**
+ * Registered OAuth Client/Platform
+ */
+export interface UCPOAuthClient {
+  id: string;
+  tenant_id: string;
+  /** Client identifier (public) */
+  client_id: string;
+  /** Client secret hash (for confidential clients) */
+  client_secret_hash?: string;
+  /** Client name for display */
+  name: string;
+  /** Client logo URL */
+  logo_url?: string;
+  /** Allowed redirect URIs */
+  redirect_uris: string[];
+  /** Allowed scopes */
+  allowed_scopes: UCPIdentityScope[];
+  /** Client type */
+  client_type: 'public' | 'confidential';
+  /** Whether client is active */
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Identity Error Codes
+ */
+export type UCPIdentityErrorCode =
+  | 'invalid_request'
+  | 'unauthorized_client'
+  | 'access_denied'
+  | 'unsupported_response_type'
+  | 'invalid_scope'
+  | 'server_error'
+  | 'temporarily_unavailable'
+  | 'invalid_client'
+  | 'invalid_grant'
+  | 'unsupported_grant_type';

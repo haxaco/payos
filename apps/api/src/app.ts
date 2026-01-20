@@ -65,6 +65,7 @@ import ucpRouter from './routes/ucp.js';
 import ucpCheckoutRouter from './routes/ucp-checkout.js';
 import ucpOrdersRouter from './routes/ucp-orders.js';
 import ucpWebhooksRouter from './routes/webhooks/ucp.js';
+import ucpIdentityRouter from './routes/ucp-identity.js';
 import approvalsRouter from './routes/approvals.js';
 
 const app = new Hono();
@@ -202,6 +203,10 @@ app.route('/ucp', ucpSchemasRouter);
 // UCP Webhooks (public - verifies signatures internally)
 // Story 43.11: UCP Webhook Handler
 app.route('/webhooks/ucp', ucpWebhooksRouter);
+
+// UCP Identity (OAuth 2.0 - mixed auth, some endpoints public)
+// Phase 4: Identity Linking
+app.route('/v1/ucp/identity', ucpIdentityRouter);
 
 // ============================================
 // API v1 ROUTES (auth required)
