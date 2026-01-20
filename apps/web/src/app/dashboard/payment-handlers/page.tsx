@@ -1,0 +1,620 @@
+'use client';
+
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plug, Plus, Trash2, CheckCircle, AlertCircle, Clock, RefreshCw } from 'lucide-react';
+import { useApiConfig } from '@/lib/api-client';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
+import { cn } from '@payos/ui';
+
+// Types
+interface ConnectedAccount {
+  id: string;
+  handler_type: 'stripe' | 'paypal' | 'circle' | 'payos_native';
+  handler_name: string;
+  status: 'pending' | 'active' | 'inactive' | 'error';
+  credentials_preview?: Record<string, string>;
+  last_verified_at: string | null;
+  error_message?: string;
+  error_code?: string;
+  metadata?: Record<string, unknown>;
+  connected_at: string;
+  updated_at: string;
+}
+
+interface ConnectedAccountsResponse {
+  data: ConnectedAccount[];
+}
+
+type HandlerType = 'stripe' | 'paypal' | 'circle' | 'payos_native';
+
+const HANDLER_INFO: Record<HandlerType, { name: string; description: string; icon: string; color: string }> = {
+  stripe: {
+    name: 'Stripe',
+    description: 'Accept cards, bank transfers, and more',
+    icon: '💳',
+    color: 'bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400',
+  },
+  paypal: {
+    name: 'PayPal',
+    description: 'Accept PayPal and Venmo payments',
+    icon: '🅿️',
+    color: 'bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400',
+  },
+  circle: {
+    name: 'Circle',
+    description: 'USDC stablecoin payments',
+    icon: '⭕',
+    color: 'bg-green-100 dark:bg-green-950 text-green-600 dark:text-green-400',
+  },
+  payos_native: {
+    name: 'PayOS Native',
+    description: 'Pix (Brazil) and SPEI (Mexico)',
+    icon: '🌎',
+    color: 'bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400',
+  },
+};
+
+// API functions
+async function fetchConnectedAccounts(authToken: string): Promise<ConnectedAccountsResponse> {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts`, {
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch connected accounts');
+  }
+  return response.json();
+}
+
+async function createConnectedAccount(authToken: string, data: {
+  handler_type: HandlerType;
+  handler_name: string;
+  credentials: Record<string, unknown>;
+}): Promise<ConnectedAccount> {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create connected account');
+  }
+  return response.json();
+}
+
+async function deleteConnectedAccount(authToken: string, id: string): Promise<void> {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts/${id}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete connected account');
+  }
+}
+
+async function verifyConnectedAccount(authToken: string, id: string): Promise<{ verified: boolean; error?: string }> {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts/${id}/verify`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to verify connected account');
+  }
+  return response.json();
+}
+
+// Status badge component
+function StatusBadge({ status }: { status: ConnectedAccount['status'] }) {
+  const config = {
+    active: { icon: CheckCircle, label: 'Active', className: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950' },
+    pending: { icon: Clock, label: 'Pending', className: 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950' },
+    inactive: { icon: AlertCircle, label: 'Inactive', className: 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800' },
+    error: { icon: AlertCircle, label: 'Error', className: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950' },
+  };
+  const { icon: Icon, label, className } = config[status];
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium', className)}>
+      <Icon className="w-3.5 h-3.5" />
+      {label}
+    </span>
+  );
+}
+
+// Connect dialog component
+function ConnectDialog({
+  isOpen,
+  onClose,
+  onConnect
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConnect: (type: HandlerType, name: string, credentials: Record<string, unknown>) => void;
+}) {
+  const [step, setStep] = useState<'select' | 'credentials'>('select');
+  const [selectedType, setSelectedType] = useState<HandlerType | null>(null);
+  const [handlerName, setHandlerName] = useState('');
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSelectType = (type: HandlerType) => {
+    setSelectedType(type);
+    setHandlerName(`My ${HANDLER_INFO[type].name} Account`);
+    setStep('credentials');
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedType) return;
+    setIsSubmitting(true);
+    try {
+      await onConnect(selectedType, handlerName, credentials);
+      handleClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleClose = () => {
+    setStep('select');
+    setSelectedType(null);
+    setHandlerName('');
+    setCredentials({});
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="p-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Connect Payment Handler</h2>
+
+          {step === 'select' ? (
+            <>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Select a payment handler to connect:</p>
+              <div className="space-y-3">
+                {(Object.keys(HANDLER_INFO) as HandlerType[]).map((type) => {
+                  const info = HANDLER_INFO[type];
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => handleSelectType(type)}
+                      className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors text-left"
+                    >
+                      <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-2xl', info.color)}>
+                        {info.icon}
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-white">{info.name}</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">{info.description}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setStep('select')}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline mb-4"
+              >
+                ← Choose different handler
+              </button>
+
+              {selectedType && (
+                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl mb-6">
+                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center text-xl', HANDLER_INFO[selectedType].color)}>
+                    {HANDLER_INFO[selectedType].icon}
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">{HANDLER_INFO[selectedType].name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{HANDLER_INFO[selectedType].description}</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={handlerName}
+                    onChange={(e) => setHandlerName(e.target.value)}
+                    placeholder="My Stripe Account"
+                    className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                {selectedType === 'stripe' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Secret API Key *
+                      </label>
+                      <input
+                        type="password"
+                        value={credentials.secret_key || ''}
+                        onChange={(e) => setCredentials({ ...credentials, secret_key: e.target.value })}
+                        placeholder="sk_live_..."
+                        className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Find this in your Stripe Dashboard → Developers → API keys
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Webhook Secret (optional)
+                      </label>
+                      <input
+                        type="password"
+                        value={credentials.webhook_secret || ''}
+                        onChange={(e) => setCredentials({ ...credentials, webhook_secret: e.target.value })}
+                        placeholder="whsec_..."
+                        className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {selectedType === 'paypal' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Client ID *
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.client_id || ''}
+                        onChange={(e) => setCredentials({ ...credentials, client_id: e.target.value })}
+                        placeholder="Your PayPal Client ID"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Client Secret *
+                      </label>
+                      <input
+                        type="password"
+                        value={credentials.client_secret || ''}
+                        onChange={(e) => setCredentials({ ...credentials, client_secret: e.target.value })}
+                        placeholder="Your PayPal Client Secret"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {selectedType === 'circle' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      API Key *
+                    </label>
+                    <input
+                      type="password"
+                      value={credentials.api_key || ''}
+                      onChange={(e) => setCredentials({ ...credentials, api_key: e.target.value })}
+                      placeholder="Your Circle API Key"
+                      className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                    />
+                  </div>
+                )}
+
+                {selectedType === 'payos_native' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Pix Key (Brazil)
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.pix_key || ''}
+                        onChange={(e) => setCredentials({ ...credentials, pix_key: e.target.value })}
+                        placeholder="Your Pix key (email, phone, CPF, or random)"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        CLABE (Mexico)
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.clabe || ''}
+                        onChange={(e) => setCredentials({ ...credentials, clabe: e.target.value })}
+                        placeholder="18-digit CLABE number"
+                        className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700">
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          {step === 'credentials' && (
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || !handlerName}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isSubmitting ? 'Connecting...' : 'Connect Account'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Main page component
+export default function PaymentHandlersPage() {
+  const { isConfigured, isLoading: isAuthLoading, authToken } = useApiConfig();
+  const queryClient = useQueryClient();
+  const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Fetch connected accounts
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['connected-accounts'],
+    queryFn: () => fetchConnectedAccounts(authToken!),
+    enabled: !!authToken,
+  });
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: ({ type, name, credentials }: { type: HandlerType; name: string; credentials: Record<string, unknown> }) =>
+      createConnectedAccount(authToken!, { handler_type: type, handler_name: name, credentials }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connected-accounts'] });
+      toast.success('Payment handler connected successfully');
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to connect payment handler', { description: error.message });
+    },
+  });
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteConnectedAccount(authToken!, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connected-accounts'] });
+      toast.success('Payment handler disconnected');
+      setDeleteId(null);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to disconnect payment handler', { description: error.message });
+    },
+  });
+
+  // Verify mutation
+  const verifyMutation = useMutation({
+    mutationFn: (id: string) => verifyConnectedAccount(authToken!, id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['connected-accounts'] });
+      if (result.verified) {
+        toast.success('Credentials verified successfully');
+      } else {
+        toast.error('Verification failed', { description: result.error });
+      }
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to verify credentials', { description: error.message });
+    },
+  });
+
+  const accounts = data?.data || [];
+  const stats = {
+    connected: accounts.length,
+    active: accounts.filter((a) => a.status === 'active').length,
+    errors: accounts.filter((a) => a.status === 'error').length,
+  };
+
+  if (isAuthLoading) {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Payment Handlers</h1>
+            <p className="text-gray-600 dark:text-gray-400">Connect your payment processor accounts to accept payments through PayOS</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-12 text-center animate-pulse">
+          <div className="h-16 w-16 bg-gray-200 dark:bg-gray-800 rounded-full mx-auto mb-4"></div>
+          <div className="h-6 w-48 bg-gray-200 dark:bg-gray-800 rounded mx-auto mb-2"></div>
+          <div className="h-4 w-64 bg-gray-200 dark:bg-gray-800 rounded mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isConfigured) {
+    return (
+      <div className="p-8">
+        <div className="text-center py-12">
+          <Plug className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Authentication Required</h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            Please log in to manage payment handlers.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Payment Handlers</h1>
+          <p className="text-gray-600 dark:text-gray-400">Connect your payment processor accounts to accept payments through PayOS</p>
+        </div>
+        <button
+          onClick={() => setShowConnectDialog(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          Connect Account
+        </button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Connected</div>
+          <div className="text-3xl font-bold text-gray-900 dark:text-white">{stats.connected}</div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Active</div>
+          <div className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.active}</div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Errors</div>
+          <div className="text-3xl font-bold text-red-600 dark:text-red-400">{stats.errors}</div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800">
+        {isLoading ? (
+          <div className="p-12 text-center">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-gray-500 dark:text-gray-400">Loading payment handlers...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center">
+            <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Failed to load payment handlers</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">There was an error loading your connected accounts.</p>
+            <button
+              onClick={() => refetch()}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : accounts.length === 0 ? (
+          <div className="p-12 text-center">
+            <Plug className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No payment handlers connected</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-6">Connect a payment processor to start accepting payments through PayOS</p>
+            <button
+              onClick={() => setShowConnectDialog(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Connect Your First Account
+            </button>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-200 dark:divide-gray-800">
+            {accounts.map((account) => {
+              const info = HANDLER_INFO[account.handler_type];
+              return (
+                <div key={account.id} className="p-6 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-2xl', info.color)}>
+                      {info.icon}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium text-gray-900 dark:text-white">{account.handler_name}</span>
+                        <StatusBadge status={account.status} />
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                        {info.name} • Connected {new Date(account.connected_at).toLocaleDateString()}
+                      </div>
+                      {account.error_message && (
+                        <div className="text-sm text-red-600 dark:text-red-400 mt-1">
+                          {account.error_message}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => verifyMutation.mutate(account.id)}
+                      disabled={verifyMutation.isPending}
+                      className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      title="Verify credentials"
+                    >
+                      <RefreshCw className={cn('h-4 w-4', verifyMutation.isPending && 'animate-spin')} />
+                    </button>
+                    <button
+                      onClick={() => setDeleteId(account.id)}
+                      className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      title="Disconnect"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Connect Dialog */}
+      <ConnectDialog
+        isOpen={showConnectDialog}
+        onClose={() => setShowConnectDialog(false)}
+        onConnect={(type, name, credentials) => createMutation.mutate({ type, name, credentials })}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Disconnect Payment Handler?</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-6">
+              This will remove the payment handler and its credentials. Any active payments using this handler may fail.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteId(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteMutation.mutate(deleteId)}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {deleteMutation.isPending ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

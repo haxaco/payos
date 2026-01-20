@@ -34,16 +34,19 @@ import {
   ScrollText,
   RotateCcw,
   Calendar,
-  UserCheck
+  UserCheck,
+  Package,
+  Plug,
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useState } from 'react';
 
-const agenticPaymentsNav = [
+const agenticPaymentsChildren = [
   {
     href: '/dashboard/agentic-payments',
     label: 'Overview',
-    icon: LayoutDashboard
+    icon: LayoutDashboard,
+    exact: true, // Only highlight when exactly on this path
   },
   {
     href: '/dashboard/agentic-payments/analytics',
@@ -51,19 +54,14 @@ const agenticPaymentsNav = [
     icon: BarChart3
   },
   {
-    label: 'x402',
-    icon: Zap,
+    label: 'UCP',
+    icon: Globe,
     children: [
-      { href: '/dashboard/agentic-payments/x402/endpoints', label: 'Endpoints', icon: Globe },
-      { href: '/dashboard/agentic-payments/x402/integration', label: 'Integration', icon: Code },
-    ]
-  },
-  {
-    label: 'AP2',
-    icon: Bot,
-    children: [
-      { href: '/dashboard/agentic-payments/ap2/mandates', label: 'Mandates', icon: FileCheck },
-      { href: '/dashboard/agentic-payments/ap2/integration', label: 'Integration', icon: Code },
+      { href: '/dashboard/agentic-payments/ucp/checkouts', label: 'Settlements', icon: ArrowLeftRight },
+      { href: '/dashboard/agentic-payments/ucp/hosted-checkouts', label: 'Checkouts', icon: ShoppingCart },
+      { href: '/dashboard/agentic-payments/ucp/orders', label: 'Orders', icon: Package },
+      { href: '/dashboard/agentic-payments/ucp/identity', label: 'Identity', icon: Users },
+      { href: '/dashboard/agentic-payments/ucp/integration', label: 'Integration', icon: Code },
     ]
   },
   {
@@ -75,6 +73,22 @@ const agenticPaymentsNav = [
     ]
   },
   {
+    label: 'AP2',
+    icon: Bot,
+    children: [
+      { href: '/dashboard/agentic-payments/ap2/mandates', label: 'Mandates', icon: FileCheck },
+      { href: '/dashboard/agentic-payments/ap2/integration', label: 'Integration', icon: Code },
+    ]
+  },
+  {
+    label: 'x402',
+    icon: Zap,
+    children: [
+      { href: '/dashboard/agentic-payments/x402/endpoints', label: 'Endpoints', icon: Globe },
+      { href: '/dashboard/agentic-payments/x402/integration', label: 'Integration', icon: Code },
+    ]
+  },
+  {
     href: '/dashboard/agentic-payments/developers',
     label: 'Developers',
     icon: Terminal
@@ -82,6 +96,7 @@ const agenticPaymentsNav = [
 ];
 
 const configurationNav = [
+  { href: '/dashboard/payment-handlers', label: 'Payment Handlers', icon: Plug },
   { href: '/dashboard/templates', label: 'Templates', icon: FileCode },
   { href: '/dashboard/verification-tiers', label: 'Verification Tiers', icon: ShieldCheck },
   { href: '/dashboard/agent-tiers', label: 'Agent Tiers (KYA)', icon: UserCheck },
@@ -100,6 +115,7 @@ interface NavItemProps {
   label: string;
   icon: any;
   badge?: number;
+  exact?: boolean;
 }
 
 export function Sidebar() {
@@ -107,6 +123,7 @@ export function Sidebar() {
   const { collapsed, setCollapsed } = useSidebar();
   const api = useApiClient();
   const [configExpanded, setConfigExpanded] = useState(false);
+  const [agenticExpanded, setAgenticExpanded] = useState(() => pathname.startsWith('/dashboard/agentic-payments'));
 
   // Fetch real compliance count
   const { data: complianceCount } = useQuery({
@@ -135,16 +152,19 @@ export function Sidebar() {
     { href: '/dashboard/reports', label: 'Reports', icon: FileText },
   ];
 
-  const isActive = (href: string) => {
-    if (href === '/dashboard' || href === '#') {
-      return pathname === '/dashboard';
+  const isActive = (href: string, exact?: boolean) => {
+    if (href === '/dashboard' || href === '#' || exact) {
+      return pathname === href;
     }
     return pathname.startsWith(href);
   };
 
+  // Check if any agentic payments route is active
+  const isAgenticActive = pathname.startsWith('/dashboard/agentic-payments');
+
   const NavItem = ({ item, className }: { item: NavItemProps; className?: string }) => {
     const Icon = item.icon;
-    const active = isActive(item.href);
+    const active = isActive(item.href, item.exact);
 
     return (
       <Link
@@ -210,44 +230,72 @@ export function Sidebar() {
 
       {/* Main Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {mainNav.map((item) => (
+        {/* Home Link */}
+        <NavItem item={mainNav[0]} />
+
+        {/* Agentic Payments - Collapsible Section */}
+        <div className="space-y-1">
+          {!collapsed ? (
+            <>
+              <button
+                onClick={() => setAgenticExpanded(!agenticExpanded)}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  isAgenticActive
+                    ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                )}
+              >
+                <Activity className="w-5 h-5 flex-shrink-0" />
+                <span className="flex-1 text-left">Agentic Payments</span>
+                <ChevronDown className={cn(
+                  'w-4 h-4 transition-transform',
+                  agenticExpanded && 'rotate-180'
+                )} />
+              </button>
+              {agenticExpanded && (
+                <div className="ml-4 pl-4 border-l border-gray-200 dark:border-gray-700 space-y-1">
+                  {agenticPaymentsChildren.map((item: any) => {
+                    if (item.children) {
+                      return (
+                        <div key={item.label} className="space-y-1 mb-1">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2 uppercase">
+                            <item.icon className="w-3.5 h-3.5" />
+                            <span>{item.label}</span>
+                          </div>
+                          <div className="space-y-0.5">
+                            {item.children.map((child: any) => (
+                              <NavItem key={child.href} item={child} className="py-2 text-xs" />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return <NavItem key={item.href} item={item} className="py-2" />;
+                  })}
+                </div>
+              )}
+            </>
+          ) : (
+            <Link
+              href="/dashboard/agentic-payments"
+              className={cn(
+                'w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                isAgenticActive
+                  ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              )}
+              title="Agentic Payments"
+            >
+              <Activity className="w-5 h-5" />
+            </Link>
+          )}
+        </div>
+
+        {/* Rest of Main Nav */}
+        {mainNav.slice(1).map((item) => (
           <NavItem key={item.href} item={item} />
         ))}
-
-        {/* Agentic Payments Section */}
-        <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
-          {!collapsed && (
-            <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              Agentic Payments
-            </div>
-          )}
-
-          {agenticPaymentsNav.map((item: any) => {
-            if (item.children && !collapsed) {
-              return (
-                <div key={item.label} className="space-y-1 mb-2">
-                  <div className="px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                    <item.icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </div>
-                  <div className="space-y-1">
-                    {item.children.map((child: any) => (
-                      <NavItem key={child.href} item={child} className="pl-9" />
-                    ))}
-                  </div>
-                </div>
-              );
-            } else if (item.children && collapsed) {
-              // In collapsed mode, we can only show the parent icon?
-              // Or we show children? 
-              // Showing parent icon as a link to the first child or just header is ambiguous.
-              // For now, let's just show the parent icon formatted as a nav item that does nothing or goes to first child.
-              const firstChild = item.children[0];
-              return <NavItem key={item.label} item={{ ...item, href: firstChild.href }} />;
-            }
-            return <NavItem key={item.href} item={item} />;
-          })}
-        </div>
 
         {/* Configuration Section - Collapsible */}
         <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">

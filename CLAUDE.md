@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL: UI Development Location
+
+**NEVER use `payos-ui/` for any new development.** It is DEPRECATED.
+
+All UI work MUST be done in `apps/web/` (Next.js application).
+
+- ❌ `payos-ui/` - DEPRECATED, do not use
+- ✅ `apps/web/` - Active UI development (Next.js, port 3000)
+
+```bash
+# Start the CORRECT UI
+pnpm --filter @payos/web dev
+```
+
 ## Project Overview
 
 PayOS is a B2B stablecoin payout operating system for LATAM. It's a monorepo featuring a Hono-based API server, a Vite+React dashboard UI, and shared packages. The system enables fintech partners to offer stablecoin-powered payouts with AI-native agent support and money streaming capabilities.
@@ -25,8 +39,8 @@ pnpm build
 # Start API server (http://localhost:4000)
 pnpm --filter @payos/api dev
 
-# Start UI (http://localhost:5173)
-pnpm --filter payos-ui dev
+# Start UI (http://localhost:3000) - USE THIS, NOT payos-ui
+pnpm --filter @payos/web dev
 
 # Start everything
 pnpm dev
@@ -90,19 +104,19 @@ payos/
 │   │   ├── supabase/migrations/ # Database schema & RLS policies
 │   │   ├── scripts/      # Seed data, setup helpers
 │   │   └── tests/        # Unit & integration tests
-│   └── dashboard/        # (Future) Next.js dashboard
+│   └── web/              # Next.js dashboard (port 3000) ← ACTIVE UI
+│       ├── src/
+│       │   ├── app/      # App Router pages
+│       │   ├── components/ # React components
+│       │   ├── lib/      # API client, utilities
+│       │   └── hooks/    # Custom hooks
 ├── packages/
 │   ├── types/            # Shared TypeScript types
 │   ├── utils/            # Shared utilities
 │   ├── api-client/       # API client library
 │   ├── ui/               # Shared UI components
 │   └── db/               # Database migration utilities
-└── payos-ui/             # Vite+React dashboard (port 5173)
-    ├── src/
-    │   ├── app/          # App Router pages (Next.js-style routing)
-    │   ├── components/   # React components (UI, partner, contractor)
-    │   ├── hooks/        # Custom hooks (useAuth, useApi)
-    │   └── pages/        # Page components
+└── payos-ui/             # ⚠️ DEPRECATED - DO NOT USE
 ```
 
 ### Authentication Flow

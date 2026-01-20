@@ -21,6 +21,7 @@ import { createClient } from './db/client.js';
 import authRouter from './routes/auth.js';
 import organizationRouter from './routes/organization.js';
 import organizationTeamRouter from './routes/organization-team.js';
+import connectedAccountsRouter from './routes/organization/connected-accounts.js';
 import apiKeysRouter from './routes/api-keys.js';
 import accountsRouter from './routes/accounts.js';
 import agentsRouter from './routes/agents.js';
@@ -177,6 +178,7 @@ app.get('/ready', (c) =>
 // Organization routes (JWT-based auth inside route handlers)
 app.route('/v1/organization', organizationRouter);
 app.route('/v1/organization/team', organizationTeamRouter);
+app.route('/v1/organization/connected-accounts', connectedAccountsRouter); // Epic 48
 
 // API keys routes (JWT-based auth inside route handlers)
 app.route('/v1/api-keys', apiKeysRouter);
@@ -204,9 +206,7 @@ app.route('/ucp', ucpSchemasRouter);
 // Story 43.11: UCP Webhook Handler
 app.route('/webhooks/ucp', ucpWebhooksRouter);
 
-// UCP Identity (OAuth 2.0 - mixed auth, some endpoints public)
-// Phase 4: Identity Linking
-app.route('/v1/ucp/identity', ucpIdentityRouter);
+// NOTE: UCP Identity routes moved to v1 router for auth middleware
 
 // ============================================
 // API v1 ROUTES (auth required)
@@ -265,6 +265,7 @@ v1.route('/simulate', simulationsRouter); // Simulation engine (Epic 28)
 v1.route('/ucp', ucpRouter); // UCP settlement endpoints (Epic 43)
 v1.route('/ucp/checkouts', ucpCheckoutRouter); // UCP checkout capability (Phase 2)
 v1.route('/ucp/orders', ucpOrdersRouter); // UCP order capability (Phase 3)
+v1.route('/ucp/identity', ucpIdentityRouter); // UCP identity linking (Phase 4)
 v1.route('/approvals', approvalsRouter); // Agent payment approvals (Story 18.R2)
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
