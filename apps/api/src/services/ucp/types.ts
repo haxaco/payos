@@ -44,11 +44,19 @@ export interface UCPService {
 
 /**
  * UCP Capability - What this service can do
+ * @see https://ucp.dev/specification/overview/#capabilities
  */
 export interface UCPCapability {
+  /** Capability name in reverse-DNS format (e.g., dev.ucp.shopping.checkout) */
   name: string;
+  /** Version in YYYY-MM-DD format */
   version: string;
+  /** URL to capability specification */
+  spec?: string;
+  /** Human-readable description */
   description?: string;
+  /** Extensions this capability supports */
+  extensions?: string[];
 }
 
 /**

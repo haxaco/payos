@@ -4,12 +4,25 @@
  * Public discovery endpoint for UCP protocol.
  * Returns PayOS's UCP profile for capability negotiation.
  *
+ * This endpoint enables:
+ * - Discovery by Google AI agents (Gemini, Search AI Mode)
+ * - Capability negotiation with platforms
+ * - Webhook signature verification via signing_keys
+ *
  * @see Story 43.1: UCP Profile Endpoint
  * @see https://ucp.dev/specification/overview/
  */
 
 import { Hono } from 'hono';
-import { generateUCPProfile, getUCPVersion } from '../services/ucp/index.js';
+import {
+  generateUCPProfile,
+  getUCPVersion,
+  initializeSigningKey,
+} from '../services/ucp/index.js';
+
+// Initialize signing key on module load
+// This ensures keys are ready when the first request comes in
+initializeSigningKey();
 
 const router = new Hono();
 

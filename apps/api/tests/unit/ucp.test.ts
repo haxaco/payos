@@ -23,6 +23,13 @@ import {
   getSettlementQuote,
   clearTokenStore,
   validateRecipient,
+  initializeSigningKey,
+  getSigningKey,
+  getAllSigningKeys,
+  createDetachedJWT,
+  verifyDetachedJWT,
+  signWebhookPayload,
+  verifyWebhookPayload,
 } from '../../src/services/ucp/index.js';
 
 describe('UCP Profile Service', () => {
@@ -38,12 +45,12 @@ describe('UCP Profile Service', () => {
       expect(profile.payment!.handlers).toBeInstanceOf(Array);
     });
 
-    it('should include settlement service definition', () => {
+    it('should include payment service definition', () => {
       const profile = generateUCPProfile();
 
-      expect(profile.ucp.services['com.payos.settlement']).toBeDefined();
-      expect(profile.ucp.services['com.payos.settlement'].version).toBe('2026-01-11');
-      expect(profile.ucp.services['com.payos.settlement'].rest).toBeDefined();
+      expect(profile.ucp.services['com.payos.payment']).toBeDefined();
+      expect(profile.ucp.services['com.payos.payment'].version).toBe('2026-01-11');
+      expect(profile.ucp.services['com.payos.payment'].rest).toBeDefined();
     });
 
     it('should include payment handler', () => {
@@ -52,10 +59,42 @@ describe('UCP Profile Service', () => {
 
       expect(handlers.length).toBeGreaterThan(0);
       const handler = handlers[0];
-      expect(handler.id).toBe('payos_latam');
-      expect(handler.name).toBe('com.payos.latam_settlement');
+      expect(handler.id).toBe('payos');
+      expect(handler.name).toBe('com.payos.payment');
       expect(handler.supported_currencies).toContain('USD');
       expect(handler.supported_currencies).toContain('USDC');
+    });
+
+    it('should include signing_keys for webhook verification', () => {
+      const profile = generateUCPProfile();
+
+      expect(profile.signing_keys).toBeDefined();
+      expect(profile.signing_keys!.length).toBeGreaterThan(0);
+
+      const key = profile.signing_keys![0];
+      expect(key.kid).toBeDefined();
+      expect(key.kty).toBe('EC');
+      expect(key.crv).toBe('P-256');
+      expect(key.alg).toBe('ES256');
+      expect(key.use).toBe('sig');
+      expect(key.x).toBeDefined();
+      expect(key.y).toBeDefined();
+    });
+
+    it('should include UCP core capabilities with spec URLs', () => {
+      const profile = generateUCPProfile();
+      const capabilities = profile.ucp.capabilities;
+
+      // Check for dev.ucp.shopping.checkout capability
+      const checkoutCap = capabilities.find(c => c.name === 'dev.ucp.shopping.checkout');
+      expect(checkoutCap).toBeDefined();
+      expect(checkoutCap!.version).toBe('2026-01-11');
+      expect(checkoutCap!.spec).toBe('https://ucp.dev/specification/checkout/');
+
+      // Check for dev.ucp.shopping.order capability
+      const orderCap = capabilities.find(c => c.name === 'dev.ucp.shopping.order');
+      expect(orderCap).toBeDefined();
+      expect(orderCap!.spec).toBe('https://ucp.dev/specification/order/');
     });
   });
 
@@ -64,8 +103,12 @@ describe('UCP Profile Service', () => {
       const capabilities = getCapabilities();
 
       expect(capabilities.length).toBeGreaterThan(0);
-      expect(capabilities.some((c) => c.name === 'com.payos.settlement.quote')).toBe(true);
-      expect(capabilities.some((c) => c.name === 'com.payos.settlement.transfer')).toBe(true);
+      // Core UCP capabilities
+      expect(capabilities.some((c) => c.name === 'dev.ucp.shopping.checkout')).toBe(true);
+      expect(capabilities.some((c) => c.name === 'dev.ucp.shopping.order')).toBe(true);
+      // PayOS-specific payment capabilities
+      expect(capabilities.some((c) => c.name === 'com.payos.payment.quote')).toBe(true);
+      expect(capabilities.some((c) => c.name === 'com.payos.payment.settlement')).toBe(true);
     });
   });
 
@@ -166,15 +209,17 @@ describe('UCP Negotiation Service', () => {
   describe('negotiateCapabilities', () => {
     it('should return intersection of capabilities', () => {
       const platformCaps = [
-        'com.payos.settlement.quote',
-        'com.payos.settlement.transfer',
+        'dev.ucp.shopping.checkout',
+        'dev.ucp.shopping.order',
+        'com.payos.payment.quote',
         'com.other.capability',
       ];
 
       const result = negotiateCapabilities(platformCaps);
 
-      expect(result).toContain('com.payos.settlement.quote');
-      expect(result).toContain('com.payos.settlement.transfer');
+      expect(result).toContain('dev.ucp.shopping.checkout');
+      expect(result).toContain('dev.ucp.shopping.order');
+      expect(result).toContain('com.payos.payment.quote');
       expect(result).not.toContain('com.other.capability');
     });
   });
@@ -388,6 +433,163 @@ describe('UCP Token Service', () => {
 
       expect(quote.fromAmount).toBe(100);
       expect(quote.toCurrency).toBe('MXN');
+    });
+  });
+});
+
+describe('UCP Signing Service', () => {
+  beforeEach(() => {
+    // Ensure signing key is initialized
+    initializeSigningKey();
+  });
+
+  describe('initializeSigningKey', () => {
+    it('should generate an EC P-256 signing key', () => {
+      const key = getSigningKey();
+
+      expect(key).toBeDefined();
+      expect(key.kid).toBeDefined();
+      expect(key.kty).toBe('EC');
+      expect(key.crv).toBe('P-256');
+      expect(key.alg).toBe('ES256');
+      expect(key.use).toBe('sig');
+      expect(key.x).toBeDefined();
+      expect(key.y).toBeDefined();
+    });
+
+    it('should return the same key on subsequent calls', () => {
+      const key1 = getSigningKey();
+      const key2 = getSigningKey();
+
+      expect(key1.kid).toBe(key2.kid);
+      expect(key1.x).toBe(key2.x);
+      expect(key1.y).toBe(key2.y);
+    });
+  });
+
+  describe('getAllSigningKeys', () => {
+    it('should return at least one signing key', () => {
+      const keys = getAllSigningKeys();
+
+      expect(keys).toBeInstanceOf(Array);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys[0].kid).toBeDefined();
+    });
+  });
+
+  describe('createDetachedJWT', () => {
+    it('should create a valid detached JWT (RFC 7797)', () => {
+      const payload = JSON.stringify({ test: 'data', amount: 100 });
+      const jwt = createDetachedJWT(payload);
+
+      // Detached JWT should have format: header..signature (empty payload section)
+      expect(jwt).toBeDefined();
+      const parts = jwt.split('.');
+      expect(parts.length).toBe(3);
+      expect(parts[1]).toBe(''); // Payload section should be empty for detached JWT
+    });
+
+    it('should create different signatures for different payloads', () => {
+      const jwt1 = createDetachedJWT(JSON.stringify({ test: 1 }));
+      const jwt2 = createDetachedJWT(JSON.stringify({ test: 2 }));
+
+      expect(jwt1).not.toBe(jwt2);
+    });
+  });
+
+  describe('verifyDetachedJWT', () => {
+    it('should verify a valid detached JWT', () => {
+      const payload = JSON.stringify({ order_id: '123', amount: 100 });
+      const jwt = createDetachedJWT(payload);
+
+      const signingKeys = getAllSigningKeys();
+      const isValid = verifyDetachedJWT(jwt, payload, signingKeys);
+
+      expect(isValid).toBe(true);
+    });
+
+    it('should reject JWT with modified payload', () => {
+      const originalPayload = JSON.stringify({ order_id: '123', amount: 100 });
+      const jwt = createDetachedJWT(originalPayload);
+
+      const modifiedPayload = JSON.stringify({ order_id: '123', amount: 200 });
+      const signingKeys = getAllSigningKeys();
+      const isValid = verifyDetachedJWT(jwt, modifiedPayload, signingKeys);
+
+      expect(isValid).toBe(false);
+    });
+
+    it('should reject malformed JWT', () => {
+      const signingKeys = getAllSigningKeys();
+
+      expect(verifyDetachedJWT('invalid', '{}', signingKeys)).toBe(false);
+      expect(verifyDetachedJWT('a.b.c', '{}', signingKeys)).toBe(false);
+      expect(verifyDetachedJWT('', '{}', signingKeys)).toBe(false);
+    });
+
+    it('should reject JWT signed with unknown key', () => {
+      const payload = JSON.stringify({ test: 'data' });
+      const jwt = createDetachedJWT(payload);
+
+      // Verify with empty keys array
+      const isValid = verifyDetachedJWT(jwt, payload, []);
+
+      expect(isValid).toBe(false);
+    });
+  });
+
+  describe('signWebhookPayload', () => {
+    it('should sign webhook payload', () => {
+      const payload = JSON.stringify({
+        id: 'evt_123',
+        type: 'order.created',
+        data: { order_id: '456' },
+      });
+
+      const signature = signWebhookPayload(payload);
+
+      expect(signature).toBeDefined();
+      // Should be a detached JWT format
+      const parts = signature.split('.');
+      expect(parts.length).toBe(3);
+      expect(parts[1]).toBe('');
+    });
+  });
+
+  describe('verifyWebhookPayload', () => {
+    it('should verify webhook signature', () => {
+      const payload = JSON.stringify({
+        id: 'evt_123',
+        type: 'order.created',
+        data: { order_id: '456' },
+      });
+
+      const signature = signWebhookPayload(payload);
+      const signingKeys = getAllSigningKeys();
+      const isValid = verifyWebhookPayload(signature, payload, signingKeys);
+
+      expect(isValid).toBe(true);
+    });
+
+    it('should reject tampered webhook payload', () => {
+      const originalPayload = JSON.stringify({
+        id: 'evt_123',
+        type: 'order.created',
+        data: { order_id: '456' },
+      });
+
+      const signature = signWebhookPayload(originalPayload);
+
+      const tamperedPayload = JSON.stringify({
+        id: 'evt_123',
+        type: 'order.created',
+        data: { order_id: '789' }, // Changed
+      });
+
+      const signingKeys = getAllSigningKeys();
+      const isValid = verifyWebhookPayload(signature, tamperedPayload, signingKeys);
+
+      expect(isValid).toBe(false);
     });
   });
 });

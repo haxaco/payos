@@ -2,6 +2,7 @@
  * UCP Profile Service
  *
  * Generates the UCP profile published at /.well-known/ucp
+ * Compliant with Google/Shopify Universal Commerce Protocol spec.
  *
  * @see Story 43.1: UCP Profile Endpoint
  * @see https://ucp.dev/specification/overview/
@@ -15,6 +16,7 @@ import type {
   UCPCorridor,
   UCPSigningKey,
 } from './types.js';
+import { getSigningKey, getAllSigningKeys, initializeSigningKey } from './signing.js';
 
 // =============================================================================
 // Configuration
@@ -33,30 +35,54 @@ const getDocsUrl = (): string => {
 };
 
 // =============================================================================
-// Capability Definitions
+// Capability Definitions (UCP Standard Naming)
 // =============================================================================
 
-const PAYOS_CAPABILITIES: UCPCapability[] = [
+/**
+ * Core UCP capabilities using dev.ucp.* namespace
+ * @see https://ucp.dev/specification/overview/#capabilities
+ */
+const UCP_CORE_CAPABILITIES: UCPCapability[] = [
   {
-    name: 'com.payos.settlement.quote',
-    version: '2026-01-11',
-    description: 'Get FX quote for LATAM settlement corridor',
+    name: 'dev.ucp.shopping.checkout',
+    version: UCP_VERSION,
+    spec: 'https://ucp.dev/specification/checkout/',
+    description: 'Shopping checkout session management',
+    extensions: ['dev.ucp.shopping.fulfillment'],
   },
   {
-    name: 'com.payos.settlement.transfer',
-    version: '2026-01-11',
-    description: 'Create settlement transfer to Pix or SPEI',
+    name: 'dev.ucp.shopping.order',
+    version: UCP_VERSION,
+    spec: 'https://ucp.dev/specification/order/',
+    description: 'Order lifecycle and fulfillment tracking',
+  },
+];
+
+/**
+ * PayOS-specific payment handler capabilities
+ * These extend the core UCP checkout with payment processing
+ */
+const PAYOS_PAYMENT_CAPABILITIES: UCPCapability[] = [
+  {
+    name: 'com.payos.payment.quote',
+    version: UCP_VERSION,
+    spec: `${getDocsUrl()}/ucp/capabilities/quote`,
+    description: 'Get FX quote for payment corridor',
   },
   {
-    name: 'com.payos.settlement.status',
-    version: '2026-01-11',
-    description: 'Get settlement transfer status',
+    name: 'com.payos.payment.settlement',
+    version: UCP_VERSION,
+    spec: `${getDocsUrl()}/ucp/capabilities/settlement`,
+    description: 'Execute settlement via Pix, SPEI, or other rails',
   },
-  {
-    name: 'com.payos.settlement.token',
-    version: '2026-01-11',
-    description: 'Acquire settlement token for checkout completion',
-  },
+];
+
+/**
+ * Combined capabilities list
+ */
+const getAllCapabilities = (): UCPCapability[] => [
+  ...UCP_CORE_CAPABILITIES,
+  ...PAYOS_PAYMENT_CAPABILITIES,
 ];
 
 // =============================================================================
@@ -111,10 +137,10 @@ const getPaymentHandler = (): UCPPaymentHandler => {
   const docsUrl = getDocsUrl();
 
   return {
-    id: 'payos_latam',
-    name: 'com.payos.latam_settlement',
+    id: 'payos',
+    name: 'com.payos.payment',
     version: UCP_VERSION,
-    spec: `${docsUrl}/ucp/handlers/latam`,
+    spec: `${docsUrl}/ucp/handlers/payment`,
     config_schema: `${baseUrl}/ucp/schemas/handler_config.json`,
     instrument_schemas: [
       `${baseUrl}/ucp/schemas/pix_instrument.json`,
@@ -134,9 +160,9 @@ const getServices = (): Record<string, UCPService> => {
   const docsUrl = getDocsUrl();
 
   return {
-    'com.payos.settlement': {
+    'com.payos.payment': {
       version: UCP_VERSION,
-      spec: `${docsUrl}/ucp/settlement`,
+      spec: `${docsUrl}/ucp/payment`,
       rest: {
         schema: `${baseUrl}/ucp/openapi.json`,
         endpoint: `${baseUrl}/v1/ucp`,
@@ -149,23 +175,16 @@ const getServices = (): Record<string, UCPService> => {
 // Signing Keys (for webhook verification)
 // =============================================================================
 
+/**
+ * Get signing keys from the signing service
+ * These are real EC P-256 keys used for detached JWT signatures
+ */
 const getSigningKeys = (): UCPSigningKey[] => {
-  // In production, these would be real JWK keys
-  // For now, return a placeholder that will be replaced with real keys
-  const keyId = process.env.PAYOS_SIGNING_KEY_ID || 'payos-ucp-key-1';
+  // Initialize signing key if not already done
+  initializeSigningKey();
 
-  return [
-    {
-      kid: keyId,
-      kty: 'EC',
-      alg: 'ES256',
-      use: 'sig',
-      crv: 'P-256',
-      // These would be populated from environment/secrets in production
-      x: process.env.PAYOS_SIGNING_KEY_X || '',
-      y: process.env.PAYOS_SIGNING_KEY_Y || '',
-    },
-  ];
+  // Get all keys (current + rotated for verification)
+  return getAllSigningKeys();
 };
 
 // =============================================================================
@@ -174,36 +193,53 @@ const getSigningKeys = (): UCPSigningKey[] => {
 
 /**
  * Generate the complete UCP profile for PayOS
+ *
+ * The profile is published at /.well-known/ucp and enables:
+ * - Discovery by Google AI agents (Gemini, Search AI Mode)
+ * - Capability negotiation with platforms
+ * - Webhook signature verification via signing_keys
+ *
+ * @see https://ucp.dev/specification/overview/#profile-structure
  */
 export function generateUCPProfile(): UCPProfile {
   const signingKeys = getSigningKeys();
-  // Filter out keys without actual values (development mode)
-  const validKeys = signingKeys.filter((k) => k.x && k.y);
+  const capabilities = getAllCapabilities();
 
   const profile: UCPProfile = {
     ucp: {
       version: UCP_VERSION,
       services: getServices(),
-      capabilities: PAYOS_CAPABILITIES,
+      capabilities,
     },
     payment: {
       handlers: [getPaymentHandler()],
     },
+    // Always include signing keys - they're generated if not configured
+    signing_keys: signingKeys,
   };
-
-  // Only include signing keys if they're configured
-  if (validKeys.length > 0) {
-    profile.signing_keys = validKeys;
-  }
 
   return profile;
 }
 
 /**
- * Get PayOS capabilities list
+ * Get all capabilities (core UCP + PayOS payment)
  */
 export function getCapabilities(): UCPCapability[] {
-  return PAYOS_CAPABILITIES;
+  return getAllCapabilities();
+}
+
+/**
+ * Get core UCP capabilities only
+ */
+export function getCoreCapabilities(): UCPCapability[] {
+  return UCP_CORE_CAPABILITIES;
+}
+
+/**
+ * Get PayOS payment capabilities only
+ */
+export function getPaymentCapabilities(): UCPCapability[] {
+  return PAYOS_PAYMENT_CAPABILITIES;
 }
 
 /**

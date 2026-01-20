@@ -2,6 +2,7 @@
  * UCP Webhook Service
  *
  * Handles UCP webhooks for order status updates from merchants.
+ * Supports both HMAC-SHA256 (legacy) and detached JWT (RFC 7797) signatures.
  *
  * @see Story 43.11: UCP Webhook Handler
  * @see https://ucp.dev/specification/webhooks/
@@ -9,6 +10,11 @@
 
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  signWebhookPayload,
+  verifyWebhookPayload,
+  type UCPSigningKey,
+} from './signing.js';
 
 // =============================================================================
 // Types
@@ -139,7 +145,7 @@ export function verifyWebhookSignature(
 }
 
 /**
- * Generate webhook signature for outgoing webhooks
+ * Generate webhook signature for outgoing webhooks (Legacy HMAC)
  */
 export function generateWebhookSignature(
   payload: string,
@@ -151,6 +157,41 @@ export function generateWebhookSignature(
     .update(signedPayload)
     .digest('hex');
   return `t=${timestamp},v1=${signature}`;
+}
+
+// =============================================================================
+// Detached JWT Signature (RFC 7797) - UCP Standard
+// =============================================================================
+
+/**
+ * Generate Request-Signature header for outgoing webhooks
+ *
+ * This is the UCP-compliant method using detached JWT (RFC 7797).
+ * The signature can be verified using the public key from /.well-known/ucp
+ *
+ * @param payload - Raw webhook payload string
+ * @returns The Request-Signature header value (detached JWT)
+ */
+export function generateRequestSignature(payload: string): string {
+  return signWebhookPayload(payload);
+}
+
+/**
+ * Verify Request-Signature header from incoming webhooks
+ *
+ * Verifies a detached JWT signature against the merchant's public keys.
+ *
+ * @param signature - The Request-Signature header value
+ * @param payload - The raw webhook body
+ * @param signingKeys - Array of valid signing keys (from merchant's /.well-known/ucp)
+ * @returns true if signature is valid
+ */
+export function verifyRequestSignature(
+  signature: string,
+  payload: string,
+  signingKeys: UCPSigningKey[]
+): boolean {
+  return verifyWebhookPayload(signature, payload, signingKeys);
 }
 
 // =============================================================================
@@ -302,11 +343,16 @@ async function handleOrderFulfilled(
 
 /**
  * Forward webhook to partner endpoint
+ *
+ * Supports two signature modes:
+ * - 'jwt' (default): Uses Request-Signature header with detached JWT (UCP standard)
+ * - 'hmac': Uses UCP-Signature header with HMAC-SHA256 (legacy)
  */
 export async function forwardWebhookToPartner(
   webhookId: string,
   partnerEndpoint: string,
-  partnerSigningKey: string
+  partnerSigningKey: string,
+  signatureMode: 'jwt' | 'hmac' = 'jwt'
 ): Promise<WebhookDeliveryResult> {
   const stored = webhookStore.get(webhookId);
   if (!stored) {
@@ -317,15 +363,27 @@ export async function forwardWebhookToPartner(
 
   try {
     const payload = JSON.stringify(stored.payload);
-    const signature = generateWebhookSignature(payload, partnerSigningKey);
+
+    // Build headers based on signature mode
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-PayOS-Webhook-ID': webhookId,
+    };
+
+    if (signatureMode === 'jwt') {
+      // UCP-compliant detached JWT signature
+      headers['Request-Signature'] = generateRequestSignature(payload);
+    } else {
+      // Legacy HMAC signature
+      headers['UCP-Signature'] = generateWebhookSignature(
+        payload,
+        partnerSigningKey
+      );
+    }
 
     const response = await fetch(partnerEndpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'UCP-Signature': signature,
-        'X-PayOS-Webhook-ID': webhookId,
-      },
+      headers,
       body: payload,
     });
 
