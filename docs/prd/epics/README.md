@@ -64,7 +64,7 @@ Every story must meet these criteria before completion:
 
 ### Security & Onboarding
 - [Epic 24: Enhanced API Key Security](./epic-24-api-key-security.md) 🔐 - Agent-specific API keys
-- [Epic 25: User Onboarding & API Improvements](./epic-25-user-onboarding.md) 🚀 - Improve onboarding UX
+- ~~[Epic 25: User Onboarding](./epic-25-user-onboarding.md)~~ → **Absorbed into Epic 51**
 
 ### AI-Native Architecture
 - [Epic 28: Simulation API](./epic-28-simulation.md) 🔮 ✅ - Transaction simulation
@@ -82,7 +82,14 @@ Every story must meet these criteria before completion:
 - [Epic 42: Frontend Dashboard Integration](./epic-42-frontend-dashboard.md) 🖥️ ✅ - UI for Epic 40 features
 
 ### Protocol Integration ⭐ NEW
-- [Epic 43: UCP (Universal Commerce Protocol)](./epic-43-ucp-integration.md) 🌐 **P0** - Google+Shopify's new standard
+- [Epic 43: UCP (Universal Commerce Protocol)](./epic-43-ucp-integration.md) 🌐 ✅ - Google+Shopify's new standard
+
+### Platform Architecture ⭐ NEW
+- [Epic 48: Connected Accounts](./epic-48-connected-accounts.md) 🔌 **P0** - Payment handler management
+- [Epic 49: Protocol Discovery](./epic-49-protocol-discovery.md) 🧭 **P0** - Protocol registry & enablement
+- [Epic 50: Settlement Decoupling](./epic-50-settlement-decoupling.md) ⚙️ **P0** - Settlement trigger rules
+- [Epic 51: Unified Onboarding](./epic-51-unified-onboarding.md) 🚀 **P1** - Protocol-specific onboarding
+- [Epic 52: Dashboard Redesign](./epic-52-dashboard-redesign.md) 📊 **P1** - Agentic protocol focus
 
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) 🏭 - x402 facilitator for LATAM ecosystem
@@ -123,13 +130,18 @@ Strategic explorations before committing to implementation:
 | Epic 36: SDK & DX | Jan 3, 2026 | 66 | |
 | Epic 40: Sandbox | Jan 5, 2026 | ~100 | Circle, Stripe, x402 |
 | Epic 42: Frontend | Jan 6, 2026 | 65 | |
-| **Total Completed** | | **~442** | |
+| Epic 43: UCP Integration | Jan 19, 2026 | 55 | |
+| **Total Completed** | | **~497** | |
 
 ### Current Focus 🚧
 
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
-| **Epic 43: UCP Integration** | **P0** | 55 | New protocol - URGENT |
+| **Epic 48: Connected Accounts** | **P0** | 21 | Payment handler management |
+| **Epic 49: Protocol Discovery** | **P0** | 18 | Protocol registry |
+| **Epic 50: Settlement Decoupling** | **P0** | 26 | Settlement rules engine |
+| **Epic 51: Unified Onboarding** | **P1** | 52 | Protocol onboarding (absorbed Epic 25) |
+| **Epic 52: Dashboard Redesign** | **P1** | 21 | Agentic protocol focus |
 | Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
 | Epic 29: Workflow Engine | P0 | 52 | |
 
@@ -138,11 +150,9 @@ Strategic explorations before committing to implementation:
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
 | Epic 32: Tool Discovery | P0 | 11 | |
-| Epic 25: User Onboarding | P0 | 29 | |
 | Epic 33: Metadata Schema | P1 | 11 | |
 | Epic 34: Transaction Decomp | P1 | 14 | |
-| Epic 35: Entity Onboarding | P1 | 14 | |
-| **Subtotal P0/P1** | | **~296** | Including Epic 43, 41, 29 |
+| **Subtotal P0/P1** | | **~336** | Including Epic 48-52, 41, 29 |
 
 ### Planned (P2) 📋
 
@@ -168,19 +178,33 @@ Strategic explorations before committing to implementation:
 
 ### Points Summary
 
-- **Completed:** ~442 points
-- **Current Focus:** ~217 points (43, 41, 29)
-- **P0/P1 Planned:** ~79 points
+- **Completed:** ~497 points
+- **Current Focus:** ~300 points (48, 49, 50, 51, 52, 41, 29)
+- **P0/P1 Planned:** ~36 points
 - **P2 Planned:** ~153 points
 - **P3 Future:** ~268 points
-- **Total Defined:** ~1,159 points
+- **Total Defined:** ~1,254 points
 
 ---
 
 ## Recent Changes (January 2026)
 
+### January 20, 2026
+- **Epic 43: UCP Integration** — COMPLETE ✅ (55 points)
+- **Epic 48: Connected Accounts** — NEW (21 points, P0)
+  - Payment handler management for multi-processor support
+- **Epic 49: Protocol Discovery** — NEW (18 points, P0)
+  - Protocol registry and enablement API
+- **Epic 50: Settlement Decoupling** — NEW (26 points, P0)
+  - Settlement trigger rules engine
+- **Epic 51: Unified Onboarding** — NEW (24 points, P1)
+  - Protocol-specific onboarding flows
+- **Epic 52: Dashboard Redesign** — NEW (21 points, P1)
+  - Agentic protocol focus, real metrics
+- **Architecture Doc** — [Three-Layer Architecture](../../architecture/three-layer-architecture.md)
+
 ### January 15, 2026
-- **Epic 43: UCP Integration** — NEW (55 points, P0)
+- **Epic 43: UCP Integration** — Created (55 points, P0)
   - Google+Shopify's Universal Commerce Protocol launched Jan 11
   - PayOS to become UCP Payment Handler for LATAM
 - **Epic 44: Observability** — NEW (Placeholder, P2)
@@ -234,4 +258,4 @@ PayOS supports **FOUR** agentic payment protocols:
 
 ---
 
-*Last updated: January 15, 2026*
+*Last updated: January 20, 2026*
