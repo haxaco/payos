@@ -68,6 +68,9 @@ import ucpOrdersRouter from './routes/ucp-orders.js';
 import ucpWebhooksRouter from './routes/webhooks/ucp.js';
 import ucpIdentityRouter from './routes/ucp-identity.js';
 import approvalsRouter from './routes/approvals.js';
+import protocolsRouter from './routes/protocols.js';
+import organizationProtocolsRouter from './routes/organization/protocols.js';
+import settlementRulesRouter from './routes/settlement-rules.js';
 
 const app = new Hono();
 
@@ -206,6 +209,10 @@ app.route('/ucp', ucpSchemasRouter);
 // Story 43.11: UCP Webhook Handler
 app.route('/webhooks/ucp', ucpWebhooksRouter);
 
+// Protocol Discovery API (public - for discovering available protocols)
+// Epic 49: Protocol Discovery & Management
+app.route('/v1/protocols', protocolsRouter);
+
 // NOTE: UCP Identity routes moved to v1 router for auth middleware
 
 // ============================================
@@ -268,6 +275,8 @@ v1.route('/ucp/orders', ucpOrdersRouter); // UCP order capability (Phase 3)
 v1.route('/ucp/identity', ucpIdentityRouter); // UCP identity linking (Phase 4)
 v1.route('/approvals', approvalsRouter); // Agent payment approvals (Story 18.R2)
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
+v1.route('/organization', organizationProtocolsRouter); // Protocol enablement (Epic 49)
+v1.route('/settlement-rules', settlementRulesRouter); // Settlement rules (Epic 50)
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods
 // Account-specific payment methods handled via accounts router
