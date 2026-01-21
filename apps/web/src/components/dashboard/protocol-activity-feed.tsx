@@ -62,7 +62,9 @@ async function fetchRecentActivity(authToken: string, limit: number = 10): Promi
   if (!response.ok) {
     throw new Error('Failed to fetch recent activity');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 function formatCurrency(amount: number, currency: string): string {

@@ -20,6 +20,7 @@ import {
   Repeat,
   FlaskConical,
   AlertCircle,
+  Power,
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -121,7 +122,9 @@ async function fetchOnboardingState(authToken: string): Promise<TenantOnboarding
   if (!response.ok) {
     throw new Error('Failed to fetch onboarding state');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function fetchTemplates(): Promise<{ data: QuickStartTemplate[] }> {
@@ -129,7 +132,9 @@ async function fetchTemplates(): Promise<{ data: QuickStartTemplate[] }> {
   if (!response.ok) {
     throw new Error('Failed to fetch templates');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function completeStep(
@@ -150,7 +155,9 @@ async function completeStep(
   if (!response.ok) {
     throw new Error('Failed to complete step');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function skipStep(
@@ -171,7 +178,9 @@ async function skipStep(
   if (!response.ok) {
     throw new Error('Failed to skip step');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function resetOnboarding(
@@ -191,7 +200,9 @@ async function resetOnboarding(
   if (!response.ok) {
     throw new Error('Failed to reset onboarding');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function toggleSandboxMode(
@@ -209,7 +220,28 @@ async function toggleSandboxMode(
   if (!response.ok) {
     throw new Error('Failed to toggle sandbox mode');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
+}
+
+async function enableProtocol(
+  authToken: string,
+  protocolId: ProtocolId
+): Promise<{ success: boolean; error?: string; missing_prerequisites?: string[] }> {
+  const response = await fetch(
+    `${API_URL}/v1/organization/protocols/${protocolId}/enable`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 // Progress ring component
@@ -361,34 +393,37 @@ function ProtocolOnboardingCard({
   onCompleteStep,
   onSkipStep,
   onReset,
+  onEnable,
   isLoading,
+  isEnabling,
 }: {
   state: ProtocolOnboardingState;
   onCompleteStep: (stepId: string) => void;
   onSkipStep: (stepId: string) => void;
   onReset: () => void;
+  onEnable: () => void;
   isLoading: boolean;
+  isEnabling: boolean;
 }) {
   const ui = PROTOCOL_UI[state.protocol_id];
   const Icon = ui.icon;
-  const [expanded, setExpanded] = useState(!state.is_complete);
+  const [expanded, setExpanded] = useState(state.enabled && !state.is_complete);
 
   return (
     <div
       className={cn(
         'bg-white dark:bg-gray-950 rounded-2xl border overflow-hidden',
-        state.enabled
-          ? 'border-gray-200 dark:border-gray-800'
-          : 'border-gray-100 dark:border-gray-900 opacity-60'
+        'border-gray-200 dark:border-gray-800'
       )}
     >
       {/* Header */}
       <div
         className={cn(
-          'p-6 cursor-pointer transition-colors',
-          expanded ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-900/50'
+          'p-6 transition-colors',
+          state.enabled ? 'cursor-pointer' : '',
+          state.enabled && !expanded ? 'hover:bg-gray-50 dark:hover:bg-gray-900/50' : ''
         )}
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => state.enabled && setExpanded(!expanded)}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -404,8 +439,14 @@ function ProtocolOnboardingCard({
                   <span className="text-xs text-green-600 dark:text-green-400 font-medium">
                     Enabled
                   </span>
+                ) : state.prerequisites_met ? (
+                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                    Ready to enable
+                  </span>
                 ) : (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">Not enabled</span>
+                  <span className="text-xs text-amber-600 dark:text-amber-400">
+                    Prerequisites required
+                  </span>
                 )}
                 {state.is_complete && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 dark:bg-green-950 text-green-600 dark:text-green-400 text-xs font-medium rounded-full">
@@ -418,31 +459,57 @@ function ProtocolOnboardingCard({
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Progress bar */}
-            <div className="hidden sm:flex items-center gap-3">
-              <div className="w-32 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div
-                  className={cn('h-full rounded-full transition-all duration-500', ui.bgColor.replace('bg-', 'bg-').replace('100', '500').replace('950', '500'))}
-                  style={{ width: `${state.progress_percentage}%` }}
-                />
-              </div>
-              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                {state.completed_steps}/{state.total_steps}
-              </span>
-            </div>
+            {state.enabled ? (
+              <>
+                {/* Progress bar - only show when enabled */}
+                <div className="hidden sm:flex items-center gap-3">
+                  <div className="w-32 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className={cn('h-full rounded-full transition-all duration-500', ui.bgColor.replace('bg-', 'bg-').replace('100', '500').replace('950', '500'))}
+                      style={{ width: `${state.progress_percentage}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                    {state.completed_steps}/{state.total_steps}
+                  </span>
+                </div>
 
-            <ChevronRight
-              className={cn(
-                'w-5 h-5 text-gray-400 transition-transform',
-                expanded && 'rotate-90'
-              )}
-            />
+                <ChevronRight
+                  className={cn(
+                    'w-5 h-5 text-gray-400 transition-transform',
+                    expanded && 'rotate-90'
+                  )}
+                />
+              </>
+            ) : (
+              /* Enable button - show when not enabled */
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEnable();
+                }}
+                disabled={isEnabling || !state.prerequisites_met}
+                className={cn(
+                  'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  state.prerequisites_met
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                )}
+              >
+                {isEnabling ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Power className="w-4 h-4" />
+                )}
+                {isEnabling ? 'Enabling...' : 'Enable Protocol'}
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Steps */}
-      {expanded && (
+      {/* Steps - only show when enabled and expanded */}
+      {state.enabled && expanded && (
         <div className="px-6 pb-6 space-y-2">
           <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
             {state.steps.map((step, index) => (
@@ -474,6 +541,18 @@ function ProtocolOnboardingCard({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Prerequisites hint - show when not enabled and prerequisites not met */}
+      {!state.enabled && !state.prerequisites_met && (
+        <div className="px-6 pb-6 border-t border-gray-100 dark:border-gray-800">
+          <div className="pt-4 text-sm text-gray-500 dark:text-gray-400">
+            <span className="font-medium text-gray-700 dark:text-gray-300">Required:</span>{' '}
+            {state.protocol_id === 'x402' || state.protocol_id === 'ap2'
+              ? 'Create a USDC wallet to enable this protocol'
+              : 'Connect a payment handler to enable this protocol'}
+          </div>
         </div>
       )}
     </div>
@@ -622,7 +701,33 @@ export default function OnboardingPage() {
     },
   });
 
-  const templates = templatesData?.data || [];
+  // Enable protocol mutation
+  const enableProtocolMutation = useMutation({
+    mutationFn: (protocolId: ProtocolId) => enableProtocol(authToken!, protocolId),
+    onSuccess: (result, protocolId) => {
+      if (result.success) {
+        queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
+        queryClient.invalidateQueries({ queryKey: ['protocol-status'] });
+        toast.success(`${protocolId.toUpperCase()} protocol enabled`);
+      } else {
+        if (result.missing_prerequisites) {
+          toast.error('Prerequisites not met', {
+            description: result.missing_prerequisites.join(', '),
+          });
+        } else {
+          toast.error('Failed to enable protocol', { description: result.error });
+        }
+      }
+      setLoadingAction(null);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to enable protocol', { description: error.message });
+      setLoadingAction(null);
+    },
+  });
+
+  // Handle both wrapped and unwrapped data formats
+  const templates = Array.isArray(templatesData) ? templatesData : (templatesData?.data || []);
   const protocols = onboardingState?.protocols
     ? (Object.values(onboardingState.protocols) as ProtocolOnboardingState[])
     : [];
@@ -779,7 +884,12 @@ export default function OnboardingPage() {
                 setLoadingAction(`${protocolState.protocol_id}-reset`);
                 resetMutation.mutate(protocolState.protocol_id);
               }}
-              isLoading={loadingAction?.startsWith(protocolState.protocol_id) || false}
+              onEnable={() => {
+                setLoadingAction(`${protocolState.protocol_id}-enable`);
+                enableProtocolMutation.mutate(protocolState.protocol_id);
+              }}
+              isLoading={loadingAction?.startsWith(protocolState.protocol_id) && !loadingAction?.endsWith('-enable') || false}
+              isEnabling={loadingAction === `${protocolState.protocol_id}-enable`}
             />
           ))}
         </div>

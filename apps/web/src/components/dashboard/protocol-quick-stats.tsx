@@ -66,7 +66,9 @@ async function fetchProtocolStats(authToken: string): Promise<{ data: ProtocolSt
   if (!response.ok) {
     throw new Error('Failed to fetch protocol stats');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 function formatValue(value: number | string): string {

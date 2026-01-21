@@ -83,7 +83,9 @@ async function fetchProtocols(): Promise<{ data: Protocol[] }> {
   if (!response.ok) {
     throw new Error('Failed to fetch protocols');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function fetchProtocolStatus(authToken: string): Promise<OrganizationProtocolStatus> {
@@ -96,7 +98,9 @@ async function fetchProtocolStatus(authToken: string): Promise<OrganizationProto
   if (!response.ok) {
     throw new Error('Failed to fetch protocol status');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function enableProtocol(authToken: string, protocolId: ProtocolId): Promise<{ success: boolean; error?: string; missing_prerequisites?: string[] }> {
@@ -107,7 +111,9 @@ async function enableProtocol(authToken: string, protocolId: ProtocolId): Promis
       'Content-Type': 'application/json',
     },
   });
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 async function disableProtocol(authToken: string, protocolId: ProtocolId): Promise<{ success: boolean; error?: string }> {
@@ -118,7 +124,9 @@ async function disableProtocol(authToken: string, protocolId: ProtocolId): Promi
       'Content-Type': 'application/json',
     },
   });
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 // Prerequisite badge component
@@ -369,7 +377,8 @@ export default function ProtocolsPage() {
     }
   };
 
-  const protocols = protocolsData?.data || [];
+  // Handle both wrapped and unwrapped data formats
+  const protocols = Array.isArray(protocolsData) ? protocolsData : (protocolsData?.data || []);
   const status: Record<ProtocolId, ProtocolEnablementStatus> = statusData?.protocols || {} as Record<ProtocolId, ProtocolEnablementStatus>;
 
   // Calculate stats

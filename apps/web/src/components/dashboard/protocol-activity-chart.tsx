@@ -49,7 +49,9 @@ async function fetchProtocolActivity(
   if (!response.ok) {
     throw new Error('Failed to fetch protocol activity');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 export function ProtocolActivityChart() {

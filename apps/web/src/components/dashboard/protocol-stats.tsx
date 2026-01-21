@@ -68,7 +68,9 @@ async function fetchProtocolDistribution(
   if (!response.ok) {
     throw new Error('Failed to fetch protocol distribution');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  return json.data || json;
 }
 
 function formatCurrency(value: number): string {
@@ -103,7 +105,8 @@ export function ProtocolStats() {
     staleTime: 60 * 1000,
   });
 
-  const distribution = Array.isArray(data?.data) ? data.data : [];
+  // Handle both wrapped and unwrapped data formats
+  const distribution = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
   const totalVolume = distribution.reduce((sum, p) => sum + (p.volume_usd || 0), 0);
   const totalCount = distribution.reduce((sum, p) => sum + (p.transaction_count || 0), 0);
   const activeProtocols = distribution.filter((p) => (p.volume_usd || 0) > 0 || (p.transaction_count || 0) > 0).length;

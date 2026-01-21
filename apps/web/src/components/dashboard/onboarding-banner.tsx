@@ -29,7 +29,10 @@ async function fetchOnboardingState(authToken: string): Promise<TenantOnboarding
   if (!response.ok) {
     throw new Error('Failed to fetch onboarding state');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped response format: { success: true, data: {...} }
+  const data = json.data || json;
+  return data;
 }
 
 interface OnboardingStep {
