@@ -697,6 +697,39 @@ export interface X402EndpointsListParams extends PaginationParams {
   method?: X402EndpointMethod;
 }
 
+// ============================================
+// Spending Policy Types
+// ============================================
+
+export interface SpendingPolicy {
+  // Spending limits
+  dailySpendLimit?: number;
+  monthlySpendLimit?: number;
+
+  // Current usage (tracked by backend)
+  dailySpent?: number;
+  monthlySpent?: number;
+
+  // Reset timestamps
+  dailyResetAt?: string;
+  monthlyResetAt?: string;
+
+  // Approval threshold (soft limit - payments above this need approval)
+  approvalThreshold?: number;
+  requiresApprovalAbove?: number;
+
+  // Allowlists
+  approvedEndpoints?: string[];
+  approvedVendors?: string[];
+  approvedCategories?: string[];
+
+  // Auto-fund configuration
+  autoFundEnabled?: boolean;
+  autoFundThreshold?: number;
+  autoFundAmount?: number;
+  autoFundSourceAccountId?: string;
+}
+
 export interface Wallet {
   id: string;
   tenantId: string;
@@ -706,12 +739,7 @@ export interface Wallet {
   currency: X402Currency;
   walletAddress?: string;
   network?: string;
-  spendingPolicy?: {
-    dailyLimit?: number;
-    monthlyLimit?: number;
-    approvedEndpoints?: string[];
-    autoFund?: { threshold: number; amount: number };
-  };
+  spendingPolicy?: SpendingPolicy;
   status: WalletStatus;
   name?: string;
   purpose?: string;
@@ -724,12 +752,7 @@ export interface CreateWalletInput {
   ownerAccountId: string;
   managedByAgentId?: string;
   currency?: X402Currency;
-  spendingPolicy?: {
-    dailyLimit?: number;
-    monthlyLimit?: number;
-    approvedEndpoints?: string[];
-    autoFund?: { threshold: number; amount: number };
-  };
+  spendingPolicy?: Partial<SpendingPolicy>;
   name?: string;
   purpose?: string;
   type?: 'internal' | 'circle_custodial';
@@ -737,12 +760,7 @@ export interface CreateWalletInput {
 }
 
 export interface UpdateWalletInput {
-  spendingPolicy?: {
-    dailyLimit?: number;
-    monthlyLimit?: number;
-    approvedEndpoints?: string[];
-    autoFund?: { threshold: number; amount: number };
-  };
+  spendingPolicy?: Partial<SpendingPolicy>;
   name?: string;
   purpose?: string;
   status?: WalletStatus;
@@ -1176,4 +1194,69 @@ export interface UCPSettlementsListParams extends PaginationParams {
   status?: UCPSettlementStatus;
   corridor?: UCPCorridorType;
   search?: string;
+}
+
+// ============================================
+// Approval Types
+// ============================================
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'executed';
+export type PaymentProtocol = 'x402' | 'ap2' | 'acp' | 'ucp';
+
+export interface ApprovalRecipient {
+  endpoint_id?: string;
+  endpoint_path?: string;
+  vendor?: string;
+  mandate_id?: string;
+  merchant?: string;
+  checkout_id?: string;
+  merchant_id?: string;
+  merchant_name?: string;
+  corridor?: string;
+  settlement_id?: string;
+  name?: string;
+}
+
+export interface Approval {
+  id: string;
+  walletId: string;
+  agentId?: string;
+  protocol: PaymentProtocol;
+  amount: number;
+  currency: string;
+  recipient: ApprovalRecipient | null;
+  status: ApprovalStatus;
+  expiresAt: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  decisionReason?: string;
+  executedTransferId?: string;
+  executedAt?: string;
+  executionError?: string;
+  requestedBy: {
+    type?: string;
+    id?: string;
+    name?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PendingApprovalsSummary {
+  count: number;
+  totalAmount: number;
+  byProtocol: Record<PaymentProtocol, { count: number; totalAmount: number }>;
+  oldestPending: string | null;
+  newestPending: string | null;
+}
+
+export interface ApprovalsListParams extends PaginationParams {
+  status?: ApprovalStatus;
+  walletId?: string;
+  agentId?: string;
+  protocol?: PaymentProtocol;
+}
+
+export interface ApproveRejectInput {
+  reason?: string;
 }

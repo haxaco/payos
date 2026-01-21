@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { Card, Button, Badge as UIBadge, Progress } from '@payos/ui';
+import { Card, Button, Badge as UIBadge } from '@payos/ui';
 import {
     ArrowLeft,
     Wallet,
@@ -25,6 +25,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { formatCurrency } from '@payos/ui';
 import { formatDistanceToNow } from 'date-fns';
+import { SpendingPolicyEditor } from '@/components/wallets/spending-policy-editor';
 
 const useWalletBalance = (walletId: string | undefined, authToken: string | null) => {
     return useQuery({
@@ -135,15 +136,6 @@ export default function WalletDetailPage() {
         );
     }
 
-    // Calculate simulated spending percentages for UI demo
-    const dailyLimit = wallet.spendingPolicy?.dailyLimit || 1000;
-    const monthlyLimit = wallet.spendingPolicy?.monthlyLimit || 5000;
-    // Mock usage data
-    const dailyUsed = 450;
-    const monthlyUsed = 2100;
-    const dailyPercent = (dailyUsed / dailyLimit) * 100;
-    const monthlyPercent = (monthlyUsed / monthlyLimit) * 100;
-
     return (
         <div className="p-8 max-w-[1600px] mx-auto space-y-8">
             {/* Top Navigation */}
@@ -222,30 +214,7 @@ export default function WalletDetailPage() {
                             </div>
                         </Card>
 
-                        <Card className="p-6">
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Spending Policy</h3>
-
-                            <div className="space-y-6">
-                                <div>
-                                    <div className="flex justify-between text-sm mb-2">
-                                        <span className="text-gray-500 dark:text-gray-400">Daily Limit</span>
-                                        <span className="font-medium text-gray-900 dark:text-white">
-                                            ${dailyUsed.toLocaleString()} / ${dailyLimit.toLocaleString()}
-                                        </span>
-                                    </div>
-                                    <Progress value={dailyPercent} className="h-2" />
-                                </div>
-                                <div>
-                                    <div className="flex justify-between text-sm mb-2">
-                                        <span className="text-gray-500 dark:text-gray-400">Monthly Limit</span>
-                                        <span className="font-medium text-gray-900 dark:text-white">
-                                            ${monthlyUsed.toLocaleString()} / ${monthlyLimit.toLocaleString()}
-                                        </span>
-                                    </div>
-                                    <Progress value={monthlyPercent} className="h-2" />
-                                </div>
-                            </div>
-                        </Card>
+                        <SpendingPolicyEditor wallet={wallet} />
                     </div>
 
                     {/* Transactions List */}
