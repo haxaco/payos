@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Tabs, TabsList, TabsTrigger, TabsContent, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@payos/ui';
-import { Zap, Bot, ShoppingCart, BarChart3 } from 'lucide-react';
+import { Zap, Bot, ShoppingCart, BarChart3, Globe } from 'lucide-react';
 import { X402Analytics } from '@/components/agentic-payments/x402-analytics';
 import { Ap2Analytics } from '@/components/ap2/ap2-analytics';
 import { AcpAnalytics } from '@/components/acp/acp-analytics';
+import { UcpAnalytics } from '@/components/ucp/ucp-analytics';
 import { AllProtocolsOverview } from '@/components/agentic-payments/all-protocols-overview';
 
-type Protocol = 'all' | 'x402' | 'ap2' | 'acp';
+type Protocol = 'all' | 'x402' | 'ap2' | 'acp' | 'ucp';
 type Period = '24h' | '7d' | '30d' | '90d';
 
 export default function AgenticAnalyticsPage() {
@@ -46,28 +47,34 @@ export default function AgenticAnalyticsPage() {
                     <TabsTrigger value="all">
                         <BarChart3 className="w-4 h-4 mr-1" /> Overview
                     </TabsTrigger>
-                    <TabsTrigger value="x402">
-                        <Zap className="w-4 h-4 mr-1" /> x402
+                    <TabsTrigger value="ucp">
+                        <Globe className="w-4 h-4 mr-1" /> UCP
+                    </TabsTrigger>
+                    <TabsTrigger value="acp">
+                        <ShoppingCart className="w-4 h-4 mr-1" /> ACP
                     </TabsTrigger>
                     <TabsTrigger value="ap2">
                         <Bot className="w-4 h-4 mr-1" /> AP2
                     </TabsTrigger>
-                    <TabsTrigger value="acp">
-                        <ShoppingCart className="w-4 h-4 mr-1" /> ACP
+                    <TabsTrigger value="x402">
+                        <Zap className="w-4 h-4 mr-1" /> x402
                     </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="all" className="pt-6">
                     <AllProtocolsOverview period={period} />
                 </TabsContent>
-                <TabsContent value="x402" className="pt-4">
-                    <X402Analytics period={period} />
+                <TabsContent value="ucp" className="pt-4">
+                    <UcpAnalytics period={period} />
+                </TabsContent>
+                <TabsContent value="acp" className="pt-4">
+                    <AcpAnalytics period={period as any} />
                 </TabsContent>
                 <TabsContent value="ap2" className="pt-4">
                     <Ap2Analytics period={period} />
                 </TabsContent>
-                <TabsContent value="acp" className="pt-4">
-                    <AcpAnalytics period={period as any} />
+                <TabsContent value="x402" className="pt-4">
+                    <X402Analytics period={period} />
                 </TabsContent>
             </Tabs>
         </div>

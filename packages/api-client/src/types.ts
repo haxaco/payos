@@ -1076,3 +1076,104 @@ export interface Recommendation {
   status: 'pending' | 'approved' | 'rejected' | 'executed';
   createdAt: string;
 }
+
+// ============================================
+// UCP Types (Universal Commerce Protocol)
+// ============================================
+
+export type UCPCorridorType = 'pix' | 'spei';
+export type UCPSettlementStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'pending_approval';
+
+export interface UCPCorridorInfo {
+  id: string;
+  name: string;
+  source_currency: string;
+  destination_currency: string;
+  destination_country: string;
+  rail: string;
+  estimated_settlement: string;
+}
+
+export interface UCPSettlement {
+  id: string;
+  tenantId: string;
+  token?: string;
+  corridor: UCPCorridorType;
+  status: UCPSettlementStatus;
+  amount: number;
+  currency: string;
+  recipient: UCPRecipient;
+  quote?: UCPQuote;
+  transferId?: string;
+  mandateId?: string;
+  failureReason?: string;
+  approvalId?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface UCPRecipient {
+  type: 'pix' | 'spei';
+  name: string;
+  // Pix fields
+  pix_key?: string;
+  pix_key_type?: 'cpf' | 'cnpj' | 'email' | 'phone' | 'evp';
+  tax_id?: string;
+  // SPEI fields
+  clabe?: string;
+  rfc?: string;
+}
+
+export interface UCPQuote {
+  fromAmount: number;
+  fromCurrency: string;
+  toAmount: number;
+  toCurrency: string;
+  fxRate: number;
+  fees: {
+    platform: number;
+    fx: number;
+    total: number;
+  };
+  expiresAt?: string;
+}
+
+export interface UCPAnalytics {
+  period: string;
+  summary: {
+    totalVolume: number;
+    totalSettlements: number;
+    completedSettlements: number;
+    failedSettlements: number;
+    pendingSettlements: number;
+    averageSettlementTime: number;
+    totalFees: number;
+  };
+  byStatus: {
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    pending_approval: number;
+  };
+  byCorridor: {
+    pix: {
+      count: number;
+      volume: number;
+    };
+    spei: {
+      count: number;
+      volume: number;
+    };
+  };
+  startDate: string;
+  endDate: string;
+}
+
+export interface UCPSettlementsListParams extends PaginationParams {
+  status?: UCPSettlementStatus;
+  corridor?: UCPCorridorType;
+  search?: string;
+}

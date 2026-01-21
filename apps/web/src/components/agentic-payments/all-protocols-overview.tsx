@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@payos/ui';
-import { TrendingUp, TrendingDown, Minus, Zap, Bot, ShoppingCart, DollarSign, Activity, CheckCircle, ArrowRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Zap, Bot, ShoppingCart, DollarSign, Activity, CheckCircle, ArrowRight, Globe } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -67,22 +67,50 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
         trend: 0,
     };
 
+    // Fetch UCP stats from analytics endpoint
+    const { data: ucpAnalytics } = useQuery({
+        queryKey: ['ucp', 'analytics', period],
+        queryFn: async () => {
+            if (!api) return null;
+            return api.ucp.getAnalytics({ period });
+        },
+        enabled: !!api,
+    });
+
+    const ucpData = {
+        volume: ucpAnalytics?.summary?.totalVolume || 0,
+        transactions: ucpAnalytics?.summary?.totalSettlements || 0,
+        successRate: ucpAnalytics?.summary?.totalSettlements
+            ? ((ucpAnalytics.summary.completedSettlements || 0) / ucpAnalytics.summary.totalSettlements) * 100
+            : 0,
+        trend: 0,
+    };
+
     // Calculate totals
     const totals = {
-        volume: (x402Data?.volume || 0) + (ap2Data?.volume || 0) + (acpData?.volume || 0),
-        transactions: (x402Data?.transactions || 0) + (ap2Data?.transactions || 0) + (acpData?.transactions || 0),
+        volume: (x402Data?.volume || 0) + (ap2Data?.volume || 0) + (acpData?.volume || 0) + (ucpData?.volume || 0),
+        transactions: (x402Data?.transactions || 0) + (ap2Data?.transactions || 0) + (acpData?.transactions || 0) + (ucpData?.transactions || 0),
         successRate: 98.5, // weighted average would be better
     };
 
     const protocols = [
         {
-            id: 'x402',
-            name: 'x402 Micropayments',
-            icon: Zap,
-            color: 'text-yellow-500',
-            bgColor: 'bg-yellow-500/10',
-            data: x402Data || { volume: 0, transactions: 0, successRate: 0, trend: 0 },
-            href: '?protocol=x402',
+            id: 'ucp',
+            name: 'UCP Checkouts',
+            icon: Globe,
+            color: 'text-purple-500',
+            bgColor: 'bg-purple-500/10',
+            data: ucpData || { volume: 0, transactions: 0, successRate: 0, trend: 0 },
+            href: '?protocol=ucp',
+        },
+        {
+            id: 'acp',
+            name: 'ACP Checkouts',
+            icon: ShoppingCart,
+            color: 'text-green-500',
+            bgColor: 'bg-green-500/10',
+            data: acpData || { volume: 0, transactions: 0, successRate: 0, trend: 0 },
+            href: '?protocol=acp',
         },
         {
             id: 'ap2',
@@ -94,13 +122,13 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
             href: '?protocol=ap2',
         },
         {
-            id: 'acp',
-            name: 'ACP Checkouts',
-            icon: ShoppingCart,
-            color: 'text-green-500',
-            bgColor: 'bg-green-500/10',
-            data: acpData || { volume: 0, transactions: 0, successRate: 0, trend: 0 },
-            href: '?protocol=acp',
+            id: 'x402',
+            name: 'x402 Micropayments',
+            icon: Zap,
+            color: 'text-yellow-500',
+            bgColor: 'bg-yellow-500/10',
+            data: x402Data || { volume: 0, transactions: 0, successRate: 0, trend: 0 },
+            href: '?protocol=x402',
         },
     ];
 

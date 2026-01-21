@@ -79,6 +79,9 @@ export {
   PopoverContent,
 } from './components/popover';
 
+// Feedback Components
+export { Alert, AlertTitle, AlertDescription } from './components/alert';
+
 // Data Display
 export {
   Table,

@@ -1,20 +1,30 @@
 'use client';
 
-import { Bot, Zap, ShoppingCart, TrendingUp, DollarSign, Activity } from 'lucide-react';
+import { Bot, Zap, ShoppingCart, TrendingUp, DollarSign, Activity, Globe } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@payos/ui';
 
 export default function AgenticPaymentsOverviewPage() {
     const protocols = [
         {
-            id: 'x402',
-            name: 'x402 Protocol',
-            description: 'HTTP 402 Payment Required - Monetize your APIs with micropayments',
-            icon: Zap,
-            color: 'text-yellow-600 dark:text-yellow-400',
-            bgColor: 'bg-yellow-100 dark:bg-yellow-950',
-            href: '/dashboard/agentic-payments/x402/endpoints',
-            stats: { endpoints: 3, revenue: '$21.82' }
+            id: 'ucp',
+            name: 'UCP Protocol',
+            description: 'Universal Commerce Protocol - PayOS payment handler for Pix and SPEI checkouts',
+            icon: Globe,
+            color: 'text-green-600 dark:text-green-400',
+            bgColor: 'bg-green-100 dark:bg-green-950',
+            href: '/dashboard/agentic-payments/ucp/checkouts',
+            stats: { checkouts: 0, volume: '$0' }
+        },
+        {
+            id: 'acp',
+            name: 'ACP Protocol',
+            description: 'Agentic Commerce Protocol - Enable AI agents to complete purchases',
+            icon: ShoppingCart,
+            color: 'text-purple-600 dark:text-purple-400',
+            bgColor: 'bg-purple-100 dark:bg-purple-950',
+            href: '/dashboard/agentic-payments/acp/checkouts',
+            stats: { checkouts: 2, volume: '$1,245' }
         },
         {
             id: 'ap2',
@@ -27,14 +37,14 @@ export default function AgenticPaymentsOverviewPage() {
             stats: { mandates: 3, active: 2 }
         },
         {
-            id: 'acp',
-            name: 'ACP Protocol',
-            description: 'Agentic Commerce Protocol - Enable AI agents to complete purchases',
-            icon: ShoppingCart,
-            color: 'text-purple-600 dark:text-purple-400',
-            bgColor: 'bg-purple-100 dark:bg-purple-950',
-            href: '/dashboard/agentic-payments/acp/checkouts',
-            stats: { checkouts: 2, volume: '$1,245' }
+            id: 'x402',
+            name: 'x402 Protocol',
+            description: 'HTTP 402 Payment Required - Monetize your APIs with micropayments',
+            icon: Zap,
+            color: 'text-yellow-600 dark:text-yellow-400',
+            bgColor: 'bg-yellow-100 dark:bg-yellow-950',
+            href: '/dashboard/agentic-payments/x402/endpoints',
+            stats: { endpoints: 3, revenue: '$21.82' }
         },
     ];
 
@@ -48,7 +58,7 @@ export default function AgenticPaymentsOverviewPage() {
             </div>
 
             {/* Protocol Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {protocols.map((protocol) => {
                     const Icon = protocol.icon;
                     return (

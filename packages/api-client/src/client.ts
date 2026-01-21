@@ -73,6 +73,12 @@ import type {
   TreasuryTransaction,
   TreasuryAlert,
   Recommendation,
+  // UCP types
+  UCPSettlement,
+  UCPCorridorInfo,
+  UCPQuote,
+  UCPAnalytics,
+  UCPSettlementsListParams,
 } from './types';
 
 export interface PayOSClientConfig {
@@ -1160,6 +1166,186 @@ export class PayOSClient {
      */
     snapshot: () =>
       this.post<{ data: any }>('/treasury/snapshot').then(r => r.data),
+  };
+
+  // ============================================
+  // UCP API (Universal Commerce Protocol)
+  // ============================================
+
+  ucp = {
+    /**
+     * List settlements
+     */
+    list: (params?: UCPSettlementsListParams) => {
+      const query = new URLSearchParams();
+      if (params?.page) query.set('offset', String((params.page - 1) * (params.limit || 20)));
+      if (params?.limit) query.set('limit', String(params.limit));
+      if (params?.status) query.set('status', params.status);
+      if (params?.corridor) query.set('corridor', params.corridor);
+
+      return this.get<PaginatedResponse<UCPSettlement>>(`/ucp/settlements${query.toString() ? `?${query.toString()}` : ''}`);
+    },
+
+    /**
+     * Get settlement by ID
+     */
+    get: (id: string) =>
+      this.get<UCPSettlement>(`/ucp/settlements/${id}`),
+
+    /**
+     * Get available corridors
+     */
+    getCorridors: () =>
+      this.get<{ corridors: UCPCorridorInfo[] }>('/ucp/corridors').then(r => r.corridors),
+
+    /**
+     * Get UCP handler info
+     */
+    getInfo: () =>
+      this.get<{ handler: { id: string; name: string; version: string }; supported_corridors: string[]; supported_currencies: string[] }>('/ucp/info'),
+
+    /**
+     * Get quote for a settlement
+     */
+    getQuote: (params: { corridor: 'pix' | 'spei'; amount: number; currency: 'USD' | 'USDC' }) =>
+      this.post<UCPQuote>('/ucp/quote', params),
+
+    /**
+     * Get UCP analytics
+     */
+    getAnalytics: (params?: { period?: '24h' | '7d' | '30d' | '90d' | '1y' }) =>
+      this.get<{ data: UCPAnalytics }>('/ucp/analytics', params).then(r => r.data),
+
+    // ============================================
+    // PayOS Hosted Checkouts (Phase 2)
+    // ============================================
+    checkouts: {
+      /**
+       * List PayOS hosted checkout sessions
+       */
+      list: (params?: { status?: string; limit?: number; offset?: number }) => {
+        const query = new URLSearchParams();
+        if (params?.limit) query.set('limit', String(params.limit));
+        if (params?.offset) query.set('offset', String(params.offset));
+        if (params?.status) query.set('status', params.status);
+        return this.get<PaginatedResponse<any>>(`/ucp/checkouts${query.toString() ? `?${query.toString()}` : ''}`);
+      },
+
+      /**
+       * Get a hosted checkout by ID
+       */
+      get: (id: string) =>
+        this.get<{ data: any }>(`/ucp/checkouts/${id}`).then(r => r.data),
+
+      /**
+       * Create a hosted checkout session
+       */
+      create: (data: any) =>
+        this.post<{ data: any }>('/ucp/checkouts', data).then(r => r.data),
+
+      /**
+       * Update a hosted checkout session
+       */
+      update: (id: string, data: any) =>
+        this.patch<{ data: any }>(`/ucp/checkouts/${id}`, data).then(r => r.data),
+
+      /**
+       * Complete a hosted checkout
+       */
+      complete: (id: string) =>
+        this.post<{ data: any }>(`/ucp/checkouts/${id}/complete`).then(r => r.data),
+
+      /**
+       * Cancel a hosted checkout
+       */
+      cancel: (id: string) =>
+        this.post<{ data: any }>(`/ucp/checkouts/${id}/cancel`).then(r => r.data),
+    },
+
+    // ============================================
+    // Orders (Phase 3)
+    // ============================================
+    orders: {
+      /**
+       * List orders
+       */
+      list: (params?: { status?: string; limit?: number; offset?: number }) => {
+        const query = new URLSearchParams();
+        if (params?.limit) query.set('limit', String(params.limit));
+        if (params?.offset) query.set('offset', String(params.offset));
+        if (params?.status) query.set('status', params.status);
+        return this.get<PaginatedResponse<any>>(`/ucp/orders${query.toString() ? `?${query.toString()}` : ''}`);
+      },
+
+      /**
+       * Get an order by ID
+       */
+      get: (id: string) =>
+        this.get<{ data: any }>(`/ucp/orders/${id}`).then(r => r.data),
+
+      /**
+       * Update order status
+       */
+      updateStatus: (id: string, status: string) =>
+        this.patch<{ data: any }>(`/ucp/orders/${id}/status`, { status }).then(r => r.data),
+
+      /**
+       * Add fulfillment event to an order
+       */
+      addEvent: (id: string, event: { type: string; description: string; tracking_url?: string; tracking_number?: string }) =>
+        this.post<{ data: any }>(`/ucp/orders/${id}/events`, event).then(r => r.data),
+
+      /**
+       * Add adjustment to an order (refund, return, credit)
+       */
+      addAdjustment: (id: string, adjustment: { type: string; amount: number; currency: string; reason: string }) =>
+        this.post<{ data: any }>(`/ucp/orders/${id}/adjustments`, adjustment).then(r => r.data),
+    },
+
+    // ============================================
+    // Identity (Phase 4 - OAuth 2.0)
+    // ============================================
+    identity: {
+      /**
+       * List OAuth clients
+       */
+      listClients: () =>
+        this.get<{ data: any[] }>('/ucp/identity/clients'),
+
+      /**
+       * Register a new OAuth client
+       */
+      registerClient: (data: { name: string; client_type: 'confidential' | 'public'; redirect_uris: string[]; allowed_scopes: string[] }) =>
+        this.post<any>('/ucp/identity/clients', data),
+
+      /**
+       * Deactivate an OAuth client
+       */
+      deactivateClient: (id: string) =>
+        this.patch<{ data: any }>(`/ucp/identity/clients/${id}/deactivate`, {}),
+
+      /**
+       * List linked buyer accounts
+       */
+      listLinkedAccounts: (params: { buyer_id?: string; platform_id?: string }) => {
+        const query = new URLSearchParams();
+        if (params.buyer_id) query.set('buyer_id', params.buyer_id);
+        if (params.platform_id) query.set('platform_id', params.platform_id);
+        return this.get<{ data: any[] }>(`/ucp/identity/linked-accounts${query.toString() ? `?${query.toString()}` : ''}`);
+      },
+
+      /**
+       * Unlink a buyer account
+       */
+      unlinkAccount: (platformId: string, buyerId: string) =>
+        this.delete<{ success: boolean }>(`/ucp/identity/linked-accounts/${platformId}/${buyerId}`),
+
+      /**
+       * Get available scopes
+       */
+      getScopes: () =>
+        this.get<{ data: { scope: string; description: string }[] }>('/ucp/identity/scopes'),
+    },
   };
 }
 
