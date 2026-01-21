@@ -6,7 +6,165 @@
  * @see Phase 4: Identity Linking
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// =============================================================================
+// Mock Supabase Client
+// =============================================================================
+
+// In-memory stores for mock database
+const mockStores = {
+  ucp_oauth_clients: new Map<string, any>(),
+  ucp_authorization_codes: new Map<string, any>(),
+  ucp_linked_accounts: new Map<string, any>(),
+};
+
+// Helper to create chainable mock query builder
+function createMockQueryBuilder(tableName: string) {
+  const store = mockStores[tableName as keyof typeof mockStores] || new Map();
+
+  // Create a new builder instance with fresh state
+  function createBuilder() {
+    let filters: Array<{ column: string; op: string; value: any }> = [];
+    let orderColumn: string | null = null;
+    let orderAsc = true;
+    let limitCount: number | null = null;
+    let rangeStart: number | null = null;
+    let rangeEnd: number | null = null;
+    let pendingUpdates: any = null;
+
+    const applyFilters = (data: any[]): any[] => {
+      return data.filter(item => {
+        return filters.every(f => {
+          if (f.op === 'eq') return item[f.column] === f.value;
+          if (f.op === 'neq') return item[f.column] !== f.value;
+          if (f.op === 'in') return f.value.includes(item[f.column]);
+          return true;
+        });
+      });
+    };
+
+    const getResults = () => {
+      let result = applyFilters(Array.from(store.values()));
+      if (orderColumn) {
+        result.sort((a, b) => {
+          const aVal = a[orderColumn!];
+          const bVal = b[orderColumn!];
+          return orderAsc ? (aVal < bVal ? -1 : 1) : (aVal > bVal ? -1 : 1);
+        });
+      }
+      if (rangeStart !== null && rangeEnd !== null) {
+        result = result.slice(rangeStart, rangeEnd + 1);
+      } else if (limitCount) {
+        result = result.slice(0, limitCount);
+      }
+      return result;
+    };
+
+    const builder: any = {
+      select: () => builder,
+      insert: (data: any | any[]) => {
+        const items = Array.isArray(data) ? data : [data];
+        const inserted: any[] = [];
+        for (const item of items) {
+          const id = item.id || `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const record = { ...item, id, created_at: new Date().toISOString() };
+          store.set(id, record);
+          inserted.push(record);
+        }
+        // Return chainable builder for insert().select().single()
+        const insertBuilder: any = {
+          select: () => insertBuilder,
+          single: async () => ({ data: inserted[0], error: null }),
+          then: async (resolve: any) => resolve({ data: inserted, error: null }),
+        };
+        return insertBuilder;
+      },
+      update: (updates: any) => {
+        pendingUpdates = updates;
+        return builder;
+      },
+      delete: () => builder,
+      eq: (column: string, value: any) => {
+        filters.push({ column, op: 'eq', value });
+        // If we have pending updates, this is update().eq() chain
+        if (pendingUpdates !== null) {
+          return builder;
+        }
+        return builder;
+      },
+      neq: (column: string, value: any) => {
+        filters.push({ column, op: 'neq', value });
+        return builder;
+      },
+      in: (column: string, values: any[]) => {
+        filters.push({ column, op: 'in', value: values });
+        return builder;
+      },
+      order: (column: string, opts?: { ascending?: boolean }) => {
+        orderColumn = column;
+        orderAsc = opts?.ascending !== false;
+        return builder;
+      },
+      limit: (count: number) => {
+        limitCount = count;
+        return builder;
+      },
+      range: (start: number, end: number) => {
+        rangeStart = start;
+        rangeEnd = end;
+        return builder;
+      },
+      single: async () => {
+        // Execute pending updates if any
+        if (pendingUpdates !== null) {
+          const filtered = applyFilters(Array.from(store.values()));
+          for (const item of filtered) {
+            const updated = { ...item, ...pendingUpdates, updated_at: new Date().toISOString() };
+            store.set(item.id, updated);
+          }
+          return { data: filtered.length > 0 ? { ...filtered[0], ...pendingUpdates } : null, error: null };
+        }
+
+        const filtered = getResults();
+        if (filtered.length === 0) {
+          return { data: null, error: { code: 'PGRST116', message: 'No rows found' } };
+        }
+        return { data: filtered[0], error: null };
+      },
+      then: async (resolve: (result: { data: any[] | null; error: null }) => void) => {
+        // Execute pending updates if any
+        if (pendingUpdates !== null) {
+          const filtered = applyFilters(Array.from(store.values()));
+          for (const item of filtered) {
+            const updated = { ...item, ...pendingUpdates, updated_at: new Date().toISOString() };
+            store.set(item.id, updated);
+          }
+          resolve({ data: null, error: null });
+          return;
+        }
+        // Execute delete
+        if (filters.length > 0 && pendingUpdates === null) {
+          // Check if this is a delete operation (we track via method call)
+        }
+        resolve({ data: getResults(), error: null });
+      },
+    };
+
+    return builder;
+  }
+
+  return createBuilder();
+}
+
+const mockSupabaseClient = {
+  from: (tableName: string) => createMockQueryBuilder(tableName),
+};
+
+vi.mock('../../src/db/client.js', () => ({
+  getClient: () => mockSupabaseClient,
+  createClient: () => mockSupabaseClient,
+}));
 import {
   // Client management
   registerClient,
@@ -64,13 +222,20 @@ async function createTestClient(
 // Test Setup
 // =============================================================================
 
+// Helper to clear mock stores
+function clearMockStores() {
+  mockStores.ucp_oauth_clients.clear();
+  mockStores.ucp_authorization_codes.clear();
+  mockStores.ucp_linked_accounts.clear();
+}
+
 describe('UCP Identity Linking', () => {
   beforeEach(() => {
-    clearIdentityStores();
+    clearMockStores();
   });
 
   afterEach(() => {
-    clearIdentityStores();
+    clearMockStores();
   });
 
   // ===========================================================================
