@@ -12,6 +12,7 @@ PayOS is a multi-tenant B2B stablecoin payout operating system built with a mode
 
 | Document | Description | Purpose |
 |----------|-------------|---------|
+| [three-layer-architecture.md](three-layer-architecture.md) | **Three-layer design** | Protocols → Transfers → Settlement |
 | [INFRASTRUCTURE.md](INFRASTRUCTURE.md) | Production infrastructure | Deployment platforms, monitoring, scaling |
 | [wallet-schema.md](wallet-schema.md) | Wallet schema design | Database schema for wallets and transactions |
 | [data-model-strategy.md](data-model-strategy.md) | Data model strategy | Core data models and relationships |
@@ -381,7 +382,7 @@ When updating architecture documentation:
 
 ---
 
-**Last Updated:** December 29, 2025
+**Last Updated:** January 20, 2026
 **Maintained By:** PayOS Team
 
 For the main documentation index, see [/docs/README.md](../README.md)

@@ -91,6 +91,9 @@ Every story must meet these criteria before completion:
 - [Epic 51: Unified Onboarding](./epic-51-unified-onboarding.md) 🚀 **P1** - Protocol-specific onboarding
 - [Epic 52: Dashboard Redesign](./epic-52-dashboard-redesign.md) 📊 **P1** - Agentic protocol focus
 
+### Card Network Integration ⭐ NEW
+- [Epic 53: Card Network Agentic Commerce](./epic-53-card-network-agentic-commerce.md) 💳 **P1** - Visa VIC + Mastercard Agent Pay, unified Web Bot Auth, multi-rail routing
+
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) 🏭 - x402 facilitator for LATAM ecosystem
 - [Epic 38: Payment-Optimized Chains](./epic-38-payment-optimized-chains.md) ⛓️ - Tempo & future chain integration
@@ -144,6 +147,7 @@ Strategic explorations before committing to implementation:
 | **Epic 52: Dashboard Redesign** | **P1** | 21 | Agentic protocol focus |
 | Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
 | Epic 29: Workflow Engine | P0 | 52 | |
+| **Epic 53: Card Networks** | **P1** | 62 | Visa VIC + Mastercard Agent Pay |
 
 ### Planned (P0/P1) 📋
 
@@ -189,6 +193,15 @@ Strategic explorations before committing to implementation:
 
 ## Recent Changes (January 2026)
 
+### January 21, 2026
+- **Epic 53: Card Network Agentic Commerce** — NEW (62 points, P1)
+  - **Both Visa VIC AND Mastercard Agent Pay** support
+  - Unified Web Bot Auth verification (RFC 9421) for both networks
+  - 11 stories covering full integration of both card networks
+  - Settlement router evaluates 5 rails: Visa, Mastercard, USDC, Pix, SPEI
+  - LATAM optimization (Mastercard already live Dec 2025)
+  - MCP tools and Dashboard UI for card network management
+
 ### January 20, 2026
 - **Epic 43: UCP Integration** — COMPLETE ✅ (55 points)
 - **Epic 48: Connected Accounts** — NEW (21 points, P0)
@@ -229,7 +242,14 @@ PayOS supports **FOUR** agentic payment protocols:
 | **x402** | Coinbase | Micropayments | ✅ Full support |
 | **AP2** | Google | Agent mandates | ✅ Full support |
 | **ACP** | Stripe/OpenAI | E-commerce | ✅ Full support |
-| **UCP** | Google+Shopify | Full commerce | 🚧 Epic 43 (P0) |
+| **UCP** | Google+Shopify | Full commerce | ✅ Epic 43 |
+
+**Card Network Support:**
+
+| Network | Protocol | PayOS Status |
+|---------|----------|---------------|
+| **Visa** | VIC / TAP | 🚧 Epic 53 (P1) |
+| **Mastercard** | Agent Pay | 🚧 Epic 53 (P1) |
 
 > **"We don't care which protocol wins. PayOS makes them all work."**
 
@@ -255,7 +275,10 @@ PayOS supports **FOUR** agentic payment protocols:
 | `payos.accounts` | Account management | `create()`, `get()`, `update()` |
 | `payos.agents` | Agent management | `create()`, `get()`, `updatePolicy()` |
 | `payos.webhooks` | Webhook utilities | `constructEvent()`, `verify()` |
+| `payos.cards` | Card network operations | `verify()`, `createInstruction()`, `complete()` |
+| `payos.cards.visa` | Visa VIC operations | `createInstruction()`, `getCredentials()` |
+| `payos.cards.mastercard` | Mastercard Agent Pay | `registerAgent()`, `createToken()`, `getDTVC()` |
 
 ---
 
-*Last updated: January 20, 2026*
+*Last updated: January 21, 2026*
