@@ -290,8 +290,25 @@ export async function createCheckout(
 export async function getCheckout(
   tenantId: string,
   checkoutId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPCheckoutSession | null> {
+  // If supabase client provided, query database
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('ucp_checkout_sessions')
+      .select('*')
+      .eq('id', checkoutId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return dbRowToCheckoutSession(data);
+  }
+
+  // Fallback to in-memory store
   const stored = checkoutStore.get(checkoutId);
 
   if (!stored) {
@@ -545,10 +562,37 @@ export async function listCheckouts(
     limit?: number;
     offset?: number;
   } = {},
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<{ data: UCPCheckoutSession[]; total: number }> {
   const { status, limit = 20, offset = 0 } = options;
 
+  // If supabase client provided, query database
+  if (supabase) {
+    let query = supabase
+      .from('ucp_checkout_sessions')
+      .select('*', { count: 'exact' })
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('[UCP Checkout] List error:', error);
+      throw new Error('Failed to list checkouts');
+    }
+
+    return {
+      data: (data || []).map(dbRowToCheckoutSession),
+      total: count || 0,
+    };
+  }
+
+  // Fallback to in-memory store
   let checkouts = Array.from(checkoutStore.values())
     .filter(c => c.tenant_id === tenantId);
 
@@ -565,6 +609,35 @@ export async function listCheckouts(
   return {
     data: paged.map(toCheckoutSession),
     total,
+  };
+}
+
+/**
+ * Convert database row to UCPCheckoutSession
+ */
+function dbRowToCheckoutSession(row: any): UCPCheckoutSession {
+  return {
+    id: row.id,
+    tenant_id: row.tenant_id,
+    status: row.status,
+    currency: row.currency,
+    line_items: row.line_items || [],
+    totals: row.totals || [],
+    buyer: row.buyer,
+    shipping_address: row.shipping_address,
+    billing_address: row.billing_address,
+    payment_config: row.payment_config || { handlers: ['payos'] },
+    payment_instruments: row.payment_instruments || [],
+    selected_instrument_id: row.selected_instrument_id,
+    messages: row.messages || [],
+    continue_url: row.continue_url,
+    cancel_url: row.cancel_url,
+    links: row.links || [],
+    metadata: row.metadata || {},
+    order_id: row.order_id,
+    expires_at: row.expires_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   };
 }
 

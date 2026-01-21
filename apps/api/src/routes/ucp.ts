@@ -4,6 +4,7 @@
  * Authenticated endpoints for UCP settlement operations.
  *
  * @see Story 43.5: Handler Credential Flow
+ * @see Story 18.R3: Multi-Protocol Spending Policy Integration
  * @see https://ucp.dev/specification/overview/
  */
 
@@ -21,8 +22,16 @@ import {
   executeSettlementWithMandate,
   getSettlement,
   listSettlements,
+  getToken,
 } from '../services/ucp/index.js';
 import type { UCPTokenRequest, UCPSettleRequest, UCPMandateSettleRequest } from '../services/ucp/types.js';
+import { 
+  createSpendingPolicyService,
+  type PolicyContext 
+} from '../services/spending-policy.js';
+import { 
+  createApprovalWorkflowService 
+} from '../services/approval-workflow.js';
 
 const router = new Hono();
 
@@ -130,6 +139,7 @@ router.post('/tokens', async (c) => {
  * POST /v1/ucp/settle
  *
  * Complete settlement using a previously acquired token.
+ * Story 18.R3: Includes spending policy checks for agent wallets.
  */
 router.post('/settle', async (c) => {
   const ctx = c.get('ctx');
@@ -147,8 +157,98 @@ router.post('/settle', async (c) => {
     idempotency_key: parsed.data.idempotency_key,
   };
 
+  // ============================================
+  // SPENDING POLICY CHECK (Story 18.R3)
+  // ============================================
+  // Get token to extract amount and check wallet policy
+  
+  const tokenData = getToken(parsed.data.token);
+  if (tokenData && tokenData.tenantId === ctx.tenantId) {
+    // Try to find wallet if token was created with wallet context
+    const walletId = (body as any).wallet_id;
+    
+    if (walletId) {
+      const spendingPolicyService = createSpendingPolicyService(supabase);
+      const approvalWorkflowService = createApprovalWorkflowService(supabase);
+      
+      const policyContext: PolicyContext = {
+        protocol: 'ucp',
+        vendor: tokenData.recipient?.name,
+        metadata: {
+          corridor: tokenData.corridor,
+          settlement_id: tokenData.settlementId,
+        },
+      };
+
+      const policyCheck = await spendingPolicyService.checkPolicy(
+        walletId,
+        tokenData.amount,
+        policyContext
+      );
+
+      if (!policyCheck.allowed) {
+        if (policyCheck.requiresApproval) {
+          // Create approval request
+          const approval = await approvalWorkflowService.createApproval({
+            tenantId: ctx.tenantId,
+            walletId,
+            protocol: 'ucp',
+            amount: tokenData.amount,
+            currency: tokenData.currency,
+            recipient: {
+              corridor: tokenData.corridor,
+              settlement_id: tokenData.settlementId,
+              name: tokenData.recipient?.name,
+            },
+            paymentContext: {
+              token: parsed.data.token,
+              corridor: tokenData.corridor,
+              recipient: tokenData.recipient,
+              quote: tokenData.quote,
+              idempotency_key: parsed.data.idempotency_key,
+            },
+            requestedByType: ctx.actorType,
+            requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
+            requestedByName: ctx.userName || ctx.actorName || undefined,
+          });
+
+          return c.json({
+            status: 'pending_approval',
+            message: 'Settlement requires approval',
+            reason: policyCheck.reason,
+            code: 'APPROVAL_REQUIRED',
+            approval: {
+              id: approval.id,
+              expiresAt: approval.expiresAt,
+              amount: approval.amount,
+              currency: approval.currency,
+            }
+          }, 202);
+        }
+
+        // Hard limit exceeded
+        return c.json({
+          error: {
+            code: 'POLICY_VIOLATION',
+            message: 'Settlement blocked by spending policy',
+            reason: policyCheck.reason,
+            violationType: policyCheck.violationType,
+          }
+        }, 403);
+      }
+    }
+  }
+
   try {
     const settlement = await executeSettlement(ctx.tenantId, request, supabase);
+    
+    // Record spending if we have a wallet (Story 18.R3)
+    const walletId = (body as any).wallet_id;
+    if (walletId && tokenData) {
+      const spendingPolicyService = createSpendingPolicyService(supabase);
+      await spendingPolicyService.recordSpending(walletId, tokenData.amount);
+    }
+    
     return c.json(settlement);
   } catch (error: any) {
     // Handle specific error cases
@@ -188,6 +288,7 @@ router.post('/settle', async (c) => {
  * Supports autonomous agent purchases via dev.ucp.shopping.ap2_mandate extension.
  *
  * @see Story 43.6: AP2 Mandate Support in Handler
+ * @see Story 18.R3: Multi-Protocol Spending Policy Integration
  */
 router.post('/settle/mandate', async (c) => {
   const ctx = c.get('ctx');
@@ -209,8 +310,89 @@ router.post('/settle/mandate', async (c) => {
     idempotency_key: parsed.data.idempotency_key,
   };
 
+  // ============================================
+  // SPENDING POLICY CHECK (Story 18.R3)
+  // ============================================
+  const walletId = (body as any).wallet_id;
+  
+  if (walletId) {
+    const spendingPolicyService = createSpendingPolicyService(supabase);
+    const approvalWorkflowService = createApprovalWorkflowService(supabase);
+    
+    const policyContext: PolicyContext = {
+      protocol: 'ucp',
+      vendor: parsed.data.recipient.name,
+      mandateId: parsed.data.mandate_token,
+      metadata: {
+        corridor: parsed.data.corridor,
+      },
+    };
+
+    const policyCheck = await spendingPolicyService.checkPolicy(
+      walletId,
+      parsed.data.amount,
+      policyContext
+    );
+
+    if (!policyCheck.allowed) {
+      if (policyCheck.requiresApproval) {
+        // Create approval request
+        const approval = await approvalWorkflowService.createApproval({
+          tenantId: ctx.tenantId,
+          walletId,
+          protocol: 'ucp',
+          amount: parsed.data.amount,
+          currency: parsed.data.currency,
+          recipient: {
+            corridor: parsed.data.corridor,
+            name: parsed.data.recipient.name,
+          },
+          paymentContext: {
+            mandate_token: parsed.data.mandate_token,
+            corridor: parsed.data.corridor,
+            recipient: parsed.data.recipient,
+            idempotency_key: parsed.data.idempotency_key,
+          },
+          requestedByType: ctx.actorType,
+          requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
+          requestedByName: ctx.userName || ctx.actorName || undefined,
+        });
+
+        return c.json({
+          status: 'pending_approval',
+          message: 'Settlement requires approval',
+          reason: policyCheck.reason,
+          code: 'APPROVAL_REQUIRED',
+          approval: {
+            id: approval.id,
+            expiresAt: approval.expiresAt,
+            amount: approval.amount,
+            currency: approval.currency,
+          }
+        }, 202);
+      }
+
+      // Hard limit exceeded
+      return c.json({
+        error: {
+          code: 'POLICY_VIOLATION',
+          message: 'Settlement blocked by spending policy',
+          reason: policyCheck.reason,
+          violationType: policyCheck.violationType,
+        }
+      }, 403);
+    }
+  }
+
   try {
     const settlement = await executeSettlementWithMandate(ctx.tenantId, request, supabase);
+    
+    // Record spending if we have a wallet (Story 18.R3)
+    if (walletId) {
+      const spendingPolicyService = createSpendingPolicyService(supabase);
+      await spendingPolicyService.recordSpending(walletId, parsed.data.amount);
+    }
+    
     return c.json(settlement);
   } catch (error: any) {
     // Handle specific error cases
@@ -388,6 +570,104 @@ router.get('/info', (c) => {
           version: ucpCtx.agent.version,
         }
       : undefined,
+  });
+});
+
+/**
+ * GET /v1/ucp/analytics
+ *
+ * Get UCP settlement analytics.
+ */
+router.get('/analytics', async (c) => {
+  const ctx = c.get('ctx');
+  const query = c.req.query();
+  const period = query.period || '30d';
+
+  // Calculate date range based on period
+  const now = new Date();
+  let startDate: Date;
+  switch (period) {
+    case '24h':
+      startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      break;
+    case '7d':
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case '90d':
+      startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    case '1y':
+      startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      break;
+    case '30d':
+    default:
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
+
+  // Get all settlements for analytics
+  const result = await listSettlements(ctx.tenantId, {
+    limit: 1000,
+    offset: 0,
+  });
+
+  // Filter by date range
+  const settlements = result.data.filter(s => new Date(s.createdAt) >= startDate);
+
+  // Calculate analytics
+  const completed = settlements.filter(s => s.status === 'completed');
+  const failed = settlements.filter(s => s.status === 'failed');
+  const pending = settlements.filter(s => s.status === 'pending' || s.status === 'processing');
+  const pendingApproval = settlements.filter(s => s.status === 'pending_approval');
+
+  const pixSettlements = settlements.filter(s => s.corridor === 'pix');
+  const speiSettlements = settlements.filter(s => s.corridor === 'spei');
+
+  const totalVolume = completed.reduce((sum, s) => sum + s.amount, 0);
+  const totalFees = completed.reduce((sum, s) => sum + (s.quote?.fees?.total || 0), 0);
+
+  // Calculate average settlement time (in seconds) for completed settlements
+  let avgSettlementTime = 0;
+  if (completed.length > 0) {
+    const times = completed
+      .filter(s => s.completedAt)
+      .map(s => new Date(s.completedAt!).getTime() - new Date(s.createdAt).getTime());
+    if (times.length > 0) {
+      avgSettlementTime = Math.round(times.reduce((a, b) => a + b, 0) / times.length / 1000);
+    }
+  }
+
+  return c.json({
+    data: {
+      period,
+      summary: {
+        totalVolume,
+        totalSettlements: settlements.length,
+        completedSettlements: completed.length,
+        failedSettlements: failed.length,
+        pendingSettlements: pending.length + pendingApproval.length,
+        averageSettlementTime: avgSettlementTime,
+        totalFees,
+      },
+      byStatus: {
+        pending: pending.filter(s => s.status === 'pending').length,
+        processing: pending.filter(s => s.status === 'processing').length,
+        completed: completed.length,
+        failed: failed.length,
+        pending_approval: pendingApproval.length,
+      },
+      byCorridor: {
+        pix: {
+          count: pixSettlements.length,
+          volume: pixSettlements.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.amount, 0),
+        },
+        spei: {
+          count: speiSettlements.length,
+          volume: speiSettlements.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.amount, 0),
+        },
+      },
+      startDate: startDate.toISOString(),
+      endDate: now.toISOString(),
+    },
   });
 });
 

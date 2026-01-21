@@ -20,6 +20,15 @@ import { createHmac } from 'crypto';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { createSettlementService } from '../services/settlement.js';
+import { 
+  createSpendingPolicyService, 
+  invalidatePolicyCache,
+  type PolicyContext 
+} from '../services/spending-policy.js';
+import { 
+  createApprovalWorkflowService,
+  type PaymentProtocol 
+} from '../services/approval-workflow.js';
 
 const app = new Hono();
 
@@ -628,39 +637,80 @@ app.post('/pay', async (c) => {
     }
 
     // ============================================
-    // 6. CHECK SPENDING POLICY (WITH CACHING)
+    // 6. CHECK SPENDING POLICY (Story 18.R1: Unified Service)
     // ============================================
-    // Optimization: Cache spending policies in memory (30s TTL)
-    // Before: ~10ms per payment (database lookup)
-    // After: ~1ms on cache hit (99% of requests)
+    // Uses SpendingPolicyService for cross-protocol consistency
+    // Supports approval workflow when threshold exceeded
 
-    // Try to get from cache first
-    let cachedPolicy = getCachedSpendingPolicy(wallet.id);
+    const spendingPolicyService = createSpendingPolicyService(supabase);
+    const approvalWorkflowService = createApprovalWorkflowService(supabase);
     
-    // If not in cache or wallet spending_policy is different, use fresh data and update cache
-    if (!cachedPolicy || JSON.stringify(cachedPolicy) !== JSON.stringify(wallet.spending_policy)) {
-      cachedPolicy = wallet.spending_policy;
-      if (cachedPolicy) {
-        cacheSpendingPolicy(wallet.id, cachedPolicy);
-      }
-    }
+    const policyContext: PolicyContext = {
+      protocol: 'x402',
+      vendor: endpoint.path,
+      endpointId: endpoint.id,
+      endpointPath: endpoint.path,
+    };
 
-    // Create a wallet-like object with cached policy for checking
-    const walletWithCachedPolicy = { ...wallet, spending_policy: cachedPolicy };
-
-    const policyCheck = await checkSpendingPolicy(
-      supabase,
-      walletWithCachedPolicy,
+    const policyCheck = await spendingPolicyService.checkPolicy(
+      wallet.id,
       auth.amount,
-      endpoint.path,
-      endpoint.id
+      policyContext
     );
 
+    timings['6_spending_policy_check'] = Date.now() - t1;
+
     if (!policyCheck.allowed) {
+      // Check if this requires approval (vs hard limit exceeded)
+      if (policyCheck.requiresApproval) {
+        // Create approval request instead of rejecting outright
+        const approval = await approvalWorkflowService.createApproval({
+          tenantId: ctx.tenantId,
+          walletId: wallet.id,
+          agentId: wallet.managed_by_agent_id || undefined,
+          protocol: 'x402',
+          amount: auth.amount,
+          currency: auth.currency,
+          recipient: {
+            endpoint_id: endpoint.id,
+            endpoint_path: endpoint.path,
+            vendor: endpoint.path.split('/')[0],
+          },
+          paymentContext: {
+            auth,
+            endpoint: {
+              id: endpoint.id,
+              path: endpoint.path,
+              account_id: endpoint.account_id,
+            },
+          },
+          requestedByType: ctx.actorType,
+          requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
+          requestedByName: ctx.userName || ctx.actorName || undefined,
+        });
+
+        return c.json({
+          status: 'pending_approval',
+          message: 'Payment requires approval',
+          reason: policyCheck.reason,
+          code: 'APPROVAL_REQUIRED',
+          approval: {
+            id: approval.id,
+            expiresAt: approval.expiresAt,
+            amount: approval.amount,
+            currency: approval.currency,
+          }
+        }, 202);
+      }
+
+      // Hard limit exceeded - reject outright
       return c.json({
         error: 'Payment blocked by spending policy',
         reason: policyCheck.reason,
-        code: 'POLICY_VIOLATION'
+        code: 'POLICY_VIOLATION',
+        violationType: policyCheck.violationType,
+        limits: policyCheck.limits,
+        currentSpending: policyCheck.currentSpending,
       }, 403);
     }
 
@@ -680,23 +730,13 @@ app.post('/pay', async (c) => {
     const feeAmount = feeCalculation.feeAmount;
 
     // ============================================
-    // 8. UPDATE SPENDING POLICY COUNTERS
+    // 8. UPDATE SPENDING POLICY COUNTERS (Story 18.R1: Unified Service)
     // ============================================
     // Note: This is done before settlement to ensure we track spending even if settlement fails
 
-    const updatedSpendingPolicy = updateSpendingPolicyCounters(wallet.spending_policy, auth.amount);
+    await spendingPolicyService.recordSpending(wallet.id, auth.amount);
     
-    await supabase
-      .from('wallets')
-      .update({
-        spending_policy: updatedSpendingPolicy,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', auth.walletId)
-      .eq('tenant_id', ctx.tenantId);
-
-    // Invalidate cache since we updated the policy
-    spendingPolicyCache.delete(wallet.id);
+    // Note: Cache invalidation is handled by the service
 
     // ============================================
     // 9. FETCH PROVIDER WALLET

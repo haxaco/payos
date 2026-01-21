@@ -17,6 +17,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getClient as getDefaultClient } from '../../db/client.js';
 import type {
   UCPLinkedAccount,
   UCPAuthorizationCode,
@@ -53,16 +54,12 @@ const ALL_SCOPES: UCPIdentityScope[] = [
 ];
 
 // =============================================================================
-// In-Memory Stores (for PoC - replace with Supabase in production)
+// Database Helper
 // =============================================================================
 
-const clientStore = new Map<string, UCPOAuthClient>();
-const authCodeStore = new Map<string, UCPAuthorizationCode>();
-const linkedAccountStore = new Map<string, UCPLinkedAccount>();
-
-// Token to linked account mapping (for validation)
-const accessTokenIndex = new Map<string, string>(); // token_hash -> linked_account_id
-const refreshTokenIndex = new Map<string, string>(); // token_hash -> linked_account_id
+function getDb(supabase?: SupabaseClient): SupabaseClient {
+  return supabase || getDefaultClient();
+}
 
 // =============================================================================
 // Helper Functions
@@ -167,10 +164,10 @@ export async function registerClient(
     client_type?: 'public' | 'confidential';
     logo_url?: string;
   },
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<{ client: UCPOAuthClient; client_secret?: string }> {
+  const db = getDb(supabase);
   const clientId = generateClientId();
-  const now = new Date().toISOString();
 
   let clientSecretHash: string | undefined;
   let clientSecret: string | undefined;
@@ -180,22 +177,41 @@ export async function registerClient(
     clientSecretHash = hashToken(clientSecret);
   }
 
-  const client: UCPOAuthClient = {
-    id: `oauth_${randomBytes(12).toString('hex')}`,
-    tenant_id: tenantId,
-    client_id: clientId,
-    client_secret_hash: clientSecretHash,
-    name: config.name,
-    logo_url: config.logo_url,
-    redirect_uris: config.redirect_uris,
-    allowed_scopes: config.allowed_scopes || ALL_SCOPES,
-    client_type: config.client_type || 'public',
-    is_active: true,
-    created_at: now,
-    updated_at: now,
-  };
+  const { data, error } = await db
+    .from('ucp_oauth_clients')
+    .insert({
+      tenant_id: tenantId,
+      client_id: clientId,
+      client_secret_hash: clientSecretHash,
+      name: config.name,
+      logo_url: config.logo_url,
+      redirect_uris: config.redirect_uris,
+      allowed_scopes: config.allowed_scopes || ALL_SCOPES,
+      client_type: config.client_type || 'public',
+      is_active: true,
+    })
+    .select()
+    .single();
 
-  clientStore.set(clientId, client);
+  if (error) {
+    console.error('[UCP Identity] Failed to register client:', error);
+    throw new Error(`Failed to register OAuth client: ${error.message}`);
+  }
+
+  const client: UCPOAuthClient = {
+    id: data.id,
+    tenant_id: data.tenant_id,
+    client_id: data.client_id,
+    client_secret_hash: data.client_secret_hash,
+    name: data.name,
+    logo_url: data.logo_url,
+    redirect_uris: data.redirect_uris,
+    allowed_scopes: data.allowed_scopes,
+    client_type: data.client_type,
+    is_active: data.is_active,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
 
   console.log(`[UCP Identity] Registered client ${clientId} (${config.name})`);
 
@@ -207,9 +223,112 @@ export async function registerClient(
  */
 export async function getClient(
   clientId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOAuthClient | null> {
-  return clientStore.get(clientId) || null;
+  const db = getDb(supabase);
+
+  const { data, error } = await db
+    .from('ucp_oauth_clients')
+    .select('*')
+    .eq('client_id', clientId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    tenant_id: data.tenant_id,
+    client_id: data.client_id,
+    client_secret_hash: data.client_secret_hash,
+    name: data.name,
+    logo_url: data.logo_url,
+    redirect_uris: data.redirect_uris,
+    allowed_scopes: data.allowed_scopes,
+    client_type: data.client_type,
+    is_active: data.is_active,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
+}
+
+/**
+ * List OAuth clients for a tenant
+ */
+export async function listClientsByTenant(
+  tenantId: string,
+  supabase?: SupabaseClient
+): Promise<UCPOAuthClient[]> {
+  const db = getDb(supabase);
+
+  const { data, error } = await db
+    .from('ucp_oauth_clients')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[UCP Identity] Failed to list clients:', error);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    tenant_id: row.tenant_id,
+    client_id: row.client_id,
+    client_secret_hash: row.client_secret_hash,
+    name: row.name,
+    logo_url: row.logo_url,
+    redirect_uris: row.redirect_uris,
+    allowed_scopes: row.allowed_scopes,
+    client_type: row.client_type,
+    is_active: row.is_active,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+}
+
+/**
+ * Deactivate an OAuth client
+ */
+export async function deactivateClient(
+  clientId: string,
+  tenantId: string,
+  supabase?: SupabaseClient
+): Promise<UCPOAuthClient | null> {
+  const db = getDb(supabase);
+
+  const { data, error } = await db
+    .from('ucp_oauth_clients')
+    .update({ is_active: false })
+    .eq('client_id', clientId)
+    .eq('tenant_id', tenantId)
+    .select()
+    .single();
+
+  if (error || !data) {
+    console.error('[UCP Identity] Failed to deactivate client:', error);
+    return null;
+  }
+
+  console.log(`[UCP Identity] Deactivated client ${clientId}`);
+
+  return {
+    id: data.id,
+    tenant_id: data.tenant_id,
+    client_id: data.client_id,
+    client_secret_hash: data.client_secret_hash,
+    name: data.name,
+    logo_url: data.logo_url,
+    redirect_uris: data.redirect_uris,
+    allowed_scopes: data.allowed_scopes,
+    client_type: data.client_type,
+    is_active: data.is_active,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
 }
 
 /**
@@ -218,9 +337,9 @@ export async function getClient(
 export async function verifyClientCredentials(
   clientId: string,
   clientSecret?: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOAuthClient | null> {
-  const client = await getClient(clientId);
+  const client = await getClient(clientId, supabase);
   if (!client || !client.is_active) {
     return null;
   }
@@ -267,32 +386,52 @@ export async function createAuthorizationCode(
     code_challenge?: string;
     code_challenge_method?: 'S256' | 'plain';
   },
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPAuthorizationCode> {
+  const db = getDb(supabase);
   const code = generateToken('authz');
   const now = new Date();
   const expiresAt = new Date(now.getTime() + AUTH_CODE_LIFETIME_SECONDS * 1000);
 
-  const authCode: UCPAuthorizationCode = {
-    code,
-    tenant_id: tenantId,
-    client_id: params.client_id,
-    buyer_id: params.buyer_id,
-    redirect_uri: params.redirect_uri,
-    scopes: params.scopes,
-    code_challenge: params.code_challenge,
-    code_challenge_method: params.code_challenge_method,
-    state: params.state,
-    expires_at: expiresAt.toISOString(),
-    created_at: now.toISOString(),
-    used: false,
-  };
+  const { data, error } = await db
+    .from('ucp_authorization_codes')
+    .insert({
+      code,
+      tenant_id: tenantId,
+      client_id: params.client_id,
+      buyer_id: params.buyer_id,
+      redirect_uri: params.redirect_uri,
+      scopes: params.scopes,
+      code_challenge: params.code_challenge,
+      code_challenge_method: params.code_challenge_method,
+      state: params.state,
+      expires_at: expiresAt.toISOString(),
+      used: false,
+    })
+    .select()
+    .single();
 
-  authCodeStore.set(code, authCode);
+  if (error) {
+    console.error('[UCP Identity] Failed to create authorization code:', error);
+    throw new Error(`Failed to create authorization code: ${error.message}`);
+  }
 
   console.log(`[UCP Identity] Created authorization code for buyer ${params.buyer_id}`);
 
-  return authCode;
+  return {
+    code: data.code,
+    tenant_id: data.tenant_id,
+    client_id: data.client_id,
+    buyer_id: data.buyer_id,
+    redirect_uri: data.redirect_uri,
+    scopes: data.scopes,
+    code_challenge: data.code_challenge,
+    code_challenge_method: data.code_challenge_method,
+    state: data.state,
+    expires_at: data.expires_at,
+    created_at: data.created_at,
+    used: data.used,
+  };
 }
 
 /**
@@ -306,20 +445,43 @@ export async function exchangeAuthorizationCode(
     redirect_uri: string;
     code_verifier?: string;
   },
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPTokenResponse> {
-  const authCode = authCodeStore.get(code);
+  const db = getDb(supabase);
 
-  if (!authCode) {
+  // Get authorization code from database
+  const { data: authCodeData, error: authCodeError } = await db
+    .from('ucp_authorization_codes')
+    .select('*')
+    .eq('code', code)
+    .single();
+
+  if (authCodeError || !authCodeData) {
     throw createOAuthError('invalid_grant', 'Authorization code not found');
   }
+
+  const authCode: UCPAuthorizationCode = {
+    code: authCodeData.code,
+    tenant_id: authCodeData.tenant_id,
+    client_id: authCodeData.client_id,
+    buyer_id: authCodeData.buyer_id,
+    redirect_uri: authCodeData.redirect_uri,
+    scopes: authCodeData.scopes,
+    code_challenge: authCodeData.code_challenge,
+    code_challenge_method: authCodeData.code_challenge_method,
+    state: authCodeData.state,
+    expires_at: authCodeData.expires_at,
+    created_at: authCodeData.created_at,
+    used: authCodeData.used,
+  };
 
   if (authCode.used) {
     throw createOAuthError('invalid_grant', 'Authorization code has already been used');
   }
 
   if (new Date(authCode.expires_at) < new Date()) {
-    authCodeStore.delete(code);
+    // Delete expired code
+    await db.from('ucp_authorization_codes').delete().eq('code', code);
     throw createOAuthError('invalid_grant', 'Authorization code has expired');
   }
 
@@ -332,7 +494,7 @@ export async function exchangeAuthorizationCode(
   }
 
   // Verify client
-  const client = await verifyClientCredentials(params.client_id, params.client_secret);
+  const client = await verifyClientCredentials(params.client_id, params.client_secret, supabase);
   if (!client) {
     throw createOAuthError('invalid_client', 'Invalid client credentials');
   }
@@ -352,8 +514,10 @@ export async function exchangeAuthorizationCode(
   }
 
   // Mark code as used
-  authCode.used = true;
-  authCodeStore.set(code, authCode);
+  await db
+    .from('ucp_authorization_codes')
+    .update({ used: true })
+    .eq('code', code);
 
   // Create linked account and tokens
   const linkedAccount = await createLinkedAccount(
@@ -363,16 +527,17 @@ export async function exchangeAuthorizationCode(
       platform_name: client.name,
       buyer_id: authCode.buyer_id,
       scopes: authCode.scopes,
-    }
+    },
+    supabase
   );
 
   console.log(`[UCP Identity] Exchanged code for tokens, linked account ${linkedAccount.id}`);
 
   return {
-    access_token: linkedAccount.access_token_hash, // In real impl, return actual token
+    access_token: linkedAccount._access_token,
     token_type: 'Bearer',
     expires_in: ACCESS_TOKEN_LIFETIME_SECONDS,
-    refresh_token: linkedAccount.refresh_token_hash, // In real impl, return actual token
+    refresh_token: linkedAccount._refresh_token,
     scope: linkedAccount.scopes.join(' '),
   };
 }
@@ -393,9 +558,9 @@ export async function createLinkedAccount(
     buyer_email?: string;
     scopes: UCPIdentityScope[];
   },
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPLinkedAccount & { _access_token: string; _refresh_token: string }> {
-  const id = `link_${randomBytes(16).toString('hex')}`;
+  const db = getDb(supabase);
   const now = new Date();
 
   // Generate tokens
@@ -408,34 +573,48 @@ export async function createLinkedAccount(
   const accessExpires = new Date(now.getTime() + ACCESS_TOKEN_LIFETIME_SECONDS * 1000);
   const refreshExpires = new Date(now.getTime() + REFRESH_TOKEN_LIFETIME_SECONDS * 1000);
 
-  const linkedAccount: UCPLinkedAccount = {
-    id,
-    tenant_id: tenantId,
-    platform_id: params.platform_id,
-    platform_name: params.platform_name,
-    buyer_id: params.buyer_id,
-    buyer_email: params.buyer_email,
-    scopes: params.scopes,
-    access_token_hash: accessTokenHash,
-    refresh_token_hash: refreshTokenHash,
-    access_token_expires_at: accessExpires.toISOString(),
-    refresh_token_expires_at: refreshExpires.toISOString(),
-    is_active: true,
-    linked_at: now.toISOString(),
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-  };
+  const { data, error } = await db
+    .from('ucp_linked_accounts')
+    .insert({
+      tenant_id: tenantId,
+      platform_id: params.platform_id,
+      platform_name: params.platform_name,
+      buyer_id: params.buyer_id,
+      buyer_email: params.buyer_email,
+      scopes: params.scopes,
+      access_token_hash: accessTokenHash,
+      refresh_token_hash: refreshTokenHash,
+      access_token_expires_at: accessExpires.toISOString(),
+      refresh_token_expires_at: refreshExpires.toISOString(),
+      is_active: true,
+      linked_at: now.toISOString(),
+    })
+    .select()
+    .single();
 
-  linkedAccountStore.set(id, linkedAccount);
+  if (error) {
+    console.error('[UCP Identity] Failed to create linked account:', error);
+    throw new Error(`Failed to create linked account: ${error.message}`);
+  }
 
-  // Index tokens for lookup
-  accessTokenIndex.set(accessTokenHash, id);
-  refreshTokenIndex.set(refreshTokenHash, id);
-
-  console.log(`[UCP Identity] Created linked account ${id} for buyer ${params.buyer_id}`);
+  console.log(`[UCP Identity] Created linked account ${data.id} for buyer ${params.buyer_id}`);
 
   return {
-    ...linkedAccount,
+    id: data.id,
+    tenant_id: data.tenant_id,
+    platform_id: data.platform_id,
+    platform_name: data.platform_name,
+    buyer_id: data.buyer_id,
+    buyer_email: data.buyer_email,
+    scopes: data.scopes,
+    access_token_hash: data.access_token_hash,
+    refresh_token_hash: data.refresh_token_hash,
+    access_token_expires_at: data.access_token_expires_at,
+    refresh_token_expires_at: data.refresh_token_expires_at,
+    is_active: data.is_active,
+    linked_at: data.linked_at,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
     _access_token: accessToken,
     _refresh_token: refreshToken,
   };
@@ -446,30 +625,52 @@ export async function createLinkedAccount(
  */
 export async function validateAccessToken(
   accessToken: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPLinkedAccount | null> {
+  const db = getDb(supabase);
   const tokenHash = hashToken(accessToken);
-  const accountId = accessTokenIndex.get(tokenHash);
 
-  if (!accountId) {
-    return null;
-  }
+  // Find linked account by access token hash
+  const { data, error } = await db
+    .from('ucp_linked_accounts')
+    .select('*')
+    .eq('access_token_hash', tokenHash)
+    .eq('is_active', true)
+    .single();
 
-  const account = linkedAccountStore.get(accountId);
-  if (!account || !account.is_active) {
+  if (error || !data) {
     return null;
   }
 
   // Check expiration
-  if (new Date(account.access_token_expires_at) < new Date()) {
+  if (new Date(data.access_token_expires_at) < new Date()) {
     return null;
   }
 
   // Update last used
-  account.last_used_at = new Date().toISOString();
-  linkedAccountStore.set(accountId, account);
+  await db
+    .from('ucp_linked_accounts')
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', data.id);
 
-  return account;
+  return {
+    id: data.id,
+    tenant_id: data.tenant_id,
+    platform_id: data.platform_id,
+    platform_name: data.platform_name,
+    buyer_id: data.buyer_id,
+    buyer_email: data.buyer_email,
+    scopes: data.scopes,
+    access_token_hash: data.access_token_hash,
+    refresh_token_hash: data.refresh_token_hash,
+    access_token_expires_at: data.access_token_expires_at,
+    refresh_token_expires_at: data.refresh_token_expires_at,
+    is_active: data.is_active,
+    linked_at: data.linked_at,
+    last_used_at: data.last_used_at,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
 }
 
 /**
@@ -479,38 +680,40 @@ export async function refreshTokens(
   refreshToken: string,
   clientId: string,
   clientSecret?: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPTokenResponse> {
+  const db = getDb(supabase);
+
   // Verify client
-  const client = await verifyClientCredentials(clientId, clientSecret);
+  const client = await verifyClientCredentials(clientId, clientSecret, supabase);
   if (!client) {
     throw createOAuthError('invalid_client', 'Invalid client credentials');
   }
 
   const tokenHash = hashToken(refreshToken);
-  const accountId = refreshTokenIndex.get(tokenHash);
 
-  if (!accountId) {
+  // Find linked account by refresh token hash
+  const { data: accountData, error } = await db
+    .from('ucp_linked_accounts')
+    .select('*')
+    .eq('refresh_token_hash', tokenHash)
+    .single();
+
+  if (error || !accountData) {
     throw createOAuthError('invalid_grant', 'Invalid refresh token');
   }
 
-  const account = linkedAccountStore.get(accountId);
-  if (!account || !account.is_active) {
+  if (!accountData.is_active) {
     throw createOAuthError('invalid_grant', 'Linked account not found or inactive');
   }
 
-  // Verify refresh token matches
-  if (!verifyToken(refreshToken, account.refresh_token_hash)) {
-    throw createOAuthError('invalid_grant', 'Invalid refresh token');
-  }
-
   // Check refresh token expiration
-  if (new Date(account.refresh_token_expires_at) < new Date()) {
+  if (new Date(accountData.refresh_token_expires_at) < new Date()) {
     throw createOAuthError('invalid_grant', 'Refresh token has expired');
   }
 
   // Verify client owns this linked account
-  if (account.platform_id !== clientId) {
+  if (accountData.platform_id !== clientId) {
     throw createOAuthError('invalid_grant', 'Token does not belong to this client');
   }
 
@@ -522,35 +725,34 @@ export async function refreshTokens(
   const newAccessTokenHash = hashToken(newAccessToken);
   const newRefreshTokenHash = hashToken(newRefreshToken);
 
-  // Remove old token indexes
-  accessTokenIndex.delete(account.access_token_hash);
-  refreshTokenIndex.delete(account.refresh_token_hash);
-
   // Update account with new tokens
-  account.access_token_hash = newAccessTokenHash;
-  account.refresh_token_hash = newRefreshTokenHash;
-  account.access_token_expires_at = new Date(
-    now.getTime() + ACCESS_TOKEN_LIFETIME_SECONDS * 1000
-  ).toISOString();
-  account.refresh_token_expires_at = new Date(
-    now.getTime() + REFRESH_TOKEN_LIFETIME_SECONDS * 1000
-  ).toISOString();
-  account.updated_at = now.toISOString();
+  const { error: updateError } = await db
+    .from('ucp_linked_accounts')
+    .update({
+      access_token_hash: newAccessTokenHash,
+      refresh_token_hash: newRefreshTokenHash,
+      access_token_expires_at: new Date(
+        now.getTime() + ACCESS_TOKEN_LIFETIME_SECONDS * 1000
+      ).toISOString(),
+      refresh_token_expires_at: new Date(
+        now.getTime() + REFRESH_TOKEN_LIFETIME_SECONDS * 1000
+      ).toISOString(),
+    })
+    .eq('id', accountData.id);
 
-  linkedAccountStore.set(accountId, account);
+  if (updateError) {
+    console.error('[UCP Identity] Failed to refresh tokens:', updateError);
+    throw new Error('Failed to refresh tokens');
+  }
 
-  // Index new tokens
-  accessTokenIndex.set(newAccessTokenHash, accountId);
-  refreshTokenIndex.set(newRefreshTokenHash, accountId);
-
-  console.log(`[UCP Identity] Refreshed tokens for linked account ${accountId}`);
+  console.log(`[UCP Identity] Refreshed tokens for linked account ${accountData.id}`);
 
   return {
     access_token: newAccessToken,
     token_type: 'Bearer',
     expires_in: ACCESS_TOKEN_LIFETIME_SECONDS,
     refresh_token: newRefreshToken,
-    scope: account.scopes.join(' '),
+    scope: accountData.scopes.join(' '),
   };
 }
 
@@ -560,41 +762,43 @@ export async function refreshTokens(
 export async function revokeToken(
   token: string,
   tokenTypeHint?: 'access_token' | 'refresh_token',
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<void> {
+  const db = getDb(supabase);
   const tokenHash = hashToken(token);
 
   // Try to find by access token first (or if hinted)
   if (tokenTypeHint !== 'refresh_token') {
-    const accountIdByAccess = accessTokenIndex.get(tokenHash);
-    if (accountIdByAccess) {
-      const account = linkedAccountStore.get(accountIdByAccess);
-      if (account) {
-        // Revoke entire linked account
-        account.is_active = false;
-        account.updated_at = new Date().toISOString();
-        linkedAccountStore.set(accountIdByAccess, account);
-        accessTokenIndex.delete(account.access_token_hash);
-        refreshTokenIndex.delete(account.refresh_token_hash);
-        console.log(`[UCP Identity] Revoked linked account ${accountIdByAccess}`);
-      }
+    const { data: accountByAccess, error: accessError } = await db
+      .from('ucp_linked_accounts')
+      .select('id')
+      .eq('access_token_hash', tokenHash)
+      .single();
+
+    if (!accessError && accountByAccess) {
+      await db
+        .from('ucp_linked_accounts')
+        .update({ is_active: false })
+        .eq('id', accountByAccess.id);
+      console.log(`[UCP Identity] Revoked linked account ${accountByAccess.id}`);
       return;
     }
   }
 
   // Try refresh token
   if (tokenTypeHint !== 'access_token') {
-    const accountIdByRefresh = refreshTokenIndex.get(tokenHash);
-    if (accountIdByRefresh) {
-      const account = linkedAccountStore.get(accountIdByRefresh);
-      if (account) {
-        account.is_active = false;
-        account.updated_at = new Date().toISOString();
-        linkedAccountStore.set(accountIdByRefresh, account);
-        accessTokenIndex.delete(account.access_token_hash);
-        refreshTokenIndex.delete(account.refresh_token_hash);
-        console.log(`[UCP Identity] Revoked linked account ${accountIdByRefresh}`);
-      }
+    const { data: accountByRefresh, error: refreshError } = await db
+      .from('ucp_linked_accounts')
+      .select('id')
+      .eq('refresh_token_hash', tokenHash)
+      .single();
+
+    if (!refreshError && accountByRefresh) {
+      await db
+        .from('ucp_linked_accounts')
+        .update({ is_active: false })
+        .eq('id', accountByRefresh.id);
+      console.log(`[UCP Identity] Revoked linked account ${accountByRefresh.id}`);
     }
   }
 }
@@ -605,13 +809,39 @@ export async function revokeToken(
 export async function getLinkedAccount(
   accountId: string,
   tenantId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPLinkedAccount | null> {
-  const account = linkedAccountStore.get(accountId);
-  if (!account || account.tenant_id !== tenantId) {
+  const db = getDb(supabase);
+
+  const { data, error } = await db
+    .from('ucp_linked_accounts')
+    .select('*')
+    .eq('id', accountId)
+    .eq('tenant_id', tenantId)
+    .single();
+
+  if (error || !data) {
     return null;
   }
-  return account;
+
+  return {
+    id: data.id,
+    tenant_id: data.tenant_id,
+    platform_id: data.platform_id,
+    platform_name: data.platform_name,
+    buyer_id: data.buyer_id,
+    buyer_email: data.buyer_email,
+    scopes: data.scopes,
+    access_token_hash: data.access_token_hash,
+    refresh_token_hash: data.refresh_token_hash,
+    access_token_expires_at: data.access_token_expires_at,
+    refresh_token_expires_at: data.refresh_token_expires_at,
+    is_active: data.is_active,
+    linked_at: data.linked_at,
+    last_used_at: data.last_used_at,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
 }
 
 /**
@@ -620,11 +850,40 @@ export async function getLinkedAccount(
 export async function listLinkedAccountsByBuyer(
   tenantId: string,
   buyerId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPLinkedAccount[]> {
-  return Array.from(linkedAccountStore.values()).filter(
-    (a) => a.tenant_id === tenantId && a.buyer_id === buyerId && a.is_active
-  );
+  const db = getDb(supabase);
+
+  const { data, error } = await db
+    .from('ucp_linked_accounts')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('buyer_id', buyerId)
+    .eq('is_active', true);
+
+  if (error) {
+    console.error('[UCP Identity] Failed to list linked accounts by buyer:', error);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    tenant_id: row.tenant_id,
+    platform_id: row.platform_id,
+    platform_name: row.platform_name,
+    buyer_id: row.buyer_id,
+    buyer_email: row.buyer_email,
+    scopes: row.scopes,
+    access_token_hash: row.access_token_hash,
+    refresh_token_hash: row.refresh_token_hash,
+    access_token_expires_at: row.access_token_expires_at,
+    refresh_token_expires_at: row.refresh_token_expires_at,
+    is_active: row.is_active,
+    linked_at: row.linked_at,
+    last_used_at: row.last_used_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
 }
 
 /**
@@ -634,17 +893,59 @@ export async function listLinkedAccountsByPlatform(
   tenantId: string,
   platformId: string,
   options: { limit?: number; offset?: number } = {},
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<{ data: UCPLinkedAccount[]; total: number }> {
+  const db = getDb(supabase);
   const { limit = 20, offset = 0 } = options;
 
-  const accounts = Array.from(linkedAccountStore.values())
-    .filter((a) => a.tenant_id === tenantId && a.platform_id === platformId && a.is_active)
-    .sort((a, b) => new Date(b.linked_at).getTime() - new Date(a.linked_at).getTime());
+  // Get total count
+  const { count, error: countError } = await db
+    .from('ucp_linked_accounts')
+    .select('*', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .eq('platform_id', platformId)
+    .eq('is_active', true);
+
+  if (countError) {
+    console.error('[UCP Identity] Failed to count linked accounts:', countError);
+    return { data: [], total: 0 };
+  }
+
+  // Get paginated data
+  const { data, error } = await db
+    .from('ucp_linked_accounts')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('platform_id', platformId)
+    .eq('is_active', true)
+    .order('linked_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    console.error('[UCP Identity] Failed to list linked accounts by platform:', error);
+    return { data: [], total: 0 };
+  }
 
   return {
-    data: accounts.slice(offset, offset + limit),
-    total: accounts.length,
+    data: (data || []).map((row) => ({
+      id: row.id,
+      tenant_id: row.tenant_id,
+      platform_id: row.platform_id,
+      platform_name: row.platform_name,
+      buyer_id: row.buyer_id,
+      buyer_email: row.buyer_email,
+      scopes: row.scopes,
+      access_token_hash: row.access_token_hash,
+      refresh_token_hash: row.refresh_token_hash,
+      access_token_expires_at: row.access_token_expires_at,
+      refresh_token_expires_at: row.refresh_token_expires_at,
+      is_active: row.is_active,
+      linked_at: row.linked_at,
+      last_used_at: row.last_used_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    })),
+    total: count || 0,
   };
 }
 
@@ -655,21 +956,22 @@ export async function unlinkAccount(
   accountId: string,
   tenantId: string,
   buyerId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<void> {
-  const account = linkedAccountStore.get(accountId);
+  const db = getDb(supabase);
 
-  if (!account || account.tenant_id !== tenantId || account.buyer_id !== buyerId) {
+  const { data, error } = await db
+    .from('ucp_linked_accounts')
+    .update({ is_active: false })
+    .eq('id', accountId)
+    .eq('tenant_id', tenantId)
+    .eq('buyer_id', buyerId)
+    .select()
+    .single();
+
+  if (error || !data) {
     throw new Error('Linked account not found');
   }
-
-  account.is_active = false;
-  account.updated_at = new Date().toISOString();
-  linkedAccountStore.set(accountId, account);
-
-  // Remove token indexes
-  accessTokenIndex.delete(account.access_token_hash);
-  refreshTokenIndex.delete(account.refresh_token_hash);
 
   console.log(`[UCP Identity] Unlinked account ${accountId}`);
 }
@@ -710,14 +1012,18 @@ export function hasAnyScope(
 // =============================================================================
 
 /**
- * Clear all stores (for testing)
+ * Clear all stores (for testing) - no-op for database storage
+ * Note: In production, use direct database operations for cleanup
  */
-export function clearIdentityStores(): void {
-  clientStore.clear();
-  authCodeStore.clear();
-  linkedAccountStore.clear();
-  accessTokenIndex.clear();
-  refreshTokenIndex.clear();
+export async function clearIdentityStores(supabase?: SupabaseClient): Promise<void> {
+  const db = getDb(supabase);
+
+  // Delete in order due to foreign key constraints
+  await db.from('ucp_linked_accounts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  await db.from('ucp_authorization_codes').delete().neq('code', '');
+  await db.from('ucp_oauth_clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+  console.log('[UCP Identity] Cleared all identity stores');
 }
 
 /**

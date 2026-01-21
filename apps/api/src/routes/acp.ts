@@ -5,6 +5,7 @@
  * Enables agents to manage shopping carts and complete checkout flows.
  * 
  * @module routes/acp
+ * @see Story 18.R3: Multi-Protocol Spending Policy Integration
  */
 
 import { Hono } from 'hono';
@@ -12,6 +13,13 @@ import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getStripeClient, isStripeConfigured } from '../services/stripe/index.js';
+import { 
+  createSpendingPolicyService,
+  type PolicyContext 
+} from '../services/spending-policy.js';
+import { 
+  createApprovalWorkflowService 
+} from '../services/approval-workflow.js';
 
 const app = new Hono();
 
@@ -399,6 +407,112 @@ app.post('/checkouts/:id/complete', async (c) => {
       .select('name, quantity, unit_price')
       .eq('checkout_id', id);
 
+    // ============================================
+    // SPENDING POLICY CHECK (Story 18.R3)
+    // ============================================
+    // If this checkout is from an agent wallet, check spending policy
+    
+    // Try to find agent wallet for the agent
+    let walletId: string | null = null;
+    if (checkout.agent_id) {
+      // Look for agent in agents table
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('name', checkout.agent_id)
+        .eq('tenant_id', ctx.tenantId)
+        .single();
+
+      if (agent) {
+        // Look for wallet managed by this agent
+        const { data: wallet } = await supabase
+          .from('wallets')
+          .select('id')
+          .eq('managed_by_agent_id', agent.id)
+          .eq('tenant_id', ctx.tenantId)
+          .eq('status', 'active')
+          .single();
+
+        if (wallet) {
+          walletId = wallet.id;
+        }
+      }
+    }
+
+    // Check spending policy if we have a wallet
+    if (walletId) {
+      const spendingPolicyService = createSpendingPolicyService(supabase);
+      const approvalWorkflowService = createApprovalWorkflowService(supabase);
+      
+      const checkoutAmount = parseFloat(checkout.total_amount);
+      const policyContext: PolicyContext = {
+        protocol: 'acp',
+        vendor: checkout.merchant_name || checkout.merchant_id,
+        merchantId: checkout.merchant_id,
+      };
+
+      const policyCheck = await spendingPolicyService.checkPolicy(
+        walletId,
+        checkoutAmount,
+        policyContext
+      );
+
+      if (!policyCheck.allowed) {
+        if (policyCheck.requiresApproval) {
+          // Create approval request
+          const approval = await approvalWorkflowService.createApproval({
+            tenantId: ctx.tenantId,
+            walletId,
+            protocol: 'acp',
+            amount: checkoutAmount,
+            currency: checkout.currency,
+            recipient: {
+              checkout_id: checkout.checkout_id,
+              merchant_id: checkout.merchant_id,
+              merchant_name: checkout.merchant_name,
+            },
+            paymentContext: {
+              checkout_id: checkout.id,
+              checkout_uuid: id,
+              merchant_id: checkout.merchant_id,
+              merchant_name: checkout.merchant_name,
+              agent_id: checkout.agent_id,
+              items: items?.map(i => ({
+                name: i.name,
+                quantity: i.quantity,
+                price: parseFloat(i.unit_price),
+              })),
+              shared_payment_token: validated.shared_payment_token,
+            },
+            requestedByType: ctx.actorType,
+            requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
+            requestedByName: ctx.userName || ctx.actorName || undefined,
+          });
+
+          return c.json({
+            status: 'pending_approval',
+            message: 'Checkout requires approval',
+            reason: policyCheck.reason,
+            code: 'APPROVAL_REQUIRED',
+            approval: {
+              id: approval.id,
+              expiresAt: approval.expiresAt,
+              amount: approval.amount,
+              currency: approval.currency,
+            }
+          }, 202);
+        }
+
+        // Hard limit exceeded
+        return c.json({
+          error: 'Checkout blocked by spending policy',
+          reason: policyCheck.reason,
+          code: 'POLICY_VIOLATION',
+          violationType: policyCheck.violationType,
+        }, 403);
+      }
+    }
+
     // Process SharedPaymentToken through Stripe (if configured)
     let stripePaymentIntent = null;
     let paymentStatus = 'completed';
@@ -527,6 +641,12 @@ app.post('/checkouts/:id/complete', async (c) => {
     if (updateError) {
       console.error('[ACP] Update checkout error:', updateError);
       return c.json({ error: 'Failed to update checkout' }, 500);
+    }
+
+    // Record spending if payment completed and we have a wallet (Story 18.R3)
+    if (walletId && paymentStatus === 'completed') {
+      const spendingPolicyService = createSpendingPolicyService(supabase);
+      await spendingPolicyService.recordSpending(walletId, parseFloat(checkout.total_amount));
     }
 
     return c.json({

@@ -202,8 +202,25 @@ export async function createOrderFromCheckout(
 export async function getOrder(
   tenantId: string,
   orderId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder | null> {
+  // If supabase client provided, query database
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .select('*')
+      .eq('id', orderId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return dbRowToOrder(data);
+  }
+
+  // Fallback to in-memory store
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -216,6 +233,32 @@ export async function getOrder(
   }
 
   return toOrder(stored);
+}
+
+/**
+ * Convert database row to UCPOrder
+ */
+function dbRowToOrder(row: any): UCPOrder {
+  return {
+    id: row.id,
+    tenant_id: row.tenant_id,
+    checkout_id: row.checkout_id,
+    status: row.status,
+    currency: row.currency,
+    line_items: row.line_items || [],
+    totals: row.totals || [],
+    buyer: row.buyer,
+    shipping_address: row.shipping_address,
+    billing_address: row.billing_address,
+    payment: row.payment || {},
+    expectations: row.expectations || [],
+    events: row.events || [],
+    adjustments: row.adjustments || [],
+    permalink_url: row.permalink_url,
+    metadata: row.metadata || {},
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
 }
 
 /**
@@ -279,10 +322,37 @@ export async function listOrders(
     limit?: number;
     offset?: number;
   } = {},
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<{ data: UCPOrder[]; total: number }> {
   const { status, limit = 20, offset = 0 } = options;
 
+  // If supabase client provided, query database
+  if (supabase) {
+    let query = supabase
+      .from('ucp_orders')
+      .select('*', { count: 'exact' })
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('[UCP Order] List error:', error);
+      throw new Error('Failed to list orders');
+    }
+
+    return {
+      data: (data || []).map(dbRowToOrder),
+      total: count || 0,
+    };
+  }
+
+  // Fallback to in-memory store
   let orders = Array.from(orderStore.values()).filter(
     (o) => o.tenant_id === tenantId
   );

@@ -25,6 +25,62 @@ declare module 'hono' {
   }
 }
 
+// =============================================================================
+// JWT Auth Cache (performance optimization)
+// =============================================================================
+
+interface JWTCacheEntry {
+  ctx: RequestContext;
+  expiresAt: number;
+}
+
+const JWT_CACHE = new Map<string, JWTCacheEntry>();
+const JWT_CACHE_TTL_MS = 60 * 1000; // 1 minute cache
+const JWT_CACHE_MAX_SIZE = 1000;
+
+function getJWTCacheKey(token: string): string {
+  // Use last 20 chars of token as cache key (faster than hashing)
+  return token.slice(-20);
+}
+
+function getCachedJWT(token: string): RequestContext | null {
+  const key = getJWTCacheKey(token);
+  const entry = JWT_CACHE.get(key);
+  if (!entry) return null;
+  
+  if (Date.now() > entry.expiresAt) {
+    JWT_CACHE.delete(key);
+    return null;
+  }
+  
+  return entry.ctx;
+}
+
+function setCachedJWT(token: string, ctx: RequestContext): void {
+  // Cleanup if cache is too large
+  if (JWT_CACHE.size >= JWT_CACHE_MAX_SIZE) {
+    const now = Date.now();
+    const keysToDelete: string[] = [];
+    JWT_CACHE.forEach((entry, key) => {
+      if (now > entry.expiresAt) keysToDelete.push(key);
+    });
+    keysToDelete.forEach(key => JWT_CACHE.delete(key));
+    
+    // If still too large, delete oldest entries
+    if (JWT_CACHE.size >= JWT_CACHE_MAX_SIZE) {
+      const entries = Array.from(JWT_CACHE.entries());
+      entries.sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      const toDelete = entries.slice(0, Math.floor(JWT_CACHE_MAX_SIZE / 2));
+      toDelete.forEach(([key]) => JWT_CACHE.delete(key));
+    }
+  }
+  
+  JWT_CACHE.set(getJWTCacheKey(token), {
+    ctx,
+    expiresAt: Date.now() + JWT_CACHE_TTL_MS,
+  });
+}
+
 /**
  * Log authentication attempts for security monitoring
  */
@@ -246,6 +302,13 @@ export async function authMiddleware(c: Context, next: Next) {
   // ============================================
   // JWTs typically start with "eyJ" (base64 encoded JSON header)
   if (token.startsWith('eyJ')) {
+    // Check cache first for performance
+    const cachedCtx = getCachedJWT(token);
+    if (cachedCtx) {
+      c.set('ctx', cachedCtx);
+      return next();
+    }
+
     try {
       // Verify JWT using Supabase client
       const { data: userData, error: authError } = await (supabase as any).auth.getUser(token);
@@ -299,20 +362,18 @@ export async function authMiddleware(c: Context, next: Next) {
 
       await logAuthAttempt(true, 'jwt', tenant.id, userId, ip, userAgent);
 
-      console.log('DEBUG: Auth Success (JWT). Setting ctx:', {
-        tenantId: tenant.id,
-        actorType: 'user',
-        userId: userId,
-        userName: profile.name
-      });
-
-      c.set('ctx', {
+      const ctx: RequestContext = {
         tenantId: tenant.id,
         actorType: 'user',
         userId: userId,
         userRole: profile.role,
         userName: profile.name || userData.user.email?.split('@')[0] || 'Unknown',
-      });
+      };
+
+      // Cache the result for subsequent requests
+      setCachedJWT(token, ctx);
+      
+      c.set('ctx', ctx);
 
       return next();
     } catch (error) {

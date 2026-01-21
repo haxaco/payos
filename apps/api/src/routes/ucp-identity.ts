@@ -25,6 +25,8 @@ import type { RequestContext } from '../middleware/auth.js';
 import {
   registerClient,
   getClient,
+  listClientsByTenant,
+  deactivateClient,
   validateRedirectUri,
   createAuthorizationCode,
   exchangeAuthorizationCode,
@@ -321,8 +323,26 @@ router.get('/clients', async (c) => {
     return c.json({ error: 'Authentication required' }, 401);
   }
 
-  // TODO: Implement client listing by tenant
-  return c.json({ data: [], message: 'Client listing not yet implemented' });
+  try {
+    const clients = await listClientsByTenant(ctx.tenantId);
+
+    return c.json({
+      data: clients.map((client) => ({
+        id: client.id,
+        client_id: client.client_id,
+        name: client.name,
+        logo_url: client.logo_url,
+        redirect_uris: client.redirect_uris,
+        allowed_scopes: client.allowed_scopes,
+        client_type: client.client_type,
+        is_active: client.is_active,
+        created_at: client.created_at,
+      })),
+    });
+  } catch (error: any) {
+    console.error('[UCP Identity] List clients error:', error);
+    return c.json({ error: 'Failed to list clients' }, 500);
+  }
 });
 
 /**
@@ -366,6 +386,40 @@ router.post('/clients', async (c) => {
     }
     console.error('[UCP Identity] Register client error:', error);
     return c.json({ error: 'Failed to register client' }, 500);
+  }
+});
+
+/**
+ * PATCH /v1/ucp/identity/clients/:clientId/deactivate
+ * Deactivate an OAuth client
+ */
+router.patch('/clients/:clientId/deactivate', async (c) => {
+  const ctx = c.get('ctx');
+  if (!ctx) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  const clientId = c.req.param('clientId');
+
+  try {
+    const client = await deactivateClient(clientId, ctx.tenantId);
+
+    if (!client) {
+      return c.json({ error: 'Client not found' }, 404);
+    }
+
+    return c.json({
+      data: {
+        id: client.id,
+        client_id: client.client_id,
+        name: client.name,
+        is_active: client.is_active,
+        updated_at: client.updated_at,
+      },
+    });
+  } catch (error: any) {
+    console.error('[UCP Identity] Deactivate client error:', error);
+    return c.json({ error: 'Failed to deactivate client' }, 500);
   }
 });
 
