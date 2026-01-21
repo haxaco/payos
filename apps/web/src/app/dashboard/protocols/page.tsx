@@ -460,8 +460,8 @@ export default function ProtocolsPage() {
           <ProtocolCard
             key={protocol.id}
             protocol={protocol}
-            status={status[protocol.id]}
-            onToggle={(enable) => handleToggle(protocol.id, enable)}
+            status={status[protocol.id as ProtocolId]}
+            onToggle={(enable) => handleToggle(protocol.id as ProtocolId, enable)}
             isToggling={togglingProtocol === protocol.id}
           />
         ))}

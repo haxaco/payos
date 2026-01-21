@@ -106,7 +106,7 @@ export function ProtocolStats() {
   });
 
   // Handle both wrapped and unwrapped data formats
-  const distribution = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+  const distribution: ProtocolDistribution[] = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
   const totalVolume = distribution.reduce((sum, p) => sum + (p.volume_usd || 0), 0);
   const totalCount = distribution.reduce((sum, p) => sum + (p.transaction_count || 0), 0);
   const activeProtocols = distribution.filter((p) => (p.volume_usd || 0) > 0 || (p.transaction_count || 0) > 0).length;

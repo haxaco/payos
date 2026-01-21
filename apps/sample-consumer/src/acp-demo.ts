@@ -57,7 +57,7 @@ export async function runACPDemo(payos: PayOS, userEmail: string, accountId: str
     console.log(chalk.gray(`   Subtotal: $${checkout.subtotal}`));
     console.log(chalk.gray(`   Tax: +$${checkout.tax_amount || 0}`));
     console.log(chalk.gray(`   Discount: -$${checkout.discount_amount || 0} (WELCOME10)`));
-    console.log(chalk.gray(`   Total: $${checkout.total}\n`));
+    console.log(chalk.gray(`   Total: $${checkout.total_amount}\n`));
     
     // 2. Complete checkout
     console.log(chalk.bold('2. Completing checkout'));
@@ -67,7 +67,7 @@ export async function runACPDemo(payos: PayOS, userEmail: string, accountId: str
     });
     
     console.log(chalk.gray(`   Transfer ID: ${completed.transfer_id}`));
-    console.log(chalk.gray(`   Amount: $${completed.total}`));
+    console.log(chalk.gray(`   Amount: $${completed.total_amount}`));
     console.log(chalk.gray(`   Status: ${completed.status}\n`));
     
     console.log(chalk.green('✅ ACP demo complete!\n'));

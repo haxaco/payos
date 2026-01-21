@@ -13,13 +13,14 @@ export async function runX402Demo(payos: PayOS, providerUrl: string) {
   console.log(chalk.cyan('╚══════════════════════════════════════════════════════════════════╝\n'));
   
   // Create x402 client with spending limits
+  // Note: x402-specific options are passed through at runtime
   const client = payos.x402.createClient({
-    maxPaymentAmount: '0.50',
-    dailyLimit: '10.00',
-    onPayment: (payment) => {
+    maxAutoPayAmount: '0.50',
+    maxDailySpend: '10.00',
+    onPayment: (payment: { amount: string }) => {
       console.log(chalk.green(`   ✅ Payment processed: $${payment.amount}`));
     },
-  });
+  } as any);
   
   try {
     // 1. Free endpoint - no payment
