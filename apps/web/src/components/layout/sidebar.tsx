@@ -37,6 +37,7 @@ import {
   UserCheck,
   Package,
   Plug,
+  Rocket,
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useState } from 'react';
@@ -142,6 +143,7 @@ export function Sidebar() {
   // Build main nav with dynamic compliance count
   const mainNav = [
     { href: '/dashboard', label: 'Home', icon: Home },
+    { href: '/dashboard/onboarding', label: 'Setup Guide', icon: Rocket },
     { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
     { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
     { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet },

@@ -71,6 +71,7 @@ import approvalsRouter from './routes/approvals.js';
 import protocolsRouter from './routes/protocols.js';
 import organizationProtocolsRouter from './routes/organization/protocols.js';
 import settlementRulesRouter from './routes/settlement-rules.js';
+import onboardingRouter from './routes/onboarding.js';
 
 const app = new Hono();
 
@@ -277,6 +278,7 @@ v1.route('/approvals', approvalsRouter); // Agent payment approvals (Story 18.R2
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 v1.route('/organization', organizationProtocolsRouter); // Protocol enablement (Epic 49)
 v1.route('/settlement-rules', settlementRulesRouter); // Settlement rules (Epic 50)
+v1.route('/onboarding', onboardingRouter); // Onboarding (Epic 51)
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods
 // Account-specific payment methods handled via accounts router
