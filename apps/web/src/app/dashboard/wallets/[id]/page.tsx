@@ -18,7 +18,8 @@ import {
     Activity,
     Calendar,
     DollarSign,
-    AlertTriangle
+    AlertTriangle,
+    RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -87,6 +88,45 @@ export default function WalletDetailPage() {
     // Fetch on-chain balance
     const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance(id, authToken);
     const onChain = balanceData?.data?.onChain;
+    const syncStatus = balanceData?.data?.syncStatus || 'stale';
+
+    // Sync state
+    const [syncing, setSyncing] = useState(false);
+
+    // Check if internal wallet
+    const isInternalWallet = !wallet?.walletAddress || wallet?.walletAddress?.startsWith('internal://');
+
+    const handleSync = async () => {
+        if (!authToken || isInternalWallet) return;
+
+        setSyncing(true);
+        try {
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/${id}/sync`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Sync failed (${response.status})`);
+            }
+
+            // Refresh both wallet data and balance data
+            queryClient.invalidateQueries({ queryKey: ['wallet', id] });
+            await refetchBalance();
+            toast.success('Wallet balance synced from blockchain');
+        } catch (error: any) {
+            console.error('Sync failed:', error);
+            toast.error(error.message || 'Failed to sync wallet balance');
+        } finally {
+            setSyncing(false);
+        }
+    };
 
     // Fetch transactions (using transfers filtered by wallet id)
     const { data: transactionsResponse, isLoading: txLoading } = useQuery({
@@ -322,68 +362,99 @@ export default function WalletDetailPage() {
                     <Card className="p-6">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">On-Chain Details</h3>
-                            <Button variant="ghost" size="sm" onClick={() => refetchBalance()} disabled={balanceLoading}>
-                                <Activity className={`w-4 h-4 text-gray-500 ${balanceLoading ? 'animate-spin' : ''}`} />
-                            </Button>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                                <span className="text-sm text-gray-500">Network</span>
-                                <span className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                    Base Sepolia
-                                </span>
-                            </div>
-
-                            {onChain ? (
-                                <>
-                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                                        <span className="text-sm text-gray-500">Native Balance</span>
-                                        <span className="text-sm font-mono text-gray-900 dark:text-white">
-                                            {parseFloat(onChain.native).toFixed(4)} ETH
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                                        <span className="text-sm text-gray-500">USDC Balance</span>
-                                        <span className="text-sm font-mono text-gray-900 dark:text-white">
-                                            ${parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                                        <span className="text-sm text-gray-500">Last Synced</span>
-                                        <span className="text-sm text-gray-500">
-                                            {onChain.lastSyncedAt ? formatDistanceToNow(new Date(onChain.lastSyncedAt)) + ' ago' : 'Never'}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                                        <span className="text-sm text-gray-500">Block Explorer</span>
-                                        {wallet.walletAddress && (
-                                            <a
-                                                href={`https://sepolia.basescan.org/address/${wallet.walletAddress}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-blue-600 hover:underline flex items-center gap-1"
-                                            >
-                                                View <ExternalLink className="w-3 h-3" />
-                                            </a>
-                                        )}
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="py-4 text-center text-gray-500 text-sm italic">
-                                    {balanceLoading ? 'Fetching on-chain data...' : 'On-chain data unavailable'}
-                                </div>
+                            {!isInternalWallet && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleSync}
+                                    disabled={syncing}
+                                    className={syncStatus === 'stale' ? 'border-red-300 text-red-600 hover:bg-red-50' : ''}
+                                >
+                                    <RefreshCw className={`w-4 h-4 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
+                                    {syncing ? 'Syncing...' : 'Sync'}
+                                </Button>
                             )}
+                        </div>
 
-                            {/* Placeholder for on-chain transactions */}
-                            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recent On-Chain Activity</h4>
-                                <div className="text-xs text-gray-500 text-center py-2">
-                                    Only available via Block Explorer
+                        {isInternalWallet ? (
+                            <div className="py-6 text-center">
+                                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                                </div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                    This is an internal PayOS wallet.<br />
+                                    No blockchain sync required.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {/* Sync Status Banner */}
+                                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+                                    syncStatus === 'synced'
+                                        ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                                        : syncStatus === 'pending'
+                                            ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400'
+                                            : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                                }`}>
+                                    <Clock className="w-4 h-4" />
+                                    {onChain?.lastSyncedAt
+                                        ? `Last synced ${formatDistanceToNow(new Date(onChain.lastSyncedAt))} ago`
+                                        : 'Never synced - click Sync to fetch on-chain balance'
+                                    }
+                                </div>
+
+                                <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                    <span className="text-sm text-gray-500">Network</span>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                        Base Sepolia
+                                    </span>
+                                </div>
+
+                                {onChain ? (
+                                    <>
+                                        <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                            <span className="text-sm text-gray-500">Native Balance</span>
+                                            <span className="text-sm font-mono text-gray-900 dark:text-white">
+                                                {parseFloat(onChain.native).toFixed(4)} ETH
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                            <span className="text-sm text-gray-500">USDC Balance</span>
+                                            <span className="text-sm font-mono text-gray-900 dark:text-white">
+                                                ${parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="py-4 text-center text-gray-500 text-sm italic">
+                                        {balanceLoading ? 'Fetching on-chain data...' : 'Click Sync to fetch on-chain balance'}
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                    <span className="text-sm text-gray-500">Block Explorer</span>
+                                    {wallet.walletAddress && (
+                                        <a
+                                            href={`https://sepolia.basescan.org/address/${wallet.walletAddress}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                                        >
+                                            View <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                    )}
+                                </div>
+
+                                {/* Placeholder for on-chain transactions */}
+                                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recent On-Chain Activity</h4>
+                                    <div className="text-xs text-gray-500 text-center py-2">
+                                        Only available via Block Explorer
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </Card>
 
                     <Card className="p-6 bg-gray-900 text-white border-0">

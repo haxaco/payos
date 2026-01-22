@@ -1,18 +1,44 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAccount, useSignMessage } from 'wagmi';
 
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { Wallet as WalletIcon, Plus, Search, Filter, TrendingUp, ArrowUp, ArrowDown, MoreVertical, X } from 'lucide-react';
+import {
+  Wallet as WalletIcon, Plus, Search, Filter, TrendingUp, ArrowUp, ArrowDown,
+  MoreVertical, X, Bot, AlertTriangle, Shield, Clock, CheckCircle, RefreshCw
+} from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import type { Wallet } from '@payos/api-client';
+import type { Wallet, SpendingPolicy } from '@payos/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { formatDistanceToNow } from 'date-fns';
+import { SpendingProgressCompact } from '@/components/wallets/spending-progress';
+import { cn } from '@/lib/utils';
+
+// Helper to calculate spending progress and check near-limit status
+function getSpendingStatus(policy: SpendingPolicy | undefined) {
+  if (!policy) return { dailyPercent: null, monthlyPercent: null, isNearLimit: false, hasPolicies: false };
+
+  const dailyPercent = policy.dailySpendLimit
+    ? Math.min(((policy.dailySpent || 0) / policy.dailySpendLimit) * 100, 100)
+    : null;
+
+  const monthlyPercent = policy.monthlySpendLimit
+    ? Math.min(((policy.monthlySpent || 0) / policy.monthlySpendLimit) * 100, 100)
+    : null;
+
+  const isNearLimit = (dailyPercent !== null && dailyPercent >= 80) ||
+                      (monthlyPercent !== null && monthlyPercent >= 80);
+
+  const hasPolicies = !!(policy.dailySpendLimit || policy.monthlySpendLimit ||
+                         policy.approvalThreshold || policy.requiresApprovalAbove);
+
+  return { dailyPercent, monthlyPercent, isNearLimit, hasPolicies };
+}
 
 const useWalletBalance = (walletId: string | undefined, authToken: string | null) => {
   return useQuery({
@@ -46,11 +72,84 @@ function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
   const onChain = balanceData?.data?.onChain;
   const syncStatus = balanceData?.data?.syncStatus || 'stale';
   const queryClient = useQueryClient();
+  const [showSyncTooltip, setShowSyncTooltip] = useState(false);
+
+  // Check if internal wallet
+  const isInternalWallet = !wallet.walletAddress || wallet.walletAddress.startsWith('internal://');
+
+  // Get sync status description for tooltip
+  const getSyncStatusInfo = () => {
+    if (isInternalWallet) {
+      return {
+        label: 'Internal',
+        description: 'Internal wallet managed by PayOS. No blockchain sync needed.',
+        color: 'bg-emerald-500',
+      };
+    }
+    switch (syncStatus) {
+      case 'synced':
+        return {
+          label: 'Synced',
+          description: 'Balance synced from blockchain within the last 5 minutes.',
+          color: 'bg-emerald-500',
+        };
+      case 'pending':
+        return {
+          label: 'Pending',
+          description: 'Balance was synced 5-60 minutes ago. Consider refreshing.',
+          color: 'bg-yellow-500',
+        };
+      case 'stale':
+      default:
+        return {
+          label: 'Stale',
+          description: onChain?.lastSyncedAt
+            ? 'Balance was synced over 60 minutes ago. Click sync to refresh.'
+            : 'Balance has never been synced. Click sync to fetch on-chain balance.',
+          color: 'bg-red-500',
+        };
+    }
+  };
+
+  const syncInfo = getSyncStatusInfo();
 
   // Wagmi hooks for BYOW verification
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [verifying, setVerifying] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSync = async () => {
+    if (!authToken || isInternalWallet) return;
+
+    setSyncing(true);
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/${wallet.id}/sync`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Sync failed (${response.status})`);
+      }
+
+      // Refresh both wallet list and balance data
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+      queryClient.invalidateQueries({ queryKey: ['wallet-balance', wallet.id] });
+      toast.success('Wallet balance synced');
+    } catch (error: any) {
+      console.error('Sync failed:', error);
+      toast.error(error.message || 'Failed to sync wallet balance');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleVerify = async () => {
     if (!wallet.walletAddress || !isConnected || !authToken) return;
@@ -88,13 +187,6 @@ function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
     }
   };
 
-  // Sync indicator color
-  const syncColor = {
-    synced: 'bg-emerald-500',
-    pending: 'bg-yellow-500',
-    stale: 'bg-red-500',
-  }[syncStatus as 'synced' | 'pending' | 'stale'] || 'bg-gray-400';
-
   return (
     <div
       className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
@@ -104,12 +196,40 @@ function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
           <WalletIcon className="h-6 w-6 text-white" />
         </div>
         <div className="flex items-center gap-2">
-          {/* Sync indicator */}
-          <div className="flex items-center gap-1.5 mr-2 px-2 py-1 bg-gray-50 dark:bg-gray-900 rounded-full border border-gray-100 dark:border-gray-800">
-            <span className={`w-2 h-2 rounded-full ${syncColor}`} />
-            <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
-              {syncStatus}
-            </span>
+          {/* Sync indicator with tooltip */}
+          <div
+            className="relative"
+            onMouseEnter={() => setShowSyncTooltip(true)}
+            onMouseLeave={() => setShowSyncTooltip(false)}
+          >
+            <div className="flex items-center gap-1.5 mr-2 px-2 py-1 bg-gray-50 dark:bg-gray-900 rounded-full border border-gray-100 dark:border-gray-800 cursor-help">
+              <span className={`w-2 h-2 rounded-full ${syncInfo.color}`} />
+              <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+                {syncInfo.label}
+              </span>
+            </div>
+
+            {/* Tooltip */}
+            {showSyncTooltip && (
+              <div className="absolute right-0 top-full mt-2 z-50 w-64 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-xl">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className={`w-2 h-2 rounded-full ${syncInfo.color}`} />
+                  <span className="font-semibold">{syncInfo.label}</span>
+                </div>
+                <p className="text-gray-300 leading-relaxed">{syncInfo.description}</p>
+                {onChain?.lastSyncedAt && (
+                  <p className="text-gray-400 mt-2 pt-2 border-t border-gray-700">
+                    Last synced: {formatDistanceToNow(new Date(onChain.lastSyncedAt))} ago
+                  </p>
+                )}
+                {!isInternalWallet && !onChain?.lastSyncedAt && (
+                  <p className="text-gray-400 mt-2 pt-2 border-t border-gray-700">
+                    Never synced
+                  </p>
+                )}
+                <div className="absolute -top-1.5 right-4 w-3 h-3 bg-gray-900 dark:bg-gray-800 rotate-45" />
+              </div>
+            )}
           </div>
 
           <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${wallet.status === 'active'
@@ -162,52 +282,147 @@ function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{wallet.currency}</div>
       </div>
 
+      {/* Spending Policy Section (for agent wallets) */}
+      {(() => {
+        const spendingStatus = getSpendingStatus(wallet.spendingPolicy);
+        const isAgentWallet = !!(wallet as any).managedByAgentId;
+        const policy = wallet.spendingPolicy;
+
+        if (isAgentWallet || spendingStatus.hasPolicies) {
+          return (
+            <div className="mb-4 pt-3 border-t border-gray-100 dark:border-gray-800 space-y-3">
+              {/* Near limit warning */}
+              {spendingStatus.isNearLimit && (
+                <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-xs font-medium">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Near spending limit
+                </div>
+              )}
+
+              {/* Daily progress */}
+              {policy?.dailySpendLimit && (
+                <SpendingProgressCompact
+                  spent={policy.dailySpent || 0}
+                  limit={policy.dailySpendLimit}
+                  currency={wallet.currency}
+                />
+              )}
+
+              {/* Monthly progress */}
+              {policy?.monthlySpendLimit && (
+                <SpendingProgressCompact
+                  spent={policy.monthlySpent || 0}
+                  limit={policy.monthlySpendLimit}
+                  currency={wallet.currency}
+                />
+              )}
+
+              {/* Approval threshold badge */}
+              {(policy?.approvalThreshold || policy?.requiresApprovalAbove) && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  <Shield className="w-3 h-3" />
+                  Approval required above ${(policy.approvalThreshold || policy.requiresApprovalAbove)?.toLocaleString()}
+                </div>
+              )}
+
+              {/* No policy warning for agent wallets */}
+              {isAgentWallet && !spendingStatus.hasPolicies && (
+                <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-xs">
+                  <AlertTriangle className="w-3 h-3" />
+                  No spending policy configured
+                </div>
+              )}
+            </div>
+          );
+        }
+        return null;
+      })()}
+
       {/* On-Chain Balance */}
-      {onChain ? (
+      {!isInternalWallet && (
         <div className="mb-4 pt-3 border-t border-gray-100 dark:border-gray-800">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-widest">On-Chain</span>
-            {wallet.walletAddress && (
-              <a
-                href={`https://sepolia.basescan.org/address/${wallet.walletAddress}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+            <div className="flex items-center gap-2">
+              {wallet.walletAddress && (
+                <a
+                  href={`https://sepolia.basescan.org/address/${wallet.walletAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+                >
+                  View <span className="text-[10px]">↗</span>
+                </a>
+              )}
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors",
+                  syncStatus === 'stale'
+                    ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400"
+                    : syncStatus === 'pending'
+                      ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400",
+                  syncing && "opacity-50 cursor-not-allowed"
+                )}
               >
-                View <span className="text-[10px]">↗</span>
-              </a>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-700 dark:text-gray-300">USDC</span>
-              <span className="font-mono text-sm font-medium text-gray-900 dark:text-white">
-                ${parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-              </span>
+                <RefreshCw className={cn("h-3 w-3", syncing && "animate-spin")} />
+                {syncing ? 'Syncing...' : 'Sync'}
+              </button>
             </div>
-            {parseFloat(onChain.native) > 0 && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-700 dark:text-gray-300">ETH</span>
-                <span className="font-mono text-sm text-gray-500">
-                  {parseFloat(onChain.native).toFixed(4)}
-                </span>
-              </div>
-            )}
           </div>
 
-          {onChain.lastSyncedAt && (
-            <p className="text-[10px] text-gray-400 mt-2 text-right">
-              Synced {formatDistanceToNow(new Date(onChain.lastSyncedAt))} ago
-            </p>
+          {onChain ? (
+            <>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">USDC</span>
+                  <span className="font-mono text-sm font-medium text-gray-900 dark:text-white">
+                    ${parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {parseFloat(onChain.native) > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-700 dark:text-gray-300">ETH</span>
+                    <span className="font-mono text-sm text-gray-500">
+                      {parseFloat(onChain.native).toFixed(4)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Last synced time - more prominent */}
+              <div className={cn(
+                "flex items-center gap-1.5 mt-2 px-2 py-1.5 rounded-md text-xs",
+                syncStatus === 'synced'
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"
+                  : syncStatus === 'pending'
+                    ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
+                    : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+              )}>
+                <Clock className="h-3 w-3" />
+                {onChain.lastSyncedAt ? (
+                  <span>Synced {formatDistanceToNow(new Date(onChain.lastSyncedAt))} ago</span>
+                ) : (
+                  <span>Never synced</span>
+                )}
+              </div>
+            </>
+          ) : balanceLoading ? (
+            <div className="animate-pulse">
+              <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-1/3 mb-2"></div>
+              <div className="h-6 bg-gray-200 dark:bg-gray-800 rounded w-full"></div>
+            </div>
+          ) : (
+            <div className="text-center py-3">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Click sync to fetch on-chain balance
+              </p>
+            </div>
           )}
         </div>
-      ) : balanceLoading ? (
-        <div className="mb-4 pt-4 border-t border-gray-100 dark:border-gray-800 animate-pulse">
-          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-1/3 mb-2"></div>
-          <div className="h-6 bg-gray-200 dark:bg-gray-800 rounded w-full"></div>
-        </div>
-      ) : null}
+      )}
 
       <div className="flex gap-2">
         <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">
@@ -231,6 +446,8 @@ export default function WalletsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAgentWalletsOnly, setShowAgentWalletsOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'frozen' | 'depleted'>('all');
 
   // Form state
   const [createMode, setCreateMode] = useState<'select' | 'create' | 'external'>('select');
@@ -299,6 +516,57 @@ export default function WalletsPage() {
     : (Array.isArray((rawData as any)?.data)
       ? (rawData as any).data
       : []);
+
+  // Calculate stats with memoization
+  const stats = useMemo(() => {
+    const agentWallets = wallets.filter((w: any) => w.managedByAgentId);
+    const activeWallets = wallets.filter((w: any) => w.status === 'active').length;
+    const totalBalance = wallets.reduce((sum: number, w: any) => sum + (w.balance || 0), 0);
+    const withPolicies = agentWallets.filter((w: any) => {
+      const status = getSpendingStatus(w.spendingPolicy);
+      return status.hasPolicies;
+    }).length;
+    const nearLimit = wallets.filter((w: any) => {
+      const status = getSpendingStatus(w.spendingPolicy);
+      return status.isNearLimit;
+    }).length;
+
+    return {
+      total: wallets.length,
+      active: activeWallets,
+      totalBalance,
+      agentManaged: agentWallets.length,
+      withPolicies,
+      nearLimit,
+    };
+  }, [wallets]);
+
+  // Filter wallets
+  const filteredWallets = useMemo(() => {
+    let filtered = wallets;
+
+    // Agent filter
+    if (showAgentWalletsOnly) {
+      filtered = filtered.filter((w: any) => w.managedByAgentId);
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((w: any) => w.status === statusFilter);
+    }
+
+    // Search filter
+    if (search.trim()) {
+      const query = search.toLowerCase();
+      filtered = filtered.filter((w: any) =>
+        (w.name?.toLowerCase() || '').includes(query) ||
+        (w.purpose?.toLowerCase() || '').includes(query) ||
+        (w.id?.toLowerCase() || '').includes(query)
+      );
+    }
+
+    return filtered;
+  }, [wallets, showAgentWalletsOnly, statusFilter, search]);
 
   const handleCreateWallet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -390,15 +658,6 @@ export default function WalletsPage() {
     setError(null);
   };
 
-  const filteredWallets = wallets.filter((wallet: any) =>
-    (wallet.name?.toLowerCase() || '').includes(search.toLowerCase()) ||
-    (wallet.purpose?.toLowerCase() || '').includes(search.toLowerCase())
-  );
-
-  // Calculate totals
-  const totalBalance = wallets.reduce((sum: number, w: any) => sum + w.balance, 0);
-  const activeWallets = wallets.filter((w: any) => w.status === 'active').length;
-
   if (isAuthLoading) {
     return (
       <div className="p-8 max-w-[1600px] mx-auto">
@@ -453,55 +712,142 @@ export default function WalletsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Wallets</span>
-            <WalletIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">{wallets.length}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{activeWallets} active</div>
-        </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Balance</span>
             <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="text-3xl font-bold text-gray-900 dark:text-white">
-            ${totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${stats.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Across all wallets</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {stats.total} wallets ({stats.active} active)
+          </div>
         </div>
 
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Agent-Managed</span>
-            <WalletIcon className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+            <Bot className="h-4 w-4 text-violet-600 dark:text-violet-400" />
           </div>
           <div className="text-3xl font-bold text-gray-900 dark:text-white">
-            {wallets.filter((w: any) => w.managedByAgentId).length}
+            {stats.agentManaged}
           </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">With spending policies</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {stats.withPolicies} with policies
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">With Policies</span>
+            <Shield className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div className="text-3xl font-bold text-gray-900 dark:text-white">
+            {stats.withPolicies}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Spending controls active
+          </div>
+        </div>
+
+        <div className={cn(
+          "bg-white dark:bg-gray-950 rounded-2xl border p-6",
+          stats.nearLimit > 0
+            ? "border-amber-300 dark:border-amber-700"
+            : "border-gray-200 dark:border-gray-800"
+        )}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Near Limit</span>
+            <AlertTriangle className={cn(
+              "h-4 w-4",
+              stats.nearLimit > 0
+                ? "text-amber-500"
+                : "text-gray-400"
+            )} />
+          </div>
+          <div className={cn(
+            "text-3xl font-bold",
+            stats.nearLimit > 0
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-gray-900 dark:text-white"
+          )}>
+            {stats.nearLimit}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            &gt;80% of limit used
+          </div>
         </div>
       </div>
 
       {/* Search and Filters */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search wallets..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      <div className="flex flex-col gap-4 mb-6">
+        <div className="flex items-center gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search wallets..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Status filter pills */}
+          <div className="flex items-center gap-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-1">
+            {(['all', 'active', 'frozen', 'depleted'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={cn(
+                  "px-3 py-1.5 text-sm rounded-md transition-colors",
+                  statusFilter === status
+                    ? "bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                )}
+              >
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-          <Filter className="h-4 w-4" />
-          Filter
-        </button>
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {/* Agent wallets toggle */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showAgentWalletsOnly}
+                onChange={(e) => setShowAgentWalletsOnly(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <Bot className="w-4 h-4 text-violet-500" />
+                Agent wallets only
+              </span>
+            </label>
+
+            {/* Results count */}
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {filteredWallets.length} wallet{filteredWallets.length !== 1 ? 's' : ''}
+              {showAgentWalletsOnly && ' (agent-managed)'}
+            </span>
+          </div>
+
+          {/* Approvals link - show when filtering agent wallets */}
+          {showAgentWalletsOnly && (
+            <Link
+              href="/dashboard/approvals"
+              className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 transition-colors"
+            >
+              <Clock className="h-4 w-4" />
+              View Pending Approvals
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Wallets Grid */}

@@ -697,6 +697,74 @@ app.get('/:id', async (c) => {
 });
 
 /**
+ * GET /v1/wallets/:id/balance
+ * Get wallet balance with on-chain sync status
+ */
+app.get('/:id/balance', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const walletId = c.req.param('id');
+    const supabase = createClient();
+
+    const { data: wallet, error } = await supabase
+      .from('wallets')
+      .select('id, balance, currency, wallet_address, last_synced_at, sync_data, sync_enabled')
+      .eq('id', walletId)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (error || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+
+    // Compute sync status based on last_synced_at
+    let syncStatus: 'synced' | 'pending' | 'stale' = 'stale';
+
+    // Check if this is an internal wallet (no on-chain address)
+    const isInternalWallet = !wallet.wallet_address || wallet.wallet_address.startsWith('internal://');
+
+    if (isInternalWallet) {
+      // Internal wallets don't need on-chain sync
+      syncStatus = 'synced';
+    } else if (wallet.last_synced_at) {
+      const lastSync = new Date(wallet.last_synced_at);
+      const now = new Date();
+      const minutesSinceSync = (now.getTime() - lastSync.getTime()) / (1000 * 60);
+
+      if (minutesSinceSync < 5) {
+        syncStatus = 'synced';
+      } else if (minutesSinceSync < 60) {
+        syncStatus = 'pending'; // Could use a refresh
+      } else {
+        syncStatus = 'stale'; // Needs sync
+      }
+    }
+
+    // Build on-chain data from sync_data
+    const syncData = wallet.sync_data as Record<string, unknown> | null;
+    const onChain = !isInternalWallet && syncData ? {
+      usdc: syncData.raw_balance
+        ? (parseFloat(syncData.raw_balance as string) / Math.pow(10, (syncData.decimals as number) || 6)).toString()
+        : wallet.balance.toString(),
+      native: (syncData.native_balance as string) || '0',
+      lastSyncedAt: wallet.last_synced_at,
+    } : null;
+
+    return c.json({
+      data: {
+        balance: parseFloat(wallet.balance),
+        currency: wallet.currency,
+        syncStatus,
+        onChain,
+      },
+    });
+  } catch (error) {
+    console.error('Error in GET /v1/wallets/:id/balance:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
  * PATCH /v1/wallets/:id
  * Update a wallet's configuration
  */
@@ -1111,6 +1179,11 @@ app.post('/:id/sync', async (c) => {
 
     if (!wallet.wallet_address) {
       return c.json({ error: 'Wallet does not have an on-chain address' }, 400);
+    }
+
+    // Check if this is an internal wallet (can't sync on-chain)
+    if (wallet.wallet_address.startsWith('internal://')) {
+      return c.json({ error: 'Internal wallets do not require on-chain sync' }, 400);
     }
 
     // Sync balance from chain
