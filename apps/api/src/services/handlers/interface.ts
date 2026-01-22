@@ -162,6 +162,7 @@ export interface PayPalCredentials {
 export interface CircleCredentials {
   api_key: string;
   entity_id?: string;
+  sandbox?: boolean;
 }
 
 export interface PayOSNativeCredentials {

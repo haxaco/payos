@@ -157,11 +157,19 @@ export function validateCredentialStructure(
       if (!credentials.client_secret || typeof credentials.client_secret !== 'string') {
         errors.push('PayPal credentials require client_secret (string)');
       }
+      // sandbox is optional boolean
+      if (credentials.sandbox !== undefined && typeof credentials.sandbox !== 'boolean') {
+        errors.push('PayPal sandbox must be a boolean');
+      }
       break;
 
     case 'circle':
       if (!credentials.api_key || typeof credentials.api_key !== 'string') {
         errors.push('Circle credentials require api_key (string)');
+      }
+      // sandbox is optional boolean
+      if (credentials.sandbox !== undefined && typeof credentials.sandbox !== 'boolean') {
+        errors.push('Circle sandbox must be a boolean');
       }
       break;
 

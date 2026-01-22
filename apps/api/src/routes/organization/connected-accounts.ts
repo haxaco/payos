@@ -20,6 +20,8 @@ import {
   maskCredentials,
 } from '../../services/credential-vault/index.js';
 import { validateStripeCredentials } from '../../services/handlers/stripe.js';
+import { validatePayPalCredentials } from '../../services/handlers/paypal.js';
+import { validateCircleCredentials } from '../../services/handlers/circle.js';
 
 const connectedAccounts = new Hono();
 
@@ -222,8 +224,19 @@ connectedAccounts.post('/', async (c) => {
 
   if (body.handler_type === 'stripe') {
     verificationResult = await validateStripeCredentials(body.credentials as { api_key: string });
+  } else if (body.handler_type === 'paypal') {
+    verificationResult = await validatePayPalCredentials(body.credentials as {
+      client_id: string;
+      client_secret: string;
+      sandbox?: boolean;
+    });
+  } else if (body.handler_type === 'circle') {
+    verificationResult = await validateCircleCredentials(body.credentials as {
+      api_key: string;
+      sandbox?: boolean;
+    });
   }
-  // Add other handler validations as needed
+  // PayOS Native doesn't have API validation (Pix/SPEI keys are validated differently)
 
   const supabase = createClient();
 
@@ -364,6 +377,17 @@ connectedAccounts.patch('/:id', async (c) => {
     let verificationResult = { valid: true, error: undefined as string | undefined };
     if (existing.handler_type === 'stripe') {
       verificationResult = await validateStripeCredentials(body.credentials as { api_key: string });
+    } else if (existing.handler_type === 'paypal') {
+      verificationResult = await validatePayPalCredentials(body.credentials as {
+        client_id: string;
+        client_secret: string;
+        sandbox?: boolean;
+      });
+    } else if (existing.handler_type === 'circle') {
+      verificationResult = await validateCircleCredentials(body.credentials as {
+        api_key: string;
+        sandbox?: boolean;
+      });
     }
 
     updates.credentials_encrypted = encryptAndSerialize(body.credentials);
@@ -502,8 +526,19 @@ connectedAccounts.post('/:id/verify', async (c) => {
 
   if (existing.handler_type === 'stripe') {
     verificationResult = await validateStripeCredentials(credentials as { api_key: string });
+  } else if (existing.handler_type === 'paypal') {
+    verificationResult = await validatePayPalCredentials(credentials as {
+      client_id: string;
+      client_secret: string;
+      sandbox?: boolean;
+    });
+  } else if (existing.handler_type === 'circle') {
+    verificationResult = await validateCircleCredentials(credentials as {
+      api_key: string;
+      sandbox?: boolean;
+    });
   }
-  // Add other handler verifications as needed
+  // PayOS Native doesn't have API validation
 
   // Update account status
   const { error: updateError } = await supabase
