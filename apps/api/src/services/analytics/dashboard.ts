@@ -283,7 +283,11 @@ export async function getProtocolStats(
     .eq('id', tenantId)
     .single();
 
-  const enabledProtocols = tenant?.settings?.enabled_protocols || [];
+  // enabled_protocols is stored as an object: { x402: { enabled_at: '...' }, ... }
+  const enabledProtocols = tenant?.settings?.enabled_protocols || {};
+  const isProtocolEnabled = (protocol: string): boolean => {
+    return !!enabledProtocols[protocol];
+  };
 
   const stats: ProtocolStats[] = [];
 
@@ -316,7 +320,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'x402',
     protocol_name: 'x402 Micropayments',
-    enabled: enabledProtocols.includes('x402'),
+    enabled: isProtocolEnabled('x402'),
     primary_metric: {
       label: 'Active Endpoints',
       value: x402Endpoints.data?.length || 0,
@@ -350,7 +354,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'ap2',
     protocol_name: 'AP2 Mandates',
-    enabled: enabledProtocols.includes('ap2'),
+    enabled: isProtocolEnabled('ap2'),
     primary_metric: {
       label: 'Active Mandates',
       value: ap2Mandates.data?.length || 0,
@@ -391,7 +395,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'acp',
     protocol_name: 'ACP Commerce',
-    enabled: enabledProtocols.includes('acp'),
+    enabled: isProtocolEnabled('acp'),
     primary_metric: {
       label: 'Checkouts (24h)',
       value: acpToday.data?.length || 0,
@@ -432,7 +436,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'ucp',
     protocol_name: 'UCP Commerce',
-    enabled: enabledProtocols.includes('ucp'),
+    enabled: isProtocolEnabled('ucp'),
     primary_metric: {
       label: 'Checkouts (24h)',
       value: ucpToday.data?.length || 0,

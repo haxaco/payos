@@ -508,7 +508,6 @@ export class WebhookService {
       return false;
     }
   }
-}
 
   // ============================================
   // Event Emission Helpers (Story 27.5)

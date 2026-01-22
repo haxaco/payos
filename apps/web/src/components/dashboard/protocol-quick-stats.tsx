@@ -169,7 +169,8 @@ export function ProtocolQuickStats() {
     staleTime: 60 * 1000,
   });
 
-  const stats = Array.isArray(data?.data) ? data.data : [];
+  // data could be: { data: [...] } or [...] depending on response wrapping
+  const stats = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
 
   if (isLoading) {
     return (
