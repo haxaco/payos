@@ -1,8 +1,8 @@
 # PayOS PoC — Product Requirements Document (PRD)
 
-**Version:** 1.20
-**Date:** January 15, 2026
-**Status:** UCP Protocol Integration
+**Version:** 1.21
+**Date:** January 21, 2026
+**Status:** Platform Architecture & Card Networks
 
 ---
 
@@ -45,6 +45,38 @@ Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is th
 ---
 
 ## Version History
+
+### Version 1.21 (January 21, 2026)
+**Platform Architecture & Card Network Epics**
+
+**New Epics 48-53 — Platform Architecture Evolution:**
+- **Epic 48: Connected Accounts** (21 pts, P0) — Payment handler management for multi-processor support
+- **Epic 49: Protocol Discovery** (18 pts, P0) — Protocol registry and enablement API
+- **Epic 50: Settlement Decoupling** (26 pts, P0) — Settlement trigger rules engine
+- **Epic 51: Unified Onboarding** (52 pts, P1) — Protocol-specific onboarding flows (absorbed Epic 25)
+- **Epic 52: Dashboard Redesign** (21 pts, P1) — Agentic protocol focus with real metrics
+- **Epic 53: Card Network Agentic Commerce** (62 pts, P1) — Visa VIC + Mastercard Agent Pay integration
+
+**Completed Since v1.20:**
+- ✅ Epic 43: UCP Integration (55 pts) — Full Google+Shopify protocol support
+- ✅ Epic 27: Settlement Infrastructure (34 pts)
+- ✅ Epic 28: Simulation Engine (24 pts)
+- ✅ Epic 30: Structured Response System (28 pts)
+- ✅ Epic 31: Context API (21 pts)
+- ✅ Epic 36: SDK & Developer Experience (66 pts)
+
+**Strategic Impact:**
+- PayOS now supports **ALL FOUR** agentic protocols: x402, AP2, ACP, UCP
+- Platform architecture epics (48-50) enable true multi-protocol scaling
+- Card network support (Epic 53) adds Visa VIC + Mastercard Agent Pay
+- Total completed: ~497 points across 13 epics
+
+**Documentation:**
+- Updated Epic Dashboard with all 48-53 epics
+- Architecture doc: `docs/architecture/three-layer-architecture.md`
+- Epic docs: `docs/prd/epics/epic-48-53-*.md`
+
+---
 
 ### Version 1.20 (January 15, 2026)
 **UCP Protocol Integration — URGENT Strategic Priority**
@@ -296,45 +328,57 @@ PayOS is now the **only settlement infrastructure** supporting all three agentic
 | Epic | Name | Phase | Priority | Status | Points | Stories | Doc |
 |------|------|-------|----------|--------|--------|---------|-----|
 | 17 | Multi-Protocol Gateway 🔌 | 3 | P1 | ✅ Complete | 53 | 12/12 | [View](./epics/epic-17-multi-protocol.md) |
-| 18 | Agent Wallets & Spending Policies 🤖 | 3.5 | P1 | 📋 Next | 23 | 0/6 | [View](./epics/epic-18-agent-wallets.md) |
+| 18 | Agent Wallets & Spending Policies 🤖 | 3.5 | P1 | 📋 Pending | 23 | 0/6 | [View](./epics/epic-18-agent-wallets.md) |
 | 19 | PayOS x402 Services 🍾 | 3.5 | P2 | 📋 Pending | 22 | 0/5 | — |
 | 20 | Streaming Payments & Agent Registry 🌊 | 3.5 | P2 | 📋 Pending | 18 | 0/5 | — |
-| 21 | Code Coverage Improvement 📊 | — | P2 | 📋 Pending | 112 | 0/13 | — |
+| 21 | Code Coverage Improvement 📊 | — | P3 | 📋 Pending | 112 | 0/13 | — |
 | 22 | Seed Data & Final UI Integration 🌱 | — | P2 | ✅ Complete | 21 | 6/6 | — |
 | 23 | Dashboard Performance & API Optimization 🚀 | — | P1 | ✅ Complete | 18 | 7/7 | — |
-| 24 | Enhanced API Key Security 🔐 | — | P1 | 📋 Pending | 28 | 0/7 | — |
-| 25 | User Onboarding & API Improvements 🚀 | — | P1 | 📋 Pending | 29 | 0/8 | — |
+| 24 | Enhanced API Key Security 🔐 | — | P2 | 📋 Pending | 28 | 0/7 | — |
+| ~~25~~ | ~~User Onboarding~~ | — | — | → Absorbed into Epic 51 | — | — | — |
 | 26 | x402 Payment Performance Optimization ⚡ | — | P1 | ✅ Complete | 13 | 7/7 | — |
-| 27 | Settlement Infrastructure Hardening 🏗️ | 5 | **P0** | 📋 **High Priority** | 29 | 0/8 | [View](./epics/epic-27-settlement.md) |
-| 28 | Simulation Engine 🔮 | 6 | P0 | 📋 Pending | 24 | 0/8 | [View](./epics/epic-28-simulation.md) |
-| 29 | Workflow Engine ⚙️ | 6 | P0/P1 | 📋 Pending | 42 | 0/11 | — |
-| 30 | Structured Response System 📋 | 6 | P0 | 📋 Pending | 26 | 0/8 | — |
-| 31 | Context API 🔍 | 6 | P0 | 📋 Pending | 16 | 0/5 | — |
-| 32 | Tool Discovery 🧭 | 6 | P0 | 📋 Pending | 11 | 0/4 | — |
-| 33 | Metadata Schema 🏷️ | 6 | P1 | 📋 Pending | 11 | 0/4 | — |
-| 34 | Transaction Decomposition 📦 | 6 | P1 | 📋 Pending | 14 | 0/4 | — |
-| 35 | Entity Onboarding API 🚀 | 6 | P1 | 📋 Pending | 14 | 0/4 | — |
-| 36 | SDK & Developer Experience 🧰 | 3.5 | P0 | 📋 Pending | 66 | 0/17 | [View](./epics/epic-36-sdk-developer-experience.md) |
-| 40 | External Sandbox Integrations 🔌 | 3.5 | P0 | ✅ Complete | 86 | 28/28 | [View](./epics/epic-40-sandbox-integrations.md) |
+| 27 | Settlement Infrastructure Hardening 🏗️ | 5 | P1 | ✅ Complete | 34 | 8/8 | [View](./epics/epic-27-settlement.md) |
+| 28 | Simulation Engine 🔮 | 6 | P0 | ✅ Complete | 24 | 8/8 | [View](./epics/epic-28-simulation.md) |
+| 29 | Workflow Engine ⚙️ | 6 | P0 | 📋 Pending | 52 | 0/11 | [View](./epics/epic-29-workflow-engine.md) |
+| 30 | Structured Response System 📋 | 6 | P0 | ✅ Complete | 28 | 8/8 | [View](./epics/epic-30-structured-response.md) |
+| 31 | Context API 🔍 | 6 | P0 | ✅ Complete | 21 | 5/5 | [View](./epics/epic-31-context-api.md) |
+| 32 | Tool Discovery 🧭 | 6 | P0 | 📋 Pending | 11 | 0/4 | [View](./epics/epic-32-tool-discovery.md) |
+| 33 | Metadata Schema 🏷️ | 6 | P1 | 📋 Pending | 11 | 0/4 | [View](./epics/epic-33-metadata-schema.md) |
+| 34 | Transaction Decomposition 📦 | 6 | P1 | 📋 Pending | 14 | 0/4 | [View](./epics/epic-34-transaction-decomposition.md) |
+| 35 | Entity Onboarding API 🚀 | 6 | P1 | 📋 Pending | 14 | 0/4 | [View](./epics/epic-35-entity-onboarding.md) |
+| 36 | SDK & Developer Experience 🧰 | 3.5 | P0 | ✅ Complete | 66 | 17/17 | [View](./epics/epic-36-sdk-developer-experience.md) |
+| 40 | External Sandbox Integrations 🔌 | 3.5 | P0 | ✅ Complete | ~100 | 28/28 | [View](./epics/epic-40-sandbox-integrations.md) |
 | 41 | On-Ramp Integrations 💳 | 3.5 | P1 | 📋 Pending | 110 | 0/29 | [View](./epics/epic-41-onramp-integrations.md) |
 | 42 | Frontend Dashboard Integration 🖥️ | 3.5 | P0 | ✅ Complete | 65 | 19/19 | [View](./epics/epic-42-frontend-dashboard.md) |
-| 43a | Cards Infrastructure & VDC 💳 | 3.5 | P1 | 📋 Planning | 47 | 0/12 | [View](./epics/epic-43-cards-infrastructure.md) |
-| **43** | **UCP (Universal Commerce Protocol) 🌐** | **3.5** | **P0** | **✅ Complete** | **55** | **14/14** | **[View](./epics/epic-43-ucp-integration.md)** |
+| 43 | UCP (Universal Commerce Protocol) 🌐 | 3.5 | P0 | ✅ Complete | 55 | 14/14 | [View](./epics/epic-43-ucp-integration.md) |
+| 43a | Cards Infrastructure & VDC 💳 | 3.5 | P2 | 📋 Backlog | 47 | 0/12 | [View](./epics/epic-43-cards-infrastructure.md) |
 | 44 | Observability & Monitoring 📊 | 5 | P2 | 📋 Placeholder | ~40 | 0/TBD | [View](./epics/epic-44-observability.md) |
 | 45 | Webhook Infrastructure 🔔 | 5 | P2 | 📋 Placeholder | ~35 | 0/TBD | [View](./epics/epic-45-webhook-infrastructure.md) |
 | 46 | Multi-Region & DR 🌍 | 5 | P3 | 📋 Placeholder | ~60 | 0/TBD | [View](./epics/epic-46-disaster-recovery.md) |
 | 47 | UCP Merchant Gateway 🏪 | 4 | P2 | 📋 Backlog | 89 | 0/22 | [View](./epics/epic-47-ucp-merchant-gateway.md) |
+| **48** | **Connected Accounts 🔌** | **4** | **P0** | **🚧 Current** | **21** | **0/6** | **[View](./epics/epic-48-connected-accounts.md)** |
+| **49** | **Protocol Discovery 🧭** | **4** | **P0** | **🚧 Current** | **18** | **0/5** | **[View](./epics/epic-49-protocol-discovery.md)** |
+| **50** | **Settlement Decoupling ⚙️** | **4** | **P0** | **🚧 Current** | **26** | **0/7** | **[View](./epics/epic-50-settlement-decoupling.md)** |
+| **51** | **Unified Onboarding 🚀** | **4** | **P1** | **📋 Next** | **52** | **0/14** | **[View](./epics/epic-51-unified-onboarding.md)** |
+| **52** | **Dashboard Redesign 📊** | **4** | **P1** | **📋 Next** | **21** | **0/6** | **[View](./epics/epic-52-dashboard-redesign.md)** |
+| **53** | **Card Network Agentic Commerce 💳** | **4** | **P1** | **📋 Next** | **62** | **0/11** | **[View](./epics/epic-53-card-network-agentic-commerce.md)** |
 
 **Summary:**
 - **Foundation Complete:** Epics 1-16 (Phase 1-2) fully implemented
-- **Epic 40 Complete:** All sandbox integrations (Circle, Stripe, x402, AP2, compliance) working
-- **Epic 42 Complete:** Frontend dashboard integration with all Epic 40 capabilities
-- **🚧 Epic 43 UCP In Progress** (55 pts, 7/14 stories) — Core P0 stories complete, P1 remaining
-- **Current Focus:** Epic 43 (UCP) + Epic 36 (SDK) — Critical path to multi-protocol positioning
-- **On-Ramp Priority:** Epic 41 enables non-crypto-native customer onboarding
-- **NEW Epic 47:** UCP Merchant Gateway (89 pts, P2) — Enable non-Shopify merchants to join UCP
-- **Total Active Points:** 453 points (Epic 43: 55 + Epic 36: 66 + Epic 41: 110 + Epic 43a: 47 + Epic 47: 89 + backlog: 86)
-- **AI-Native Infrastructure:** Epics 28-35 (158 points) planned for Phase 6
+- **Protocol Infrastructure Complete:** Epic 17 (Multi-Protocol), Epic 43 (UCP), Epic 36 (SDK)
+- **AI-Native Complete:** Epic 28 (Simulation), Epic 30 (Structured Response), Epic 31 (Context API)
+- **🚧 Current Focus (P0):** Epics 48-50 — Platform architecture for multi-protocol scaling
+  - Epic 48: Connected Accounts (payment handler management)
+  - Epic 49: Protocol Discovery (protocol registry & enablement)
+  - Epic 50: Settlement Decoupling (settlement trigger rules)
+- **📋 Next (P1):** Epics 51-53 — Onboarding, Dashboard, Card Networks
+  - Epic 51: Unified Onboarding (protocol-specific flows)
+  - Epic 52: Dashboard Redesign (agentic protocol focus)
+  - Epic 53: Card Network Agentic Commerce (Visa VIC + Mastercard Agent Pay)
+- **Total Completed:** ~497 points across 13 epics
+- **Current Focus:** ~65 points (Epics 48-50)
+- **Next Priority:** ~135 points (Epics 51-53)
+- **AI-Native Remaining:** Epic 29 (Workflow Engine), Epic 32 (Tool Discovery)
 - **Production Hardening:** Epics 44-46 (Observability, Webhooks, DR) — placeholders for scale phase
 
 ---
