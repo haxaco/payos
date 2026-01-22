@@ -24,7 +24,7 @@ import { getCorridors } from './profile.js';
 interface StoredSettlement {
   id: string;
   tenantId: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'deferred'; // Epic 50.3: added 'deferred'
   token: string;
   mandateId?: string; // AP2 mandate reference (Story 43.6)
   transferId?: string;
@@ -37,11 +37,13 @@ interface StoredSettlement {
     fees: number;
   };
   recipient: UCPRecipient;
-  corridor: 'pix' | 'spei';
+  corridor: 'pix' | 'spei' | 'auto'; // Epic 50.3: can be 'auto'
   estimatedCompletion?: Date;
   completedAt?: Date;
   failedAt?: Date;
   failureReason?: string;
+  deferredToRules?: boolean; // Epic 50.3: settlement managed by rules engine
+  settlementRuleId?: string; // Epic 50.3: which rule handles this
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +56,7 @@ const settlementStore = new Map<string, StoredSettlement>();
 
 /**
  * Map stored settlement to API response
+ * Epic 50.3: Added deferred fields
  */
 function mapSettlement(stored: StoredSettlement): UCPSettlement {
   return {
@@ -75,6 +78,8 @@ function mapSettlement(stored: StoredSettlement): UCPSettlement {
     completed_at: stored.completedAt?.toISOString(),
     failed_at: stored.failedAt?.toISOString(),
     failure_reason: stored.failureReason,
+    deferred_to_rules: stored.deferredToRules,
+    settlement_rule_id: stored.settlementRuleId,
     created_at: stored.createdAt.toISOString(),
     updated_at: stored.updatedAt.toISOString(),
   };
@@ -109,20 +114,22 @@ export async function executeSettlement(
   // Mark token as used
   markTokenUsed(token);
 
-  // Calculate estimated completion
-  const corridors = getCorridors();
-  const corridor = corridors.find(
-    (c) => c.rail === tokenData.corridor && c.source_currency === tokenData.currency
-  );
-  const estimatedMinutes = tokenData.corridor === 'pix' ? 1 : 30;
-  const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
+  // Epic 50.3: Check if settlement should be deferred to rules engine
+  const shouldDefer = tokenData.deferSettlement || tokenData.corridor === 'auto';
+
+  // Calculate estimated completion (only if not deferred)
+  let estimatedCompletion: Date | undefined;
+  if (!shouldDefer) {
+    const estimatedMinutes = tokenData.corridor === 'pix' ? 1 : 30;
+    estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
+  }
 
   // Create settlement record
   const now = new Date();
   const stored: StoredSettlement = {
     id: tokenData.settlementId,
     tenantId,
-    status: 'pending',
+    status: shouldDefer ? 'deferred' : 'pending',
     token,
     amount: {
       source: tokenData.amount,
@@ -135,18 +142,25 @@ export async function executeSettlement(
     recipient: tokenData.recipient,
     corridor: tokenData.corridor,
     estimatedCompletion,
+    deferredToRules: shouldDefer,
     createdAt: now,
     updatedAt: now,
   };
   settlementStore.set(stored.id, stored);
 
-  // In production, this would:
-  // 1. Create a transfer in the transfers table
-  // 2. Initiate the actual payout via Circle or other PSP
-  // 3. Update status based on webhooks
-  //
-  // For PoC, we'll simulate by updating status after a delay
-  simulateSettlementExecution(stored.id, supabase);
+  // Epic 50.3: If deferred, the rules engine will execute this later
+  // Otherwise, execute immediately (PoC simulation)
+  if (!shouldDefer) {
+    // In production, this would:
+    // 1. Create a transfer in the transfers table
+    // 2. Initiate the actual payout via Circle or other PSP
+    // 3. Update status based on webhooks
+    //
+    // For PoC, we'll simulate by updating status after a delay
+    simulateSettlementExecution(stored.id, supabase);
+  } else {
+    console.log(`[UCP] Settlement ${stored.id} deferred to rules engine`);
+  }
 
   return mapSettlement(stored);
 }
@@ -293,18 +307,25 @@ export async function executeSettlementWithMandate(
     );
   }
 
+  // Epic 50.3: Check if settlement should be deferred to rules engine
+  const shouldDefer = (request as any).defer_settlement || corridor === 'auto';
+
   // Get FX quote for the settlement
   const quote = getQuoteForCorridor(amount, currency, corridor);
 
+  // Calculate estimated completion (only if not deferred)
+  let estimatedCompletion: Date | undefined;
+  if (!shouldDefer && corridor !== 'auto') {
+    const estimatedMinutes = corridor === 'pix' ? 1 : 30;
+    estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
+  }
+
   // Create settlement
   const now = new Date();
-  const estimatedMinutes = corridor === 'pix' ? 1 : 30;
-  const estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
-
   const stored: StoredSettlement = {
     id: randomUUID(),
     tenantId,
-    status: 'pending',
+    status: shouldDefer ? 'deferred' : 'pending',
     token: mandate_token, // Store mandate token as reference
     mandateId: mandateId, // Link to AP2 mandate
     amount: {
@@ -318,10 +339,17 @@ export async function executeSettlementWithMandate(
     recipient,
     corridor,
     estimatedCompletion,
+    deferredToRules: shouldDefer,
     createdAt: now,
     updatedAt: now,
   };
   settlementStore.set(stored.id, stored);
+
+  // Epic 50.3: If deferred, the rules engine will execute this later
+  if (shouldDefer) {
+    console.log(`[UCP] Mandate settlement ${stored.id} deferred to rules engine`);
+    return mapSettlement(stored);
+  }
 
   // Request payment from mandate
   const paymentResponse = await mandateService.requestPayment({
@@ -354,11 +382,12 @@ export async function executeSettlementWithMandate(
 
 /**
  * Get FX quote for corridor (helper for mandate settlements)
+ * Epic 50.3: Supports 'auto' corridor with placeholder values
  */
 function getQuoteForCorridor(
   amount: number,
   currency: string,
-  corridor: 'pix' | 'spei'
+  corridor: 'pix' | 'spei' | 'auto'
 ): {
   fromAmount: number;
   fromCurrency: string;
@@ -374,6 +403,21 @@ function getQuoteForCorridor(
     'USD-MXN': 17.25,
     'USDC-MXN': 17.25,
   };
+
+  // Epic 50.3: For 'auto' corridor, return placeholder quote
+  // Actual FX rate will be determined when settlement rules select the corridor
+  if (corridor === 'auto') {
+    const feePercent = 0.01;
+    const fees = amount * feePercent;
+    return {
+      fromAmount: amount,
+      fromCurrency: currency,
+      toAmount: 0, // Will be calculated when corridor is determined
+      toCurrency: 'TBD', // To be determined by settlement rules
+      fxRate: 0,
+      fees: Number(fees.toFixed(2)),
+    };
+  }
 
   const destCurrency = corridor === 'pix' ? 'BRL' : 'MXN';
   const rateKey = `${currency}-${destCurrency}`;
@@ -391,6 +435,79 @@ function getQuoteForCorridor(
     fxRate,
     fees: Number(fees.toFixed(2)),
   };
+}
+
+// =============================================================================
+// Rules Engine Integration (Epic 50.3)
+// =============================================================================
+
+/**
+ * Get all deferred settlements for a tenant
+ * Used by the rules engine to find settlements waiting for execution
+ */
+export async function getDeferredSettlements(
+  tenantId: string
+): Promise<UCPSettlement[]> {
+  const deferred = Array.from(settlementStore.values()).filter(
+    (s) => s.tenantId === tenantId && s.status === 'deferred'
+  );
+  return deferred.map(mapSettlement);
+}
+
+/**
+ * Execute a deferred settlement with a determined corridor
+ * Called by the rules engine when a settlement rule triggers
+ */
+export async function executeDeferredSettlement(
+  settlementId: string,
+  tenantId: string,
+  options: {
+    corridor: 'pix' | 'spei';
+    ruleId: string;
+  },
+  supabase: SupabaseClient
+): Promise<UCPSettlement> {
+  const stored = settlementStore.get(settlementId);
+
+  if (!stored) {
+    throw new Error('Settlement not found');
+  }
+
+  if (stored.tenantId !== tenantId) {
+    throw new Error('Settlement not found'); // Don't reveal tenant mismatch
+  }
+
+  if (stored.status !== 'deferred') {
+    throw new Error(`Settlement cannot be executed: status is ${stored.status}`);
+  }
+
+  const { corridor, ruleId } = options;
+
+  // Get the actual FX quote now that corridor is determined
+  const quote = getQuoteForCorridor(stored.amount.source, stored.amount.sourceCurrency, corridor);
+
+  // Update settlement with corridor and quote
+  stored.corridor = corridor;
+  stored.amount.destination = quote.toAmount;
+  stored.amount.destinationCurrency = quote.toCurrency;
+  stored.amount.fxRate = quote.fxRate;
+  stored.status = 'pending';
+  stored.settlementRuleId = ruleId;
+  stored.deferredToRules = false; // No longer deferred
+
+  // Calculate estimated completion
+  const estimatedMinutes = corridor === 'pix' ? 1 : 30;
+  stored.estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
+  stored.updatedAt = new Date();
+
+  settlementStore.set(settlementId, stored);
+
+  console.log(`[UCP] Deferred settlement ${settlementId} now executing via ${corridor} (rule: ${ruleId})`);
+
+  // Execute the settlement
+  simulateSettlementExecution(settlementId, supabase);
+
+  return mapSettlement(stored);
 }
 
 /**

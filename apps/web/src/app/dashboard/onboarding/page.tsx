@@ -127,8 +127,13 @@ async function fetchOnboardingState(authToken: string): Promise<TenantOnboarding
   return json.data || json;
 }
 
-async function fetchTemplates(): Promise<{ data: QuickStartTemplate[] }> {
-  const response = await fetch(`${API_URL}/v1/onboarding/templates`);
+async function fetchTemplates(authToken: string): Promise<{ data: QuickStartTemplate[] }> {
+  const response = await fetch(`${API_URL}/v1/onboarding/templates`, {
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch templates');
   }
@@ -642,7 +647,8 @@ export default function OnboardingPage() {
   // Fetch templates
   const { data: templatesData } = useQuery({
     queryKey: ['onboarding-templates'],
-    queryFn: fetchTemplates,
+    queryFn: () => fetchTemplates(authToken!),
+    enabled: !!authToken,
   });
 
   // Complete step mutation

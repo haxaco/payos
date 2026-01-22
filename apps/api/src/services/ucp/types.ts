@@ -129,14 +129,19 @@ export interface UCPNegotiatedCapabilities {
 
 /**
  * Settlement Token Request
+ * Epic 50.3: corridor now optional, defaults to 'auto' for rules-based settlement
  */
-export interface UCPTokenRequest {
-  corridor: 'pix' | 'spei';
+export interface UCPSettlementTokenRequest {
+  corridor?: 'pix' | 'spei' | 'auto'; // Optional, defaults to 'auto'
   amount: number;
   currency: string;
   recipient: UCPRecipient;
   metadata?: Record<string, unknown>;
+  defer_settlement?: boolean; // If true, create transfer only, defer settlement to rules engine
 }
+
+// Legacy alias for backward compatibility
+export type UCPTokenRequest = UCPSettlementTokenRequest;
 
 /**
  * Settlement Token Response
@@ -190,22 +195,25 @@ export interface UCPSettleRequest {
 
 /**
  * Settlement with AP2 Mandate
+ * Epic 50.3: corridor now optional, defaults to 'auto' for rules-based settlement
  */
 export interface UCPMandateSettleRequest {
   mandate_token: string;
   amount: number;
   currency: string;
-  corridor: 'pix' | 'spei';
+  corridor?: 'pix' | 'spei' | 'auto'; // Optional, defaults to 'auto'
   recipient: UCPRecipient;
   idempotency_key?: string;
+  defer_settlement?: boolean; // If true, create transfer only, defer settlement to rules engine
 }
 
 /**
  * Settlement Response
+ * Epic 50.3: Added 'deferred' status and 'auto' corridor for rules-based settlement
  */
 export interface UCPSettlement {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'deferred'; // Added 'deferred' for rules-based
   token: string;
   transfer_id?: string;
   amount: {
@@ -217,11 +225,13 @@ export interface UCPSettlement {
     fees: number;
   };
   recipient: UCPRecipient;
-  corridor: 'pix' | 'spei';
+  corridor: 'pix' | 'spei' | 'auto'; // Can be 'auto' when deferred to rules
   estimated_completion?: string;
   completed_at?: string;
   failed_at?: string;
   failure_reason?: string;
+  deferred_to_rules?: boolean; // Epic 50.3: Whether settlement is managed by rules engine
+  settlement_rule_id?: string; // Epic 50.3: Which rule will handle this settlement
   created_at: string;
   updated_at: string;
 }

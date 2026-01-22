@@ -13,6 +13,7 @@ import {
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { ErrorCode } from '@payos/types';
+import { onboardEntity, type OnboardingInput } from '../services/entity-onboarding.js';
 
 const accounts = new Hono();
 
@@ -1038,6 +1039,94 @@ accounts.post('/:id/activate', async (c) => {
       message: 'Account reactivated. Note: Agents must be reactivated individually.',
     },
   });
+});
+
+// ============================================
+// Story 51.3: POST /v1/accounts/onboard - Unified Entity Onboarding
+// ============================================
+
+const paymentMethodSchema = z.object({
+  type: z.enum(['pix', 'spei', 'bank_account']),
+  pix_key: z.string().optional(),
+  pix_key_type: z.enum(['cpf', 'cnpj', 'email', 'phone', 'evp']).optional(),
+  clabe: z.string().optional(),
+  bank_code: z.string().optional(),
+  account_number: z.string().optional(),
+  routing_number: z.string().optional(),
+}).refine(
+  (data) => {
+    if (data.type === 'pix') return data.pix_key && data.pix_key_type;
+    if (data.type === 'spei') return data.clabe;
+    if (data.type === 'bank_account') return data.bank_code && data.account_number;
+    return true;
+  },
+  { message: 'Missing required fields for payment method type' }
+);
+
+const verificationSchema = z.object({
+  skip_kyb: z.boolean().optional(),
+  skip_kyc: z.boolean().optional(),
+  documents: z.array(z.object({
+    type: z.string(),
+    url: z.string().url(),
+  })).optional(),
+}).optional();
+
+const personOnboardingSchema = z.object({
+  type: z.literal('person'),
+  first_name: z.string().min(1).max(100),
+  last_name: z.string().min(1).max(100),
+  email: z.string().email().optional(),
+  country: z.string().length(2),
+  tax_id: z.string().optional(),
+  payment_methods: z.array(paymentMethodSchema).optional(),
+  verification: verificationSchema,
+  metadata: z.record(z.unknown()).optional(),
+});
+
+const businessOnboardingSchema = z.object({
+  type: z.literal('business'),
+  business_name: z.string().min(1).max(255),
+  email: z.string().email().optional(),
+  country: z.string().length(2),
+  tax_id: z.string().optional(),
+  payment_methods: z.array(paymentMethodSchema).optional(),
+  verification: verificationSchema,
+  metadata: z.record(z.unknown()).optional(),
+});
+
+const onboardingSchema = z.discriminatedUnion('type', [
+  personOnboardingSchema,
+  businessOnboardingSchema,
+]);
+
+/**
+ * Onboard a new entity (person or business) in a single call.
+ * Creates account + payment methods + triggers verification.
+ *
+ * @see Story 51.3: Unified Entity Onboarding Endpoint
+ */
+accounts.post('/onboard', async (c) => {
+  const ctx = c.get('ctx');
+
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+
+  const parsed = onboardingSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError('Validation failed', parsed.error.flatten());
+  }
+
+  const input = parsed.data as OnboardingInput;
+  const supabase = createClient();
+
+  const result = await onboardEntity(ctx.tenantId, input, supabase);
+
+  return c.json(result, 201);
 });
 
 export default accounts;

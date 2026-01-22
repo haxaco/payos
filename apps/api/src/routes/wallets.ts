@@ -18,6 +18,7 @@ import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getCircleService, USDC_CONTRACTS, EURC_CONTRACTS } from '../services/circle-mock.js';
 import { getWalletVerificationService } from '../services/wallet/index.js';
+import { normalizeFields, buildDeprecationHeader } from '../utils/helpers.js';
 
 const app = new Hono();
 
@@ -47,8 +48,10 @@ const spendingPolicySchema = z.object({
 }).optional();
 
 // Schema for creating a NEW wallet (internal or Circle)
+// Story 51.1: Accept both accountId (new) and ownerAccountId (deprecated)
 const createWalletSchema = z.object({
-  ownerAccountId: z.string().uuid(),
+  accountId: z.string().uuid().optional(),
+  ownerAccountId: z.string().uuid().optional(), // Deprecated, use accountId
   managedByAgentId: z.string().uuid().optional(),
   currency: z.enum(['USDC', 'EURC']).default('USDC'),
   initialBalance: z.number().min(0).default(0),
@@ -61,11 +64,16 @@ const createWalletSchema = z.object({
   // Optional metadata
   name: z.string().max(255).optional(),
   purpose: z.string().max(500).optional()
-});
+}).refine(
+  (data) => data.accountId || data.ownerAccountId,
+  { message: 'accountId is required', path: ['accountId'] }
+);
 
 // Schema for ADDING an existing external wallet
+// Story 51.1: Accept both accountId (new) and ownerAccountId (deprecated)
 const addExternalWalletSchema = z.object({
-  ownerAccountId: z.string().uuid(),
+  accountId: z.string().uuid().optional(),
+  ownerAccountId: z.string().uuid().optional(), // Deprecated, use accountId
   managedByAgentId: z.string().uuid().optional(),
   currency: z.enum(['USDC', 'EURC']).default('USDC'),
   spendingPolicy: spendingPolicySchema,
@@ -81,18 +89,26 @@ const addExternalWalletSchema = z.object({
   // Metadata
   name: z.string().max(255).optional(),
   purpose: z.string().max(500).optional()
-});
+}).refine(
+  (data) => data.accountId || data.ownerAccountId,
+  { message: 'accountId is required', path: ['accountId'] }
+);
 
 const updateWalletSchema = z.object({
   spendingPolicy: spendingPolicySchema,
   status: z.enum(['active', 'frozen', 'depleted']).optional()
 });
 
+// Story 51.1: Accept both fromAccountId (new) and sourceAccountId (deprecated)
 const depositSchema = z.object({
   amount: z.number().positive(),
-  sourceAccountId: z.string().uuid(),
+  fromAccountId: z.string().uuid().optional(),
+  sourceAccountId: z.string().uuid().optional(), // Deprecated, use fromAccountId
   reference: z.string().max(500).optional()
-});
+}).refine(
+  (data) => data.fromAccountId || data.sourceAccountId,
+  { message: 'fromAccountId is required', path: ['fromAccountId'] }
+);
 
 const withdrawSchema = z.object({
   amount: z.number().positive(),
@@ -173,8 +189,23 @@ app.post('/', async (c) => {
     const ctx = c.get('ctx');
     const body = await c.req.json();
 
+    // Story 51.1: Normalize deprecated field names
+    const { data: normalizedBody, deprecatedFieldsUsed } = normalizeFields(body, {
+      ownerAccountId: 'accountId',
+    });
+
     // Validate request
-    const validated = createWalletSchema.parse(body);
+    const validated = createWalletSchema.parse(normalizedBody);
+
+    // Story 51.1: Add deprecation warning header if old fields were used
+    const deprecationWarning = buildDeprecationHeader(deprecatedFieldsUsed);
+    if (deprecationWarning) {
+      c.header('Deprecation', deprecationWarning);
+      c.header('X-Deprecated-Fields', deprecatedFieldsUsed.join(', '));
+    }
+
+    // Get the account ID (prefer new name, fall back to old)
+    const accountId = validated.accountId || accountId;
 
     const supabase = createClient();
 
@@ -182,7 +213,7 @@ app.post('/', async (c) => {
     const { data: account, error: accountError } = await supabase
       .from('accounts')
       .select('id')
-      .eq('id', validated.ownerAccountId)
+      .eq('id', accountId)
       .eq('tenant_id', ctx.tenantId)
       .single();
 
@@ -224,8 +255,8 @@ app.post('/', async (c) => {
     if (validated.walletType === 'internal') {
       // Internal PayOS wallet (Phase 1)
       walletAddress = validated.managedByAgentId
-        ? `internal://payos/${ctx.tenantId}/${validated.ownerAccountId}/agent/${validated.managedByAgentId}`
-        : `internal://payos/${ctx.tenantId}/${validated.ownerAccountId}/${Date.now()}`;
+        ? `internal://payos/${ctx.tenantId}/${accountId}/agent/${validated.managedByAgentId}`
+        : `internal://payos/${ctx.tenantId}/${accountId}/${Date.now()}`;
     } else {
       // Circle wallet (mock for now, real in Phase 2)
       const circleService = getCircleService(ctx.tenantId);
@@ -235,7 +266,7 @@ app.post('/', async (c) => {
           walletSetId: circleService.getDefaultWalletSetId(),
           blockchain: blockchain.toUpperCase() as any,
           name: validated.name || `PayOS Wallet`,
-          refId: validated.ownerAccountId
+          refId: accountId
         });
 
         walletAddress = circleWallet.address;
@@ -262,7 +293,7 @@ app.post('/', async (c) => {
       .from('wallets')
       .insert({
         tenant_id: ctx.tenantId,
-        owner_account_id: validated.ownerAccountId,
+        owner_account_id: accountId,
         managed_by_agent_id: validated.managedByAgentId || null,
         balance: validated.initialBalance,
         currency: validated.currency,
@@ -311,8 +342,8 @@ app.post('/', async (c) => {
         .from('transfers')
         .insert({
           tenant_id: ctx.tenantId,
-          from_account_id: validated.ownerAccountId,
-          to_account_id: validated.ownerAccountId,
+          from_account_id: accountId,
+          to_account_id: accountId,
           amount: validated.initialBalance,
           currency: validated.currency,
           type: 'internal',
@@ -422,8 +453,23 @@ app.post('/external', async (c) => {
     const ctx = c.get('ctx');
     const body = await c.req.json();
 
+    // Story 51.1: Normalize deprecated field names
+    const { data: normalizedBody, deprecatedFieldsUsed } = normalizeFields(body, {
+      ownerAccountId: 'accountId',
+    });
+
     // Validate request
-    const validated = addExternalWalletSchema.parse(body);
+    const validated = addExternalWalletSchema.parse(normalizedBody);
+
+    // Story 51.1: Add deprecation warning header if old fields were used
+    const deprecationWarning = buildDeprecationHeader(deprecatedFieldsUsed);
+    if (deprecationWarning) {
+      c.header('Deprecation', deprecationWarning);
+      c.header('X-Deprecated-Fields', deprecatedFieldsUsed.join(', '));
+    }
+
+    // Get the account ID (prefer new name, fall back to old)
+    const accountId = validated.accountId || validated.ownerAccountId;
 
     const supabase = createClient();
 
@@ -431,7 +477,7 @@ app.post('/external', async (c) => {
     const { data: account, error: accountError } = await supabase
       .from('accounts')
       .select('id')
-      .eq('id', validated.ownerAccountId)
+      .eq('id', accountId)
       .eq('tenant_id', ctx.tenantId)
       .single();
 
@@ -489,7 +535,7 @@ app.post('/external', async (c) => {
       .from('wallets')
       .insert({
         tenant_id: ctx.tenantId,
-        owner_account_id: validated.ownerAccountId,
+        owner_account_id: accountId,
         managed_by_agent_id: validated.managedByAgentId || null,
         balance: 0, // External wallet balance must be synced
         currency: validated.currency,
@@ -835,8 +881,23 @@ app.post('/:id/deposit', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json();
 
+    // Story 51.1: Normalize deprecated field names
+    const { data: normalizedBody, deprecatedFieldsUsed } = normalizeFields(body, {
+      sourceAccountId: 'fromAccountId',
+    });
+
     // Validate request
-    const validated = depositSchema.parse(body);
+    const validated = depositSchema.parse(normalizedBody);
+
+    // Story 51.1: Add deprecation warning header if old fields were used
+    const deprecationWarning = buildDeprecationHeader(deprecatedFieldsUsed);
+    if (deprecationWarning) {
+      c.header('Deprecation', deprecationWarning);
+      c.header('X-Deprecated-Fields', deprecatedFieldsUsed.join(', '));
+    }
+
+    // Get the from account ID (prefer new name, fall back to old)
+    const fromAccountId = validated.fromAccountId || validated.sourceAccountId;
 
     const supabase = createClient();
 
@@ -864,7 +925,7 @@ app.post('/:id/deposit', async (c) => {
     const { data: sourceAccount, error: sourceError } = await supabase
       .from('accounts')
       .select('id')
-      .eq('id', validated.sourceAccountId)
+      .eq('id', fromAccountId)
       .eq('tenant_id', ctx.tenantId)
       .single();
 
@@ -897,7 +958,7 @@ app.post('/:id/deposit', async (c) => {
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
-        from_account_id: validated.sourceAccountId,
+        from_account_id: fromAccountId,
         to_account_id: wallet.owner_account_id,
         amount: validated.amount,
         currency: wallet.currency,
@@ -1277,6 +1338,137 @@ app.get('/external/info', async (c) => {
     });
   } catch (error) {
     console.error('Error in GET /v1/wallets/external/info:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// ============================================
+// Story 51.6: POST /v1/wallets/:id/test-fund - Test Wallet Funding
+// ============================================
+
+const testFundSchema = z.object({
+  amount: z.number().positive().max(100000), // Max 100k USDC for test funding
+  currency: z.enum(['USDC', 'EURC']).default('USDC'),
+  reference: z.string().max(500).optional(),
+});
+
+/**
+ * Add test funds to a wallet (sandbox/development only)
+ *
+ * @see Story 51.6: Test Wallet Funding & Auto-Assignment
+ */
+app.post('/:id/test-fund', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const id = c.req.param('id');
+
+    // Check environment - only allow in sandbox/development
+    const isProduction = process.env.NODE_ENV === 'production' &&
+      !process.env.SANDBOX_MODE &&
+      ctx.apiKeyEnvironment !== 'test';
+
+    if (isProduction) {
+      return c.json({
+        error: {
+          code: 'TEST_FUNDING_NOT_ALLOWED',
+          message: 'Test funding is only available in sandbox mode',
+          suggestion: 'Use a test API key (pk_test_*) or enable sandbox mode',
+          docs_url: 'https://docs.payos.ai/sandbox',
+        },
+      }, 403);
+    }
+
+    const body = await c.req.json();
+    const validated = testFundSchema.parse(body);
+
+    const supabase = createClient();
+
+    // Fetch wallet
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      return c.json({
+        error: {
+          code: 'WALLET_NOT_FOUND',
+          message: 'Wallet not found',
+          suggestion: 'Create a wallet first using POST /v1/wallets',
+          related_endpoints: [
+            { method: 'POST', path: '/v1/wallets', description: 'Create a new wallet' },
+          ],
+        },
+      }, 404);
+    }
+
+    // Update wallet balance
+    const previousBalance = parseFloat(wallet.balance);
+    const newBalance = previousBalance + validated.amount;
+
+    const { error: updateError } = await supabase
+      .from('wallets')
+      .update({
+        balance: newBalance,
+        status: 'active', // Ensure wallet is active
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId);
+
+    if (updateError) {
+      console.error('Error updating wallet balance:', updateError);
+      return c.json({ error: 'Failed to add test funds' }, 500);
+    }
+
+    // Create audit log entry
+    await supabase.from('audit_log').insert({
+      tenant_id: ctx.tenantId,
+      entity_type: 'wallet',
+      entity_id: id,
+      action: 'test_fund',
+      actor_type: ctx.actorType || 'user',
+      actor_id: ctx.userId || ctx.actorId || 'system',
+      actor_name: ctx.userName || ctx.actorName || 'System',
+      changes: {
+        previous_balance: previousBalance,
+        funded_amount: validated.amount,
+        new_balance: newBalance,
+        currency: validated.currency,
+        reference: validated.reference,
+      },
+      metadata: {
+        environment: 'sandbox',
+        source: 'test_fund_endpoint',
+      },
+    });
+
+    console.log(`[Sandbox] Test funded wallet ${id}: +${validated.amount} ${validated.currency}`);
+
+    return c.json({
+      data: {
+        wallet_id: id,
+        previous_balance: previousBalance,
+        funded_amount: validated.amount,
+        new_balance: newBalance,
+        currency: validated.currency,
+        environment: 'sandbox',
+        message: 'Test funds added successfully. Note: These are simulated funds for testing only.',
+      },
+    });
+  } catch (error) {
+    console.error('Error in POST /v1/wallets/:id/test-fund:', error);
+    if (error instanceof z.ZodError) {
+      return c.json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid request body',
+          details: error.errors,
+        },
+      }, 400);
+    }
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

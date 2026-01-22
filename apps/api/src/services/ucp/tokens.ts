@@ -31,7 +31,7 @@ interface StoredToken {
   token: string;
   settlementId: string;
   tenantId: string;
-  corridor: 'pix' | 'spei';
+  corridor: 'pix' | 'spei' | 'auto'; // Epic 50.3: can be 'auto' for rules-based
   amount: number;
   currency: string;
   recipient: UCPRecipient;
@@ -44,6 +44,7 @@ interface StoredToken {
     fees: number;
   };
   metadata?: Record<string, unknown>;
+  deferSettlement?: boolean; // Epic 50.3: defer to settlement rules
   createdAt: Date;
   expiresAt: Date;
   used: boolean;
@@ -97,11 +98,12 @@ interface FXQuote {
 /**
  * Get FX quote for corridor
  * In production, this would call the real FX service
+ * Epic 50.3: When corridor is 'auto', returns a placeholder quote (actual rate determined at settlement time)
  */
 function getQuote(
   amount: number,
   currency: string,
-  corridor: 'pix' | 'spei'
+  corridor: 'pix' | 'spei' | 'auto'
 ): FXQuote {
   // Mock FX rates (would be real-time in production)
   const rates: Record<string, number> = {
@@ -110,6 +112,21 @@ function getQuote(
     'USD-MXN': 17.25,
     'USDC-MXN': 17.25,
   };
+
+  // Epic 50.3: For 'auto' corridor, return a placeholder quote
+  // Actual FX rate will be determined when settlement rules select the corridor
+  if (corridor === 'auto') {
+    const feePercent = 0.01;
+    const fees = amount * feePercent;
+    return {
+      fromAmount: amount,
+      fromCurrency: currency,
+      toAmount: 0, // Will be calculated when corridor is determined
+      toCurrency: 'TBD', // To be determined by settlement rules
+      fxRate: 0,
+      fees: Number(fees.toFixed(2)),
+    };
+  }
 
   const destCurrency = corridor === 'pix' ? 'BRL' : 'MXN';
   const rateKey = `${currency}-${destCurrency}`;
@@ -171,17 +188,23 @@ export function validateRecipient(
 
 /**
  * Acquire a settlement token
+ * Epic 50.3: Supports 'auto' corridor and deferred settlement
  */
 export async function acquireToken(
   tenantId: string,
   request: UCPTokenRequest
-): Promise<UCPToken> {
-  const { corridor, amount, currency, recipient, metadata } = request;
+): Promise<UCPToken & { deferred?: boolean }> {
+  const { amount, currency, recipient, metadata } = request;
+  // Epic 50.3: corridor defaults to 'auto' if not specified
+  const corridor = request.corridor || 'auto';
+  const deferSettlement = (request as any).defer_settlement || corridor === 'auto';
 
-  // Validate corridor is supported
-  const destCurrency = corridor === 'pix' ? 'BRL' : 'MXN';
-  if (!isCorridorSupported(currency, destCurrency, corridor)) {
-    throw new Error(`Corridor ${currency}->${destCurrency} via ${corridor} is not supported`);
+  // Epic 50.3: Only validate corridor if not 'auto'
+  if (corridor !== 'auto') {
+    const destCurrency = corridor === 'pix' ? 'BRL' : 'MXN';
+    if (!isCorridorSupported(currency, destCurrency, corridor)) {
+      throw new Error(`Corridor ${currency}->${destCurrency} via ${corridor} is not supported`);
+    }
   }
 
   // Validate amount
@@ -192,10 +215,12 @@ export async function acquireToken(
     throw new Error('Amount exceeds maximum limit of 100,000');
   }
 
-  // Validate recipient
-  const recipientValidation = validateRecipient(recipient, corridor);
-  if (!recipientValidation.valid) {
-    throw new Error(recipientValidation.error);
+  // Epic 50.3: Only validate recipient if corridor is known (not 'auto')
+  if (corridor !== 'auto') {
+    const recipientValidation = validateRecipient(recipient, corridor);
+    if (!recipientValidation.valid) {
+      throw new Error(recipientValidation.error);
+    }
   }
 
   // Get FX quote
@@ -218,13 +243,14 @@ export async function acquireToken(
     recipient,
     quote,
     metadata,
+    deferSettlement,
     createdAt: now,
     expiresAt,
     used: false,
   };
   tokenStore.set(token, stored);
 
-  return {
+  const response: UCPToken & { deferred?: boolean } = {
     token,
     settlement_id: settlementId,
     quote: {
@@ -238,6 +264,13 @@ export async function acquireToken(
     expires_at: expiresAt.toISOString(),
     created_at: now.toISOString(),
   };
+
+  // Epic 50.3: Indicate if settlement is deferred to rules engine
+  if (deferSettlement) {
+    response.deferred = true;
+  }
+
+  return response;
 }
 
 /**
@@ -290,11 +323,12 @@ export function markTokenUsed(token: string): boolean {
 
 /**
  * Get quote for corridor (public function)
+ * Epic 50.3: Supports 'auto' corridor
  */
 export function getSettlementQuote(
   amount: number,
   currency: string,
-  corridor: 'pix' | 'spei'
+  corridor: 'pix' | 'spei' | 'auto'
 ): FXQuote {
   return getQuote(amount, currency, corridor);
 }

@@ -1,13 +1,15 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { 
-  mapAgentFromDb, 
+import {
+  mapAgentFromDb,
   mapStreamFromDb,
   logAudit,
   isValidUUID,
   getPaginationParams,
   paginationResponse,
+  normalizeFields,
+  buildDeprecationHeader,
 } from '../utils/helpers.js';
 import { createLimitService } from '../services/limits.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
@@ -43,12 +45,20 @@ const permissionsSchema = z.object({
   }).optional(),
 }).optional();
 
+// Story 51.1: Accept both accountId (new) and parentAccountId (deprecated)
+// Story 51.6: Add auto_create_wallet option
 const createAgentSchema = z.object({
-  parentAccountId: z.string().uuid(),
+  accountId: z.string().uuid().optional(),
+  parentAccountId: z.string().uuid().optional(), // Deprecated, use accountId
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
   permissions: permissionsSchema,
-});
+  wallet_id: z.string().uuid().optional(), // Existing wallet to assign
+  auto_create_wallet: z.boolean().optional().default(true), // Story 51.6: Auto-create wallet if not specified
+}).refine(
+  (data) => data.accountId || data.parentAccountId,
+  { message: 'accountId is required', path: ['accountId'] }
+);
 
 const updateAgentSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -139,7 +149,7 @@ agents.get('/', async (c) => {
 agents.post('/', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
-  
+
   // Parse and validate body
   let body;
   try {
@@ -147,31 +157,45 @@ agents.post('/', async (c) => {
   } catch {
     throw new ValidationError('Invalid JSON body');
   }
-  
-  const parsed = createAgentSchema.safeParse(body);
+
+  // Story 51.1: Normalize deprecated field names
+  const { data: normalizedBody, deprecatedFieldsUsed } = normalizeFields(body, {
+    parentAccountId: 'accountId',
+  });
+
+  const parsed = createAgentSchema.safeParse(normalizedBody);
   if (!parsed.success) {
     throw new ValidationError('Validation failed', parsed.error.flatten());
   }
-  
-  const { parentAccountId, name, description, permissions } = parsed.data;
-  
+
+  // Story 51.1: Add deprecation warning header if old fields were used
+  const deprecationWarning = buildDeprecationHeader(deprecatedFieldsUsed);
+  if (deprecationWarning) {
+    c.header('Deprecation', deprecationWarning);
+    c.header('X-Deprecated-Fields', deprecatedFieldsUsed.join(', '));
+  }
+
+  const { name, description, permissions, wallet_id, auto_create_wallet } = parsed.data;
+  // Get the account ID (prefer new name, fall back to old)
+  const accountId = parsed.data.accountId || parsed.data.parentAccountId;
+
   // Verify parent account exists and belongs to tenant
   const { data: parentAccount, error: parentError } = await supabase
     .from('accounts')
     .select('id, type, name, verification_tier')
-    .eq('id', parentAccountId)
+    .eq('id', accountId)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (parentError || !parentAccount) {
-    throw new NotFoundError('Parent account', parentAccountId);
+    throw new NotFoundError('Parent account', accountId!);
   }
-  
+
   // Only business accounts can have agents
   if (parentAccount.type !== 'business') {
     const error: any = new ValidationError('Only business accounts can have agents');
     error.details = {
-      account_id: parentAccountId,
+      account_id: accountId,
       account_type: parentAccount.type,
       required_type: 'business',
     };
@@ -198,7 +222,7 @@ agents.post('/', async (c) => {
     .from('agents')
     .insert({
       tenant_id: ctx.tenantId,
-      parent_account_id: parentAccountId,
+      parent_account_id: accountId,
       name,
       description: description || null,
       status: 'active',
@@ -223,6 +247,63 @@ agents.post('/', async (c) => {
     throw new Error('Failed to create agent in database');
   }
   
+  // Story 51.6: Handle wallet assignment or auto-creation
+  let assignedWalletId: string | null = null;
+
+  if (wallet_id) {
+    // Verify wallet exists and belongs to tenant
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id')
+      .eq('id', wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      // Rollback agent creation
+      await supabase.from('agents').delete().eq('id', data.id);
+      throw new NotFoundError('Wallet', wallet_id);
+    }
+
+    // Update wallet to be managed by this agent
+    await supabase
+      .from('wallets')
+      .update({ managed_by_agent_id: data.id })
+      .eq('id', wallet_id)
+      .eq('tenant_id', ctx.tenantId);
+
+    assignedWalletId = wallet_id;
+  } else if (auto_create_wallet !== false) {
+    // Story 51.6: Auto-create a wallet for the agent
+    const walletAddress = `internal://payos/${ctx.tenantId}/${accountId}/agent/${data.id}`;
+
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .insert({
+        tenant_id: ctx.tenantId,
+        owner_account_id: accountId,
+        managed_by_agent_id: data.id,
+        balance: 0,
+        currency: 'USDC',
+        wallet_address: walletAddress,
+        network: 'internal',
+        status: 'active',
+        wallet_type: 'internal',
+        name: `${name} Wallet`,
+        purpose: `Auto-created wallet for agent ${name}`,
+      })
+      .select('id')
+      .single();
+
+    if (walletError) {
+      console.error('Warning: Failed to auto-create wallet for agent:', walletError);
+      // Don't fail agent creation, just log the warning
+    } else {
+      assignedWalletId = wallet.id;
+      console.log(`[Agent] Auto-created wallet ${wallet.id} for agent ${data.id}`);
+    }
+  }
+
   // Audit log
   await logAudit(supabase, {
     tenantId: ctx.tenantId,
@@ -232,9 +313,14 @@ agents.post('/', async (c) => {
     actorType: ctx.actorType,
     actorId: ctx.actorId,
     actorName: ctx.actorName,
-    metadata: { name, parentAccount: parentAccount.name },
+    metadata: {
+      name,
+      parentAccount: parentAccount.name,
+      wallet_id: assignedWalletId,
+      auto_created_wallet: !wallet_id && auto_create_wallet !== false,
+    },
   });
-  
+
   const agent = mapAgentFromDb(data);
   agent.parentAccount = {
     id: parentAccount.id,
@@ -242,11 +328,14 @@ agents.post('/', async (c) => {
     name: parentAccount.name,
     verificationTier: parentAccount.verification_tier,
   };
-  
+
   // Include auth credentials in response (only on creation)
   // WARNING: This is the ONLY time the plaintext token is available!
   return c.json({
-    data: agent,
+    data: {
+      ...agent,
+      wallet_id: assignedWalletId, // Story 51.6: Include wallet_id in response
+    },
     credentials: {
       token: authToken,
       prefix: authTokenPrefix,

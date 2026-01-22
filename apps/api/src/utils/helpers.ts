@@ -325,3 +325,66 @@ export function paginationResponse<T>(
   };
 }
 
+// ============================================
+// FIELD ALIASING (Story 51.1)
+// ============================================
+
+/**
+ * Field alias mappings for backward compatibility
+ * oldName -> newName
+ */
+export const FIELD_ALIASES: Record<string, string> = {
+  ownerAccountId: 'accountId',
+  parentAccountId: 'accountId',
+  sourceAccountId: 'fromAccountId',
+};
+
+/**
+ * Result of normalizing fields - includes list of deprecated fields used
+ */
+export interface NormalizedFields<T> {
+  data: T;
+  deprecatedFieldsUsed: string[];
+}
+
+/**
+ * Normalize request body by replacing deprecated field names with new ones
+ * Returns the normalized data plus a list of deprecated fields that were used
+ */
+export function normalizeFields<T extends Record<string, any>>(
+  body: T,
+  aliases: Record<string, string> = FIELD_ALIASES
+): NormalizedFields<T> {
+  const deprecatedFieldsUsed: string[] = [];
+  const normalized = { ...body };
+
+  for (const [oldName, newName] of Object.entries(aliases)) {
+    if (oldName in normalized && !(newName in normalized)) {
+      // Old field present, new field not - copy value
+      normalized[newName as keyof T] = normalized[oldName as keyof T];
+      delete normalized[oldName as keyof T];
+      deprecatedFieldsUsed.push(oldName);
+    } else if (oldName in normalized && newName in normalized) {
+      // Both present - prefer new name, remove old
+      delete normalized[oldName as keyof T];
+      deprecatedFieldsUsed.push(oldName);
+    }
+  }
+
+  return { data: normalized as T, deprecatedFieldsUsed };
+}
+
+/**
+ * Build deprecation warning header value
+ */
+export function buildDeprecationHeader(deprecatedFields: string[]): string | null {
+  if (deprecatedFields.length === 0) return null;
+
+  const warnings = deprecatedFields.map((field) => {
+    const newField = FIELD_ALIASES[field] || field;
+    return `"${field}" is deprecated, use "${newField}" instead`;
+  });
+
+  return warnings.join('; ');
+}
+

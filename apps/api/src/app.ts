@@ -22,6 +22,7 @@ import authRouter from './routes/auth.js';
 import organizationRouter from './routes/organization.js';
 import organizationTeamRouter from './routes/organization-team.js';
 import connectedAccountsRouter from './routes/organization/connected-accounts.js';
+import organizationOnboardingRouter from './routes/organization/onboarding.js';
 import apiKeysRouter from './routes/api-keys.js';
 import accountsRouter from './routes/accounts.js';
 import agentsRouter from './routes/agents.js';
@@ -184,6 +185,7 @@ app.get('/ready', (c) =>
 app.route('/v1/organization', organizationRouter);
 app.route('/v1/organization/team', organizationTeamRouter);
 app.route('/v1/organization/connected-accounts', connectedAccountsRouter); // Epic 48
+app.route('/v1/organization/onboarding-status', organizationOnboardingRouter); // Epic 51
 
 // API keys routes (JWT-based auth inside route handlers)
 app.route('/v1/api-keys', apiKeysRouter);
