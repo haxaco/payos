@@ -60,11 +60,12 @@ const speiRecipientSchema = z.object({
 const recipientSchema = z.discriminatedUnion('type', [pixRecipientSchema, speiRecipientSchema]);
 
 const tokenRequestSchema = z.object({
-  corridor: z.enum(['pix', 'spei']),
+  corridor: z.enum(['pix', 'spei', 'auto']).optional().default('auto'), // Epic 50.3: corridor now optional, defaults to 'auto'
   amount: z.number().positive().max(100000),
   currency: z.enum(['USD', 'USDC']),
   recipient: recipientSchema,
   metadata: z.record(z.unknown()).optional(),
+  defer_settlement: z.boolean().optional().default(false), // Epic 50.3: allow deferring settlement to rules engine
 });
 
 const settleRequestSchema = z.object({
@@ -73,19 +74,21 @@ const settleRequestSchema = z.object({
 });
 
 const quoteRequestSchema = z.object({
-  corridor: z.enum(['pix', 'spei']),
+  corridor: z.enum(['pix', 'spei', 'auto']).optional(), // Epic 50.3: corridor optional for quotes
   amount: z.number().positive().max(100000),
   currency: z.enum(['USD', 'USDC']),
 });
 
 // Story 43.6: AP2 Mandate Settlement Schema
+// Epic 50.3: corridor now optional, defaults to 'auto' for rules-based settlement
 const mandateSettleRequestSchema = z.object({
   mandate_token: z.string().min(1),
   amount: z.number().positive().max(100000),
   currency: z.enum(['USD', 'USDC']),
-  corridor: z.enum(['pix', 'spei']),
+  corridor: z.enum(['pix', 'spei', 'auto']).optional().default('auto'),
   recipient: recipientSchema,
   idempotency_key: z.string().max(64).optional(),
+  defer_settlement: z.boolean().optional().default(false), // Epic 50.3: defer to rules engine
 });
 
 // =============================================================================

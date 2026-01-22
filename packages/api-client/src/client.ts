@@ -79,6 +79,11 @@ import type {
   UCPQuote,
   UCPAnalytics,
   UCPSettlementsListParams,
+  // Approval types
+  Approval,
+  PendingApprovalsSummary,
+  ApprovalsListParams,
+  ApproveRejectInput,
 } from './types';
 
 export interface PayOSClientConfig {
@@ -1166,6 +1171,50 @@ export class PayOSClient {
      */
     snapshot: () =>
       this.post<{ data: any }>('/treasury/snapshot').then(r => r.data),
+  };
+
+  // ============================================
+  // Approvals API
+  // ============================================
+
+  approvals = {
+    /**
+     * List approvals with optional filters
+     */
+    list: (params?: ApprovalsListParams) => {
+      const query = new URLSearchParams();
+      if (params?.page) query.set('page', String(params.page));
+      if (params?.limit) query.set('limit', String(params.limit));
+      if (params?.status) query.set('status', params.status);
+      if (params?.walletId) query.set('wallet_id', params.walletId);
+      if (params?.agentId) query.set('agent_id', params.agentId);
+      if (params?.protocol) query.set('protocol', params.protocol);
+      return this.get<PaginatedResponse<Approval>>(`/approvals${query.toString() ? `?${query.toString()}` : ''}`);
+    },
+
+    /**
+     * Get a single approval by ID
+     */
+    get: (id: string) =>
+      this.get<{ data: Approval }>(`/approvals/${id}`).then(r => r.data),
+
+    /**
+     * Get pending approvals summary
+     */
+    getPending: () =>
+      this.get<{ data: PendingApprovalsSummary }>('/approvals/pending').then(r => r.data),
+
+    /**
+     * Approve a pending approval
+     */
+    approve: (id: string, input?: ApproveRejectInput) =>
+      this.post<{ data: Approval }>(`/approvals/${id}/approve`, input || {}).then(r => r.data),
+
+    /**
+     * Reject a pending approval
+     */
+    reject: (id: string, input?: ApproveRejectInput) =>
+      this.post<{ data: Approval }>(`/approvals/${id}/reject`, input || {}).then(r => r.data),
   };
 
   // ============================================
