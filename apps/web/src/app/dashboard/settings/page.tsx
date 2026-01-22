@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe, Zap } from 'lucide-react';
 import { useLocale, type Locale } from '@/lib/locale';
@@ -8,12 +8,18 @@ import { useLocale, type Locale } from '@/lib/locale';
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, formatCurrency, formatDate } = useLocale();
+  const [mounted, setMounted] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
     streams: true,
     transfers: true,
   });
+
+  // Prevent hydration mismatch by only showing theme-dependent content after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const localeOptions: Array<{ value: Locale; label: string; description: string; example: string }> = [
     {
@@ -151,30 +157,33 @@ export default function SettingsPage() {
               Theme
             </label>
             <div className="grid grid-cols-3 gap-3">
-              {themeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => setTheme(option.value)}
-                  className={`relative p-4 rounded-xl border-2 transition-all ${theme === option.value
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
-                      : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-                    }`}
-                >
-                  {theme === option.value && (
-                    <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                      <Check className="h-3 w-3 text-white" />
+              {themeOptions.map((option) => {
+                const isSelected = mounted && theme === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => setTheme(option.value)}
+                    className={`relative p-4 rounded-xl border-2 transition-all ${isSelected
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
+                        : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
+                      }`}
+                  >
+                    {isSelected && (
+                      <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                        <Check className="h-3 w-3 text-white" />
+                      </div>
+                    )}
+                    <option.icon className={`h-6 w-6 mb-2 ${isSelected ? 'text-blue-600' : 'text-gray-400'
+                      }`} />
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      {option.label}
                     </div>
-                  )}
-                  <option.icon className={`h-6 w-6 mb-2 ${theme === option.value ? 'text-blue-600' : 'text-gray-400'
-                    }`} />
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                    {option.label}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {option.description}
-                  </div>
-                </button>
-              ))}
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {option.description}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>

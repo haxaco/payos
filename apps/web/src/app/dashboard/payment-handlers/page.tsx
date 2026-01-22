@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus, Trash2, CheckCircle, AlertCircle, Clock, RefreshCw } from 'lucide-react';
+import { Plug, Plus, Trash2, CheckCircle, AlertCircle, Clock, RefreshCw, ExternalLink } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
@@ -29,30 +29,38 @@ interface ConnectedAccountsResponse {
 
 type HandlerType = 'stripe' | 'paypal' | 'circle' | 'payos_native';
 
-const HANDLER_INFO: Record<HandlerType, { name: string; description: string; icon: string; color: string }> = {
+const HANDLER_INFO: Record<HandlerType, { name: string; description: string; icon: string; color: string; docsUrl: string; docsLabel: string }> = {
   stripe: {
     name: 'Stripe',
     description: 'Accept cards, bank transfers, and more',
     icon: '💳',
     color: 'bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400',
+    docsUrl: 'https://dashboard.stripe.com/test/apikeys',
+    docsLabel: 'Get Stripe API Keys',
   },
   paypal: {
     name: 'PayPal',
     description: 'Accept PayPal and Venmo payments',
     icon: '🅿️',
     color: 'bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400',
+    docsUrl: 'https://developer.paypal.com/dashboard/applications/sandbox',
+    docsLabel: 'Get PayPal Sandbox Credentials',
   },
   circle: {
     name: 'Circle',
     description: 'USDC stablecoin payments',
     icon: '⭕',
     color: 'bg-green-100 dark:bg-green-950 text-green-600 dark:text-green-400',
+    docsUrl: 'https://console.circle.com/api-keys',
+    docsLabel: 'Get Circle API Key',
   },
   payos_native: {
     name: 'PayOS Native',
     description: 'Pix (Brazil) and SPEI (Mexico)',
     icon: '🌎',
     color: 'bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400',
+    docsUrl: 'https://www.bcb.gov.br/estabilidadefinanceira/pix',
+    docsLabel: 'Learn about Pix & SPEI',
   },
 };
 
@@ -190,19 +198,35 @@ function ConnectDialog({
                 {(Object.keys(HANDLER_INFO) as HandlerType[]).map((type) => {
                   const info = HANDLER_INFO[type];
                   return (
-                    <button
+                    <div
                       key={type}
-                      onClick={() => handleSelectType(type)}
-                      className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors text-left"
+                      className="rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors overflow-hidden"
                     >
-                      <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-2xl', info.color)}>
-                        {info.icon}
+                      <button
+                        onClick={() => handleSelectType(type)}
+                        className="w-full flex items-center gap-4 p-4 text-left"
+                      >
+                        <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-2xl', info.color)}>
+                          {info.icon}
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white">{info.name}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{info.description}</div>
+                        </div>
+                      </button>
+                      <div className="px-4 pb-3">
+                        <a
+                          href={info.docsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          {info.docsLabel}
+                        </a>
                       </div>
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">{info.name}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">{info.description}</div>
-                      </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -217,14 +241,32 @@ function ConnectDialog({
               </button>
 
               {selectedType && (
-                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl mb-6">
-                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center text-xl', HANDLER_INFO[selectedType].color)}>
-                    {HANDLER_INFO[selectedType].icon}
+                <div className="mb-6 space-y-3">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                    <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center text-xl', HANDLER_INFO[selectedType].color)}>
+                      {HANDLER_INFO[selectedType].icon}
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white">{HANDLER_INFO[selectedType].name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{HANDLER_INFO[selectedType].description}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-medium text-gray-900 dark:text-white">{HANDLER_INFO[selectedType].name}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{HANDLER_INFO[selectedType].description}</div>
-                  </div>
+                  <a
+                    href={HANDLER_INFO[selectedType].docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-lg transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ExternalLink className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                        {HANDLER_INFO[selectedType].docsLabel}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300">
+                      Opens in new tab
+                    </span>
+                  </a>
                 </div>
               )}
 
@@ -250,9 +292,9 @@ function ConnectDialog({
                       </label>
                       <input
                         type="password"
-                        value={credentials.secret_key || ''}
-                        onChange={(e) => setCredentials({ ...credentials, secret_key: e.target.value })}
-                        placeholder="sk_live_..."
+                        value={credentials.api_key || ''}
+                        onChange={(e) => setCredentials({ ...credentials, api_key: e.target.value })}
+                        placeholder="sk_test_... or sk_live_..."
                         className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
                       />
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
