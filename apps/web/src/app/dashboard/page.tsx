@@ -19,6 +19,7 @@ import { ProtocolActivityChart } from '@/components/dashboard/protocol-activity-
 import { ProtocolStats } from '@/components/dashboard/protocol-stats';
 import { ProtocolActivityFeed } from '@/components/dashboard/protocol-activity-feed';
 import { RateLimitCard } from '@/components/dashboard/rate-limit-card';
+import { ProtocolStatusWidget } from '@/components/dashboard/protocol-status-widget';
 import { formatCurrency } from '@payos/ui';
 
 interface Stats {
@@ -227,6 +228,9 @@ export default function DashboardPage() {
 
             {/* Rate Limit Indicator */}
             <RateLimitCard />
+
+            {/* Protocol Status Widget (Story 49.4) */}
+            <ProtocolStatusWidget />
           </div>
         </div>
       </div>
