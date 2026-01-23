@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import {
   CreditCard,
   CheckCircle2,
@@ -77,7 +78,8 @@ export default function CardNetworksSettingsPage() {
   const [networksData, setNetworksData] = useState<NetworksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const [connectingVisa, setConnectingVisa] = useState(false);
+  const [connectingMc, setConnectingMc] = useState(false);
 
   // Helper for making authenticated requests
   const makeRequest = useCallback(
@@ -135,67 +137,63 @@ export default function CardNetworksSettingsPage() {
 
   const handleConnectVisa = async () => {
     if (!visaConfig.apiKey) {
-      alert('Please enter your Visa API Key');
+      toast.error('Please enter your Visa API Key');
       return;
     }
 
-    setConnecting(true);
+    setConnectingVisa(true);
     try {
-      const result = await makeRequest<{ id: string }>('/organization/connected-accounts', {
+      const result = await makeRequest<{ id: string }>('/cards/networks/visa/configure', {
         method: 'POST',
         body: JSON.stringify({
-          handler_type: 'visa_vic',
-          handler_name: 'Visa Intelligent Commerce',
-          credentials: {
-            api_key: visaConfig.apiKey,
-            shared_secret: visaConfig.sharedSecret,
-            sandbox: visaConfig.sandbox,
-          },
+          api_key: visaConfig.apiKey,
+          shared_secret: visaConfig.sharedSecret,
+          sandbox: visaConfig.sandbox,
         }),
       });
       if (result.data) {
+        toast.success('Visa VIC connected successfully');
         refetch();
         setVisaConfig({ apiKey: '', sharedSecret: '', sandbox: true });
       } else if (result.error) {
-        alert(result.error);
+        toast.error(result.error);
       }
     } catch (err) {
       console.error('Failed to connect Visa:', err);
+      toast.error('Failed to connect to Visa');
     } finally {
-      setConnecting(false);
+      setConnectingVisa(false);
     }
   };
 
   const handleConnectMastercard = async () => {
     if (!mcConfig.consumerKey) {
-      alert('Please enter your Mastercard Consumer Key');
+      toast.error('Please enter your Mastercard Consumer Key');
       return;
     }
 
-    setConnecting(true);
+    setConnectingMc(true);
     try {
-      const result = await makeRequest<{ id: string }>('/organization/connected-accounts', {
+      const result = await makeRequest<{ id: string }>('/cards/networks/mastercard/configure', {
         method: 'POST',
         body: JSON.stringify({
-          handler_type: 'mastercard_agent_pay',
-          handler_name: 'Mastercard Agent Pay',
-          credentials: {
-            consumer_key: mcConfig.consumerKey,
-            private_key_pem: mcConfig.privateKeyPem,
-            sandbox: mcConfig.sandbox,
-          },
+          consumer_key: mcConfig.consumerKey,
+          private_key_pem: mcConfig.privateKeyPem,
+          sandbox: mcConfig.sandbox,
         }),
       });
       if (result.data) {
+        toast.success('Mastercard Agent Pay connected successfully');
         refetch();
         setMcConfig({ consumerKey: '', privateKeyPem: '', sandbox: true });
       } else if (result.error) {
-        alert(result.error);
+        toast.error(result.error);
       }
     } catch (err) {
       console.error('Failed to connect Mastercard:', err);
+      toast.error('Failed to connect to Mastercard');
     } finally {
-      setConnecting(false);
+      setConnectingMc(false);
     }
   };
 
@@ -422,10 +420,10 @@ export default function CardNetworksSettingsPage() {
 
                   <button
                     onClick={handleConnectVisa}
-                    disabled={connecting}
+                    disabled={connectingVisa}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
                   >
-                    {connecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {connectingVisa && <Loader2 className="h-4 w-4 animate-spin" />}
                     Connect Visa
                   </button>
                 </div>
@@ -564,10 +562,10 @@ export default function CardNetworksSettingsPage() {
 
                   <button
                     onClick={handleConnectMastercard}
-                    disabled={connecting}
+                    disabled={connectingMc}
                     className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
                   >
-                    {connecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {connectingMc && <Loader2 className="h-4 w-4 animate-spin" />}
                     Connect Mastercard
                   </button>
                 </div>
