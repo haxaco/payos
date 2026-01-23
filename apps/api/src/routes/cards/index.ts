@@ -191,6 +191,84 @@ cards.post('/networks/:network/test', async (c) => {
   return c.json(result);
 });
 
+/**
+ * POST /v1/cards/networks/:network/configure
+ * Configure a card network with credentials
+ */
+cards.post('/networks/:network/configure', async (c) => {
+  const ctx = c.get('ctx');
+  const network = c.req.param('network') as 'visa' | 'mastercard';
+  const body = await c.req.json();
+
+  if (!['visa', 'mastercard'].includes(network)) {
+    throw new ValidationError('Invalid network. Must be "visa" or "mastercard"');
+  }
+
+  const supabase = createClient();
+  const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
+  const handlerName = network === 'visa' ? 'Visa Intelligent Commerce' : 'Mastercard Agent Pay';
+
+  // Validate required credentials
+  if (network === 'visa') {
+    if (!body.api_key || body.api_key.length < 10) {
+      throw new ValidationError('API key is required and must be at least 10 characters');
+    }
+  } else {
+    if (!body.consumer_key || body.consumer_key.length < 10) {
+      throw new ValidationError('Consumer key is required and must be at least 10 characters');
+    }
+  }
+
+  // Check if already configured
+  const { data: existing } = await supabase
+    .from('connected_accounts')
+    .select('id')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', handlerType)
+    .single();
+
+  // Encrypt credentials
+  const { encryptAndSerialize } = await import('../../services/credential-vault/index.js');
+  const encryptedCredentials = encryptAndSerialize(body);
+
+  if (existing) {
+    // Update existing
+    const { error } = await supabase
+      .from('connected_accounts')
+      .update({
+        credentials_encrypted: encryptedCredentials,
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id);
+
+    if (error) {
+      throw new ApiError(`Failed to update ${network} configuration: ${error.message}`);
+    }
+
+    return c.json({ id: existing.id, message: `${handlerName} configuration updated` });
+  } else {
+    // Create new
+    const { data, error } = await supabase
+      .from('connected_accounts')
+      .insert({
+        tenant_id: ctx.tenantId,
+        handler_type: handlerType,
+        handler_name: handlerName,
+        credentials_encrypted: encryptedCredentials,
+        status: 'active',
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      throw new ApiError(`Failed to configure ${network}: ${error.message}`);
+    }
+
+    return c.json({ id: data.id, message: `${handlerName} configured successfully` });
+  }
+});
+
 // ============================================
 // Visa Payment Instructions
 // ============================================
