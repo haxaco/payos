@@ -9,6 +9,7 @@ export default defineConfig({
     ucp: 'src/protocols/ucp/index.ts',
     langchain: 'src/langchain/index.ts',
     vercel: 'src/vercel/index.ts',
+    cards: 'src/cards/index.ts',
   },
   format: ['cjs', 'esm'],
   dts: true,

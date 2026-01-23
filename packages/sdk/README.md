@@ -125,6 +125,90 @@ await payos.acp.completeCheckout({
 });
 ```
 
+### Card Networks (Visa VIC & Mastercard Agent Pay)
+
+Accept payments from AI agents using Web Bot Auth signature verification:
+
+```typescript
+import { PayOS } from '@payos/sdk';
+
+const payos = new PayOS({
+  apiKey: 'pk_live_...',
+  environment: 'production',
+});
+
+// Verify incoming agent signature
+const result = await payos.cards.verifyAgentSignature({
+  method: request.method,
+  path: request.path,
+  headers: request.headers,
+  signatureInput: request.headers['signature-input'],
+  signature: request.headers['signature'],
+});
+
+if (result.valid) {
+  console.log(`Verified ${result.network} agent from ${result.agentProvider}`);
+  // Process payment...
+}
+
+// Check network configuration
+const { networks, capabilities } = await payos.cards.getNetworks();
+console.log(`Visa: ${networks.visa.status}, MC: ${networks.mastercard.status}`);
+
+// Get analytics
+const analytics = await payos.cards.getAnalytics(30);
+console.log(`${analytics.verifications.total} verifications, ${analytics.verifications.successRate}% success`);
+```
+
+#### Visa VIC Operations
+
+```typescript
+// Create a payment instruction
+const instruction = await payos.cards.visa.createInstruction({
+  amount: 100.00,
+  currency: 'USD',
+  merchant: {
+    name: 'My Store',
+    categoryCode: '5411',
+    country: 'US',
+  },
+  expiresInSeconds: 900,
+});
+
+// Provision a VTS token
+const token = await payos.cards.visa.createToken({
+  instructionId: instruction.instructionId,
+  cardToken: 'tok_visa_...',
+});
+
+// List tokens
+const { data: tokens } = await payos.cards.visa.listTokens();
+```
+
+#### Mastercard Agent Pay Operations
+
+```typescript
+// Register an agent with Mastercard
+const registration = await payos.cards.mastercard.registerAgent({
+  agentId: 'agent_123',
+  publicKey: '-----BEGIN PUBLIC KEY-----...',
+  capabilities: ['payment', 'tokenization'],
+  provider: 'anthropic',
+});
+
+// Create an agentic token with DTVC
+const token = await payos.cards.mastercard.createToken({
+  agentId: 'agent_123',
+  cardToken: 'tok_mc_...',
+  expiresInSeconds: 3600,
+});
+
+// Get token with fresh DTVC
+const refreshed = await payos.cards.mastercard.getToken(token.tokenReference, {
+  refresh: true,
+});
+```
+
 ## Environment Configuration
 
 | Environment | API URL | x402 Facilitator | Use Case |

@@ -40,6 +40,11 @@
       "types": "./dist/vercel.d.ts",
       "import": "./dist/vercel.mjs",
       "require": "./dist/vercel.js"
+    },
+    "./cards": {
+      "types": "./dist/cards.d.ts",
+      "import": "./dist/cards.mjs",
+      "require": "./dist/cards.js"
     }
   },
   "files": [

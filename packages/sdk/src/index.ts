@@ -35,6 +35,7 @@ import { ACPClient } from './protocols/acp/client';
 import { UCPClient } from './protocols/ucp/client';
 import { CapabilitiesClient } from './capabilities';
 import { LangChainTools } from './langchain/tools';
+import { CardsClient } from './cards';
 
 /**
  * Main PayOS SDK class
@@ -93,6 +94,12 @@ export class PayOS extends PayOSClient {
    */
   public readonly langchain: LangChainTools;
 
+  /**
+   * Card network integration (Visa VIC, Mastercard Agent Pay)
+   * Accept payments from AI agents using Web Bot Auth
+   */
+  public readonly cards: CardsClient;
+
   constructor(config: PayOSConfig) {
     // Validate API key
     if (!config.apiKey || config.apiKey.trim() === '') {
@@ -129,6 +136,9 @@ export class PayOS extends PayOSClient {
 
     // Initialize LangChain tools
     this.langchain = new LangChainTools(this);
+
+    // Initialize Cards client
+    this.cards = new CardsClient(this);
   }
 }
 
