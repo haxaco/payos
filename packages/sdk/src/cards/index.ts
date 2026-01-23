@@ -26,6 +26,12 @@ import type {
   ConfigureVisaRequest,
   ConfigureMastercardRequest,
   ConfigureResult,
+  GenerateSigningKeyRequest,
+  GenerateSigningKeyResult,
+  SigningKeyStatus,
+  SignRequestInput,
+  SignRequestResult,
+  DeleteSigningKeyResult,
 } from './types';
 
 export * from './types';
@@ -360,5 +366,113 @@ export class CardsClient {
    */
   async getTransaction(transactionId: string): Promise<CardTransaction> {
     return this.client.request<CardTransaction>(`/v1/cards/transactions/${transactionId}`);
+  }
+
+  // ============================================
+  // Agent Signing Methods
+  // ============================================
+
+  /**
+   * Generate a signing key for an agent
+   *
+   * Creates an Ed25519 or RSA-SHA256 key pair for the agent to sign
+   * payment requests according to RFC 9421 (HTTP Message Signatures).
+   *
+   * @example
+   * ```typescript
+   * const key = await payos.cards.generateSigningKey('agent_123');
+   * console.log(`Public key: ${key.publicKey}`);
+   * // Register this public key with card networks (Visa TAP, MC Agent Pay)
+   * ```
+   */
+  async generateSigningKey(
+    agentId: string,
+    options?: GenerateSigningKeyRequest
+  ): Promise<GenerateSigningKeyResult> {
+    return this.client.request<GenerateSigningKeyResult>(
+      `/v1/agents/${agentId}/signing-keys`,
+      {
+        method: 'POST',
+        body: JSON.stringify(options || {}),
+      }
+    );
+  }
+
+  /**
+   * Get the signing key status for an agent
+   *
+   * @example
+   * ```typescript
+   * const status = await payos.cards.getSigningKey('agent_123');
+   * if (status.hasKey) {
+   *   console.log(`Key: ${status.keyId}, Uses: ${status.stats.useCount}`);
+   * }
+   * ```
+   */
+  async getSigningKey(agentId: string): Promise<SigningKeyStatus> {
+    return this.client.request<SigningKeyStatus>(`/v1/agents/${agentId}/signing-keys`);
+  }
+
+  /**
+   * Revoke an agent's signing key
+   *
+   * After revocation, the agent will need a new key to sign requests.
+   */
+  async revokeSigningKey(agentId: string): Promise<DeleteSigningKeyResult> {
+    return this.client.request<DeleteSigningKeyResult>(
+      `/v1/agents/${agentId}/signing-keys`,
+      { method: 'DELETE' }
+    );
+  }
+
+  /**
+   * Sign a payment request for an agent
+   *
+   * Signs an HTTP request according to RFC 9421 so the agent can
+   * authenticate with merchants and card networks.
+   *
+   * Requirements:
+   * - Agent must have KYA tier >= 1
+   * - Agent must be active
+   * - Agent must have a signing key
+   * - Payment must be within spending limits
+   *
+   * @example
+   * ```typescript
+   * // Sign a payment request
+   * const signed = await payos.cards.signRequest('agent_123', {
+   *   method: 'POST',
+   *   path: '/api/checkout',
+   *   host: 'merchant.com',
+   *   body: JSON.stringify({ items: [...], total: 99.99 }),
+   *   payment: {
+   *     amount: 99.99,
+   *     currency: 'USD',
+   *     merchantName: 'Acme Store',
+   *   },
+   * });
+   *
+   * // Agent uses signed headers to call merchant
+   * const response = await fetch('https://merchant.com/api/checkout', {
+   *   method: 'POST',
+   *   headers: {
+   *     ...signed.headers,
+   *     'Content-Type': 'application/json',
+   *   },
+   *   body: JSON.stringify({ items: [...], total: 99.99 }),
+   * });
+   * ```
+   */
+  async signRequest(
+    agentId: string,
+    request: SignRequestInput
+  ): Promise<SignRequestResult> {
+    return this.client.request<SignRequestResult>(
+      `/v1/agents/${agentId}/sign-request`,
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+      }
+    );
   }
 }

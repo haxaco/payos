@@ -25,6 +25,17 @@ export {
   type VerifyOptions,
 } from './web-bot-auth-verifier.js';
 
+// Web Bot Auth Signer (RFC 9421 - for agents signing requests)
+export {
+  WebBotAuthSigner,
+  signWebBotRequest,
+  generateAgentKeyPair,
+  type SigningKeyOptions,
+  type SigningRequest,
+  type SigningResult,
+  type KeyPair,
+} from './web-bot-auth-signer.js';
+
 // Visa VIC
 export { VisaVICClient, createVisaVICClient } from './visa/vic-client.js';
 

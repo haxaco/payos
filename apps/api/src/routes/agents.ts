@@ -913,7 +913,7 @@ agents.post('/:id/rotate-token', async (c) => {
   const ctx = c.get('ctx');
   const { id } = c.req.param();
   const supabase = createClient();
-  
+
   if (!isValidUUID(id)) {
     const error: any = new ValidationError('Invalid agent ID format');
     error.details = {
@@ -922,7 +922,7 @@ agents.post('/:id/rotate-token', async (c) => {
     };
     throw error;
   }
-  
+
   // Get existing agent
   const { data: existing, error: fetchError } = await supabase
     .from('agents')
@@ -930,11 +930,11 @@ agents.post('/:id/rotate-token', async (c) => {
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
     .single();
-  
+
   if (fetchError || !existing) {
     throw new NotFoundError('Agent');
   }
-  
+
   // Only users (API key holders) can rotate tokens, not agents themselves
   if (ctx.actorType !== 'user') {
     const error: any = new ValidationError('Only API key holders can rotate agent tokens');
@@ -944,12 +944,12 @@ agents.post('/:id/rotate-token', async (c) => {
     };
     throw error;
   }
-  
+
   // Generate new token
   const newToken = generateAgentToken();
   const newTokenHash = hashApiKey(newToken);
   const newTokenPrefix = getKeyPrefix(newToken);
-  
+
   // Update with new token
   const { error: updateError } = await supabase
     .from('agents')
@@ -959,12 +959,12 @@ agents.post('/:id/rotate-token', async (c) => {
       auth_token_prefix: newTokenPrefix,
     })
     .eq('id', id);
-  
+
   if (updateError) {
     console.error('Error rotating token:', updateError);
     throw new Error('Failed to rotate token in database');
   }
-  
+
   // Audit log
   await logAudit(supabase, {
     tenantId: ctx.tenantId,
@@ -979,7 +979,7 @@ agents.post('/:id/rotate-token', async (c) => {
       newPrefix: newTokenPrefix,
     },
   });
-  
+
   // Return new token (only time it's visible!)
   return c.json({
     success: true,
@@ -989,6 +989,417 @@ agents.post('/:id/rotate-token', async (c) => {
       warning: '⚠️ SAVE THIS TOKEN NOW - it will never be shown again!',
     },
     previousTokenRevoked: true,
+  });
+});
+
+// ============================================
+// POST /v1/agents/:id/signing-keys - Generate signing key
+// ============================================
+agents.post('/:id/signing-keys', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+
+  if (!isValidUUID(id)) {
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
+  }
+
+  // Parse body
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const algorithm = body.algorithm || 'ed25519';
+  if (!['ed25519', 'rsa-sha256'].includes(algorithm)) {
+    throw new ValidationError('Algorithm must be "ed25519" or "rsa-sha256"');
+  }
+
+  // Verify agent exists and belongs to tenant
+  const { data: agent, error: agentError } = await supabase
+    .from('agents')
+    .select('id, name, status, kya_tier')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (agentError || !agent) {
+    throw new NotFoundError('Agent', id);
+  }
+
+  // Check if signing key already exists
+  const { data: existingKey } = await supabase
+    .from('agent_signing_keys')
+    .select('id, key_id')
+    .eq('agent_id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (existingKey) {
+    const error: any = new ValidationError('Agent already has a signing key');
+    error.details = {
+      agent_id: id,
+      existing_key_id: existingKey.key_id,
+      message: 'Use DELETE /v1/agents/:id/signing-keys first to replace',
+    };
+    throw error;
+  }
+
+  // Generate key pair
+  const { generateAgentKeyPair } = await import('@payos/cards');
+  const keyPair = await generateAgentKeyPair(algorithm as 'ed25519' | 'rsa-sha256');
+
+  // Create key ID
+  const keyId = `payos_agent_${id.slice(0, 8)}`;
+
+  // Encrypt private key using credential-vault
+  const { encryptAndSerialize } = await import('../services/credential-vault/index.js');
+  const encryptedPrivateKey = encryptAndSerialize({ privateKey: keyPair.privateKey });
+
+  // Store signing key
+  const { data: signingKey, error: insertError } = await supabase
+    .from('agent_signing_keys')
+    .insert({
+      tenant_id: ctx.tenantId,
+      agent_id: id,
+      key_id: keyId,
+      algorithm,
+      private_key_encrypted: encryptedPrivateKey,
+      public_key: keyPair.publicKey,
+      status: 'active',
+    })
+    .select('id, key_id, algorithm, public_key, status, created_at')
+    .single();
+
+  if (insertError) {
+    console.error('Error creating signing key:', insertError);
+    throw new Error('Failed to create signing key in database');
+  }
+
+  // Audit log
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'agent',
+    entityId: id,
+    action: 'signing_key_created',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: {
+      keyId,
+      algorithm,
+    },
+  });
+
+  return c.json({
+    keyId: signingKey.key_id,
+    publicKey: signingKey.public_key,
+    algorithm: signingKey.algorithm,
+    status: signingKey.status,
+    registeredNetworks: [],
+    createdAt: signingKey.created_at,
+  }, 201);
+});
+
+// ============================================
+// GET /v1/agents/:id/signing-keys - Get signing key status
+// ============================================
+agents.get('/:id/signing-keys', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+
+  if (!isValidUUID(id)) {
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
+  }
+
+  // Verify agent exists
+  const { data: agent, error: agentError } = await supabase
+    .from('agents')
+    .select('id')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (agentError || !agent) {
+    throw new NotFoundError('Agent', id);
+  }
+
+  // Get signing key
+  const { data: signingKey, error: keyError } = await supabase
+    .from('agent_signing_keys')
+    .select('id, key_id, algorithm, public_key, status, registered_networks, use_count, last_used_at, created_at')
+    .eq('agent_id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (keyError || !signingKey) {
+    return c.json({
+      hasKey: false,
+    });
+  }
+
+  return c.json({
+    hasKey: true,
+    keyId: signingKey.key_id,
+    publicKey: signingKey.public_key,
+    algorithm: signingKey.algorithm,
+    status: signingKey.status,
+    registeredNetworks: signingKey.registered_networks || [],
+    stats: {
+      useCount: signingKey.use_count || 0,
+      lastUsedAt: signingKey.last_used_at,
+    },
+    createdAt: signingKey.created_at,
+  });
+});
+
+// ============================================
+// DELETE /v1/agents/:id/signing-keys - Revoke signing key
+// ============================================
+agents.delete('/:id/signing-keys', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+
+  if (!isValidUUID(id)) {
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
+  }
+
+  // Verify agent exists
+  const { data: agent, error: agentError } = await supabase
+    .from('agents')
+    .select('id')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (agentError || !agent) {
+    throw new NotFoundError('Agent', id);
+  }
+
+  // Get existing signing key
+  const { data: existingKey, error: keyError } = await supabase
+    .from('agent_signing_keys')
+    .select('id, key_id')
+    .eq('agent_id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (keyError || !existingKey) {
+    throw new NotFoundError('Signing key');
+  }
+
+  // Delete the signing key
+  const { error: deleteError } = await supabase
+    .from('agent_signing_keys')
+    .delete()
+    .eq('id', existingKey.id);
+
+  if (deleteError) {
+    console.error('Error deleting signing key:', deleteError);
+    throw new Error('Failed to delete signing key from database');
+  }
+
+  // Audit log
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'agent',
+    entityId: id,
+    action: 'signing_key_revoked',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: {
+      keyId: existingKey.key_id,
+    },
+  });
+
+  return c.json({
+    success: true,
+    message: 'Signing key revoked',
+    keyId: existingKey.key_id,
+  });
+});
+
+// ============================================
+// POST /v1/agents/:id/sign-request - Sign a request
+// ============================================
+agents.post('/:id/sign-request', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+
+  if (!isValidUUID(id)) {
+    const error: any = new ValidationError('Invalid agent ID format');
+    error.details = {
+      provided_id: id,
+      expected_format: 'UUID',
+    };
+    throw error;
+  }
+
+  // Parse body
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+
+  const { method, path, host, headers: reqHeaders, body: reqBody, payment } = body;
+
+  if (!method || !path) {
+    throw new ValidationError('Missing required fields: method, path');
+  }
+
+  // Verify agent exists and is active
+  const { data: agent, error: agentError } = await supabase
+    .from('agents')
+    .select('id, name, status, kya_tier')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (agentError || !agent) {
+    throw new NotFoundError('Agent', id);
+  }
+
+  // Check agent is active
+  if (agent.status !== 'active') {
+    const error: any = new ValidationError('Agent is not active');
+    error.details = {
+      agent_id: id,
+      status: agent.status,
+      required_status: 'active',
+    };
+    throw error;
+  }
+
+  // Check KYA tier >= 1 (unverified agents cannot sign)
+  if (agent.kya_tier < 1) {
+    const error: any = new ValidationError('Agent must be KYA verified (tier >= 1) to sign requests');
+    error.details = {
+      agent_id: id,
+      kya_tier: agent.kya_tier,
+      required_tier: 1,
+    };
+    throw error;
+  }
+
+  // Check spending limits if payment info provided
+  if (payment && payment.amount) {
+    const limitService = createLimitService(supabase);
+    const limitCheck = await limitService.checkTransactionLimit(id, payment.amount);
+
+    if (!limitCheck.allowed) {
+      const error: any = new ValidationError(`Spending limit exceeded: ${limitCheck.reason}`);
+      error.details = {
+        agent_id: id,
+        limit_type: limitCheck.limitType,
+        limit: limitCheck.limit,
+        used: limitCheck.used,
+        requested: limitCheck.requested,
+      };
+      throw error;
+    }
+  }
+
+  // Get signing key
+  const { data: signingKey, error: keyError } = await supabase
+    .from('agent_signing_keys')
+    .select('id, key_id, algorithm, private_key_encrypted, status')
+    .eq('agent_id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (keyError || !signingKey) {
+    throw new NotFoundError('Signing key for agent. Generate one first with POST /v1/agents/:id/signing-keys');
+  }
+
+  if (signingKey.status !== 'active') {
+    const error: any = new ValidationError('Signing key is not active');
+    error.details = {
+      key_id: signingKey.key_id,
+      status: signingKey.status,
+    };
+    throw error;
+  }
+
+  // Decrypt private key
+  const { deserializeAndDecrypt } = await import('../services/credential-vault/index.js');
+  const decryptedKey = deserializeAndDecrypt(signingKey.private_key_encrypted);
+  const privateKey = decryptedKey.privateKey as string;
+
+  // Sign the request
+  const { WebBotAuthSigner } = await import('@payos/cards');
+  const signer = new WebBotAuthSigner({
+    keyId: signingKey.key_id,
+    privateKey,
+    algorithm: signingKey.algorithm as 'ed25519' | 'rsa-sha256',
+  });
+
+  const signResult = await signer.sign({
+    method,
+    path,
+    host,
+    headers: reqHeaders || {},
+    body: reqBody,
+  });
+
+  // Log the signing request
+  const { data: signingRequest, error: logError } = await supabase
+    .from('agent_signing_requests')
+    .insert({
+      tenant_id: ctx.tenantId,
+      agent_id: id,
+      signing_key_id: signingKey.id,
+      request_method: method,
+      request_path: path,
+      request_host: host || null,
+      signature_input: signResult.signatureInput,
+      signature: signResult.signature,
+      content_digest: signResult.contentDigest || null,
+      amount: payment?.amount || null,
+      currency: payment?.currency || null,
+      merchant_name: payment?.merchantName || null,
+      status: 'signed',
+      expires_at: signResult.expiresAt,
+    })
+    .select('id')
+    .single();
+
+  if (logError) {
+    console.error('Warning: Failed to log signing request:', logError);
+  }
+
+  // Update signing key usage stats
+  await supabase.rpc('update_signing_key_usage', { p_key_id: signingKey.id });
+
+  return c.json({
+    signatureInput: signResult.signatureInput,
+    signature: signResult.signature,
+    contentDigest: signResult.contentDigest,
+    headers: signResult.headers,
+    expiresAt: signResult.expiresAt,
+    signingRequestId: signingRequest?.id,
   });
 });
 

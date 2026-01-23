@@ -393,3 +393,115 @@ export interface ConfigureResult {
   id: string;
   message: string;
 }
+
+// ============================================
+// Agent Signing Types
+// ============================================
+
+/**
+ * Generate signing key request
+ */
+export interface GenerateSigningKeyRequest {
+  /** Signing algorithm (default: ed25519) */
+  algorithm?: 'ed25519' | 'rsa-sha256';
+}
+
+/**
+ * Generated signing key result
+ */
+export interface GenerateSigningKeyResult {
+  /** Public key identifier used in signatures */
+  keyId: string;
+  /** Base64 encoded public key */
+  publicKey: string;
+  /** Signing algorithm */
+  algorithm: 'ed25519' | 'rsa-sha256';
+  /** Key status */
+  status: 'active' | 'suspended' | 'revoked';
+  /** Networks where public key is registered */
+  registeredNetworks: string[];
+  /** When the key was created */
+  createdAt: string;
+}
+
+/**
+ * Signing key status result
+ */
+export interface SigningKeyStatus {
+  /** Whether the agent has a signing key */
+  hasKey: boolean;
+  /** Public key identifier */
+  keyId?: string;
+  /** Base64 encoded public key */
+  publicKey?: string;
+  /** Signing algorithm */
+  algorithm?: 'ed25519' | 'rsa-sha256';
+  /** Key status */
+  status?: 'active' | 'suspended' | 'revoked';
+  /** Networks where public key is registered */
+  registeredNetworks?: string[];
+  /** Usage statistics */
+  stats?: {
+    useCount: number;
+    lastUsedAt?: string;
+  };
+  /** When the key was created */
+  createdAt?: string;
+}
+
+/**
+ * Payment information for signing request
+ */
+export interface SigningPaymentInfo {
+  /** Payment amount */
+  amount: number;
+  /** Currency code (default: USD) */
+  currency?: string;
+  /** Merchant name for audit trail */
+  merchantName?: string;
+}
+
+/**
+ * Sign request input
+ */
+export interface SignRequestInput {
+  /** HTTP method */
+  method: string;
+  /** Request path */
+  path: string;
+  /** Host header value */
+  host?: string;
+  /** Request headers (lowercase keys) */
+  headers?: Record<string, string>;
+  /** Request body */
+  body?: string;
+  /** Payment info for spending limit check */
+  payment?: SigningPaymentInfo;
+}
+
+/**
+ * Sign request result
+ */
+export interface SignRequestResult {
+  /** The Signature-Input header value */
+  signatureInput: string;
+  /** The Signature header value */
+  signature: string;
+  /** The Content-Digest header value (if body was provided) */
+  contentDigest?: string;
+  /** All headers to add to the request */
+  headers: Record<string, string>;
+  /** When the signature expires */
+  expiresAt: string;
+  /** ID of the signing request for audit trail */
+  signingRequestId?: string;
+}
+
+/**
+ * Delete signing key result
+ */
+export interface DeleteSigningKeyResult {
+  success: boolean;
+  message: string;
+  keyId: string;
+}
