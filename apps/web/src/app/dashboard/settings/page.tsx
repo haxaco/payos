@@ -2,12 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe, Zap, Clock, ChevronRight, CreditCard, Plus, AlertCircle } from 'lucide-react';
-import Link from 'next/link';
+import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe } from 'lucide-react';
 import { useLocale, type Locale } from '@/lib/locale';
-import { useConnectedAccounts } from '@/hooks/api/useConnectedAccounts';
-import { ConnectedAccountRow } from '@/components/settings/ConnectedAccountRow';
-import { ConnectHandlerDialog } from '@/components/settings/ConnectHandlerDialog';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -19,17 +15,6 @@ export default function SettingsPage() {
     streams: true,
     transfers: true,
   });
-  const [showConnectDialog, setShowConnectDialog] = useState(false);
-
-  // Connected accounts hook
-  const {
-    accounts: connectedAccounts,
-    isLoading: accountsLoading,
-    error: accountsError,
-    connect,
-    verify,
-    disconnect,
-  } = useConnectedAccounts();
 
   // Prevent hydration mismatch by only showing theme-dependent content after mount
   useEffect(() => {
@@ -277,134 +262,7 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Settlement Rules Section */}
-        <Link
-          href="/dashboard/settings/settlement-rules"
-          className="block bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:border-gray-300 dark:hover:border-gray-700 transition-colors group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-950 rounded-xl flex items-center justify-center">
-                <Clock className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Settlement Rules</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Configure automated settlement triggers and schedules</p>
-              </div>
-            </div>
-            <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors" />
-          </div>
-        </Link>
-
-        {/* Agentic Payments Visibility Section */}
-        <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-950 rounded-xl flex items-center justify-center">
-              <Zap className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Agentic Payments</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Configure protocol visibility in dashboard</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {[
-              { key: 'x402', label: 'x402 (Micropayments)', description: 'HTTP 402, API Monetization' },
-              { key: 'ap2', label: 'AP2 (Google Agents)', description: 'Agent Mandates and Authorization' },
-              { key: 'acp', label: 'ACP (Agent Commerce)', description: 'Commerce Checkouts' },
-            ].map((item) => (
-              <div key={item.key} className="flex items-center justify-between py-2">
-                <div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">{item.label}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{item.description}</div>
-                </div>
-                <button
-                  className="relative w-11 h-6 rounded-full transition-colors bg-blue-600"
-                  onClick={() => alert("Visibility toggle not yet persistent (Demo)")}
-                >
-                  <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform translate-x-5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Payment Handlers Section (Epic 48) */}
-        <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-950 rounded-xl flex items-center justify-center">
-                <CreditCard className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Handlers</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Connect your payment processors</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowConnectDialog(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Connect Account
-            </button>
-          </div>
-
-          {/* Error state */}
-          {accountsError && (
-            <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm rounded-lg mb-4">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {accountsError}
-            </div>
-          )}
-
-          {/* Loading state */}
-          {accountsLoading && !connectedAccounts.length && (
-            <div className="flex items-center justify-center py-8">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-
-          {/* Empty state */}
-          {!accountsLoading && connectedAccounts.length === 0 && (
-            <div className="text-center py-8">
-              <CreditCard className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-600 dark:text-gray-400 text-sm">
-                No payment handlers connected
-              </p>
-              <p className="text-gray-500 dark:text-gray-500 text-xs mt-1">
-                Connect Stripe, PayPal, Circle, or PayOS Native to process payments
-              </p>
-            </div>
-          )}
-
-          {/* Connected accounts list */}
-          {connectedAccounts.length > 0 && (
-            <div className="space-y-3">
-              {connectedAccounts.map((account) => (
-                <ConnectedAccountRow
-                  key={account.id}
-                  account={account}
-                  onVerify={async (id) => {
-                    await verify(id);
-                  }}
-                  onDisconnect={async (id) => {
-                    await disconnect(id);
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </section>
       </div>
-
-      {/* Connect Handler Dialog */}
-      <ConnectHandlerDialog
-        isOpen={showConnectDialog}
-        onClose={() => setShowConnectDialog(false)}
-        onConnect={connect}
-      />
     </div>
   );
 }

@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "@payos/cards": "workspace:*",
     "@payos/types": "workspace:*",
     "@payos/utils": "workspace:*",
     "@supabase/supabase-js": "^2.47.10",

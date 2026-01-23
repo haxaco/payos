@@ -171,8 +171,30 @@ export interface PayOSNativeCredentials {
   clabe?: string;
 }
 
+/**
+ * Visa VIC credentials (Epic 53)
+ */
+export interface VisaVICCredentials {
+  api_key: string;
+  shared_secret?: string;
+  sandbox?: boolean;
+}
+
+/**
+ * Mastercard Agent Pay credentials (Epic 53)
+ */
+export interface MastercardAgentPayCredentials {
+  consumer_key: string;
+  private_key_pem?: string;
+  keystore_path?: string;
+  keystore_password?: string;
+  sandbox?: boolean;
+}
+
 export type HandlerCredentials =
   | StripeCredentials
   | PayPalCredentials
   | CircleCredentials
-  | PayOSNativeCredentials;
+  | PayOSNativeCredentials
+  | VisaVICCredentials
+  | MastercardAgentPayCredentials;

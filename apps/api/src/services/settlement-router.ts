@@ -24,13 +24,15 @@ import { getCircleService } from './circle-mock.js';
 
 export type Protocol = 'x402' | 'ap2' | 'acp' | 'internal' | 'cross_border';
 
-export type SettlementRail = 
+export type SettlementRail =
   | 'circle_usdc'     // Circle Programmable Wallets (USDC)
   | 'base_chain'      // Base L2 for on-chain settlements
   | 'pix'             // Brazil instant payment
   | 'spei'            // Mexico instant payment
   | 'internal'        // Internal ledger transfer
   | 'wire'            // International wire (fallback)
+  | 'visa_pull'       // Visa VIC card pull (Epic 53)
+  | 'mastercard_pull' // Mastercard Agent Pay card pull (Epic 53)
   | 'mock';           // Mock rail for testing
 
 export interface SettlementRoute {
@@ -151,6 +153,24 @@ const RAIL_CONFIG: Record<SettlementRail, Omit<SettlementRoute, 'supported'>> = 
     minAmount: 100,
     maxAmount: 10000000,
   },
+  visa_pull: {
+    rail: 'visa_pull',
+    priority: 6,
+    estimatedTime: 86400,      // T+1 settlement
+    feePercentage: 0.029,      // 2.9%
+    feeFixed: 0.30,
+    minAmount: 0.50,
+    maxAmount: 999999.99,
+  },
+  mastercard_pull: {
+    rail: 'mastercard_pull',
+    priority: 7,
+    estimatedTime: 86400,      // T+1 settlement
+    feePercentage: 0.029,      // 2.9%
+    feeFixed: 0.30,
+    minAmount: 0.50,
+    maxAmount: 999999.99,
+  },
   mock: {
     rail: 'mock',
     priority: 0,
@@ -173,12 +193,12 @@ const CURRENCY_COUNTRY_MAP: Record<string, string> = {
 
 // Country to available rails mapping
 const COUNTRY_RAILS: Record<string, SettlementRail[]> = {
-  'BR': ['pix', 'wire'],
-  'MX': ['spei', 'wire'],
-  'US': ['circle_usdc', 'base_chain', 'wire'],
-  'EU': ['wire'],
-  // Default: stablecoin rails
-  '*': ['circle_usdc', 'base_chain', 'internal'],
+  'BR': ['pix', 'visa_pull', 'mastercard_pull', 'wire'],
+  'MX': ['spei', 'visa_pull', 'mastercard_pull', 'wire'],
+  'US': ['circle_usdc', 'base_chain', 'visa_pull', 'mastercard_pull', 'wire'],
+  'EU': ['visa_pull', 'mastercard_pull', 'wire'],
+  // Default: stablecoin and card rails
+  '*': ['circle_usdc', 'base_chain', 'visa_pull', 'mastercard_pull', 'internal'],
 };
 
 // ============================================
@@ -351,6 +371,12 @@ export class SettlementRouter {
       case 'wire':
         return this.executeWireSettlement(request, feeAmount, netAmount);
 
+      case 'visa_pull':
+        return this.executeVisaPullSettlement(request, feeAmount, netAmount);
+
+      case 'mastercard_pull':
+        return this.executeMastercardPullSettlement(request, feeAmount, netAmount);
+
       default:
         return this.executeMockSettlement(request, routing, feeAmount, netAmount);
     }
@@ -485,7 +511,7 @@ export class SettlementRouter {
   ): Promise<SettlementResponse> {
     // Wire transfers are typically batched
     console.log(`[Settlement Router] Wire settlement for ${request.amount} ${request.currency}`);
-    
+
     return {
       success: true,
       transferId: request.transferId,
@@ -496,6 +522,60 @@ export class SettlementRouter {
       feeAmount,
       netAmount,
       estimatedCompletion: new Date(Date.now() + 86400000).toISOString(), // 24 hours
+    };
+  }
+
+  private async executeVisaPullSettlement(
+    request: SettlementRequest,
+    feeAmount: number,
+    netAmount: number
+  ): Promise<SettlementResponse> {
+    // Epic 53: Visa VIC card pull settlement
+    console.log(`[Settlement Router] Visa VIC settlement for ${request.amount} ${request.currency}`);
+
+    // In production, this would:
+    // 1. Get Visa VIC credentials from connected_accounts
+    // 2. Create payment instruction via VisaVICClient
+    // 3. Wait for commerce signal from agent
+    // 4. Complete the transaction
+
+    return {
+      success: true,
+      transferId: request.transferId,
+      status: 'pending',
+      rail: 'visa_pull',
+      settlementId: `vic_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      grossAmount: request.amount,
+      feeAmount,
+      netAmount,
+      estimatedCompletion: new Date(Date.now() + 86400000).toISOString(), // T+1
+    };
+  }
+
+  private async executeMastercardPullSettlement(
+    request: SettlementRequest,
+    feeAmount: number,
+    netAmount: number
+  ): Promise<SettlementResponse> {
+    // Epic 53: Mastercard Agent Pay card pull settlement
+    console.log(`[Settlement Router] Mastercard Agent Pay settlement for ${request.amount} ${request.currency}`);
+
+    // In production, this would:
+    // 1. Get Mastercard credentials from connected_accounts
+    // 2. Create payment request via MastercardAgentPayClient
+    // 3. Generate DTVC and submit transaction
+    // 4. Complete the transaction
+
+    return {
+      success: true,
+      transferId: request.transferId,
+      status: 'pending',
+      rail: 'mastercard_pull',
+      settlementId: `mc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      grossAmount: request.amount,
+      feeAmount,
+      netAmount,
+      estimatedCompletion: new Date(Date.now() + 86400000).toISOString(), // T+1
     };
   }
 
@@ -611,6 +691,10 @@ export class SettlementRouter {
       reasons.push(`Local rail for ${route.rail.toUpperCase()} (lowest fees)`);
     } else if (route.rail === 'base_chain') {
       reasons.push('On-chain settlement via Base L2');
+    } else if (route.rail === 'visa_pull') {
+      reasons.push('Visa VIC card pull (agent payment)');
+    } else if (route.rail === 'mastercard_pull') {
+      reasons.push('Mastercard Agent Pay card pull');
     } else {
       reasons.push('Fallback rail');
     }

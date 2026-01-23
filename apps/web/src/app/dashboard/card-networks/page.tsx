@@ -1,0 +1,623 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import {
+  CreditCard,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Loader2,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  RefreshCw,
+} from 'lucide-react';
+import { useApiConfig } from '@/lib/api-client';
+
+// Visa and Mastercard logos as SVG components
+const VisaLogo = () => (
+  <svg viewBox="0 0 48 16" className="h-4 w-auto">
+    <path
+      fill="#1434CB"
+      d="M17.88 1.42L14.56 14.5h-3.12L14.76 1.42h3.12zM30.48 9.86l1.64-4.5.94 4.5h-2.58zm3.48 4.64h2.88L34.4 1.42h-2.66c-.6 0-1.1.35-1.32.88l-4.66 12.2h3.26l.65-1.78h3.98l.37 1.78zM25.44 10.12c.02-3.44-4.76-3.64-4.72-5.18.02-.46.46-.96 1.44-1.08.48-.06 1.82-.1 3.34.54l.6-2.78C25.02 1.24 23.64 1 21.98 1c-3.08 0-5.24 1.64-5.26 3.98-.02 1.74 1.54 2.7 2.72 3.28 1.22.58 1.62.96 1.62 1.48-.02.8-.98 1.16-1.88 1.18-1.58.02-2.5-.42-3.22-.76l-.58 2.68c.74.34 2.1.64 3.5.66 3.28 0 5.42-1.62 5.44-4.12l.12-.26zM11.36 1.42L6.1 14.5H2.78L.14 3.9c-.16-.62-.3-.84-.78-1.1-.78-.42-2.08-.82-3.22-1.06l.08-.32h5.28c.68 0 1.28.44 1.44 1.22l1.3 6.92 3.22-8.14h3.26z"
+    />
+  </svg>
+);
+
+const MastercardLogo = () => (
+  <svg viewBox="0 0 48 30" className="h-5 w-auto">
+    <circle cx="17" cy="15" r="15" fill="#EB001B" />
+    <circle cx="31" cy="15" r="15" fill="#F79E1B" />
+    <path
+      d="M24 5.02c2.8 2.2 4.6 5.6 4.6 9.48s-1.8 7.28-4.6 9.48a12.54 12.54 0 01-4.6-9.48c0-3.88 1.8-7.28 4.6-9.48z"
+      fill="#FF5F00"
+    />
+  </svg>
+);
+
+interface NetworkStatus {
+  configured: boolean;
+  status: 'active' | 'inactive' | 'not_configured';
+  accountId: string | null;
+}
+
+interface NetworksResponse {
+  networks: {
+    visa: NetworkStatus;
+    mastercard: NetworkStatus;
+  };
+  capabilities: {
+    webBotAuth: boolean;
+    paymentInstructions: boolean;
+    agentRegistration: boolean;
+    tokenization: boolean;
+  };
+}
+
+export default function CardNetworksSettingsPage() {
+  const { authToken, isConfigured, isLoading: authLoading } = useApiConfig();
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+  const [showVisaKey, setShowVisaKey] = useState(false);
+  const [showMcKey, setShowMcKey] = useState(false);
+  const [visaConfig, setVisaConfig] = useState({
+    apiKey: '',
+    sharedSecret: '',
+    sandbox: true,
+  });
+  const [mcConfig, setMcConfig] = useState({
+    consumerKey: '',
+    privateKeyPem: '',
+    sandbox: true,
+  });
+  const [testingVisa, setTestingVisa] = useState(false);
+  const [testingMc, setTestingMc] = useState(false);
+  const [visaTestResult, setVisaTestResult] = useState<{ success: boolean; error?: string } | null>(null);
+  const [mcTestResult, setMcTestResult] = useState<{ success: boolean; error?: string } | null>(null);
+  const [networksData, setNetworksData] = useState<NetworksResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+
+  // Helper for making authenticated requests
+  const makeRequest = useCallback(
+    async <T,>(
+      endpoint: string,
+      options: RequestInit = {}
+    ): Promise<{ data?: T; error?: string }> => {
+      if (!authToken) {
+        return { error: 'Not authenticated' };
+      }
+
+      try {
+        const response = await fetch(`${apiUrl}/v1${endpoint}`, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+            ...options.headers,
+          },
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          return { error: result.error || 'Request failed' };
+        }
+
+        return { data: result };
+      } catch (err) {
+        console.error('Request error:', err);
+        return { error: 'Network error' };
+      }
+    },
+    [authToken, apiUrl]
+  );
+
+  // Fetch network configurations
+  const refetch = useCallback(async () => {
+    if (!isConfigured || authLoading) return;
+    setLoading(true);
+    setError(null);
+
+    const result = await makeRequest<NetworksResponse>('/cards/networks');
+    if (result.error) {
+      setError(result.error);
+    } else if (result.data) {
+      setNetworksData(result.data);
+    }
+    setLoading(false);
+  }, [isConfigured, authLoading, makeRequest]);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  const handleConnectVisa = async () => {
+    if (!visaConfig.apiKey) {
+      alert('Please enter your Visa API Key');
+      return;
+    }
+
+    setConnecting(true);
+    try {
+      const result = await makeRequest<{ id: string }>('/organization/connected-accounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          handler_type: 'visa_vic',
+          handler_name: 'Visa Intelligent Commerce',
+          credentials: {
+            api_key: visaConfig.apiKey,
+            shared_secret: visaConfig.sharedSecret,
+            sandbox: visaConfig.sandbox,
+          },
+        }),
+      });
+      if (result.data) {
+        refetch();
+        setVisaConfig({ apiKey: '', sharedSecret: '', sandbox: true });
+      } else if (result.error) {
+        alert(result.error);
+      }
+    } catch (err) {
+      console.error('Failed to connect Visa:', err);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleConnectMastercard = async () => {
+    if (!mcConfig.consumerKey) {
+      alert('Please enter your Mastercard Consumer Key');
+      return;
+    }
+
+    setConnecting(true);
+    try {
+      const result = await makeRequest<{ id: string }>('/organization/connected-accounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          handler_type: 'mastercard_agent_pay',
+          handler_name: 'Mastercard Agent Pay',
+          credentials: {
+            consumer_key: mcConfig.consumerKey,
+            private_key_pem: mcConfig.privateKeyPem,
+            sandbox: mcConfig.sandbox,
+          },
+        }),
+      });
+      if (result.data) {
+        refetch();
+        setMcConfig({ consumerKey: '', privateKeyPem: '', sandbox: true });
+      } else if (result.error) {
+        alert(result.error);
+      }
+    } catch (err) {
+      console.error('Failed to connect Mastercard:', err);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleTestVisa = async () => {
+    setTestingVisa(true);
+    setVisaTestResult(null);
+    try {
+      const result = await makeRequest<{ success: boolean; error?: string }>('/cards/networks/visa/test', {
+        method: 'POST',
+      });
+      if (result.data) {
+        setVisaTestResult(result.data);
+      } else {
+        setVisaTestResult({ success: false, error: result.error || 'Connection test failed' });
+      }
+    } catch (err) {
+      setVisaTestResult({ success: false, error: 'Connection test failed' });
+    } finally {
+      setTestingVisa(false);
+    }
+  };
+
+  const handleTestMastercard = async () => {
+    setTestingMc(true);
+    setMcTestResult(null);
+    try {
+      const result = await makeRequest<{ success: boolean; error?: string }>('/cards/networks/mastercard/test', {
+        method: 'POST',
+      });
+      if (result.data) {
+        setMcTestResult(result.data);
+      } else {
+        setMcTestResult({ success: false, error: result.error || 'Connection test failed' });
+      }
+    } catch (err) {
+      setMcTestResult({ success: false, error: 'Connection test failed' });
+    } finally {
+      setTestingMc(false);
+    }
+  };
+
+  const networks = networksData?.networks;
+  const capabilities = networksData?.capabilities;
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-950 rounded-xl flex items-center justify-center">
+            <CreditCard className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Card Networks</h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Configure Visa VIC and Mastercard Agent Pay for AI agent payments
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl mb-6">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {!loading && (
+        <div className="space-y-6">
+          {/* Capabilities Overview */}
+          <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Capabilities</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { key: 'webBotAuth', label: 'Web Bot Auth', description: 'RFC 9421 signature verification' },
+                { key: 'paymentInstructions', label: 'Payment Instructions', description: 'Visa VIC' },
+                { key: 'agentRegistration', label: 'Agent Registration', description: 'Mastercard Agent Pay' },
+                { key: 'tokenization', label: 'Tokenization', description: 'VTS / MDES tokens' },
+              ].map((cap) => (
+                <div
+                  key={cap.key}
+                  className={`p-4 rounded-xl border ${
+                    capabilities?.[cap.key as keyof typeof capabilities]
+                      ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30'
+                      : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    {capabilities?.[cap.key as keyof typeof capabilities] ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-gray-400" />
+                    )}
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">{cap.label}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{cap.description}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Visa VIC Section */}
+          <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-blue-50 dark:bg-blue-950 rounded-xl flex items-center justify-center">
+                  <VisaLogo />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Visa Intelligent Commerce</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Agent payments via Visa VIC</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {networks?.visa.configured ? (
+                  <>
+                    <span
+                      className={`px-3 py-1 text-xs font-medium rounded-full ${
+                        networks.visa.status === 'active'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                      }`}
+                    >
+                      {networks.visa.status === 'active' ? 'Connected' : 'Inactive'}
+                    </span>
+                    <button
+                      onClick={handleTestVisa}
+                      disabled={testingVisa}
+                      className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                    >
+                      {testingVisa ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3" />
+                      )}
+                      Test
+                    </button>
+                  </>
+                ) : (
+                  <span className="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Test result */}
+            {visaTestResult && (
+              <div
+                className={`flex items-center gap-2 p-3 rounded-lg mb-4 ${
+                  visaTestResult.success
+                    ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
+                }`}
+              >
+                {visaTestResult.success ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                <span className="text-sm">
+                  {visaTestResult.success ? 'Connection successful' : visaTestResult.error || 'Connection failed'}
+                </span>
+              </div>
+            )}
+
+            {/* Configuration form (show if not connected) */}
+            {!networks?.visa.configured && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    API Key <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showVisaKey ? 'text' : 'password'}
+                      value={visaConfig.apiKey}
+                      onChange={(e) => setVisaConfig({ ...visaConfig, apiKey: e.target.value })}
+                      placeholder="Enter your Visa Developer API Key"
+                      className="w-full px-4 py-2 pr-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowVisaKey(!showVisaKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showVisaKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Shared Secret (optional)
+                  </label>
+                  <input
+                    type="password"
+                    value={visaConfig.sharedSecret}
+                    onChange={(e) => setVisaConfig({ ...visaConfig, sharedSecret: e.target.value })}
+                    placeholder="For webhook verification"
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={visaConfig.sandbox}
+                      onChange={(e) => setVisaConfig({ ...visaConfig, sandbox: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Sandbox Mode</span>
+                  </label>
+
+                  <button
+                    onClick={handleConnectVisa}
+                    disabled={connecting}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {connecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Connect Visa
+                  </button>
+                </div>
+
+                <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
+                  <a
+                    href="https://developer.visa.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    Get Visa Developer credentials
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Mastercard Agent Pay Section */}
+          <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-orange-50 dark:bg-orange-950 rounded-xl flex items-center justify-center">
+                  <MastercardLogo />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Mastercard Agent Pay</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Agent payments via Mastercard</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {networks?.mastercard.configured ? (
+                  <>
+                    <span
+                      className={`px-3 py-1 text-xs font-medium rounded-full ${
+                        networks.mastercard.status === 'active'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                      }`}
+                    >
+                      {networks.mastercard.status === 'active' ? 'Connected' : 'Inactive'}
+                    </span>
+                    <button
+                      onClick={handleTestMastercard}
+                      disabled={testingMc}
+                      className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                    >
+                      {testingMc ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3" />
+                      )}
+                      Test
+                    </button>
+                  </>
+                ) : (
+                  <span className="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Test result */}
+            {mcTestResult && (
+              <div
+                className={`flex items-center gap-2 p-3 rounded-lg mb-4 ${
+                  mcTestResult.success
+                    ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
+                }`}
+              >
+                {mcTestResult.success ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                <span className="text-sm">
+                  {mcTestResult.success ? 'Connection successful' : mcTestResult.error || 'Connection failed'}
+                </span>
+              </div>
+            )}
+
+            {/* Configuration form (show if not connected) */}
+            {!networks?.mastercard.configured && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Consumer Key <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showMcKey ? 'text' : 'password'}
+                      value={mcConfig.consumerKey}
+                      onChange={(e) => setMcConfig({ ...mcConfig, consumerKey: e.target.value })}
+                      placeholder="Enter your Mastercard Consumer Key"
+                      className="w-full px-4 py-2 pr-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowMcKey(!showMcKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showMcKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Private Key (PEM format)
+                  </label>
+                  <textarea
+                    value={mcConfig.privateKeyPem}
+                    onChange={(e) => setMcConfig({ ...mcConfig, privateKeyPem: e.target.value })}
+                    placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
+                    rows={4}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-xs"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Or upload your P12 keystore file (coming soon)
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={mcConfig.sandbox}
+                      onChange={(e) => setMcConfig({ ...mcConfig, sandbox: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Sandbox Mode</span>
+                  </label>
+
+                  <button
+                    onClick={handleConnectMastercard}
+                    disabled={connecting}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {connecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Connect Mastercard
+                  </button>
+                </div>
+
+                <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
+                  <a
+                    href="https://developer.mastercard.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-orange-600 hover:text-orange-700 dark:text-orange-400"
+                  >
+                    Get Mastercard Developer credentials
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Documentation */}
+          <section className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              About Card Network Integration
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              PayOS integrates with Visa Intelligent Commerce (VIC) and Mastercard Agent Pay to enable
+              AI agents to make secure payments on behalf of users. Both networks use Web Bot Auth
+              (HTTP Message Signatures - RFC 9421) for cryptographic verification of agent requests.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-1">Visa VIC Features:</h4>
+                <ul className="text-gray-600 dark:text-gray-400 space-y-1">
+                  <li>- Payment instructions for agents</li>
+                  <li>- VTS token management</li>
+                  <li>- Commerce signal processing</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-1">Mastercard Agent Pay:</h4>
+                <ul className="text-gray-600 dark:text-gray-400 space-y-1">
+                  <li>- Agent registration</li>
+                  <li>- MDES token management</li>
+                  <li>- DTVC generation</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}

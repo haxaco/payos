@@ -21,7 +21,7 @@ import type {
 } from './interface.js';
 import { createStripeHandler } from './stripe.js';
 
-export type HandlerType = 'stripe' | 'paypal' | 'circle' | 'payos_native';
+export type HandlerType = 'stripe' | 'paypal' | 'circle' | 'payos_native' | 'visa_vic' | 'mastercard_agent_pay';
 
 interface ConnectedAccount {
   id: string;
@@ -56,6 +56,20 @@ export function createHandlerFromAccount(
     case 'payos_native':
       // TODO: Implement PayOS native handler (Pix/SPEI)
       console.warn('PayOS Native handler not yet implemented');
+      return null;
+
+    case 'visa_vic':
+      // Epic 53: Visa VIC handler
+      // Card network handlers use different interface - return null for payment handler
+      // Use VisaVICClient directly from @payos/cards package
+      console.log('Visa VIC configured - use @payos/cards for operations');
+      return null;
+
+    case 'mastercard_agent_pay':
+      // Epic 53: Mastercard Agent Pay handler
+      // Card network handlers use different interface - return null for payment handler
+      // Use MastercardAgentPayClient directly from @payos/cards package
+      console.log('Mastercard Agent Pay configured - use @payos/cards for operations');
       return null;
 
     default:

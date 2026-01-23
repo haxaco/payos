@@ -1,0 +1,575 @@
+/**
+ * Card Network Routes
+ * Epic 53: Card Network Integration
+ *
+ * API endpoints for:
+ * - Web Bot Auth signature verification
+ * - Card network configuration
+ * - Payment instructions (Visa VIC)
+ * - Agent registration (Mastercard)
+ * - Token management
+ */
+
+import { Hono } from 'hono';
+import { createClient } from '../../db/client.js';
+import { ApiError, NotFoundError, ValidationError } from '../../middleware/error.js';
+import type { RequestContext } from '../../middleware/auth.js';
+
+const cards = new Hono<{ Variables: { ctx: RequestContext } }>();
+
+// ============================================
+// Web Bot Auth Verification
+// ============================================
+
+/**
+ * POST /v1/cards/verify
+ * Verify a Web Bot Auth signature from an incoming agent request
+ */
+cards.post('/verify', async (c) => {
+  const ctx = c.get('ctx');
+  const body = await c.req.json();
+
+  const { method, path, headers, signatureInput, signature, network } = body;
+
+  if (!method || !path || !signatureInput || !signature) {
+    throw new ValidationError('Missing required fields: method, path, signatureInput, signature');
+  }
+
+  // Dynamic import to avoid bundling issues
+  const { verifyWebBotAuth } = await import('@payos/cards');
+
+  const result = await verifyWebBotAuth(
+    {
+      method,
+      path,
+      headers: headers || {},
+      signatureInput,
+      signature,
+    },
+    {
+      network: network || undefined,
+      skipTimestampValidation: process.env.NODE_ENV === 'development',
+    }
+  );
+
+  // Log the verification attempt
+  const supabase = createClient();
+  await supabase.from('card_agent_verifications').insert({
+    tenant_id: ctx.tenantId,
+    network: result.network,
+    agent_key_id: result.keyId,
+    verified: result.valid,
+    failure_reason: result.error || null,
+    agent_provider: result.agentProvider || null,
+    request_path: path,
+    request_method: method,
+  });
+
+  return c.json({
+    valid: result.valid,
+    network: result.network,
+    keyId: result.keyId,
+    agentProvider: result.agentProvider,
+    error: result.error,
+    verifiedAt: result.verifiedAt,
+  });
+});
+
+// ============================================
+// Network Configuration
+// ============================================
+
+/**
+ * GET /v1/cards/networks
+ * Get configured card networks and their status
+ */
+cards.get('/networks', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  // Get connected accounts for card networks
+  const { data: accounts } = await supabase
+    .from('connected_accounts')
+    .select('id, handler_type, handler_name, status, created_at, updated_at')
+    .eq('tenant_id', ctx.tenantId)
+    .in('handler_type', ['visa_vic', 'mastercard_agent_pay']);
+
+  const networks = {
+    visa: {
+      configured: false,
+      status: 'not_configured' as const,
+      accountId: null as string | null,
+    },
+    mastercard: {
+      configured: false,
+      status: 'not_configured' as const,
+      accountId: null as string | null,
+    },
+  };
+
+  if (accounts) {
+    for (const account of accounts) {
+      if (account.handler_type === 'visa_vic') {
+        networks.visa = {
+          configured: true,
+          status: account.status as 'active' | 'inactive' | 'not_configured',
+          accountId: account.id,
+        };
+      } else if (account.handler_type === 'mastercard_agent_pay') {
+        networks.mastercard = {
+          configured: true,
+          status: account.status as 'active' | 'inactive' | 'not_configured',
+          accountId: account.id,
+        };
+      }
+    }
+  }
+
+  return c.json({
+    networks,
+    capabilities: {
+      webBotAuth: true,
+      paymentInstructions: networks.visa.configured,
+      agentRegistration: networks.mastercard.configured,
+      tokenization: networks.visa.configured || networks.mastercard.configured,
+    },
+  });
+});
+
+/**
+ * POST /v1/cards/networks/:network/test
+ * Test connection to a card network
+ */
+cards.post('/networks/:network/test', async (c) => {
+  const ctx = c.get('ctx');
+  const network = c.req.param('network') as 'visa' | 'mastercard';
+
+  if (!['visa', 'mastercard'].includes(network)) {
+    throw new ValidationError('Invalid network. Must be "visa" or "mastercard"');
+  }
+
+  const supabase = createClient();
+
+  // Get credentials from connected account
+  const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
+  const { data: account, error } = await supabase
+    .from('connected_accounts')
+    .select('credentials_encrypted')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', handlerType)
+    .single();
+
+  if (error || !account) {
+    throw new NotFoundError(`${network} network not configured`);
+  }
+
+  // Decrypt and test
+  const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+  const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+  let result: { success: boolean; error?: string };
+
+  if (network === 'visa') {
+    const { VisaVICClient } = await import('@payos/cards');
+    const client = new VisaVICClient({
+      apiKey: credentials.api_key as string,
+      sharedSecret: credentials.shared_secret as string | undefined,
+      sandbox: credentials.sandbox !== false,
+    });
+    result = await client.testConnection();
+  } else {
+    const { MastercardAgentPayClient } = await import('@payos/cards');
+    const client = new MastercardAgentPayClient({
+      consumerKey: credentials.consumer_key as string,
+      privateKeyPem: credentials.private_key_pem as string | undefined,
+      sandbox: credentials.sandbox !== false,
+    });
+    await client.initialize();
+    result = await client.testConnection();
+  }
+
+  return c.json(result);
+});
+
+// ============================================
+// Visa Payment Instructions
+// ============================================
+
+/**
+ * POST /v1/cards/visa/instructions
+ * Create a Visa VIC payment instruction
+ */
+cards.post('/visa/instructions', async (c) => {
+  const ctx = c.get('ctx');
+  const body = await c.req.json();
+
+  const { amount, currency, merchant, restrictions, expiresInSeconds, metadata } = body;
+
+  if (!amount || !currency || !merchant?.name || !merchant?.categoryCode) {
+    throw new ValidationError('Missing required fields: amount, currency, merchant.name, merchant.categoryCode');
+  }
+
+  const supabase = createClient();
+
+  // Get Visa credentials
+  const { data: account, error } = await supabase
+    .from('connected_accounts')
+    .select('credentials_encrypted')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', 'visa_vic')
+    .eq('status', 'active')
+    .single();
+
+  if (error || !account) {
+    throw new ApiError('Visa VIC not configured or inactive', 400);
+  }
+
+  const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+  const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+  const { VisaVICClient } = await import('@payos/cards');
+  const client = new VisaVICClient({
+    apiKey: credentials.api_key as string,
+    sandbox: credentials.sandbox !== false,
+  });
+
+  const instruction = await client.createPaymentInstruction({
+    merchantRef: `payos_${ctx.tenantId.slice(0, 8)}_${Date.now()}`,
+    amount,
+    currency,
+    merchant: {
+      name: merchant.name,
+      categoryCode: merchant.categoryCode,
+      country: merchant.country || 'US',
+      url: merchant.url,
+    },
+    restrictions,
+    expiresInSeconds: expiresInSeconds || 900,
+    metadata,
+  });
+
+  // Store the instruction
+  await supabase.from('visa_payment_instructions').insert({
+    tenant_id: ctx.tenantId,
+    instruction_id: instruction.instructionId,
+    merchant_ref: instruction.merchantRef,
+    amount: instruction.amount,
+    currency: instruction.currency,
+    merchant_name: instruction.merchant.name,
+    merchant_category_code: instruction.merchant.categoryCode,
+    merchant_country: instruction.merchant.country,
+    merchant_url: instruction.merchant.url,
+    restrictions: instruction.restrictions,
+    metadata: instruction.metadata,
+    expires_at: instruction.expiresAt,
+  });
+
+  return c.json(instruction, 201);
+});
+
+/**
+ * GET /v1/cards/visa/instructions
+ * List Visa payment instructions
+ */
+cards.get('/visa/instructions', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const status = c.req.query('status');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  let query = supabase
+    .from('visa_payment_instructions')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    throw new ApiError('Failed to fetch instructions', 500);
+  }
+
+  return c.json({
+    data: data || [],
+    pagination: {
+      total: count || 0,
+      limit,
+      offset,
+    },
+  });
+});
+
+/**
+ * GET /v1/cards/visa/instructions/:id
+ * Get a specific Visa payment instruction
+ */
+cards.get('/visa/instructions/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const instructionId = c.req.param('id');
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('visa_payment_instructions')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('instruction_id', instructionId)
+    .single();
+
+  if (error || !data) {
+    throw new NotFoundError('Payment instruction not found');
+  }
+
+  return c.json(data);
+});
+
+// ============================================
+// Mastercard Agent Registration
+// ============================================
+
+/**
+ * POST /v1/cards/mastercard/agents
+ * Register an agent with Mastercard Agent Pay
+ */
+cards.post('/mastercard/agents', async (c) => {
+  const ctx = c.get('ctx');
+  const body = await c.req.json();
+
+  const { agentId, agentName, publicKey, capabilities, provider, callbackUrl } = body;
+
+  if (!agentId || !publicKey) {
+    throw new ValidationError('Missing required fields: agentId, publicKey');
+  }
+
+  const supabase = createClient();
+
+  // Verify the agent exists and belongs to this tenant
+  const { data: agent, error: agentError } = await supabase
+    .from('agents')
+    .select('id, name')
+    .eq('id', agentId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (agentError || !agent) {
+    throw new NotFoundError('Agent not found');
+  }
+
+  // Get Mastercard credentials
+  const { data: account, error } = await supabase
+    .from('connected_accounts')
+    .select('credentials_encrypted')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', 'mastercard_agent_pay')
+    .eq('status', 'active')
+    .single();
+
+  if (error || !account) {
+    throw new ApiError('Mastercard Agent Pay not configured or inactive', 400);
+  }
+
+  const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+  const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+  const { MastercardAgentPayClient } = await import('@payos/cards');
+  const client = new MastercardAgentPayClient({
+    consumerKey: credentials.consumer_key as string,
+    privateKeyPem: credentials.private_key_pem as string | undefined,
+    sandbox: credentials.sandbox !== false,
+  });
+
+  await client.initialize();
+
+  const registration = await client.registerAgent({
+    agentId,
+    agentName: agentName || agent.name,
+    publicKey,
+    capabilities: capabilities || ['payment', 'tokenization'],
+    provider,
+    callbackUrl,
+  });
+
+  // Store the registration
+  await supabase.from('mastercard_agents').insert({
+    tenant_id: ctx.tenantId,
+    agent_id: agentId,
+    mc_agent_id: registration.mcAgentId,
+    agent_name: agentName || agent.name,
+    public_key: publicKey,
+    capabilities: registration.capabilities,
+    agent_status: registration.status,
+    provider,
+    callback_url: callbackUrl,
+    registered_at: registration.registeredAt,
+  });
+
+  return c.json(registration, 201);
+});
+
+/**
+ * GET /v1/cards/mastercard/agents
+ * List registered Mastercard agents
+ */
+cards.get('/mastercard/agents', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('mastercard_agents')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new ApiError('Failed to fetch agents', 500);
+  }
+
+  return c.json({ data: data || [] });
+});
+
+/**
+ * GET /v1/cards/mastercard/agents/:id
+ * Get a specific Mastercard agent registration
+ */
+cards.get('/mastercard/agents/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const agentId = c.req.param('id');
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('mastercard_agents')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('agent_id', agentId)
+    .single();
+
+  if (error || !data) {
+    throw new NotFoundError('Agent registration not found');
+  }
+
+  return c.json(data);
+});
+
+// ============================================
+// Transactions
+// ============================================
+
+/**
+ * GET /v1/cards/transactions
+ * List card network transactions
+ */
+cards.get('/transactions', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const network = c.req.query('network');
+  const status = c.req.query('status');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  let query = supabase
+    .from('card_network_transactions')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (network) {
+    query = query.eq('network', network);
+  }
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    throw new ApiError('Failed to fetch transactions', 500);
+  }
+
+  return c.json({
+    data: data || [],
+    pagination: {
+      total: count || 0,
+      limit,
+      offset,
+    },
+  });
+});
+
+/**
+ * GET /v1/cards/transactions/:id
+ * Get a specific card network transaction
+ */
+cards.get('/transactions/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const transactionId = c.req.param('id');
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('card_network_transactions')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('id', transactionId)
+    .single();
+
+  if (error || !data) {
+    throw new NotFoundError('Transaction not found');
+  }
+
+  return c.json(data);
+});
+
+// ============================================
+// Verification Stats
+// ============================================
+
+/**
+ * GET /v1/cards/verifications/stats
+ * Get verification statistics
+ */
+cards.get('/verifications/stats', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const days = parseInt(c.req.query('days') || '30');
+
+  const { data, error } = await supabase
+    .from('card_agent_verifications')
+    .select('network, verified, agent_provider, created_at')
+    .eq('tenant_id', ctx.tenantId)
+    .gte('created_at', new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString());
+
+  if (error) {
+    throw new ApiError('Failed to fetch verification stats', 500);
+  }
+
+  const stats = {
+    total: data?.length || 0,
+    successful: data?.filter((v) => v.verified).length || 0,
+    failed: data?.filter((v) => !v.verified).length || 0,
+    byNetwork: {
+      visa: data?.filter((v) => v.network === 'visa').length || 0,
+      mastercard: data?.filter((v) => v.network === 'mastercard').length || 0,
+    },
+    byProvider: {} as Record<string, number>,
+  };
+
+  // Count by provider
+  for (const verification of data || []) {
+    if (verification.agent_provider) {
+      stats.byProvider[verification.agent_provider] = (stats.byProvider[verification.agent_provider] || 0) + 1;
+    }
+  }
+
+  return c.json(stats);
+});
+
+export { cards };
+export default cards;

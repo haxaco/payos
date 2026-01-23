@@ -99,6 +99,7 @@ const agenticPaymentsChildren = [
 const configurationNav = [
   { href: '/dashboard/protocols', label: 'Protocols', icon: Globe },
   { href: '/dashboard/payment-handlers', label: 'Payment Handlers', icon: Plug },
+  { href: '/dashboard/card-networks', label: 'Card Networks', icon: CreditCard },
   { href: '/dashboard/settlement-rules', label: 'Settlement Rules', icon: Settings },
   { href: '/dashboard/templates', label: 'Templates', icon: FileCode },
   { href: '/dashboard/verification-tiers', label: 'Verification Tiers', icon: ShieldCheck },
