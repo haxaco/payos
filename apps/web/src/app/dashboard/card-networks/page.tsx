@@ -12,6 +12,9 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  Trash2,
+  Shield,
+  Calendar,
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 
@@ -40,6 +43,8 @@ interface NetworkStatus {
   configured: boolean;
   status: 'active' | 'inactive' | 'not_configured';
   accountId: string | null;
+  sandbox?: boolean;
+  connectedAt?: string;
 }
 
 interface NetworksResponse {
@@ -80,6 +85,8 @@ export default function CardNetworksSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [connectingVisa, setConnectingVisa] = useState(false);
   const [connectingMc, setConnectingMc] = useState(false);
+  const [disconnectingVisa, setDisconnectingVisa] = useState(false);
+  const [disconnectingMc, setDisconnectingMc] = useState(false);
 
   // Helper for making authenticated requests
   const makeRequest = useCallback(
@@ -194,6 +201,50 @@ export default function CardNetworksSettingsPage() {
       toast.error('Failed to connect to Mastercard');
     } finally {
       setConnectingMc(false);
+    }
+  };
+
+  const handleDisconnectVisa = async () => {
+    if (!confirm('Are you sure you want to disconnect Visa VIC?')) return;
+
+    setDisconnectingVisa(true);
+    try {
+      const result = await makeRequest<{ success: boolean }>('/cards/networks/visa/disconnect', {
+        method: 'DELETE',
+      });
+      if (result.data || !result.error) {
+        toast.success('Visa VIC disconnected');
+        refetch();
+      } else {
+        toast.error(result.error || 'Failed to disconnect');
+      }
+    } catch (err) {
+      console.error('Failed to disconnect Visa:', err);
+      toast.error('Failed to disconnect Visa');
+    } finally {
+      setDisconnectingVisa(false);
+    }
+  };
+
+  const handleDisconnectMastercard = async () => {
+    if (!confirm('Are you sure you want to disconnect Mastercard Agent Pay?')) return;
+
+    setDisconnectingMc(true);
+    try {
+      const result = await makeRequest<{ success: boolean }>('/cards/networks/mastercard/disconnect', {
+        method: 'DELETE',
+      });
+      if (result.data || !result.error) {
+        toast.success('Mastercard Agent Pay disconnected');
+        refetch();
+      } else {
+        toast.error(result.error || 'Failed to disconnect');
+      }
+    } catch (err) {
+      console.error('Failed to disconnect Mastercard:', err);
+      toast.error('Failed to disconnect Mastercard');
+    } finally {
+      setDisconnectingMc(false);
     }
   };
 
@@ -369,6 +420,67 @@ export default function CardNetworksSettingsPage() {
               </div>
             )}
 
+            {/* Connected state details */}
+            {networks?.visa.configured && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+                      <Shield className="h-4 w-4" />
+                      <span className="text-xs font-medium uppercase">Environment</span>
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {networks.visa.sandbox !== false ? 'Sandbox' : 'Production'}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span className="text-xs font-medium uppercase">Status</span>
+                    </div>
+                    <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                      {networks.visa.status === 'active' ? 'Active' : 'Inactive'}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+                      <Calendar className="h-4 w-4" />
+                      <span className="text-xs font-medium uppercase">Connected</span>
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {networks.visa.connectedAt
+                        ? new Date(networks.visa.connectedAt).toLocaleDateString()
+                        : 'Recently'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-800">
+                  <a
+                    href="https://developer.visa.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    Visa Developer Portal
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <button
+                    onClick={handleDisconnectVisa}
+                    disabled={disconnectingVisa}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
+                  >
+                    {disconnectingVisa ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Configuration form (show if not connected) */}
             {!networks?.visa.configured && (
               <div className="space-y-4">
@@ -505,6 +617,67 @@ export default function CardNetworksSettingsPage() {
                 <span className="text-sm">
                   {mcTestResult.success ? 'Connection successful' : mcTestResult.error || 'Connection failed'}
                 </span>
+              </div>
+            )}
+
+            {/* Connected state details */}
+            {networks?.mastercard.configured && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+                      <Shield className="h-4 w-4" />
+                      <span className="text-xs font-medium uppercase">Environment</span>
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {networks.mastercard.sandbox !== false ? 'Sandbox' : 'Production'}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span className="text-xs font-medium uppercase">Status</span>
+                    </div>
+                    <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                      {networks.mastercard.status === 'active' ? 'Active' : 'Inactive'}
+                    </div>
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 mb-1">
+                      <Calendar className="h-4 w-4" />
+                      <span className="text-xs font-medium uppercase">Connected</span>
+                    </div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {networks.mastercard.connectedAt
+                        ? new Date(networks.mastercard.connectedAt).toLocaleDateString()
+                        : 'Recently'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-800">
+                  <a
+                    href="https://developer.mastercard.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-orange-600 hover:text-orange-700 dark:text-orange-400"
+                  >
+                    Mastercard Developer Portal
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <button
+                    onClick={handleDisconnectMastercard}
+                    disabled={disconnectingMc}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
+                  >
+                    {disconnectingMc ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    Disconnect
+                  </button>
+                </div>
               </div>
             )}
 

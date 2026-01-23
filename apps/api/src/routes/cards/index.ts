@@ -90,7 +90,7 @@ cards.get('/networks', async (c) => {
   // Get connected accounts for card networks
   const { data: accounts } = await supabase
     .from('connected_accounts')
-    .select('id, handler_type, handler_name, status, created_at, updated_at')
+    .select('id, handler_type, handler_name, status, credentials_encrypted, created_at, updated_at')
     .eq('tenant_id', ctx.tenantId)
     .in('handler_type', ['visa_vic', 'mastercard_agent_pay']);
 
@@ -99,27 +99,46 @@ cards.get('/networks', async (c) => {
       configured: false,
       status: 'not_configured' as const,
       accountId: null as string | null,
+      sandbox: true,
+      connectedAt: null as string | null,
     },
     mastercard: {
       configured: false,
       status: 'not_configured' as const,
       accountId: null as string | null,
+      sandbox: true,
+      connectedAt: null as string | null,
     },
   };
 
   if (accounts) {
+    const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+
     for (const account of accounts) {
+      // Decrypt credentials to get sandbox mode
+      let sandbox = true;
+      try {
+        const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+        sandbox = credentials.sandbox !== false;
+      } catch {
+        // If decryption fails, default to sandbox
+      }
+
       if (account.handler_type === 'visa_vic') {
         networks.visa = {
           configured: true,
           status: account.status as 'active' | 'inactive' | 'not_configured',
           accountId: account.id,
+          sandbox,
+          connectedAt: account.created_at,
         };
       } else if (account.handler_type === 'mastercard_agent_pay') {
         networks.mastercard = {
           configured: true,
           status: account.status as 'active' | 'inactive' | 'not_configured',
           accountId: account.id,
+          sandbox,
+          connectedAt: account.created_at,
         };
       }
     }
@@ -267,6 +286,34 @@ cards.post('/networks/:network/configure', async (c) => {
 
     return c.json({ id: data.id, message: `${handlerName} configured successfully` });
   }
+});
+
+/**
+ * DELETE /v1/cards/networks/:network/disconnect
+ * Disconnect a card network
+ */
+cards.delete('/networks/:network/disconnect', async (c) => {
+  const ctx = c.get('ctx');
+  const network = c.req.param('network') as 'visa' | 'mastercard';
+
+  if (!['visa', 'mastercard'].includes(network)) {
+    throw new ValidationError('Invalid network. Must be "visa" or "mastercard"');
+  }
+
+  const supabase = createClient();
+  const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
+
+  const { error } = await supabase
+    .from('connected_accounts')
+    .delete()
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', handlerType);
+
+  if (error) {
+    throw new ApiError(`Failed to disconnect ${network}: ${error.message}`);
+  }
+
+  return c.json({ success: true, message: `${network} disconnected successfully` });
 });
 
 // ============================================
