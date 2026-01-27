@@ -696,5 +696,557 @@ cards.get('/verifications/stats', async (c) => {
   return c.json(stats);
 });
 
+// ============================================
+// Analytics
+// ============================================
+
+/**
+ * GET /v1/cards/analytics
+ * Get comprehensive card network analytics
+ */
+cards.get('/analytics', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const days = parseInt(c.req.query('days') || '30');
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  // Fetch all data in parallel
+  const [verificationsResult, transactionsResult, recentTxResult] = await Promise.all([
+    // Verifications
+    supabase
+      .from('card_agent_verifications')
+      .select('network, verified, agent_provider, created_at')
+      .eq('tenant_id', ctx.tenantId)
+      .gte('created_at', since),
+
+    // Transactions - try card_network_transactions first, fall back to vaulted_card_transactions
+    supabase
+      .from('card_network_transactions')
+      .select('id, network, status, amount, currency, created_at')
+      .eq('tenant_id', ctx.tenantId)
+      .gte('created_at', since),
+
+    // Recent transactions for the table (last 10)
+    supabase
+      .from('card_network_transactions')
+      .select('id, network, status, amount, currency, merchant_name, created_at')
+      .eq('tenant_id', ctx.tenantId)
+      .order('created_at', { ascending: false })
+      .limit(10),
+  ]);
+
+  // Process verifications
+  const verifications = verificationsResult.data || [];
+  const verificationStats = {
+    total: verifications.length,
+    successful: verifications.filter((v) => v.verified).length,
+    successRate: verifications.length > 0
+      ? Math.round((verifications.filter((v) => v.verified).length / verifications.length) * 100)
+      : 0,
+    byNetwork: {
+      visa: verifications.filter((v) => v.network === 'visa').length,
+      mastercard: verifications.filter((v) => v.network === 'mastercard').length,
+    },
+    byProvider: {} as Record<string, number>,
+  };
+
+  // Count by provider
+  for (const verification of verifications) {
+    if (verification.agent_provider) {
+      verificationStats.byProvider[verification.agent_provider] =
+        (verificationStats.byProvider[verification.agent_provider] || 0) + 1;
+    }
+  }
+
+  // Process transactions
+  const transactions = transactionsResult.data || [];
+  const totalVolume = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const transactionStats = {
+    total: transactions.length,
+    volume: totalVolume,
+    byStatus: {
+      completed: transactions.filter((t) => t.status === 'completed').length,
+      pending: transactions.filter((t) => t.status === 'pending').length,
+      failed: transactions.filter((t) => t.status === 'failed' || t.status === 'declined').length,
+    },
+    byNetwork: {
+      visa: transactions.filter((t) => t.network === 'visa').length,
+      mastercard: transactions.filter((t) => t.network === 'mastercard').length,
+    },
+  };
+
+  // Process recent transactions
+  const recentTransactions = (recentTxResult.data || []).map((tx) => ({
+    id: tx.id,
+    network: tx.network,
+    amount: tx.amount,
+    currency: tx.currency,
+    merchantName: tx.merchant_name || 'Unknown',
+    status: tx.status,
+    createdAt: tx.created_at,
+  }));
+
+  return c.json({
+    verifications: verificationStats,
+    transactions: transactionStats,
+    recentTransactions,
+    period: {
+      days,
+      from: since,
+      to: new Date().toISOString(),
+    },
+  });
+});
+
+// ============================================
+// Visa Token Management
+// ============================================
+
+/**
+ * POST /v1/cards/visa/tokens
+ * Provision a VTS token for an instruction
+ */
+cards.post('/visa/tokens', async (c) => {
+  const ctx = c.get('ctx');
+  const body = await c.req.json();
+  const supabase = createClient();
+
+  const { instructionId, cardToken, metadata } = body;
+
+  if (!instructionId || !cardToken) {
+    throw new ValidationError('Missing required fields: instructionId, cardToken');
+  }
+
+  // Verify the instruction exists and belongs to this tenant
+  const { data: instruction, error: instructionError } = await supabase
+    .from('visa_payment_instructions')
+    .select('id, tenant_id, status')
+    .eq('instruction_id', instructionId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (instructionError || !instruction) {
+    throw new NotFoundError('Payment instruction not found');
+  }
+
+  // Get Visa credentials
+  const { data: account, error: accountError } = await supabase
+    .from('connected_accounts')
+    .select('credentials_encrypted')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', 'visa_vic')
+    .eq('status', 'active')
+    .single();
+
+  if (accountError || !account) {
+    throw new ApiError('Visa VIC not configured or inactive', 400);
+  }
+
+  const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+  const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+  const { VisaVICClient } = await import('@payos/cards');
+  const client = new VisaVICClient({
+    apiKey: credentials.api_key as string,
+    sandbox: credentials.sandbox !== false,
+  });
+
+  // Provision the token
+  const token = await client.provisionToken({
+    instructionId,
+    cardToken,
+    metadata,
+  });
+
+  // Store the token
+  await supabase.from('visa_agent_tokens').insert({
+    tenant_id: ctx.tenantId,
+    instruction_id: instructionId,
+    vic_token_id: token.tokenId,
+    card_last_four: token.cardLastFour || cardToken.slice(-4),
+    token_status: 'active',
+    metadata,
+    provisioned_at: new Date().toISOString(),
+    expires_at: token.expiresAt,
+  });
+
+  return c.json(token, 201);
+});
+
+/**
+ * GET /v1/cards/visa/tokens
+ * List Visa VTS tokens
+ */
+cards.get('/visa/tokens', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const status = c.req.query('status');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  let query = supabase
+    .from('visa_agent_tokens')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('provisioned_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (status) {
+    query = query.eq('token_status', status);
+  }
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    throw new ApiError('Failed to fetch tokens', 500);
+  }
+
+  return c.json({
+    data: data || [],
+    pagination: {
+      total: count || 0,
+      limit,
+      offset,
+    },
+  });
+});
+
+/**
+ * GET /v1/cards/visa/tokens/:id
+ * Get a specific Visa token
+ */
+cards.get('/visa/tokens/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const tokenId = c.req.param('id');
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('visa_agent_tokens')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('vic_token_id', tokenId)
+    .single();
+
+  if (error || !data) {
+    throw new NotFoundError('Token not found');
+  }
+
+  return c.json(data);
+});
+
+/**
+ * DELETE /v1/cards/visa/tokens/:id
+ * Suspend a Visa token
+ */
+cards.delete('/visa/tokens/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const tokenId = c.req.param('id');
+  const supabase = createClient();
+
+  // Verify the token exists
+  const { data: token, error: tokenError } = await supabase
+    .from('visa_agent_tokens')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('vic_token_id', tokenId)
+    .single();
+
+  if (tokenError || !token) {
+    throw new NotFoundError('Token not found');
+  }
+
+  // Get Visa credentials to call suspend API
+  const { data: account } = await supabase
+    .from('connected_accounts')
+    .select('credentials_encrypted')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', 'visa_vic')
+    .eq('status', 'active')
+    .single();
+
+  if (account) {
+    try {
+      const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+      const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+      const { VisaVICClient } = await import('@payos/cards');
+      const client = new VisaVICClient({
+        apiKey: credentials.api_key as string,
+        sandbox: credentials.sandbox !== false,
+      });
+
+      await client.suspendToken(tokenId);
+    } catch (e) {
+      // Log but continue - token might already be suspended
+      console.error('Failed to suspend token with Visa:', e);
+    }
+  }
+
+  // Update local status
+  await supabase
+    .from('visa_agent_tokens')
+    .update({ token_status: 'suspended' })
+    .eq('vic_token_id', tokenId)
+    .eq('tenant_id', ctx.tenantId);
+
+  return c.json({ success: true, message: 'Token suspended' });
+});
+
+// ============================================
+// Mastercard Token Management
+// ============================================
+
+/**
+ * POST /v1/cards/mastercard/tokens
+ * Create a Mastercard agentic token
+ */
+cards.post('/mastercard/tokens', async (c) => {
+  const ctx = c.get('ctx');
+  const body = await c.req.json();
+  const supabase = createClient();
+
+  const { agentId, cardToken, metadata, expiresInSeconds } = body;
+
+  if (!agentId || !cardToken) {
+    throw new ValidationError('Missing required fields: agentId, cardToken');
+  }
+
+  // Verify the agent is registered with Mastercard
+  const { data: mcAgent, error: mcAgentError } = await supabase
+    .from('mastercard_agents')
+    .select('mc_agent_id, agent_status')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('agent_id', agentId)
+    .single();
+
+  if (mcAgentError || !mcAgent) {
+    throw new NotFoundError('Agent not registered with Mastercard');
+  }
+
+  if (mcAgent.agent_status !== 'active') {
+    throw new ApiError('Agent is not active with Mastercard', 400);
+  }
+
+  // Get Mastercard credentials
+  const { data: account, error: accountError } = await supabase
+    .from('connected_accounts')
+    .select('credentials_encrypted')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', 'mastercard_agent_pay')
+    .eq('status', 'active')
+    .single();
+
+  if (accountError || !account) {
+    throw new ApiError('Mastercard Agent Pay not configured or inactive', 400);
+  }
+
+  const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+  const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+  const { MastercardAgentPayClient } = await import('@payos/cards');
+  const client = new MastercardAgentPayClient({
+    consumerKey: credentials.consumer_key as string,
+    privateKeyPem: credentials.private_key_pem as string | undefined,
+    sandbox: credentials.sandbox !== false,
+  });
+
+  await client.initialize();
+
+  // Create the agentic token with DTVC
+  const token = await client.createAgenticToken({
+    mcAgentId: mcAgent.mc_agent_id,
+    cardToken,
+    expiresInSeconds: expiresInSeconds || 3600, // 1 hour default
+    metadata,
+  });
+
+  // Store the token
+  const expiresAt = new Date(Date.now() + (expiresInSeconds || 3600) * 1000).toISOString();
+  await supabase.from('mastercard_agentic_tokens').insert({
+    tenant_id: ctx.tenantId,
+    mc_agent_id: mcAgent.mc_agent_id,
+    token_reference: token.tokenReference,
+    dtvc: token.dtvc,
+    card_last_four: cardToken.slice(-4),
+    token_status: 'active',
+    metadata,
+    expires_at: expiresAt,
+  });
+
+  return c.json({
+    tokenReference: token.tokenReference,
+    mcAgentId: mcAgent.mc_agent_id,
+    dtvc: token.dtvc,
+    expiresAt,
+    status: 'active',
+  }, 201);
+});
+
+/**
+ * GET /v1/cards/mastercard/tokens
+ * List Mastercard agentic tokens
+ */
+cards.get('/mastercard/tokens', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const status = c.req.query('status');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
+  const offset = parseInt(c.req.query('offset') || '0');
+
+  let query = supabase
+    .from('mastercard_agentic_tokens')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (status) {
+    query = query.eq('token_status', status);
+  }
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    throw new ApiError('Failed to fetch tokens', 500);
+  }
+
+  return c.json({
+    data: data || [],
+    pagination: {
+      total: count || 0,
+      limit,
+      offset,
+    },
+  });
+});
+
+/**
+ * GET /v1/cards/mastercard/tokens/:id
+ * Get a specific Mastercard token with fresh DTVC
+ */
+cards.get('/mastercard/tokens/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const tokenRef = c.req.param('id');
+  const refreshDtvc = c.req.query('refresh') === 'true';
+  const supabase = createClient();
+
+  const { data: token, error } = await supabase
+    .from('mastercard_agentic_tokens')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('token_reference', tokenRef)
+    .single();
+
+  if (error || !token) {
+    throw new NotFoundError('Token not found');
+  }
+
+  // If refreshing DTVC
+  if (refreshDtvc && token.token_status === 'active') {
+    const { data: account } = await supabase
+      .from('connected_accounts')
+      .select('credentials_encrypted')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('handler_type', 'mastercard_agent_pay')
+      .eq('status', 'active')
+      .single();
+
+    if (account) {
+      try {
+        const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+        const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+        const { MastercardAgentPayClient } = await import('@payos/cards');
+        const client = new MastercardAgentPayClient({
+          consumerKey: credentials.consumer_key as string,
+          privateKeyPem: credentials.private_key_pem as string | undefined,
+          sandbox: credentials.sandbox !== false,
+        });
+
+        await client.initialize();
+
+        const newDtvc = await client.refreshDTVC(token.token_reference);
+
+        // Update stored DTVC
+        await supabase
+          .from('mastercard_agentic_tokens')
+          .update({ dtvc: newDtvc.dtvc })
+          .eq('token_reference', tokenRef)
+          .eq('tenant_id', ctx.tenantId);
+
+        return c.json({ ...token, dtvc: newDtvc.dtvc });
+      } catch (e) {
+        console.error('Failed to refresh DTVC:', e);
+        // Return existing token without refresh
+      }
+    }
+  }
+
+  return c.json(token);
+});
+
+/**
+ * DELETE /v1/cards/mastercard/tokens/:id
+ * Revoke a Mastercard token
+ */
+cards.delete('/mastercard/tokens/:id', async (c) => {
+  const ctx = c.get('ctx');
+  const tokenRef = c.req.param('id');
+  const supabase = createClient();
+
+  // Verify the token exists
+  const { data: token, error: tokenError } = await supabase
+    .from('mastercard_agentic_tokens')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('token_reference', tokenRef)
+    .single();
+
+  if (tokenError || !token) {
+    throw new NotFoundError('Token not found');
+  }
+
+  // Get Mastercard credentials to call revoke API
+  const { data: account } = await supabase
+    .from('connected_accounts')
+    .select('credentials_encrypted')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('handler_type', 'mastercard_agent_pay')
+    .eq('status', 'active')
+    .single();
+
+  if (account) {
+    try {
+      const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
+      const credentials = deserializeAndDecrypt(account.credentials_encrypted);
+
+      const { MastercardAgentPayClient } = await import('@payos/cards');
+      const client = new MastercardAgentPayClient({
+        consumerKey: credentials.consumer_key as string,
+        privateKeyPem: credentials.private_key_pem as string | undefined,
+        sandbox: credentials.sandbox !== false,
+      });
+
+      await client.initialize();
+      await client.revokeToken(tokenRef);
+    } catch (e) {
+      // Log but continue - token might already be revoked
+      console.error('Failed to revoke token with Mastercard:', e);
+    }
+  }
+
+  // Update local status
+  await supabase
+    .from('mastercard_agentic_tokens')
+    .update({ token_status: 'revoked' })
+    .eq('token_reference', tokenRef)
+    .eq('tenant_id', ctx.tenantId);
+
+  return c.json({ success: true, message: 'Token revoked' });
+});
+
 export { cards };
 export default cards;

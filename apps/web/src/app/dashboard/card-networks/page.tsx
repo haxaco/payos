@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import Link from 'next/link';
 import {
   CreditCard,
   CheckCircle2,
@@ -15,6 +16,12 @@ import {
   Trash2,
   Shield,
   Calendar,
+  TrendingUp,
+  Zap,
+  Globe,
+  ShoppingCart,
+  ArrowRight,
+  BarChart3,
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 
@@ -60,6 +67,86 @@ interface NetworksResponse {
   };
 }
 
+interface AnalyticsResponse {
+  verifications: {
+    total: number;
+    successful: number;
+    successRate: number;
+    byNetwork: {
+      visa: number;
+      mastercard: number;
+    };
+    byProvider: Record<string, number>;
+  };
+  transactions: {
+    total: number;
+    volume: number;
+    byStatus: {
+      completed: number;
+      pending: number;
+      failed: number;
+    };
+    byNetwork: {
+      visa: number;
+      mastercard: number;
+    };
+  };
+  recentTransactions: Array<{
+    id: string;
+    network: 'visa' | 'mastercard';
+    amount: number;
+    currency: string;
+    merchantName: string;
+    status: string;
+    createdAt: string;
+  }>;
+  period: {
+    days: number;
+    from: string;
+    to: string;
+  };
+}
+
+// Protocol info for the integration section
+const PROTOCOL_INFO = [
+  {
+    id: 'acp',
+    name: 'ACP',
+    description: 'Agent Commerce Protocol',
+    cardSupport: 'full',
+    icon: ShoppingCart,
+    color: 'text-purple-600 dark:text-purple-400',
+    bg: 'bg-purple-100 dark:bg-purple-950',
+  },
+  {
+    id: 'ucp',
+    name: 'UCP',
+    description: 'Universal Commerce Protocol',
+    cardSupport: 'full',
+    icon: Globe,
+    color: 'text-green-600 dark:text-green-400',
+    bg: 'bg-green-100 dark:bg-green-950',
+  },
+  {
+    id: 'ap2',
+    name: 'AP2',
+    description: 'Agent Payment Protocol',
+    cardSupport: 'fallback',
+    icon: Shield,
+    color: 'text-blue-600 dark:text-blue-400',
+    bg: 'bg-blue-100 dark:bg-blue-950',
+  },
+  {
+    id: 'x402',
+    name: 'x402',
+    description: 'HTTP 402 Payments',
+    cardSupport: 'none',
+    icon: Zap,
+    color: 'text-yellow-600 dark:text-yellow-400',
+    bg: 'bg-yellow-100 dark:bg-yellow-950',
+  },
+];
+
 export default function CardNetworksSettingsPage() {
   const { authToken, isConfigured, isLoading: authLoading } = useApiConfig();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -81,7 +168,9 @@ export default function CardNetworksSettingsPage() {
   const [visaTestResult, setVisaTestResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [mcTestResult, setMcTestResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [networksData, setNetworksData] = useState<NetworksResponse | null>(null);
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connectingVisa, setConnectingVisa] = useState(false);
   const [connectingMc, setConnectingMc] = useState(false);
@@ -138,9 +227,22 @@ export default function CardNetworksSettingsPage() {
     setLoading(false);
   }, [isConfigured, authLoading, makeRequest]);
 
+  // Fetch analytics data
+  const fetchAnalytics = useCallback(async () => {
+    if (!isConfigured || authLoading) return;
+    setLoadingAnalytics(true);
+
+    const result = await makeRequest<AnalyticsResponse>('/cards/analytics?days=30');
+    if (result.data) {
+      setAnalyticsData(result.data);
+    }
+    setLoadingAnalytics(false);
+  }, [isConfigured, authLoading, makeRequest]);
+
   useEffect(() => {
     refetch();
-  }, [refetch]);
+    fetchAnalytics();
+  }, [refetch, fetchAnalytics]);
 
   const handleConnectVisa = async () => {
     if (!visaConfig.apiKey) {
@@ -353,6 +455,238 @@ export default function CardNetworksSettingsPage() {
                 </div>
               ))}
             </div>
+          </section>
+
+          {/* Analytics Section */}
+          {(networks?.visa.configured || networks?.mastercard.configured) && (
+            <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-950 rounded-xl flex items-center justify-center">
+                    <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Analytics</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Last 30 days</p>
+                  </div>
+                </div>
+                <button
+                  onClick={fetchAnalytics}
+                  disabled={loadingAnalytics}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loadingAnalytics ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+
+              {loadingAnalytics ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 text-blue-600 animate-spin" />
+                </div>
+              ) : analyticsData ? (
+                <div className="space-y-6">
+                  {/* Verification Stats */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Verifications</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                          {analyticsData.verifications.total}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Total</div>
+                      </div>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                        <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                          {analyticsData.verifications.successRate}%
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Success Rate</div>
+                      </div>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                        <div className="flex items-center gap-2">
+                          <VisaLogo />
+                          <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {analyticsData.verifications.byNetwork.visa}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Visa</div>
+                      </div>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                        <div className="flex items-center gap-2">
+                          <MastercardLogo />
+                          <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {analyticsData.verifications.byNetwork.mastercard}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Mastercard</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Transaction Stats */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Transactions</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                          {analyticsData.transactions.total}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Total</div>
+                      </div>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                          ${analyticsData.transactions.volume.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Volume</div>
+                      </div>
+                      <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-xl">
+                        <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                          {analyticsData.transactions.byStatus.completed}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Completed</div>
+                      </div>
+                      <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 rounded-xl">
+                        <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                          {analyticsData.transactions.byStatus.pending}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Pending</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recent Transactions */}
+                  {analyticsData.recentTransactions.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Recent Transactions</h3>
+                        <Link
+                          href="/dashboard/transactions?rail=card"
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          View All
+                        </Link>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-200 dark:border-gray-800">
+                              <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Network</th>
+                              <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Amount</th>
+                              <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Merchant</th>
+                              <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Status</th>
+                              <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Time</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analyticsData.recentTransactions.map((tx) => (
+                              <tr key={tx.id} className="border-b border-gray-100 dark:border-gray-800/50">
+                                <td className="py-2 px-3">
+                                  {tx.network === 'visa' ? <VisaLogo /> : <MastercardLogo />}
+                                </td>
+                                <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">
+                                  ${tx.amount.toFixed(2)} {tx.currency}
+                                </td>
+                                <td className="py-2 px-3 text-gray-600 dark:text-gray-400">
+                                  {tx.merchantName}
+                                </td>
+                                <td className="py-2 px-3">
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      tx.status === 'completed'
+                                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                        : tx.status === 'pending'
+                                        ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                                    }`}
+                                  >
+                                    {tx.status === 'completed' && <CheckCircle2 className="h-3 w-3" />}
+                                    {tx.status === 'pending' && <Loader2 className="h-3 w-3" />}
+                                    {tx.status}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-gray-500 dark:text-gray-400">
+                                  {new Date(tx.createdAt).toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  No analytics data available
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Protocol Integration Section */}
+          <section className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-2xl border border-blue-100 dark:border-blue-900 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
+                <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Protocol Integration</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Card networks enable settlement for these protocols
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              {PROTOCOL_INFO.map((protocol) => {
+                const Icon = protocol.icon;
+                return (
+                  <div
+                    key={protocol.id}
+                    className="p-4 bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className={`w-8 h-8 ${protocol.bg} rounded-lg flex items-center justify-center`}>
+                        <Icon className={`h-4 w-4 ${protocol.color}`} />
+                      </div>
+                      <span className="font-medium text-gray-900 dark:text-white">{protocol.name}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{protocol.description}</p>
+                    <div className="flex items-center gap-1">
+                      {protocol.cardSupport === 'full' ? (
+                        <>
+                          <CheckCircle2 className="h-3 w-3 text-green-600 dark:text-green-400" />
+                          <span className="text-xs text-green-600 dark:text-green-400">Card payment</span>
+                        </>
+                      ) : protocol.cardSupport === 'fallback' ? (
+                        <>
+                          <AlertCircle className="h-3 w-3 text-yellow-600 dark:text-yellow-400" />
+                          <span className="text-xs text-yellow-600 dark:text-yellow-400">Fallback</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-3 w-3 text-gray-400" />
+                          <span className="text-xs text-gray-400">USDC only</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              When agents make purchases via ACP or settlements via UCP, card networks provide traditional
+              card rails with consumer protection and chargeback support.
+            </p>
+
+            <Link
+              href="/dashboard/protocols"
+              className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              Configure Protocols
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </section>
 
           {/* Visa VIC Section */}
