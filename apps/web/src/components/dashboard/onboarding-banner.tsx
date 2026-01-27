@@ -148,7 +148,7 @@ export function OnboardingBanner() {
                 <Rocket className="w-7 h-7" />
               </div>
               <div>
-                <h2 className="text-xl font-bold mb-1">Welcome to PayOS!</h2>
+                <h2 className="text-xl font-bold mb-1">Welcome to Sly!</h2>
                 <p className="text-blue-100">
                   Complete these steps to start accepting agentic payments
                 </p>

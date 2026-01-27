@@ -43,10 +43,10 @@ export default function UcpIntegrationPage() {
 
     const apiClientInstall = `npm install @sly/api-client`;
 
-    const acquireTokenExample = `import { PayOSClient } from '@sly/api-client';
+    const acquireTokenExample = `import { SlyClient } from '@sly/api-client';
 
-const client = new PayOSClient({
-  apiKey: process.env.PAYOS_API_KEY
+const client = new SlyClient({
+  apiKey: process.env.SLY_API_KEY
 });
 
 // Acquire a payment token for Pix (Brazil) checkout
@@ -150,7 +150,7 @@ console.log('Fees:', quote.fees.total);`;
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">UCP Integration</h1>
                     <p className="text-muted-foreground mt-1">
-                        Universal Commerce Protocol - PayOS Payment Handler for checkout payments via Pix, SPEI, and more
+                        Universal Commerce Protocol - Sly Payment Handler for checkout payments via Pix, SPEI, and more
                     </p>
                 </div>
                 <div className="flex gap-2">

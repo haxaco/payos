@@ -159,7 +159,7 @@ export const WIZARD_TEMPLATES: Record<TemplateId, WizardTemplateConfig> = {
         isRequired: false,
         estimatedMinutes: 3,
         helpText: 'Upload your logo, set primary color, and add support email.',
-        skipWarning: 'Default PayOS branding will be used.',
+        skipWarning: 'Default Sly branding will be used.',
       },
       {
         id: 'test-purchase',

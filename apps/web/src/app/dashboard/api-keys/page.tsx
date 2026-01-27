@@ -74,7 +74,7 @@ export default function ApiKeysPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">API Keys</h1>
         <p className="text-muted-foreground">
-          Manage API keys for programmatic access to PayOS (scripts, integrations, etc.)
+          Manage API keys for programmatic access to Sly (scripts, integrations, etc.)
         </p>
         {isAuthenticatedViaJWT && (
           <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg">
@@ -94,7 +94,7 @@ export default function ApiKeysPage() {
             Current API Key
           </CardTitle>
           <CardDescription>
-            Your API key is used to authenticate requests to the PayOS API
+            Your API key is used to authenticate requests to the Sly API
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -149,8 +149,8 @@ export default function ApiKeysPage() {
             <CardTitle>Add API Key (Optional)</CardTitle>
             <CardDescription>
               {isAuthenticatedViaJWT 
-                ? "Add an API key only if you need programmatic access to PayOS from scripts or external tools."
-                : "Enter your PayOS API key to enable dashboard features. You can find your API key in the PayOS developer portal."
+                ? "Add an API key only if you need programmatic access to Sly from scripts or external tools."
+                : "Enter your Sly API key to enable dashboard features. You can find your API key in the Sly developer portal."
               }
             </CardDescription>
           </CardHeader>
@@ -182,7 +182,7 @@ export default function ApiKeysPage() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-muted-foreground">
           <p>
-            PayOS uses API keys to authenticate requests from your applications and
+            Sly uses API keys to authenticate requests from your applications and
             the dashboard. There are two types of keys:
           </p>
           <ul className="list-disc list-inside space-y-2">

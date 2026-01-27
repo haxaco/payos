@@ -82,7 +82,7 @@ function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
     if (isInternalWallet) {
       return {
         label: 'Internal',
-        description: 'Internal wallet managed by PayOS. No blockchain sync needed.',
+        description: 'Internal wallet managed by Sly. No blockchain sync needed.',
         color: 'bg-emerald-500',
       };
     }
@@ -157,7 +157,7 @@ function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
     setVerifying(true);
     try {
       // Generate challenge message
-      const message = `Verify ownership of wallet ${wallet.walletAddress} for PayOS at ${new Date().toISOString()}`;
+      const message = `Verify ownership of wallet for Sly at ${new Date().toISOString()}`;
 
       // Sign with MetaMask
       const signature = await signMessageAsync({ message });
@@ -936,7 +936,7 @@ export default function WalletsPage() {
                         Create New Wallet
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Create a new custodial wallet managed by PayOS
+                        Create a new custodial wallet managed by Sly
                       </p>
                     </div>
                   </div>

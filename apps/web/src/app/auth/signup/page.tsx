@@ -91,7 +91,7 @@ export default function SignUpPage() {
           </div>
           <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
           <CardDescription>
-            Get started with PayOS Dashboard
+            Get started with Sly Dashboard
           </CardDescription>
         </CardHeader>
         <CardContent>

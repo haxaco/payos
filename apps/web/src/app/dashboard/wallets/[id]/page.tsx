@@ -382,7 +382,7 @@ export default function WalletDetailPage() {
                                     <Wallet className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                                 </div>
                                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                                    This is an internal PayOS wallet.<br />
+                                    This is an internal Sly wallet.<br />
                                     No blockchain sync required.
                                 </p>
                             </div>

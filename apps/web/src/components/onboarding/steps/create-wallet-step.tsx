@@ -234,7 +234,7 @@ export function CreateWalletStep({
               onChange={(e) => setFormData(prev => ({ ...prev, walletType: e.target.value as any }))}
               className="w-full px-4 py-3 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="internal">PayOS Managed</option>
+              <option value="internal">Sly Managed</option>
               <option value="circle_custodial">Circle Wallet (MPC)</option>
             </select>
           </div>

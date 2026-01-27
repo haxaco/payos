@@ -42,10 +42,10 @@ export default function Ap2IntegrationPage() {
 
     const apiClientInstall = `npm install @sly/api-client`;
 
-    const createMandateExample = `import { PayOSClient } from '@sly/api-client';
+    const createMandateExample = `import { SlyClient } from '@sly/api-client';
 
-const client = new PayOSClient({
-  apiKey: process.env.PAYOS_API_KEY
+const client = new SlyClient({
+  apiKey: process.env.SLY_API_KEY
 });
 
 // Create a payment mandate for an AI agent
@@ -161,7 +161,7 @@ console.log('Remaining balance:', execution.mandate.remaining_amount);`;
                     <Card>
                         <CardHeader>
                             <CardTitle>Installation</CardTitle>
-                            <CardDescription>Install the PayOS API Client</CardDescription>
+                            <CardDescription>Install the Sly API Client</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="relative">

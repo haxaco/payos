@@ -268,7 +268,7 @@ export function ConnectHandlerDialog({ isOpen, onClose, onConnect }: ConnectHand
           {step === 'select' && (
             <div className="space-y-3">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Choose a payment processor to connect with your PayOS account.
+                Choose a payment processor to connect with your Sly account.
               </p>
               {handlers.map((handler) => (
                 <HandlerOption

@@ -96,7 +96,7 @@ export function VirtualCard({ mandate, className }: VirtualCardProps) {
 
                 <div className="relative flex h-full flex-col justify-between z-10">
                     <div className="flex items-start justify-between">
-                        <div className="text-lg font-bold tracking-wider opacity-90">PayOS</div>
+                        <div className="text-lg font-bold tracking-wider opacity-90">Sly</div>
                         <CreditCard className="h-8 w-8 opacity-80" />
                     </div>
 

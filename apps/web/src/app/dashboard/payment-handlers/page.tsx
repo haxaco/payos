@@ -56,7 +56,7 @@ const HANDLER_INFO: Record<HandlerType, { name: string; description: string; ico
     docsLabel: 'Get Circle API Key',
   },
   payos_native: {
-    name: 'PayOS Native',
+    name: 'Sly Native',
     description: 'Pix (Brazil) and SPEI (Mexico)',
     icon: '🌎',
     color: 'bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400',
@@ -485,7 +485,7 @@ export default function PaymentHandlersPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Payment Handlers</h1>
-            <p className="text-gray-600 dark:text-gray-400">Connect your payment processor accounts to accept payments through PayOS</p>
+            <p className="text-gray-600 dark:text-gray-400">Connect your payment processor accounts to accept payments through Sly</p>
           </div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-12 text-center animate-pulse">
@@ -517,7 +517,7 @@ export default function PaymentHandlersPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Payment Handlers</h1>
-          <p className="text-gray-600 dark:text-gray-400">Connect your payment processor accounts to accept payments through PayOS</p>
+          <p className="text-gray-600 dark:text-gray-400">Connect your payment processor accounts to accept payments through Sly</p>
         </div>
         <button
           onClick={() => setShowConnectDialog(true)}
@@ -567,7 +567,7 @@ export default function PaymentHandlersPage() {
           <div className="p-12 text-center">
             <Plug className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No payment handlers connected</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6">Connect a payment processor to start accepting payments through PayOS</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-6">Connect a payment processor to start accepting payments through Sly</p>
             <button
               onClick={() => setShowConnectDialog(true)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"

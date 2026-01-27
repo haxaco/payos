@@ -8,7 +8,7 @@ import { Web3Provider } from '@/components/providers/web3-provider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'PayOS Dashboard',
+  title: 'Sly Dashboard',
   description: 'Stablecoin Payout Operating System for LATAM',
   icons: {
     icon: '/favicon.ico',

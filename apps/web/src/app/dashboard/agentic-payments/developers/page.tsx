@@ -57,15 +57,15 @@ export default function DevelopersPage() {
 
     const codeExamples = {
         'x402-provider':
-            `import { PayOSServer } from '@sly/node';
+            `import { Sly } from '@sly/sdk';
 
-// Initialize server SDK
-const payos = new PayOSServer(process.env.PAYOS_SECRET_KEY);
+// Initialize SDK
+const sly = new Sly({ apiKey: process.env.SLY_SECRET_KEY });
 
 // Create an x402-protected endpoint
 app.post('/api/generate-image', async (req, res) => {
   // 1. Create a payment quote
-  const quote = await payos.x402.createQuote({
+  const quote = await sly.x402.createQuote({
     amount: 0.05,
     currency: 'USDC',
     description: 'AI Image Generation'
@@ -79,7 +79,7 @@ app.post('/api/generate-image', async (req, res) => {
   }
 
   // 3. Verify Payment
-  const { valid } = await payos.x402.verifyPayment(
+  const { valid } = await sly.x402.verifyPayment(
     req.headers['authorization']
   );
 
@@ -90,15 +90,15 @@ app.post('/api/generate-image', async (req, res) => {
   res.json({ url: image });
 });`,
         'x402-consumer':
-            `import { PayOSClient } from '@sly/web';
+            `import { Sly } from '@sly/sdk';
 
 // Initialize client SDK
-const payos = new PayOSClient(process.env.NEXT_PUBLIC_PAYOS_KEY);
+const sly = new Sly({ apiKey: process.env.NEXT_PUBLIC_SLY_KEY });
 
 async function fetchPaidContent() {
   try {
     // The SDK automatically handles 402 responses and payments
-    const response = await payos.fetch('https://api.example.com/generate-image', {
+    const response = await sly.fetch('https://api.example.com/generate-image', {
       method: 'POST',
       body: JSON.stringify({ prompt: 'A futuristic city' })
     });

@@ -83,7 +83,7 @@ export default function HostedCheckoutsPage() {
             <div className="p-8 max-w-[1600px] mx-auto space-y-6">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-3xl font-bold tracking-tight">PayOS Checkouts</h1>
+                        <h1 className="text-3xl font-bold tracking-tight">Sly Checkouts</h1>
                         <p className="text-muted-foreground mt-1">
                             Hosted checkout sessions for agentic commerce
                         </p>
@@ -105,7 +105,7 @@ export default function HostedCheckoutsPage() {
         <div className="p-8 max-w-[1600px] mx-auto space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">PayOS Checkouts</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Sly Checkouts</h1>
                     <p className="text-muted-foreground mt-1">
                         Hosted checkout sessions for agentic commerce
                     </p>
@@ -193,7 +193,7 @@ export default function HostedCheckoutsPage() {
                                         <div className="flex flex-col items-center gap-2">
                                             <ShoppingCart className="h-8 w-8 text-muted-foreground/50" />
                                             <span>No checkouts found</span>
-                                            <span className="text-xs">PayOS checkout sessions will appear here</span>
+                                            <span className="text-xs">Sly checkout sessions will appear here</span>
                                         </div>
                                     </TableCell>
                                 </TableRow>

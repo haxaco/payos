@@ -889,7 +889,7 @@ export default function OnboardingPage() {
             Platform Setup
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Follow these steps to get started with PayOS payment protocols
+            Follow these steps to get started with Sly payment protocols
           </p>
         </div>
 

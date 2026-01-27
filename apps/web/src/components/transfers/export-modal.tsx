@@ -11,7 +11,7 @@ interface ExportModalProps {
 }
 
 const EXPORT_FORMATS: { value: ExportFormat; label: string; description: string }[] = [
-  { value: 'payos', label: 'PayOS Full', description: 'All fields, ideal for analysis' },
+  { value: 'payos', label: 'Sly Full', description: 'All fields, ideal for analysis' },
   { value: 'quickbooks', label: 'QuickBooks', description: 'Compatible with QuickBooks Online' },
   { value: 'quickbooks4', label: 'QuickBooks (4 col)', description: 'Simplified 4-column format' },
   { value: 'xero', label: 'Xero', description: 'Compatible with Xero accounting' },

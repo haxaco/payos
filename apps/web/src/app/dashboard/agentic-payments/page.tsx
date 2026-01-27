@@ -9,7 +9,7 @@ export default function AgenticPaymentsOverviewPage() {
         {
             id: 'ucp',
             name: 'UCP Protocol',
-            description: 'Universal Commerce Protocol - PayOS payment handler for Pix and SPEI checkouts',
+            description: 'Universal Commerce Protocol - Sly payment handler for Pix and SPEI checkouts',
             icon: Globe,
             color: 'text-green-600 dark:text-green-400',
             bgColor: 'bg-green-100 dark:bg-green-950',

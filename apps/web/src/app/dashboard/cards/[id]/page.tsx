@@ -118,7 +118,7 @@ export default function CardDetailPage() {
 
                         <div className="relative z-10 flex flex-col justify-between h-48">
                             <div className="flex justify-between items-start">
-                                <div className="text-lg font-semibold tracking-wider">PayOS</div>
+                                <div className="text-lg font-semibold tracking-wider">Sly</div>
                                 <div className="text-sm font-mono opacity-70">
                                     {metadata.type?.toUpperCase() || 'VIRTUAL'}
                                 </div>

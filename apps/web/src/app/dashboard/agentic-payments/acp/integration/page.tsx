@@ -42,10 +42,10 @@ export default function AcpIntegrationPage() {
 
     const apiClientInstall = `npm install @sly/api-client`;
 
-    const createCheckoutExample = `import { PayOSClient } from '@sly/api-client';
+    const createCheckoutExample = `import { SlyClient } from '@sly/api-client';
 
-const client = new PayOSClient({
-  apiKey: process.env.PAYOS_API_KEY
+const client = new SlyClient({
+  apiKey: process.env.SLY_API_KEY
 });
 
 // Create a checkout for a customer
@@ -170,7 +170,7 @@ console.log('Checkout completed:', result.status);`;
                     <Card>
                         <CardHeader>
                             <CardTitle>Installation</CardTitle>
-                            <CardDescription>Install the PayOS API Client</CardDescription>
+                            <CardDescription>Install the Sly API Client</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="relative">

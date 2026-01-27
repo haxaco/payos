@@ -152,7 +152,7 @@ export const HANDLER_INFO: Record<HandlerType, HandlerInfo> = {
   },
   payos_native: {
     type: 'payos_native',
-    name: 'PayOS Native',
+    name: 'Sly Native',
     description: 'Native Pix/SPEI support',
     icon: 'payos',
     docsUrl: 'https://www.bcb.gov.br/estabilidadefinanceira/pix',

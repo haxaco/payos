@@ -92,7 +92,7 @@ function getHandlerLabel(type: HandlerType): string {
     case 'circle':
       return 'Circle';
     case 'payos_native':
-      return 'PayOS Native';
+      return 'Sly Native';
     default:
       return type;
   }

@@ -67,7 +67,7 @@ export function RecentActivity() {
         <Activity className="h-12 w-12 text-muted-foreground" />
         <h3 className="mt-4 text-sm font-medium">No recent activity</h3>
         <p className="text-xs text-muted-foreground">
-          Activity will appear here as you use PayOS
+          Activity will appear here as you use Sly
         </p>
       </div>
     );

@@ -417,7 +417,7 @@ curl https://api.payos.com/v1/x402/pay \\
       <Card>
         <CardHeader>
           <CardTitle>Additional Resources</CardTitle>
-          <CardDescription>Learn more about x402 and PayOS</CardDescription>
+          <CardDescription>Learn more about x402 and Sly</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

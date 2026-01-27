@@ -427,7 +427,7 @@ export default function WalletsPage() {
                         Create New Wallet
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Create a new custodial wallet managed by PayOS
+                        Create a new custodial wallet managed by Sly
                       </p>
                     </div>
                   </div>

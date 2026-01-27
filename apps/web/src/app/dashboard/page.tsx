@@ -112,7 +112,7 @@ export default function DashboardPage() {
           {/* Welcome banner for unconfigured state */}
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white">
             <div className="max-w-2xl">
-              <h2 className="text-2xl font-bold mb-2">Welcome to PayOS</h2>
+              <h2 className="text-2xl font-bold mb-2">Welcome to Sly</h2>
               <p className="text-blue-100 mb-6">
                 Configure your API key to start accepting agentic payments with x402, AP2, ACP, and UCP protocols.
               </p>

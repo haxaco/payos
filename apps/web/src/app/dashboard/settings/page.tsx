@@ -148,7 +148,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Appearance</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Customize how PayOS looks</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Customize how Sly looks</p>
             </div>
           </div>
 

@@ -1098,7 +1098,7 @@ export default function CardNetworksSettingsPage() {
               About Card Network Integration
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              PayOS integrates with Visa Intelligent Commerce (VIC) and Mastercard Agent Pay to enable
+              Sly integrates with Visa Intelligent Commerce (VIC) and Mastercard Agent Pay to enable
               AI agents to make secure payments on behalf of users. Both networks use Web Bot Auth
               (HTTP Message Signatures - RFC 9421) for cryptographic verification of agent requests.
             </p>
