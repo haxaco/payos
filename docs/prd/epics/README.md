@@ -85,11 +85,11 @@ Every story must meet these criteria before completion:
 - [Epic 43: UCP (Universal Commerce Protocol)](./epic-43-ucp-integration.md) 🌐 ✅ - Google+Shopify's new standard
 
 ### Platform Architecture ⭐ NEW
-- [Epic 48: Connected Accounts](./epic-48-connected-accounts.md) 🔌 **P0** - Payment handler management
-- [Epic 49: Protocol Discovery](./epic-49-protocol-discovery.md) 🧭 **P0** - Protocol registry & enablement
-- [Epic 50: Settlement Decoupling](./epic-50-settlement-decoupling.md) ⚙️ **P0** - Settlement trigger rules
-- [Epic 51: Unified Onboarding](./epic-51-unified-onboarding.md) 🚀 **P1** - Protocol-specific onboarding
-- [Epic 52: Dashboard Redesign](./epic-52-dashboard-redesign.md) 📊 **P1** - Agentic protocol focus
+- [Epic 48: Connected Accounts](./epic-48-connected-accounts.md) 🔌 ✅ - Payment handler management
+- [Epic 49: Protocol Discovery](./epic-49-protocol-discovery.md) 🧭 ✅ - Protocol registry & enablement
+- [Epic 50: Settlement Decoupling](./epic-50-settlement-decoupling.md) ⚙️ ✅ - Settlement trigger rules
+- [Epic 51: Unified Onboarding](./epic-51-unified-onboarding.md) 🚀 ✅ - Protocol-specific onboarding
+- [Epic 52: Dashboard Redesign](./epic-52-dashboard-redesign.md) 📊 ✅ - Agentic protocol focus
 
 ### Card Network Integration ⭐ NEW
 - [Epic 53: Card Network Agentic Commerce](./epic-53-card-network-agentic-commerce.md) 💳 **P1** - Visa VIC + Mastercard Agent Pay, unified Web Bot Auth, multi-rail routing
@@ -134,20 +134,20 @@ Strategic explorations before committing to implementation:
 | Epic 40: Sandbox | Jan 5, 2026 | ~100 | Circle, Stripe, x402 |
 | Epic 42: Frontend | Jan 6, 2026 | 65 | |
 | Epic 43: UCP Integration | Jan 19, 2026 | 55 | |
-| **Total Completed** | | **~497** | |
+| Epic 52: Dashboard Redesign | Jan 22, 2026 | 21 | Agentic protocol focus |
+| Epic 48: Connected Accounts | Jan 22, 2026 | 21 | Payment handler management |
+| Epic 49: Protocol Discovery | Jan 22, 2026 | 18 | Protocol registry & enablement |
+| Epic 50: Settlement Decoupling | Jan 22, 2026 | 26 | Settlement trigger rules |
+| Epic 51: Unified Onboarding | Jan 22, 2026 | 52 | Protocol-specific onboarding |
+| **Total Completed** | | **~635** | |
 
 ### Current Focus 🚧
 
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
-| **Epic 48: Connected Accounts** | **P0** | 21 | Payment handler management |
-| **Epic 49: Protocol Discovery** | **P0** | 18 | Protocol registry |
-| **Epic 50: Settlement Decoupling** | **P0** | 26 | Settlement rules engine |
-| **Epic 51: Unified Onboarding** | **P1** | 52 | Protocol onboarding (absorbed Epic 25) |
-| **Epic 52: Dashboard Redesign** | **P1** | 21 | Agentic protocol focus |
-| Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
-| Epic 29: Workflow Engine | P0 | 52 | |
 | **Epic 53: Card Networks** | **P1** | 62 | Visa VIC + Mastercard Agent Pay |
+| Epic 29: Workflow Engine | P0 | 52 | Multi-step workflows |
+| Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
 
 ### Planned (P0/P1) 📋
 
@@ -182,8 +182,8 @@ Strategic explorations before committing to implementation:
 
 ### Points Summary
 
-- **Completed:** ~497 points
-- **Current Focus:** ~300 points (48, 49, 50, 51, 52, 41, 29)
+- **Completed:** ~635 points
+- **Current Focus:** ~224 points (53, 29, 41)
 - **P0/P1 Planned:** ~36 points
 - **P2 Planned:** ~153 points
 - **P3 Future:** ~268 points
@@ -192,6 +192,34 @@ Strategic explorations before committing to implementation:
 ---
 
 ## Recent Changes (January 2026)
+
+### January 22, 2026
+- **Epic 52: Dashboard Redesign** — COMPLETE ✅ (21 points)
+  - Protocol distribution widget (x402/AP2/ACP/UCP, not Circle/ETH/BTC)
+  - Protocol activity chart with time range and metric toggles
+  - Protocol quick stats cards with enable/disable toggles
+  - Conditional onboarding banner
+  - Recent protocol activity feed with agent badges
+- **Epic 48: Connected Accounts** — COMPLETE ✅ (21 points)
+  - CRUD API for connected accounts
+  - Credential vault with AES-256 encryption
+  - Payment handler abstraction (Stripe, PayPal, Circle)
+  - Handler registry and validation
+- **Epic 49: Protocol Discovery** — COMPLETE ✅ (18 points)
+  - Protocol registry service (x402, AP2, ACP, UCP)
+  - Protocol discovery API (`GET /v1/protocols`)
+  - Protocol enablement API with prerequisite validation
+  - Protocol status dashboard widget with toggles
+- **Epic 50: Settlement Decoupling** — COMPLETE ✅ (26 points)
+  - Settlement trigger engine (schedule, threshold, manual, immediate)
+  - Settlement rules CRUD API
+  - Settlement rules dashboard UI
+- **Epic 51: Unified Onboarding** — COMPLETE ✅ (52 points)
+  - Onboarding state tracking API
+  - Protocol-specific onboarding flows
+  - Quick start templates
+  - Sandbox mode toggle
+  - Full wizard UI with step components
 
 ### January 21, 2026
 - **Epic 53: Card Network Agentic Commerce** — NEW (62 points, P1)
@@ -281,4 +309,4 @@ PayOS supports **FOUR** agentic payment protocols:
 
 ---
 
-*Last updated: January 21, 2026*
+*Last updated: January 22, 2026*

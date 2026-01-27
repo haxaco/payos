@@ -1,14 +1,14 @@
-# PayOS PoC — Product Requirements Document (PRD)
+# Sly — Product Requirements Document (PRD)
 
-**Version:** 1.21
-**Date:** January 21, 2026
-**Status:** Platform Architecture & Card Networks
+**Version:** 1.22
+**Date:** January 25, 2026
+**Status:** Rebrand to Sly + Platform Architecture & Card Networks
 
 ---
 
 ## Executive Summary
 
-PayOS is a **multi-protocol settlement infrastructure** for LATAM, enabling fintechs and AI agents to move money across borders using stablecoins with native local rail integration (Pix, SPEI). This PRD covers the PoC implementation that demonstrates:
+Sly is a **multi-protocol settlement infrastructure** for LATAM, enabling fintechs and AI agents to move money across borders using stablecoins with native local rail integration (Pix, SPEI). This PRD covers the PoC implementation that demonstrates:
 
 1. **Core settlement infrastructure** — Quotes, transfers, multi-currency payouts
 2. **Agent system** — AI agents as first-class actors with KYA verification
@@ -18,9 +18,9 @@ PayOS is a **multi-protocol settlement infrastructure** for LATAM, enabling fint
 
 ### Strategic Positioning
 
-> **"We don't care which protocol wins. PayOS makes them all work."**
+> **"We don't care which protocol wins. Sly makes them all work."**
 
-Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is the **only settlement layer** that:
+Four agentic payment protocols are now active (x402, AP2, ACP, UCP). Sly is the **only settlement layer** that:
 - Supports all four protocols
 - Has native LATAM rails (Pix/SPEI via Circle)
 - Enables partners rather than competing with them
@@ -66,7 +66,7 @@ Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is th
 - ✅ Epic 36: SDK & Developer Experience (66 pts)
 
 **Strategic Impact:**
-- PayOS now supports **ALL FOUR** agentic protocols: x402, AP2, ACP, UCP
+- Sly now supports **ALL FOUR** agentic protocols: x402, AP2, ACP, UCP
 - Platform architecture epics (48-50) enable true multi-protocol scaling
 - Card network support (Epic 53) adds Visa VIC + Mastercard Agent Pay
 - Total completed: ~497 points across 13 epics
@@ -85,13 +85,13 @@ Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is th
 - Google+Shopify launched UCP on January 11, 2026 as THE industry standard for agentic commerce
 - 20+ endorsements: Stripe, Visa, Mastercard, Walmart, Target, Shopify (1M+ merchants)
 - UCP orchestrates existing protocols (AP2, MCP, A2A) rather than replacing them
-- PayOS to become a **UCP Payment Handler** (`com.payos.latam_settlement`)
+- Sly to become a **UCP Payment Handler** (`com.sly.latam_settlement`)
 - Stories include: Profile endpoint, capability negotiation, payment handler spec, SDK client
 
 **Strategic Impact:**
-- UCP validates PayOS's multi-protocol strategy
+- UCP validates Sly's multi-protocol strategy
 - Not supporting UCP risks irrelevance in agentic commerce
-- PayOS can become THE LATAM settlement layer for entire UCP ecosystem
+- Sly can become THE LATAM settlement layer for entire UCP ecosystem
 
 **Protocol Coverage Update:**
 - x402 (Coinbase) — ✅ Full support
@@ -185,7 +185,7 @@ Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is th
 **Epic 40: External Sandbox Integrations & Epic 41: On-Ramp Integrations — NEW**
 
 **Epic 40 (86 points, 28 stories):**
-- Connect PayOS to all external sandbox environments
+- Connect Sly to all external sandbox environments
 - Circle, Base Sepolia, x402, Stripe, AP2, compliance (mock)
 - Critical x402 → Circle settlement bridge identified
 
@@ -196,7 +196,7 @@ Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is th
 - Pix/SPEI collection for Brazilian/Mexican funding
 - Fiat→USDC conversion via Circle
 
-**Key Insight:** Without on-ramps, PayOS is limited to crypto-native customers (~5% of market). Epic 41 opens access to traditional fintechs.
+**Key Insight:** Without on-ramps, Sly is limited to crypto-native customers (~5% of market). Epic 41 opens access to traditional fintechs.
 
 **External Services Covered:**
 - Stripe: Cards, ACH, SEPA, Connect
@@ -242,7 +242,7 @@ Four agentic payment protocols are now active (x402, AP2, ACP, UCP). PayOS is th
 - Full type safety with Zod validation schemas
 
 **Impact:**
-PayOS is now the **only settlement infrastructure** supporting all three agentic payment protocols (x402, AP2, ACP) with native LATAM rails. Production-ready for sandbox integrations and customer demos.
+Sly is now the **only settlement infrastructure** supporting all three agentic payment protocols (x402, AP2, ACP) with native LATAM rails. Production-ready for sandbox integrations and customer demos.
 
 **Documentation:**
 - `docs/MULTI_PROTOCOL_COMPLETION_SUMMARY.md` (comprehensive session summary)
@@ -282,7 +282,7 @@ PayOS is now the **only settlement infrastructure** supporting all three agentic
 
 - **Strategic Context Added:**
   - Agentic payments landscape (x402, AP2, ACP)
-  - PayOS market position as multi-protocol settlement layer
+  - Sly market position as multi-protocol settlement layer
   - Revenue model with 9 revenue streams
   - Competitive landscape analysis
   - Regulatory requirements (Brazil Nov 2025, Mexico)
@@ -329,7 +329,7 @@ PayOS is now the **only settlement infrastructure** supporting all three agentic
 |------|------|-------|----------|--------|--------|---------|-----|
 | 17 | Multi-Protocol Gateway 🔌 | 3 | P1 | ✅ Complete | 53 | 12/12 | [View](./epics/epic-17-multi-protocol.md) |
 | 18 | Agent Wallets & Spending Policies 🤖 | 3.5 | P1 | 📋 Pending | 23 | 0/6 | [View](./epics/epic-18-agent-wallets.md) |
-| 19 | PayOS x402 Services 🍾 | 3.5 | P2 | 📋 Pending | 22 | 0/5 | — |
+| 19 | Sly x402 Services 🍾 | 3.5 | P2 | 📋 Pending | 22 | 0/5 | — |
 | 20 | Streaming Payments & Agent Registry 🌊 | 3.5 | P2 | 📋 Pending | 18 | 0/5 | — |
 | 21 | Code Coverage Improvement 📊 | — | P3 | 📋 Pending | 112 | 0/13 | — |
 | 22 | Seed Data & Final UI Integration 🌱 | — | P2 | ✅ Complete | 21 | 6/6 | — |
@@ -396,15 +396,15 @@ Four major protocols have emerged for AI agent payments:
 | **ACP** | Stripe/OpenAI | Consumer checkout, e-commerce | SharedPaymentToken | Production |
 | **UCP** | Google+Shopify (20+ partners) | Full commerce lifecycle | Multi-handler (AP2, cards, wallets) | **NEW** (Jan 11, 2026) |
 
-**Key Insight:** UCP is a **superset** protocol that orchestrates x402/AP2/ACP rather than replacing them. It defines the full shopping journey (Discovery → Checkout → Order → Post-purchase) and supports multiple transports (REST, MCP, A2A). PayOS's multi-protocol strategy is validated—we're the settlement layer, not picking winners.
+**Key Insight:** UCP is a **superset** protocol that orchestrates x402/AP2/ACP rather than replacing them. It defines the full shopping journey (Discovery → Checkout → Order → Post-purchase) and supports multiple transports (REST, MCP, A2A). Sly's multi-protocol strategy is validated—we're the settlement layer, not picking winners.
 
 **UCP Ecosystem Impact:**
 - Google AI Mode and Gemini will use UCP for shopping agents
 - Shopify's 1M+ merchants will support UCP natively
-- PayOS can become a **UCP Payment Handler** for LATAM settlement
+- Sly can become a **UCP Payment Handler** for LATAM settlement
 - AP2 mandates work inside UCP via the `dev.ucp.shopping.ap2_mandate` extension
 
-### PayOS Market Position
+### Sly Market Position
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -416,7 +416,7 @@ Four major protocols have emerged for AI agent payments:
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    PayOS SETTLEMENT-AS-A-SERVICE                        │
+│                      Sly SETTLEMENT-AS-A-SERVICE                        │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
 │  │   Protocol  │  │  Execution  │  │  Treasury   │  │ Compliance  │    │
 │  │ Orchestrator│  │   Engine    │  │  & Float    │  │  & KYC      │    │
@@ -478,7 +478,7 @@ Four major protocols have emerged for AI agent payments:
 | **Kite** | $33M | L1 for agent payments | Chain fees | No local rails integration |
 | **Natural** | $9.8M | B2B agentic workflows | Enterprise SaaS | No LATAM focus |
 
-### PayOS Differentiation
+### Sly Differentiation
 
 1. **Multi-protocol** — Not betting on one winner (x402 vs AP2 vs ACP)
 2. **Native LATAM settlement** — Circle's Pix/SPEI = 12-month head start
@@ -567,12 +567,12 @@ Four major protocols have emerged for AI agent payments:
 
 ### Why AI-Native Matters
 
-PayOS's Identity 3 positioning as "AI-Native Settlement OS" requires infrastructure that AI agents can actually use. This means:
+Sly's Identity 3 positioning as "AI-Native Settlement OS" requires infrastructure that AI agents can actually use. This means:
 
 1. **Machine-parseable responses** — Agents can't interpret "Something went wrong"
 2. **Simulation before execution** — Agents must reason about outcomes
 3. **Composable workflows** — Same primitives serve procurement, batch payments, compliance
-4. **Capability discovery** — Agent platforms need to understand what PayOS can do
+4. **Capability discovery** — Agent platforms need to understand what Sly can do
 
 ### Composable Primitives Architecture
 
@@ -588,7 +588,7 @@ PayOS's Identity 3 positioning as "AI-Native Settlement OS" requires infrastruct
                                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                        TOOL DISCOVERY (Epic 32)                                  │
-│         "What can PayOS do?" → Capabilities, schemas, limits                     │
+│         "What can Sly do?" → Capabilities, schemas, limits                     │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
@@ -726,7 +726,7 @@ PayOS's Identity 3 positioning as "AI-Native Settlement OS" requires infrastruct
 [ ] Run sample scenarios locally:
     cd samples/python/scenarios/<scenario>
     bash run.sh
-[ ] Implement mandate verification in PayOS
+[ ] Implement mandate verification in Sly
 [ ] Test IntentMandate → CartMandate → PaymentMandate flow
 [ ] Verify A2A x402 extension for crypto payments
 ```
