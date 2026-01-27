@@ -8,7 +8,7 @@ import {
     CardHeader,
     CardTitle,
     StatCard,
-} from '@payos/ui';
+} from '@sly/ui';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import {
     DollarSign,

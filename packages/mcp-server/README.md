@@ -1,4 +1,4 @@
-# @payos/mcp-server
+# @sly/mcp-server
 
 Model Context Protocol (MCP) server for PayOS, enabling Claude Desktop integration.
 
@@ -10,7 +10,7 @@ Model Context Protocol (MCP) server for PayOS, enabling Claude Desktop integrati
 
 ```bash
 # From npm (when published)
-npm install -g @payos/mcp-server
+npm install -g @sly/mcp-server
 
 # From source
 cd packages/mcp-server
@@ -32,7 +32,7 @@ Add to your Claude Desktop configuration file:
   "mcpServers": {
     "payos": {
       "command": "npx",
-      "args": ["@payos/mcp-server"],
+      "args": ["@sly/mcp-server"],
       "env": {
         "PAYOS_API_KEY": "payos_sandbox_...",
         "PAYOS_ENVIRONMENT": "sandbox"
@@ -144,7 +144,7 @@ The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is a tool
 npm install -g @modelcontextprotocol/inspector
 
 # Run server in inspector
-PAYOS_API_KEY=payos_sandbox_xxx mcp-inspector npx @payos/mcp-server
+PAYOS_API_KEY=payos_sandbox_xxx mcp-inspector npx @sly/mcp-server
 ```
 
 ## Architecture

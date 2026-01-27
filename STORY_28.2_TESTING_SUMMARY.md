@@ -93,7 +93,7 @@ const corridorFee = toCurrency === 'BRL' ? 1.50 : 0;
 
 ✅ **FX Rate Integration**
 ```typescript
-import { getExchangeRate } from '@payos/utils';
+import { getExchangeRate } from '@sly/utils';
 const fxRate = getExchangeRate('USD', 'BRL'); // 4.97
 ```
 

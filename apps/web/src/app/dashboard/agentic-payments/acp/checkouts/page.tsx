@@ -15,7 +15,7 @@ import {
     TableHead,
     TableHeader,
     TableRow
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     Plus,
     Search,
@@ -28,7 +28,7 @@ import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { CheckoutStatusBadge } from '@/components/acp/checkout-status-badge';
-import { CheckoutStatus } from '@payos/api-client';
+import { CheckoutStatus } from '@sly/api-client';
 
 export default function CheckoutsPage() {
     const api = useApiClient();

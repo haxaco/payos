@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Rocket, ShoppingBag, Bot, Repeat, X, PartyPopper } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import { useApiConfig } from '@/lib/api-client';
 import { useWizardProgress } from '@/hooks/useWizardProgress';
 import { WizardSidebar } from '@/components/onboarding/wizard-sidebar';

@@ -757,7 +757,7 @@ With PayOS:
 
 ```typescript
 // Instead of 4 integrations...
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({ apiKey: 'pk_...' });
 

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { StreamHealth } from '@payos/types';
+import type { StreamHealth } from '@sly/types';
 
 export interface StreamBalance {
   total: number;

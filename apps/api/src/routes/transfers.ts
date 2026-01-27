@@ -15,7 +15,7 @@ import {
   InsufficientBalanceError 
 } from '../middleware/error.js';
 import { storeIdempotencyResponse } from '../middleware/idempotency.js';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 
 const transfers = new Hono();
 
@@ -221,7 +221,7 @@ transfers.post('/', async (c) => {
     feeAmount = parseFloat(quote.fee_amount);
   } else if (!isInternal) {
     // For cross-border without quote, calculate on the fly (not recommended)
-    const { getExchangeRate } = await import('@payos/utils');
+    const { getExchangeRate } = await import('@sly/utils');
     fxRate = getExchangeRate('USD', destinationCurrency!);
     feeAmount = amount * 0.007; // 0.7% fee
     destinationAmount = (amount - feeAmount) * fxRate;

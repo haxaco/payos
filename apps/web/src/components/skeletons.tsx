@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 // Base skeleton component
 export function Skeleton({ className }: { className?: string }) {

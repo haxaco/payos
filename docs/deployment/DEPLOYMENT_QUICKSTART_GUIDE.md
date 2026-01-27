@@ -160,7 +160,7 @@ Select **"Production"**, **"Preview"**, and **"Development"** for each variable.
 3. **Configure:**
    - **Framework Preset:** Next.js
    - **Root Directory:** `apps/web`
-   - **Build Command:** `cd ../.. && pnpm build --filter=@payos/web`
+   - **Build Command:** `cd ../.. && pnpm build --filter=@sly/web`
    - **Output Directory:** `.next` (auto-detected)
 
 ### Step 2: Set Environment Variables

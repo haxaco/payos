@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, Button, Input, Select, Badge } from '@payos/ui';
+import { Card, Button, Input, Select, Badge } from '@sly/ui';
 import { ArrowLeft, RefreshCw, TrendingUp, ArrowRight, DollarSign, Info } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
-import { formatCurrency } from '@payos/ui';
+import { formatCurrency } from '@sly/ui';
 import { toast } from 'sonner';
 
 export default function FXCalculatorPage() {

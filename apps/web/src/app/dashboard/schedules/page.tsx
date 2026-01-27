@@ -19,9 +19,9 @@ import {
   Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Button, Input, cn } from '@payos/ui';
-import { formatCurrency } from '@payos/ui';
-import type { ScheduledTransfer, ScheduleStatus } from '@payos/api-client';
+import { Button, Input, cn } from '@sly/ui';
+import { formatCurrency } from '@sly/ui';
+import type { ScheduledTransfer, ScheduleStatus } from '@sly/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { CreateScheduleModal } from '@/components/schedules/create-schedule-modal';
 import { usePagination } from '@/hooks/usePagination';

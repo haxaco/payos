@@ -7,7 +7,7 @@ import {
     TableHead,
     TableHeader,
     TableRow,
-} from '@payos/ui';
+} from '@sly/ui';
 import { Package } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 

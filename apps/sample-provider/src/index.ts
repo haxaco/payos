@@ -15,7 +15,7 @@
 
 import 'dotenv/config';
 import express from 'express';
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const app = express();
 app.use(express.json());

@@ -173,7 +173,7 @@ Create the foundational type definitions for all PayOS error codes and API respo
 - [ ] Every error code is mapped to exactly one category
 - [ ] Response types are generic and reusable
 - [ ] Zod schemas can validate both success and error responses
-- [ ] All types are exported from `@payos/types` package
+- [ ] All types are exported from `@sly/types` package
 - [ ] Package builds without TypeScript errors
 - [ ] Unit tests verify:
   - Every error code has metadata

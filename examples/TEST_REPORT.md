@@ -134,4 +134,4 @@ Please review the detailed results above for failure information.
 
 **Report Generated**: 1/3/2026, 7:53:45 PM  
 **Test Framework**: Vitest  
-**SDK Version**: @payos/sdk v0.1.0
+**SDK Version**: @sly/sdk v0.1.0

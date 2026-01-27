@@ -49,13 +49,13 @@
 - ✅ Settlement analytics RPC functions
 
 ### **Story 17.5: x402 JavaScript SDK** ✅
-- ✅ **Provider SDK** (`@payos/x402-provider-sdk`)
+- ✅ **Provider SDK** (`@sly/x402-provider-sdk`)
   - Endpoint registration
   - Payment verification middleware
   - Express/Hono/Fastify support
   - Webhook notifications
   - Volume discount handling
-- ✅ **Consumer SDK** (`@payos/x402-client-sdk`)
+- ✅ **Consumer SDK** (`@sly/x402-client-sdk`)
   - Automatic payment handling
   - Retry logic
   - Wallet management

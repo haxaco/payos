@@ -127,7 +127,7 @@ curl -X POST https://payos-production.up.railway.app/v1/x402/endpoints \
 
 **In a real application, you would:**
 ```typescript
-import { createX402ProviderMiddleware } from '@payos/x402-provider-sdk';
+import { createX402ProviderMiddleware } from '@sly/x402-provider-sdk';
 
 // Add to your API server
 app.use('/api/compliance/check', 

@@ -21,7 +21,7 @@ import {
     Alert,
     AlertDescription,
     AlertTitle,
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     ArrowLeft,
     Key,

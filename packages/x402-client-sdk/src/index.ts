@@ -1,5 +1,5 @@
 /**
- * @payos/x402-client-sdk
+ * @sly/x402-client-sdk
  * 
  * Consumer SDK for calling x402-enabled APIs with automatic payment handling.
  * 
@@ -386,7 +386,7 @@ export class X402Client {
       timestamp,
       metadata: {
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'PayOS SDK',
-        sdk: '@payos/x402-client-sdk@0.1.0'
+        sdk: '@sly/x402-client-sdk@0.1.0'
       }
     };
     

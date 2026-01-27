@@ -472,7 +472,7 @@ PAYOS_API_KEY=your_production_key
 
 ```typescript
 // In your app
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: process.env.PAYOS_API_KEY,

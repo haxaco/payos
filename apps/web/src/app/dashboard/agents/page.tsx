@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Bot, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
-import type { Agent } from '@payos/api-client';
+import type { Agent } from '@sly/api-client';
 import { AgentsEmptyState } from '@/components/ui/empty-state';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';

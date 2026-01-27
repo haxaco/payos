@@ -113,9 +113,9 @@
 **Impact on Gaps:**
 - ✅ **Tool Discovery API** — `GET /v1/capabilities` with full machine-readable specs
 - ✅ **Function-Calling Format** — `/v1/capabilities/function-calling` for OpenAI/Anthropic
-- ✅ **MCP Server** — `@payos/mcp-server` for Claude integration
+- ✅ **MCP Server** — `@sly/mcp-server` for Claude integration
 - ✅ **LangChain Tools** — `payos-langchain` package for Python agents
-- ✅ **Unified SDK** — `@payos/sdk` with x402, AP2, ACP support
+- ✅ **Unified SDK** — `@sly/sdk` with x402, AP2, ACP support
 - ✅ **Sandbox Facilitator** — Mock x402 facilitator for local development
 
 ---

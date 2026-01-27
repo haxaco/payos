@@ -20,7 +20,7 @@ import {
     SelectItem,
     SelectTrigger,
     SelectValue,
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     Search,
     ShoppingCart,

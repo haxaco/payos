@@ -486,7 +486,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Card, Button, Badge, Tabs } from '@payos/ui';
+import { Card, Button, Badge, Tabs } from '@sly/ui';
 import { Calendar, Repeat, Pause, Play, X } from 'lucide-react';
 ```
 

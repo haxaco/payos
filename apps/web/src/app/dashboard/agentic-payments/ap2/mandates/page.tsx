@@ -26,9 +26,9 @@ import {
     CardDescription,
     CardHeader,
     CardTitle,
-} from "@payos/ui";
+} from "@sly/ui";
 import { MandateStatusBadge } from "@/components/ap2/mandate-status-badge";
-import { MandateStatus } from "@payos/api-client";
+import { MandateStatus } from "@sly/api-client";
 import { MandateActionsMenu } from "@/components/ap2/mandate-actions-menu";
 
 export default function MandatesPage() {

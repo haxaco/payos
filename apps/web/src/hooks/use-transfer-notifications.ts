@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { Transfer } from '@payos/api-client';
+import { Transfer } from '@sly/api-client';
 
 export function useTransferNotifications(transfers: Transfer[] = []) {
     const previousStatuses = useRef<Record<string, string>>({});

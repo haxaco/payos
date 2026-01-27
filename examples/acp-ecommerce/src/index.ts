@@ -5,7 +5,7 @@
  * for AI-powered shopping cart checkout and e-commerce transactions.
  */
 
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Initialize PayOS SDK
 const payos = new PayOS({

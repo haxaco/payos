@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-**Problem:** Our current `@payos/x402-client-sdk` and `@payos/x402-provider-sdk` are custom implementations that don't use the official Coinbase x402 SDKs. This means:
+**Problem:** Our current `@sly/x402-client-sdk` and `@sly/x402-provider-sdk` are custom implementations that don't use the official Coinbase x402 SDKs. This means:
 - We're not compatible with the x402 ecosystem
 - We can't accept payments from agents using `@x402/fetch` or `@x402/axios`
 - We can't be listed as a facilitator in Coinbase's network
@@ -31,9 +31,9 @@
 
 ```
 packages/
-├── x402-client-sdk/          # @payos/x402-client-sdk
+├── x402-client-sdk/          # @sly/x402-client-sdk
 │   └── src/index.ts          # Custom X402Client class
-├── x402-provider-sdk/        # @payos/x402-provider-sdk
+├── x402-provider-sdk/        # @sly/x402-provider-sdk
 │   └── src/index.ts          # Custom X402Provider class
 apps/
 ├── sample-consumer/          # CLI agent using client SDK
@@ -47,7 +47,7 @@ apps/
 │                     CURRENT: PayOS-Only Implementation                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  @payos/x402-client-sdk                @payos/x402-provider-sdk             │
+│  @sly/x402-client-sdk                @sly/x402-provider-sdk             │
 │  ─────────────────────────             ───────────────────────────          │
 │  • Parses 402 headers                  • Returns 402 with custom headers    │
 │  • Calls PayOS /v1/x402/pay            • Verifies via PayOS /v1/x402/verify │
@@ -80,7 +80,7 @@ apps/
 
 ```
 packages/
-├── sdk/                              # NEW: @payos/sdk (unified)
+├── sdk/                              # NEW: @sly/sdk (unified)
 │   ├── src/
 │   │   ├── index.ts                  # Main PayOS class
 │   │   ├── types.ts                  # TypeScript types
@@ -106,7 +106,7 @@ packages/
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         @payos/sdk Architecture                             │
+│                         @sly/sdk Architecture                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -144,7 +144,7 @@ packages/
 
 ## Stories
 
-### Story 36.1: Create Unified @payos/sdk Package Structure
+### Story 36.1: Create Unified @sly/sdk Package Structure
 
 **Points:** 3  
 **Priority:** P0  
@@ -155,7 +155,7 @@ Create the new `packages/sdk` directory with proper package.json, tsconfig, and 
 
 **Acceptance Criteria:**
 - [ ] `packages/sdk/package.json` created with:
-  - Name: `@payos/sdk`
+  - Name: `@sly/sdk`
   - Dependencies: `@x402/core`, `@x402/evm`, `@x402/fetch`, `@x402/express`, `viem`, `uuid`
   - Peer dependencies for `express` (optional)
   - Exports for `./client`, `./provider`, `./facilitator`
@@ -172,7 +172,7 @@ Create the new `packages/sdk` directory with proper package.json, tsconfig, and 
   └── settlements/
   ```
 - [ ] Package builds successfully with `pnpm build`
-- [ ] Package exports work: `import { PayOS } from '@payos/sdk'`
+- [ ] Package exports work: `import { PayOS } from '@sly/sdk'`
 
 **Implementation Notes:**
 ```json
@@ -399,7 +399,7 @@ Create the main `PayOS` class that provides unified access to all SDK functional
 **Implementation Notes:**
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Client usage
 const payos = new PayOS({
@@ -451,7 +451,7 @@ Add the sandbox facilitator as an endpoint in the PayOS API so the SDK can use i
 ```typescript
 // apps/api/src/routes/x402-facilitator.ts
 import { Router } from 'express';
-import { SandboxFacilitator } from '@payos/sdk/facilitator';
+import { SandboxFacilitator } from '@sly/sdk/facilitator';
 
 const router = Router();
 const facilitator = new SandboxFacilitator({
@@ -492,7 +492,7 @@ export default router;
 **Dependencies:** Stories 36.5, 36.6
 
 **Description:**
-Migrate `sample-provider` and `sample-consumer` to use the new `@payos/sdk` instead of the old custom SDKs.
+Migrate `sample-provider` and `sample-consumer` to use the new `@sly/sdk` instead of the old custom SDKs.
 
 **Acceptance Criteria:**
 - [ ] `sample-provider` updated:
@@ -512,12 +512,12 @@ Migrate `sample-provider` and `sample-consumer` to use the new `@payos/sdk` inst
 
 ```typescript
 // sample-provider - BEFORE
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 const x402 = new X402Provider({ apiKey: '...' });
 app.get('/api/forecast', x402.protect(), handler);
 
 // sample-provider - AFTER
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 const payos = new PayOS({ 
   apiKey: '...', 
   environment: 'sandbox',
@@ -531,12 +531,12 @@ app.get('/api/weather/forecast', handler);
 
 ```typescript
 // sample-consumer - BEFORE
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 const x402 = new X402Client({ apiKey: '...', agentId: '...' });
 const response = await x402.fetch(url);
 
 // sample-consumer - AFTER
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 const payos = new PayOS({
   apiKey: '...',
   environment: 'sandbox',
@@ -563,8 +563,8 @@ const response = await payos.x402.fetch(url);
 Add deprecation notices to old SDKs and create migration documentation.
 
 **Acceptance Criteria:**
-- [ ] `@payos/x402-client-sdk` shows deprecation warning on import
-- [ ] `@payos/x402-provider-sdk` shows deprecation warning on import
+- [ ] `@sly/x402-client-sdk` shows deprecation warning on import
+- [ ] `@sly/x402-provider-sdk` shows deprecation warning on import
 - [ ] Old SDKs continue to work (no breaking changes)
 - [ ] Migration guide created: `docs/guides/SDK_MIGRATION.md`
 - [ ] CHANGELOG updated with migration instructions
@@ -575,8 +575,8 @@ Add deprecation notices to old SDKs and create migration documentation.
 ```typescript
 // packages/x402-client-sdk/src/index.ts
 console.warn(
-  '[@payos/x402-client-sdk] This package is deprecated. ' +
-  'Please migrate to @payos/sdk. See https://docs.payos.ai/migration'
+  '[@sly/x402-client-sdk] This package is deprecated. ' +
+  'Please migrate to @sly/sdk. See https://docs.payos.ai/migration'
 );
 
 export * from './legacy'; // Keep old exports working
@@ -595,7 +595,7 @@ export * from './legacy'; // Keep old exports working
 
 | Story | Points | Priority | Description |
 |-------|--------|----------|-------------|
-| 36.1 | 3 | P0 | Create unified @payos/sdk package structure |
+| 36.1 | 3 | P0 | Create unified @sly/sdk package structure |
 | 36.2 | 5 | P0 | Implement Sandbox Facilitator |
 | 36.3 | 5 | P0 | Implement Client Wrapper with environment switching |
 | 36.4 | 5 | P0 | Implement Provider Wrapper with environment switching |

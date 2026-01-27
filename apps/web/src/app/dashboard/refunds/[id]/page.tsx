@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
-import { Card, Button, Badge as UIBadge } from '@payos/ui';
+import { Card, Button, Badge as UIBadge } from '@sly/ui';
 import {
     ArrowLeft,
     AlertCircle,

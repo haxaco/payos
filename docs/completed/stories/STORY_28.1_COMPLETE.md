@@ -112,7 +112,7 @@ The transfer simulation provides:
 
 ### 4. New Error Codes
 
-Added to `@payos/types`:
+Added to `@sly/types`:
 
 ```typescript
 // Simulation errors

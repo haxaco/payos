@@ -13,9 +13,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppContext } from '../types.js';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 import { createClient } from '../db/client.js';
-import { getExchangeRate } from '@payos/utils';
+import { getExchangeRate } from '@sly/utils';
 import { createLimitService } from '../services/limits.js';
 
 // Create supabase client

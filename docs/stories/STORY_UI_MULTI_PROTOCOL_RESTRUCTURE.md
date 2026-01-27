@@ -279,7 +279,7 @@ interface AgenticPaymentsSummary {
 'use client';
 
 import { useState } from 'react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@payos/ui';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@sly/ui';
 
 type Protocol = 'all' | 'x402' | 'ap2' | 'acp';
 
@@ -370,8 +370,8 @@ Create new component `apps/web/src/components/transfers/protocol-badge.tsx`:
 
 ```tsx
 import { Zap, Bot, ShoppingCart } from 'lucide-react';
-import { Badge } from '@payos/ui';
-import { cn } from '@payos/ui';
+import { Badge } from '@sly/ui';
+import { cn } from '@sly/ui';
 
 interface ProtocolBadgeProps {
   protocol?: 'x402' | 'ap2' | 'acp' | null;

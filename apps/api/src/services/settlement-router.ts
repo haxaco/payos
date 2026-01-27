@@ -618,7 +618,7 @@ export class SettlementRouter {
 
     try {
       // Dynamic import to avoid bundling issues
-      const { VisaVICClient } = await import('@payos/cards');
+      const { VisaVICClient } = await import('@sly/cards');
 
       const client = new VisaVICClient({
         apiKey: credentials.apiKey,
@@ -717,7 +717,7 @@ export class SettlementRouter {
 
     try {
       // Dynamic import to avoid bundling issues
-      const { MastercardAgentPayClient } = await import('@payos/cards');
+      const { MastercardAgentPayClient } = await import('@sly/cards');
 
       const client = new MastercardAgentPayClient({
         consumerKey: credentials.consumerKey,

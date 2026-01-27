@@ -1,11 +1,14 @@
 /**
- * Core type definitions for the PayOS SDK
+ * Core type definitions for the Sly SDK
  */
 
 /**
  * SDK environment configuration
  */
-export type PayOSEnvironment = 'sandbox' | 'testnet' | 'production';
+export type SlyEnvironment = 'sandbox' | 'testnet' | 'production';
+
+// Backward compatibility alias
+export type PayOSEnvironment = SlyEnvironment;
 
 /**
  * Environment-specific configuration
@@ -16,11 +19,11 @@ export interface EnvironmentConfig {
 }
 
 /**
- * PayOS SDK configuration options
+ * Sly SDK configuration options
  */
-export interface PayOSConfig {
+export interface SlyConfig {
   /**
-   * PayOS API key
+   * Sly API key
    */
   apiKey: string;
 
@@ -30,7 +33,7 @@ export interface PayOSConfig {
    * - testnet: Base Sepolia testnet with x402.org
    * - production: Base mainnet with Coinbase CDP
    */
-  environment: PayOSEnvironment;
+  environment: SlyEnvironment;
 
   /**
    * EVM private key (required for testnet/production x402)
@@ -48,6 +51,9 @@ export interface PayOSConfig {
    */
   facilitatorUrl?: string;
 }
+
+// Backward compatibility alias
+export type PayOSConfig = SlyConfig;
 
 /**
  * Payment protocol types supported by PayOS

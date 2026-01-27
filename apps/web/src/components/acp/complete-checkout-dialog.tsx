@@ -17,7 +17,7 @@ import {
     SelectItem,
     SelectTrigger,
     SelectValue
-} from '@payos/ui';
+} from '@sly/ui';
 import { useApiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { formatCurrencyStandalone } from '@/lib/locale';

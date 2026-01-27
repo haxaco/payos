@@ -1,4 +1,4 @@
-# Story 36.1: Create @payos/sdk Package Structure ✅
+# Story 36.1: Create @sly/sdk Package Structure ✅
 
 **Epic:** 36 - SDK & Developer Experience  
 **Points:** 3  
@@ -9,7 +9,7 @@
 
 ## Summary
 
-Successfully created the `@payos/sdk` package with complete monorepo structure, build configuration, and module exports. The package is now ready for protocol implementations in subsequent stories.
+Successfully created the `@sly/sdk` package with complete monorepo structure, build configuration, and module exports. The package is now ready for protocol implementations in subsequent stories.
 
 ---
 
@@ -44,10 +44,10 @@ packages/sdk/
 
 Configured package exports for tree-shaking:
 
-- `@payos/sdk` — Main entry with PayOS class
-- `@payos/sdk/x402` — x402 protocol (Story 36.3/36.4)
-- `@payos/sdk/ap2` — AP2 protocol (Story 36.5)
-- `@payos/sdk/acp` — ACP protocol (Story 36.6)
+- `@sly/sdk` — Main entry with PayOS class
+- `@sly/sdk/x402` — x402 protocol (Story 36.3/36.4)
+- `@sly/sdk/ap2` — AP2 protocol (Story 36.5)
+- `@sly/sdk/acp` — ACP protocol (Story 36.6)
 
 ### 3. Environment Configuration
 
@@ -115,7 +115,7 @@ Created comprehensive tests (21 tests, all passing):
 
 ### Production Dependencies
 
-- `@payos/types` (workspace) — Shared types
+- `@sly/types` (workspace) — Shared types
 - `@x402/core` ^2.1.0 — x402 protocol core
 - `@x402/evm` ^2.1.0 — EVM blockchain support
 - `@x402/fetch` ^2.1.0 — x402 HTTP client
@@ -135,7 +135,7 @@ Created comprehensive tests (21 tests, all passing):
 ### Sandbox Mode (No Blockchain)
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: 'payos_...',

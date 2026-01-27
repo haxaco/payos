@@ -14,9 +14,9 @@ import {
   Plus,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Input, cn } from '@payos/ui';
-import { formatCurrency } from '@payos/ui';
-import type { Refund, Transfer } from '@payos/api-client';
+import { Input, cn } from '@sly/ui';
+import { formatCurrency } from '@sly/ui';
+import type { Refund, Transfer } from '@sly/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';

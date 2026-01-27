@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: 'default' | 'secondary' | 'destructive' | 'outline';

@@ -218,7 +218,7 @@ All tests executed with the correct user tenant:
 ## Conclusion
 
 ${totalFailed === 0 
-  ? '🎉 **All tests passed successfully!**\n\nAll scenarios validated:\n- ✅ AP2 mandate-based subscriptions\n- ✅ ACP e-commerce checkout\n- ✅ User tenant isolation\n- ✅ Error handling\n- ✅ Analytics tracking\n\nThe sample apps are production-ready and demonstrate all key features of the @payos/sdk.'
+  ? '🎉 **All tests passed successfully!**\n\nAll scenarios validated:\n- ✅ AP2 mandate-based subscriptions\n- ✅ ACP e-commerce checkout\n- ✅ User tenant isolation\n- ✅ Error handling\n- ✅ Analytics tracking\n\nThe sample apps are production-ready and demonstrate all key features of the @sly/sdk.'
   : '⚠️ **Some tests failed.**\n\nPlease review the detailed results above for failure information.'
 }
 
@@ -226,7 +226,7 @@ ${totalFailed === 0
 
 **Report Generated**: ${new Date().toLocaleString()}  
 **Test Framework**: Vitest  
-**SDK Version**: @payos/sdk v0.1.0
+**SDK Version**: @sly/sdk v0.1.0
 `;
 
   return report;

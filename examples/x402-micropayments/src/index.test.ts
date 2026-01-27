@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 describe('x402 Micropayments E2E Tests', () => {
   let payos: PayOS;

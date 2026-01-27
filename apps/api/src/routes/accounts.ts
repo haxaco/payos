@@ -12,7 +12,7 @@ import {
   paginationResponse,
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 import { onboardEntity, type OnboardingInput } from '../services/entity-onboarding.js';
 
 const accounts = new Hono();

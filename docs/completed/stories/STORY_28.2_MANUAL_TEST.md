@@ -14,7 +14,7 @@ Story 28.2 has been successfully implemented with the following enhancements:
 2. **Real FX Rate Integration**
    - Supports BRL, MXN, ARS, COP
    - Calculates spreads (0.35% for emerging markets)
-   - Uses `@payos/utils` `getExchangeRate()`
+   - Uses `@sly/utils` `getExchangeRate()`
 
 3. **Payment Rail Selection**
    - PIX (Brazil): 120 seconds
@@ -121,10 +121,10 @@ amount * 0.002
 
 ### 4. Verify FX Rates
 
-FX rates come from `@payos/utils`:
+FX rates come from `@sly/utils`:
 
 ```typescript
-import { getExchangeRate } from '@payos/utils';
+import { getExchangeRate } from '@sly/utils';
 
 // USD to BRL: 4.97
 getExchangeRate('USD', 'BRL') // => 4.97

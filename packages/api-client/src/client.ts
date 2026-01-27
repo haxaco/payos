@@ -1,4 +1,4 @@
-import { PayOSError } from './errors';
+import { SlyError } from './errors';
 import type {
   PaginatedResponse,
   Account,
@@ -86,11 +86,14 @@ import type {
   ApproveRejectInput,
 } from './types';
 
-export interface PayOSClientConfig {
+export interface SlyClientConfig {
   baseUrl: string;
   apiKey: string;
-  onError?: (error: PayOSError) => void;
+  onError?: (error: SlyError) => void;
 }
+
+// Backward compatibility alias
+export type PayOSClientConfig = SlyClientConfig;
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -101,25 +104,25 @@ type RequestOptions = {
 };
 
 /**
- * PayOS API Client
- * 
- * A fully typed client for the PayOS API.
- * 
+ * Sly API Client
+ *
+ * A fully typed client for the Sly API.
+ *
  * @example
  * ```typescript
- * const client = createPayOSClient({
+ * const client = createSlyClient({
  *   baseUrl: 'http://localhost:4000',
  *   apiKey: 'pk_test_...',
  * });
- * 
+ *
  * const accounts = await client.accounts.list();
  * const stream = await client.streams.create({ ... });
  * ```
  */
-export class PayOSClient {
-  private config: PayOSClientConfig;
+export class SlyClient {
+  private config: SlyClientConfig;
 
-  constructor(config: PayOSClientConfig) {
+  constructor(config: SlyClientConfig) {
     this.config = config;
   }
 
@@ -166,7 +169,7 @@ export class PayOSClient {
 
     // Handle errors
     if (!response.ok) {
-      const error = PayOSError.fromResponse(data, response.status, response.headers);
+      const error = SlyError.fromResponse(data, response.status, response.headers);
       this.config.onError?.(error);
       throw error;
     }
@@ -1400,11 +1403,15 @@ export class PayOSClient {
 
 
 /**
- * Create a PayOS client instance
+ * Create a Sly client instance
  */
-export function createPayOSClient(config: PayOSClientConfig): PayOSClient {
-  return new PayOSClient(config);
+export function createSlyClient(config: SlyClientConfig): SlyClient {
+  return new SlyClient(config);
 }
+
+// Backward compatibility aliases
+export { SlyClient as PayOSClient };
+export { createSlyClient as createPayOSClient };
 
 // Helper to transform backend mandate response to frontend Mandate type
 function transformMandate(data: any): Mandate {

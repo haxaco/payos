@@ -129,7 +129,7 @@ apps/api/src/
 ### ✅ All Checks Passed
 
 1. **No linter errors** - All files compile cleanly
-2. **Build successful** - `pnpm --filter @payos/api build` ✅
+2. **Build successful** - `pnpm --filter @sly/api build` ✅
 3. **No remaining references** - Only backward-compatible fallbacks remain
 4. **Database migration applied** - Column renamed in Supabase
 5. **Existing data updated** - All x402 transfers have `protocol` field

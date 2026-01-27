@@ -13,7 +13,7 @@
 **Status:** 📋 Open
 
 **Problem:**  
-The `@payos/api-client` package hides HTTP response headers, making it impossible to read rate limit headers (`X-RateLimit-Remaining`, `X-RateLimit-Reset`) for UI indicators.
+The `@sly/api-client` package hides HTTP response headers, making it impossible to read rate limit headers (`X-RateLimit-Remaining`, `X-RateLimit-Reset`) for UI indicators.
 
 **Solution Options:**
 1. Expose response metadata in API client methods
@@ -32,7 +32,7 @@ The `@payos/api-client` package hides HTTP response headers, making it impossibl
 **Status:** 📋 Open
 
 **Problem:**  
-Some API response types in `@payos/api-client` don't match actual API responses (nested `data` objects vs flat responses).
+Some API response types in `@sly/api-client` don't match actual API responses (nested `data` objects vs flat responses).
 
 **Affected Areas:**
 - Transfer list responses

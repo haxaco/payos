@@ -193,7 +193,7 @@ This page is essential for developers building:
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ [x402 Provider] [x402 Consumer] [AP2] [ACP]           ││
 │  │ ┌───────────────────────────────────────────────────┐ ││
-│  │ │ import { X402Provider } from '@payos/x402-sdk';   │ ││
+│  │ │ import { X402Provider } from '@sly/x402-sdk';   │ ││
 │  │ │                                                    │ ││
 │  │ │ const provider = new X402Provider({               │ ││
 │  │ │   apiKey: 'your-api-key',                        │ ││
@@ -253,7 +253,7 @@ This page is essential for developers building:
 - Rate limiting replacement
 
 **Getting Started:**
-1. Install SDK: `npm install @payos/x402-provider-sdk`
+1. Install SDK: `npm install @sly/x402-provider-sdk`
 2. Register your API endpoint
 3. Add middleware to your routes
 4. Consumers pay automatically per request
@@ -273,7 +273,7 @@ This page is essential for developers building:
 - Automated bookkeeping
 
 **Getting Started:**
-1. Install SDK: `npm install @payos/ap2-sdk`
+1. Install SDK: `npm install @sly/ap2-sdk`
 2. Request user mandate authorization
 3. Execute payments within mandate limits
 4. Track spending and renewals
@@ -293,7 +293,7 @@ This page is essential for developers building:
 - Cart management
 
 **Getting Started:**
-1. Install SDK: `npm install @payos/acp-sdk`
+1. Install SDK: `npm install @sly/acp-sdk`
 2. Create checkout session
 3. Add items to cart
 4. Complete payment
@@ -307,7 +307,7 @@ This page is essential for developers building:
 ### Example 1: x402 Provider Setup
 
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 import express from 'express';
 
 const app = express();
@@ -340,7 +340,7 @@ app.listen(3000);
 ### Example 2: x402 Consumer Integration
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiUrl: 'https://api.payos.com',
@@ -363,7 +363,7 @@ console.log(data);
 ### Example 3: AP2 Mandate Creation
 
 ```typescript
-import { AP2Client } from '@payos/ap2-sdk';
+import { AP2Client } from '@sly/ap2-sdk';
 
 const ap2 = new AP2Client({
   apiUrl: 'https://api.payos.com',
@@ -394,7 +394,7 @@ const payment = await ap2.executePayment(mandate.id, {
 ### Example 4: ACP Checkout Flow
 
 ```typescript
-import { ACPClient } from '@payos/acp-sdk';
+import { ACPClient } from '@sly/acp-sdk';
 
 const acp = new ACPClient({
   apiUrl: 'https://api.payos.com',
@@ -450,8 +450,8 @@ console.log('Transfer ID:', result.transferId);
 ## SDKs & Libraries
 
 ### JavaScript/TypeScript
-- **Package:** `@payos/x402-sdk`, `@payos/ap2-sdk`, `@payos/acp-sdk`
-- **Install:** `npm install @payos/x402-sdk`
+- **Package:** `@sly/x402-sdk`, `@sly/ap2-sdk`, `@sly/acp-sdk`
+- **Install:** `npm install @sly/x402-sdk`
 - **Version:** v2.1.0
 - **Repo:** https://github.com/payos/x402-js-sdk
 - **Docs:** https://docs.payos.com/sdks/javascript
@@ -500,7 +500,7 @@ apps/web/src/app/dashboard/agentic-payments/developers/
 
 ```typescript
 import { Code, Book, Key, Webhook, Terminal } from 'lucide-react';
-import { Card, Button, Tabs, Badge } from '@payos/ui';
+import { Card, Button, Tabs, Badge } from '@sly/ui';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 ```

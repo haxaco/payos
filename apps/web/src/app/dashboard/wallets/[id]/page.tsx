@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { Card, Button, Badge as UIBadge } from '@payos/ui';
+import { Card, Button, Badge as UIBadge } from '@sly/ui';
 import {
     ArrowLeft,
     Wallet,
@@ -24,7 +24,7 @@ import {
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatCurrency } from '@payos/ui';
+import { formatCurrency } from '@sly/ui';
 import { formatDistanceToNow } from 'date-fns';
 import { SpendingPolicyEditor } from '@/components/wallets/spending-policy-editor';
 

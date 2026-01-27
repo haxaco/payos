@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Bell, Bot, Activity, Shield, Check, X } from 'lucide-react';
 import Link from 'next/link';
-import { formatRelativeTime } from '@payos/ui';
+import { formatRelativeTime } from '@sly/ui';
 
 interface Notification {
   id: string;

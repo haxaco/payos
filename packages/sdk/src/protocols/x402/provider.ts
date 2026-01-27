@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
-import type { PayOSEnvironment } from '../../types';
+import type { SlyEnvironment } from '../../types';
 import { getEnvironmentConfig } from '../../config';
 import { SandboxFacilitator } from '../../facilitator/sandbox-facilitator';
 
@@ -8,14 +8,14 @@ import { SandboxFacilitator } from '../../facilitator/sandbox-facilitator';
  */
 export interface X402ProviderConfig {
   /**
-   * PayOS API key
+   * Sly API key
    */
   apiKey: string;
 
   /**
    * Environment (sandbox, testnet, production)
    */
-  environment: PayOSEnvironment;
+  environment: SlyEnvironment;
 
   /**
    * Route configuration
@@ -35,11 +35,11 @@ export interface X402ProviderConfig {
 
 /**
  * x402 Provider for accepting payments
- * 
+ *
  * Express middleware that returns 402 responses for protected routes
  * and verifies payments before serving content.
  */
-export class PayOSX402Provider {
+export class SlyX402Provider {
   private config: Required<Omit<X402ProviderConfig, 'facilitatorUrl'>> & {
     facilitatorUrl?: string;
   };
@@ -224,4 +224,7 @@ export class PayOSX402Provider {
     throw new Error('Blockchain payment verification not yet implemented - use sandbox mode');
   }
 }
+
+// Backward compatibility alias
+export { SlyX402Provider as PayOSX402Provider };
 

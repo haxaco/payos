@@ -27,7 +27,7 @@ Implemented Vercel AI SDK integration for PayOS, enabling seamless use of PayOS 
 ### 2. Integration Pattern
 
 ```typescript
-import { createPayOSVercelTools } from '@payos/sdk/vercel';
+import { createPayOSVercelTools } from '@sly/sdk/vercel';
 import { streamText } from 'ai';
 
 const tools = createPayOSVercelTools(payos);
@@ -71,8 +71,8 @@ Test coverage includes:
 
 ```typescript
 // app/api/chat/route.ts
-import { createPayOSVercelTools, PAYOS_VERCEL_SYSTEM_PROMPT } from '@payos/sdk/vercel';
-import { PayOS } from '@payos/sdk';
+import { createPayOSVercelTools, PAYOS_VERCEL_SYSTEM_PROMPT } from '@sly/sdk/vercel';
+import { PayOS } from '@sly/sdk';
 import { openai } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Activity, Plus, Search, Filter, Play, Pause } from 'lucide-react';
 import Link from 'next/link';
-import type { Stream } from '@payos/api-client';
+import type { Stream } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { StreamsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
 

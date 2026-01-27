@@ -1,7 +1,7 @@
 'use client';
 
-import { TreasuryAlert } from '@payos/api-client';
-import { Card, Button, Badge } from '@payos/ui';
+import { TreasuryAlert } from '@sly/api-client';
+import { Card, Button, Badge } from '@sly/ui';
 import { Check, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';

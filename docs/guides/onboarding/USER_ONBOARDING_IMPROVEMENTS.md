@@ -523,7 +523,7 @@ Ensure you have:
 
 - [ ] **Tools**
   - cURL, Postman, or HTTP client
-  - OR: Install SDK (`npm install @payos/x402-client-sdk`)
+  - OR: Install SDK (`npm install @sly/x402-client-sdk`)
 
 ### Quick Health Check
 

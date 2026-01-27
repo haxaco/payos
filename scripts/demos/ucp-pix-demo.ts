@@ -5,7 +5,7 @@
  * Demonstrates the complete UCP checkout flow with PayOS LATAM settlement.
  *
  * Usage:
- *   pnpm --filter @payos/api tsx scripts/demos/ucp-pix-demo.ts
+ *   pnpm --filter @sly/api tsx scripts/demos/ucp-pix-demo.ts
  *
  * @see Story 43.14: UCP Demo Script
  */

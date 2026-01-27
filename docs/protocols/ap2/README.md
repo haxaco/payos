@@ -46,7 +46,7 @@ AP2 is the next-generation protocol for AI agent payments, building on the found
 ### For Consumers (Agent Payments)
 
 ```typescript
-import { AP2Client } from '@payos/api-client';
+import { AP2Client } from '@sly/api-client';
 
 const client = new AP2Client({
   apiKey: 'pk_test_your_key',
@@ -74,7 +74,7 @@ const payment = await client.createPayment({
 ### For Providers (Multi-Party Settlements)
 
 ```typescript
-import { AP2Provider } from '@payos/api-client';
+import { AP2Provider } from '@sly/api-client';
 
 const provider = new AP2Provider({
   apiKey: 'pk_test_your_key',
@@ -243,14 +243,14 @@ See [AP2_MINOR_ISSUES_PLAN.md](AP2_MINOR_ISSUES_PLAN.md) for current work items.
 
 ```bash
 # Run AP2 unit tests
-pnpm --filter @payos/api test tests/unit/ap2
+pnpm --filter @sly/api test tests/unit/ap2
 ```
 
 ### Integration Tests
 
 ```bash
 # Run AP2 integration tests
-INTEGRATION=true pnpm --filter @payos/api test tests/integration/ap2
+INTEGRATION=true pnpm --filter @sly/api test tests/integration/ap2
 ```
 
 ### Manual Testing

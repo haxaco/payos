@@ -85,7 +85,7 @@ PayOS is now the **only settlement infrastructure** that supports all three emer
 - **`ProtocolMetadata`** type union for x402/AP2/ACP
 
 #### API Client
-- **`@payos/api-client`** - Full AP2 and ACP client methods
+- **`@sly/api-client`** - Full AP2 and ACP client methods
   - `api.ap2.list()`, `api.ap2.get()`, `api.ap2.create()`, `api.ap2.execute()`, etc.
   - `api.acp.list()`, `api.acp.get()`, `api.acp.create()`, `api.acp.complete()`, etc.
   - Proper camelCase/snake_case transformation

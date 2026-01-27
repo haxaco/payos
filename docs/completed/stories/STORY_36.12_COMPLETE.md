@@ -67,10 +67,10 @@ Test coverage includes:
 ### Basic LangChain Agent
 
 ```typescript
-import { createPayOSLangChainTools, PAYOS_LANGCHAIN_SYSTEM_MESSAGE } from '@payos/sdk/langchain';
+import { createPayOSLangChainTools, PAYOS_LANGCHAIN_SYSTEM_MESSAGE } from '@sly/sdk/langchain';
 import { ChatOpenAI } from '@langchain/openai';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: 'payos_...',
@@ -99,7 +99,7 @@ console.log(result.messages[result.messages.length - 1].content);
 ```typescript
 import { StateGraph } from '@langchain/langgraph';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
-import { createPayOSLangChainTools } from '@payos/sdk/langchain';
+import { createPayOSLangChainTools } from '@sly/sdk/langchain';
 
 const tools = createPayOSLangChainTools(payos);
 const toolNode = new ToolNode(tools);
@@ -124,7 +124,7 @@ const app = graph.compile();
 ### Individual Tool Usage
 
 ```typescript
-import { getPayOSLangChainTool } from '@payos/sdk/langchain';
+import { getPayOSLangChainTool } from '@sly/sdk/langchain';
 
 const quoteTool = getPayOSLangChainTool(payos, 'get_settlement_quote');
 

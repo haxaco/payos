@@ -83,14 +83,14 @@ All x402 infrastructure has been successfully deployed to Railway and is now liv
 
 ### SDKs (2 packages)
 
-1. **@payos/x402-client-sdk**
+1. **@sly/x402-client-sdk**
    - For API consumers & agents
    - Automatic payment handling
    - Auto-retry after payment
    - Payment verification
    - Pricing quotes
 
-2. **@payos/x402-provider-sdk**
+2. **@sly/x402-provider-sdk**
    - For API providers
    - Framework-agnostic middleware
    - Automatic 402 responses

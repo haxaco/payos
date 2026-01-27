@@ -151,7 +151,7 @@ private resetDailySpendIfNeeded(): void {
 ### Basic Usage
 
 ```typescript
-import { PayOSX402Client } from '@payos/sdk/x402';
+import { PayOSX402Client } from '@sly/sdk/x402';
 
 const client = new PayOSX402Client({
   apiKey: 'payos_...',

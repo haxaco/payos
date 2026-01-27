@@ -38,7 +38,7 @@ ACP enables AI agents to participate in e-commerce activities autonomously. It p
 ### For Agents (Shopping)
 
 ```typescript
-import { ACPClient } from '@payos/api-client';
+import { ACPClient } from '@sly/api-client';
 
 const client = new ACPClient({
   apiKey: 'pk_test_your_key',
@@ -73,7 +73,7 @@ const order = await client.checkout(cart.id, {
 ### For Merchants (Managing Products)
 
 ```typescript
-import { ACPMerchant } from '@payos/api-client';
+import { ACPMerchant } from '@sly/api-client';
 
 const merchant = new ACPMerchant({
   apiKey: 'pk_test_your_key',
@@ -265,14 +265,14 @@ See [ACP_UI_INTEGRATION_STATUS.md](ACP_UI_INTEGRATION_STATUS.md) for UI details.
 
 ```bash
 # Run ACP unit tests
-pnpm --filter @payos/api test tests/unit/acp
+pnpm --filter @sly/api test tests/unit/acp
 ```
 
 ### Integration Tests
 
 ```bash
 # Run ACP integration tests
-INTEGRATION=true pnpm --filter @payos/api test tests/integration/acp
+INTEGRATION=true pnpm --filter @sly/api test tests/integration/acp
 ```
 
 ### Manual Testing

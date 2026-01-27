@@ -19,7 +19,7 @@ import {
   TabsList, 
   TabsTrigger,
   Badge
-} from '@payos/ui';
+} from '@sly/ui';
 import { 
   Copy,
   CheckCircle2,
@@ -39,9 +39,9 @@ export default function X402IntegrationPage() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  const providerInstall = `npm install @payos/x402-provider-sdk`;
+  const providerInstall = `npm install @sly/x402-provider-sdk`;
   
-  const providerExample = `import { X402Provider } from '@payos/x402-provider-sdk';
+  const providerExample = `import { X402Provider } from '@sly/x402-provider-sdk';
 import express from 'express';
 
 const app = express();
@@ -72,9 +72,9 @@ app.get('/api/premium-data', provider.middleware(), (req, res) => {
 
 app.listen(3000);`;
 
-  const consumerInstall = `npm install @payos/x402-client-sdk`;
+  const consumerInstall = `npm install @sly/x402-client-sdk`;
 
-  const consumerExample = `import { X402Client } from '@payos/x402-client-sdk';
+  const consumerExample = `import { X402Client } from '@sly/x402-client-sdk';
 
 // Initialize client
 const client = new X402Client({

@@ -53,7 +53,7 @@ Configuration file: `~/Library/Application Support/Claude/claude_desktop_config.
   "mcpServers": {
     "payos": {
       "command": "npx",
-      "args": ["@payos/mcp-server"],
+      "args": ["@sly/mcp-server"],
       "env": {
         "PAYOS_API_KEY": "payos_sandbox_...",
         "PAYOS_ENVIRONMENT": "sandbox"
@@ -77,7 +77,7 @@ cd packages/mcp-server
 pnpm build
 
 # Test manually with MCP Inspector
-PAYOS_API_KEY=payos_sandbox_xxx mcp-inspector npx @payos/mcp-server
+PAYOS_API_KEY=payos_sandbox_xxx mcp-inspector npx @sly/mcp-server
 
 # Run in Claude Desktop (after config)
 # Restart Claude Desktop to load the server
@@ -161,7 +161,7 @@ Claude: [Uses get_settlement_status tool]
                   │ MCP Protocol (stdio)
                   ↓
 ┌──────────────────────────────────────────────┐
-│      @payos/mcp-server (This Package)       │
+│      @sly/mcp-server (This Package)       │
 │  Exposes PayOS operations as MCP tools       │
 └─────────────────┬────────────────────────────┘
                   │ HTTP/REST
@@ -213,7 +213,7 @@ try {
 ```json
 {
   "@modelcontextprotocol/sdk": "^1.0.4",
-  "@payos/sdk": "workspace:*"
+  "@sly/sdk": "workspace:*"
 }
 ```
 
@@ -247,7 +247,7 @@ This isn't just demo-ware - it's production-ready:
 
 ```bash
 # Install globally
-npm install -g @payos/mcp-server
+npm install -g @sly/mcp-server
 
 # Configure Claude Desktop
 # Add to ~/.config/Claude/claude_desktop_config.json

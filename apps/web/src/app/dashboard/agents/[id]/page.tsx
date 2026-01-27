@@ -20,7 +20,7 @@ import {
   Copy,
   AlertTriangle,
 } from 'lucide-react';
-import type { Agent, Stream, AgentLimits } from '@payos/api-client';
+import type { Agent, Stream, AgentLimits } from '@sly/api-client';
 import { AgentActivityFeed } from '@/components/agents/agent-activity-feed';
 import { AgentQuickActions } from '@/components/agents/agent-quick-actions';
 import { getAgentActivity } from '@/lib/mock-data/agent-activity';

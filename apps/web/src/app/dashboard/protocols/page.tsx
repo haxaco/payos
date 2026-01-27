@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import Link from 'next/link';
 
 // Types
@@ -540,8 +540,8 @@ export default function ProtocolsPage() {
                 <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">AP2</td>
                 <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
                 <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
-                <td className="py-2 px-3 text-center"><AlertCircle className="h-4 w-4 text-yellow-500 mx-auto" title="Fallback" /></td>
-                <td className="py-2 px-3 text-center"><AlertCircle className="h-4 w-4 text-yellow-500 mx-auto" title="Fallback" /></td>
+                <td className="py-2 px-3 text-center"><span title="Fallback"><AlertCircle className="h-4 w-4 text-yellow-500 mx-auto" /></span></td>
+                <td className="py-2 px-3 text-center"><span title="Fallback"><AlertCircle className="h-4 w-4 text-yellow-500 mx-auto" /></span></td>
               </tr>
               <tr className="border-b border-gray-100 dark:border-gray-800/50">
                 <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">ACP</td>

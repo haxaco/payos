@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { DollarSign, Info, Calculator } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 interface ConfigurePricingStepProps {
   onPricingConfigured: (pricing: { pricePerRequest: number; freeTier?: number }) => void;

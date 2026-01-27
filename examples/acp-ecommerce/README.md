@@ -56,7 +56,7 @@ pnpm dev
 ## Code Example
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: process.env.PAYOS_API_KEY!,

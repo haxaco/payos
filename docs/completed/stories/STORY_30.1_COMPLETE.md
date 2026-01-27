@@ -191,7 +191,7 @@ Created a comprehensive error taxonomy and structured response type system for P
 ### 7. Package Exports ✅
 
 - **File:** `packages/types/src/index.ts`
-- All types, schemas, and helpers exported from `@payos/types`
+- All types, schemas, and helpers exported from `@sly/types`
 - Package builds successfully (CJS + ESM + TypeScript declarations)
 
 ---
@@ -203,7 +203,7 @@ Created a comprehensive error taxonomy and structured response type system for P
 ✅ **Every error code is mapped to exactly one category**  
 ✅ **Response types are generic and reusable**  
 ✅ **Zod schemas can validate both success and error responses**  
-✅ **All types are exported from `@payos/types` package**  
+✅ **All types are exported from `@sly/types` package**  
 ✅ **Package builds without TypeScript errors**  
 ✅ **Unit tests verify:**
   - Every error code has metadata
@@ -250,7 +250,7 @@ packages/types/
 ### Creating an Error
 
 ```typescript
-import { createApiError, ErrorCode } from '@payos/types';
+import { createApiError, ErrorCode } from '@sly/types';
 
 const error = createApiError(ErrorCode.INSUFFICIENT_BALANCE, {
   details: {
@@ -267,7 +267,7 @@ const error = createApiError(ErrorCode.INSUFFICIENT_BALANCE, {
 ### Checking Retryability
 
 ```typescript
-import { isRetryable, getRetryAfterAction, ErrorCode } from '@payos/types';
+import { isRetryable, getRetryAfterAction, ErrorCode } from '@sly/types';
 
 if (isRetryable(ErrorCode.INSUFFICIENT_BALANCE)) {
   const action = getRetryAfterAction(ErrorCode.INSUFFICIENT_BALANCE);
@@ -278,7 +278,7 @@ if (isRetryable(ErrorCode.INSUFFICIENT_BALANCE)) {
 ### Validating API Response
 
 ```typescript
-import { validateApiResponse } from '@payos/types';
+import { validateApiResponse } from '@sly/types';
 import { z } from 'zod';
 
 const accountSchema = z.object({
@@ -296,7 +296,7 @@ const validated = validateApiResponse(data, accountSchema);
 ### Searching Errors
 
 ```typescript
-import { searchErrors, getErrorsByCategory, ErrorCategory } from '@payos/types';
+import { searchErrors, getErrorsByCategory, ErrorCategory } from '@sly/types';
 
 // Search by text
 const balanceErrors = searchErrors('balance');

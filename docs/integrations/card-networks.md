@@ -24,7 +24,7 @@ PayOS integrates with card networks to enable merchants to accept payments from 
 ### 1. Install the SDK
 
 ```bash
-npm install @payos/sdk
+npm install @sly/sdk
 ```
 
 ### 2. Configure Card Networks
@@ -32,7 +32,7 @@ npm install @payos/sdk
 Configure your card networks in the PayOS Dashboard or via API:
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: 'pk_live_...',
@@ -59,7 +59,7 @@ await payos.cards.configureMastercard({
 When an AI agent makes a request to your endpoint, verify their signature:
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 import express from 'express';
 
 const app = express();

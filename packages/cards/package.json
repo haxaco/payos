@@ -1,5 +1,5 @@
 {
-  "name": "@payos/cards",
+  "name": "@sly/cards",
   "version": "0.1.0",
   "description": "Card network integration for Visa VIC and Mastercard Agent Pay",
   "main": "./dist/index.js",
@@ -40,6 +40,6 @@
     "vitest": "^1.0.0"
   },
   "peerDependencies": {
-    "@payos/types": "workspace:*"
+    "@sly/types": "workspace:*"
   }
 }

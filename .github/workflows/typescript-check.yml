@@ -30,7 +30,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       
       - name: Build dependencies
-        run: pnpm build --filter=@payos/ui --filter=@payos/types --filter=@payos/api-client
+        run: pnpm build --filter=@sly/ui --filter=@sly/types --filter=@sly/api-client
       
       - name: TypeScript check - Web
         run: cd apps/web && pnpm tsc --noEmit

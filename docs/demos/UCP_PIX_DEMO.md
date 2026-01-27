@@ -17,7 +17,7 @@ The demo shows a complete flow where:
 
 1. Start the PayOS API server:
    ```bash
-   pnpm --filter @payos/api dev
+   pnpm --filter @sly/api dev
    ```
 
 2. (Optional) Set environment variables:
@@ -29,7 +29,7 @@ The demo shows a complete flow where:
 ### Run the Demo
 
 ```bash
-pnpm --filter @payos/api tsx scripts/demos/ucp-pix-demo.ts
+pnpm --filter @sly/api tsx scripts/demos/ucp-pix-demo.ts
 ```
 
 ### Expected Output

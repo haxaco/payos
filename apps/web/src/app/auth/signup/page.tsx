@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { Button } from '@payos/ui';
-import { Input } from '@payos/ui';
-import { Label } from '@payos/ui';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@payos/ui';
+import { Button } from '@sly/ui';
+import { Input } from '@sly/ui';
+import { Label } from '@sly/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@sly/ui';
 import { Loader2, Zap } from 'lucide-react';
 import Link from 'next/link';
 

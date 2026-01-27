@@ -211,7 +211,7 @@ Each story document includes:
 ### ✅ Already Complete
 - All API endpoints exist and are functional
 - Authentication (JWT) working correctly
-- Design system components available (`@payos/ui`)
+- Design system components available (`@sly/ui`)
 - Routing structure in place
 - Similar pages exist as references
 
@@ -295,7 +295,7 @@ Each implemented page must:
 
 **For Gemini:**
 - Review existing similar pages first (e.g., Account Detail, Agent Detail)
-- Reuse existing components from `@payos/ui` package
+- Reuse existing components from `@sly/ui` package
 - Follow TypeScript patterns from other pages
 - Test with real API data using JWT authentication
 - Ask questions if API response format is unclear

@@ -19,7 +19,7 @@ import {
     TabsList,
     TabsTrigger,
     Badge
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     Copy,
     CheckCircle2,
@@ -41,9 +41,9 @@ export default function UcpIntegrationPage() {
         setTimeout(() => setCopiedCode(null), 2000);
     };
 
-    const apiClientInstall = `npm install @payos/api-client`;
+    const apiClientInstall = `npm install @sly/api-client`;
 
-    const acquireTokenExample = `import { PayOSClient } from '@payos/api-client';
+    const acquireTokenExample = `import { PayOSClient } from '@sly/api-client';
 
 const client = new PayOSClient({
   apiKey: process.env.PAYOS_API_KEY

@@ -6,7 +6,7 @@
 
 ## Summary
 
-Successfully deprecated old SDK packages (`@payos/x402-client-sdk`, `@payos/x402-provider-sdk`, `@payos/api-client`) in favor of the new unified `@payos/sdk`, with comprehensive migration guide and deprecation notices.
+Successfully deprecated old SDK packages (`@sly/x402-client-sdk`, `@sly/x402-provider-sdk`, `@sly/api-client`) in favor of the new unified `@sly/sdk`, with comprehensive migration guide and deprecation notices.
 
 ---
 
@@ -15,9 +15,9 @@ Successfully deprecated old SDK packages (`@payos/x402-client-sdk`, `@payos/x402
 ### 1. Identified Old Packages
 
 Found 3 packages to deprecate:
-- ❌ `@payos/x402-client-sdk` - Old x402 client SDK
-- ❌ `@payos/x402-provider-sdk` - Old x402 provider SDK  
-- ❌ `@payos/api-client` - Old direct API client
+- ❌ `@sly/x402-client-sdk` - Old x402 client SDK
+- ❌ `@sly/x402-provider-sdk` - Old x402 provider SDK  
+- ❌ `@sly/api-client` - Old direct API client
 
 ### 2. Created Comprehensive Migration Guide
 
@@ -43,16 +43,16 @@ Added deprecation notices to `package.json`:
 #### x402-client-sdk
 ```json
 {
-  "deprecated": "This package is deprecated. Please use @payos/sdk instead. See https://docs.payos.ai/migration for migration guide.",
-  "description": "[DEPRECATED] Client SDK for consuming x402-enabled APIs with automatic payment handling. Use @payos/sdk instead."
+  "deprecated": "This package is deprecated. Please use @sly/sdk instead. See https://docs.payos.ai/migration for migration guide.",
+  "description": "[DEPRECATED] Client SDK for consuming x402-enabled APIs with automatic payment handling. Use @sly/sdk instead."
 }
 ```
 
 #### x402-provider-sdk
 ```json
 {
-  "deprecated": "This package is deprecated. Please use @payos/sdk instead. See https://docs.payos.ai/migration for migration guide.",
-  "description": "[DEPRECATED] Provider SDK for monetizing APIs with x402 - HTTP 402 Payment Required middleware. Use @payos/sdk instead."
+  "deprecated": "This package is deprecated. Please use @sly/sdk instead. See https://docs.payos.ai/migration for migration guide.",
+  "description": "[DEPRECATED] Provider SDK for monetizing APIs with x402 - HTTP 402 Payment Required middleware. Use @sly/sdk instead."
 }
 ```
 
@@ -94,12 +94,12 @@ Each includes:
 #### x402 Client Migration
 ```typescript
 // ❌ Before (Old)
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 const client = new X402Client({ apiKey, evmPrivateKey });
 await client.fetch('https://api.example.com/protected');
 
 // ✅ After (New)
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 const payos = new PayOS({ apiKey, environment: 'production', evmPrivateKey });
 const x402Client = payos.x402.createClient();
 await x402Client.fetch('https://api.example.com/protected');
@@ -108,14 +108,14 @@ await x402Client.fetch('https://api.example.com/protected');
 #### x402 Provider Migration
 ```typescript
 // ❌ Before (Old)
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 const provider = new X402Provider({
   routes: { '/api/protected': { price: '0.01' } }
 });
 app.use('/api', provider.middleware());
 
 // ✅ After (New)
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 const payos = new PayOS({ apiKey, environment: 'production' });
 const provider = payos.x402.createProvider({
   'GET /api/protected': { price: '0.01', description: 'Protected resource' }
@@ -126,12 +126,12 @@ app.use('/api', provider.middleware());
 #### API Client Migration
 ```typescript
 // ❌ Before (Old)
-import { PayOSApiClient } from '@payos/api-client';
+import { PayOSApiClient } from '@sly/api-client';
 const client = new PayOSApiClient({ apiKey });
 await client.post('/settlements/quote', { amount: 100 });
 
 // ✅ After (New)
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 const payos = new PayOS({ apiKey, environment: 'production' });
 await payos.getSettlementQuote({ amount: '100', fromCurrency: 'USD', toCurrency: 'BRL' });
 ```

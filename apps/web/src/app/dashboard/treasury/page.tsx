@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { RefreshCw, LayoutDashboard, List, Bell } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
-import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from '@payos/ui';
+import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from '@sly/ui';
 import { toast } from 'sonner';
 import { TreasuryStats } from './components/treasury-stats';
 import { AccountsTable } from './components/accounts-table';

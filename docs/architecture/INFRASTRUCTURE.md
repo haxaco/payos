@@ -87,7 +87,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_YOUR_ANON_KEY
 1. Install Node.js 20
 2. Install pnpm 9.14.2
 3. Install dependencies (`pnpm install --frozen-lockfile`)
-4. Build packages: `@payos/types`, `@payos/utils`, `@payos/api`
+4. Build packages: `@sly/types`, `@sly/utils`, `@sly/api`
 5. Start server
 
 **Environment Variables:**

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@payos/ui';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@sly/ui';
 import { Ap2Analytics } from '@/components/ap2/ap2-analytics';
 
 export default function Ap2AnalyticsPage() {

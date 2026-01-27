@@ -122,7 +122,7 @@ B2C Protocol Stack (Inbound):
 
 ```typescript
 // B2C Merchant: Accept from all AI surfaces
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({ 
   apiKey: 'pk_...',
@@ -354,7 +354,7 @@ AP2 + PayOS:
 
 ```typescript
 // B2B Enterprise: Control agent spending
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({ 
   apiKey: 'pk_...',

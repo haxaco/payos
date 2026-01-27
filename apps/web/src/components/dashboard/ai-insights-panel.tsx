@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { cn } from '@payos/ui';
-import { formatRelativeTime } from '@payos/ui';
+import { cn } from '@sly/ui';
+import { formatRelativeTime } from '@sly/ui';
 import type { AiInsight } from '@/lib/mock-data/ai-insights';
 
 interface AiInsightsPanelProps {

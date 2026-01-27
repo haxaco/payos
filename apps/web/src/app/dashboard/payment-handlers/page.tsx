@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useApiConfig } from '@/lib/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 // Types
 interface ConnectedAccount {

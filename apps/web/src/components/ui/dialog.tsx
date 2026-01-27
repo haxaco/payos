@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import { X } from 'lucide-react';
 
 interface DialogProps {

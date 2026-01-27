@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Tabs, TabsList, TabsTrigger, TabsContent, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@payos/ui';
+import { Tabs, TabsList, TabsTrigger, TabsContent, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@sly/ui';
 import { Zap, Bot, ShoppingCart, BarChart3, Globe } from 'lucide-react';
 import { X402Analytics } from '@/components/agentic-payments/x402-analytics';
 import { Ap2Analytics } from '@/components/ap2/ap2-analytics';

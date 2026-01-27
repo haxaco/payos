@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 // Types
 type TriggerType = 'schedule' | 'threshold' | 'manual' | 'immediate';

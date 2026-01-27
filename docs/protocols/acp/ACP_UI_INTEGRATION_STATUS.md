@@ -268,7 +268,7 @@ All backend APIs are ready and tested:
 ## Implementation Checklist
 
 ### Phase 1: Core Checkout Management
-- [x] Add ACP types to `@payos/api-client/types.ts`
+- [x] Add ACP types to `@sly/api-client/types.ts`
 - [x] Add `acp` methods to API client
 - [x] Create `CheckoutStatusBadge` component
 - [x] Create Checkouts List Page

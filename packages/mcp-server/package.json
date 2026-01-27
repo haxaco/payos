@@ -1,5 +1,5 @@
 {
-  "name": "@payos/mcp-server",
+  "name": "@sly/mcp-server",
   "version": "0.1.0",
   "description": "Model Context Protocol (MCP) server for PayOS - enables Claude Desktop integration",
   "type": "module",
@@ -17,7 +17,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@payos/sdk": "workspace:*",
+    "@sly/sdk": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.4"
   },
   "devDependencies": {

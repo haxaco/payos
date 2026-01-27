@@ -296,7 +296,7 @@ Create `railway.json` in `apps/api/`:
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "cd ../.. && pnpm install && pnpm --filter @payos/api build"
+    "buildCommand": "cd ../.. && pnpm install && pnpm --filter @sly/api build"
   },
   "deploy": {
     "startCommand": "node dist/index.js",
@@ -316,7 +316,7 @@ nixPkgs = ["nodejs-18_x", "pnpm"]
 cmds = ["cd ../.. && pnpm install --frozen-lockfile"]
 
 [phases.build]
-cmds = ["cd ../.. && pnpm --filter @payos/types build", "cd ../.. && pnpm --filter @payos/utils build", "pnpm build"]
+cmds = ["cd ../.. && pnpm --filter @sly/types build", "cd ../.. && pnpm --filter @sly/utils build", "pnpm build"]
 
 [start]
 cmd = "node dist/index.js"
@@ -434,7 +434,7 @@ vercel --prod
 
 ```json
 {
-  "buildCommand": "cd ../.. && pnpm build --filter=@payos/web",
+  "buildCommand": "cd ../.. && pnpm build --filter=@sly/web",
   "outputDirectory": ".next",
   "devCommand": "pnpm dev",
   "installCommand": "cd ../.. && pnpm install",
@@ -621,7 +621,7 @@ vercel logs --prod
 
 ```bash
 # Install Sentry
-pnpm add @sentry/node --filter @payos/api
+pnpm add @sentry/node --filter @sly/api
 pnpm add @sentry/react --filter payos-ui
 ```
 

@@ -138,11 +138,11 @@ Both networks partnered with **Cloudflare** to build on the same standards:
 | `GET /v1/cards/:network/credentials/:id` | ✅ Yes | `payos.cards` | P0 | Credential retrieval |
 | `POST /v1/cards/:network/signals` | ✅ Yes | `payos.cards` | P1 | Commerce signal submission |
 | `POST /v1/settlements/route` | ✅ Yes | `payos.settlements` | P0 | Enhanced with card rails |
-| Card MCP tools | ✅ MCP | `@payos/mcp` | P1 | `cards_create_instruction`, etc. |
+| Card MCP tools | ✅ MCP | `@sly/mcp` | P1 | `cards_create_instruction`, etc. |
 | Dashboard card settings | ❌ No | - | P1 | Dashboard only |
 
 **SDK Stories Required:** 
-- [ ] Story 36.X: Add `cards` module to @payos/sdk (unified interface)
+- [ ] Story 36.X: Add `cards` module to @sly/sdk (unified interface)
 - [ ] Story 36.Y: Add card tools to MCP server
 - [ ] Story 36.Z: Update `settlements.route()` with card rail options
 
@@ -1739,7 +1739,7 @@ Comprehensive test suite and documentation for both Visa and Mastercard integrat
 | Epic 27: Settlement | ✅ Complete | Settlement service integration |
 | Epic 48: Connected Accounts | 🚧 In Progress | Card networks as connected handlers |
 | Epic 50: Settlement Decoupling | 🚧 In Progress | Settlement trigger rules |
-| Epic 36: SDK | ✅ Complete | `cards` module added to @payos/sdk |
+| Epic 36: SDK | ✅ Complete | `cards` module added to @sly/sdk |
 
 ---
 

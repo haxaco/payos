@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Rocket, CheckCircle, ChevronRight, X, Sparkles, PartyPopper } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import Link from 'next/link';
 
 const STORAGE_KEY_DISMISSED = 'payos_onboarding_dismissed';

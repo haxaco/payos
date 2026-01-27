@@ -1,6 +1,6 @@
 # PayOS SDK Examples
 
-This directory contains complete, runnable examples demonstrating how to use the `@payos/sdk` unified SDK for various payment scenarios.
+This directory contains complete, runnable examples demonstrating how to use the `@sly/sdk` unified SDK for various payment scenarios.
 
 ## Examples Overview
 
@@ -135,7 +135,7 @@ PAYOS_EVM_PRIVATE_KEY=0xxxxx
 
 ### Pattern 1: Initialize SDK
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: process.env.PAYOS_API_KEY!,

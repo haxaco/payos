@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Shield, Info, DollarSign, Clock, AlertTriangle } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 interface ConfigureLimitsStepProps {
   onLimitsConfigured: (limits: SpendingLimits) => void;

@@ -46,7 +46,7 @@ Flexible configuration for testing scenarios:
 Easy integration with Express applications:
 
 ```typescript
-import { createSandboxFacilitatorRouter } from '@payos/sdk/facilitator';
+import { createSandboxFacilitatorRouter } from '@sly/sdk/facilitator';
 
 const router = createSandboxFacilitatorRouter({
   apiUrl: 'http://localhost:4000',
@@ -159,7 +159,7 @@ Three REST endpoints:
 ### Basic Usage
 
 ```typescript
-import { SandboxFacilitator } from '@payos/sdk/facilitator';
+import { SandboxFacilitator } from '@sly/sdk/facilitator';
 
 const facilitator = new SandboxFacilitator({
   apiUrl: 'http://localhost:4000',
@@ -208,7 +208,7 @@ const facilitator = new SandboxFacilitator({
 
 ```typescript
 import express from 'express';
-import { createSandboxFacilitatorRouter } from '@payos/sdk/facilitator';
+import { createSandboxFacilitatorRouter } from '@sly/sdk/facilitator';
 
 const app = express();
 app.use(express.json());

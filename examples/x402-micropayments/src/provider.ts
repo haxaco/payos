@@ -13,7 +13,7 @@
  */
 
 import express from 'express';
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const USER_EMAIL = 'haxaco@gmail.com';
 const PROVIDER_ACCOUNT_ID = 'acct_haxaco_provider';

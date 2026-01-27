@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Zap, Shield, ShoppingCart, Globe, Bot, User, Clock, Loader2, ArrowRight } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import Link from 'next/link';
 
 type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';

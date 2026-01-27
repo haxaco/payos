@@ -1,4 +1,4 @@
-import { Badge } from "@payos/ui";
+import { Badge } from "@sly/ui";
 
 type CheckoutStatus = 'pending' | 'completed' | 'cancelled' | 'expired' | 'failed';
 

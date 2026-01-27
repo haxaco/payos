@@ -1,7 +1,7 @@
-# Migration Guide: Old SDKs → @payos/sdk
+# Migration Guide: Old SDKs → @sly/sdk
 
 **Last Updated**: January 3, 2026  
-**Status**: Old SDKs deprecated, please migrate to `@payos/sdk`
+**Status**: Old SDKs deprecated, please migrate to `@sly/sdk`
 
 ---
 
@@ -9,11 +9,11 @@
 
 The following packages are **deprecated** and will no longer receive updates:
 
-- ❌ `@payos/x402-client-sdk` → Use `@payos/sdk` with `payos.x402.createClient()`
-- ❌ `@payos/x402-provider-sdk` → Use `@payos/sdk` with `payos.x402.createProvider()`
-- ❌ `@payos/api-client` → Use `@payos/sdk` directly
+- ❌ `@sly/x402-client-sdk` → Use `@sly/sdk` with `payos.x402.createClient()`
+- ❌ `@sly/x402-provider-sdk` → Use `@sly/sdk` with `payos.x402.createProvider()`
+- ❌ `@sly/api-client` → Use `@sly/sdk` directly
 
-**Please migrate to `@payos/sdk` for:**
+**Please migrate to `@sly/sdk` for:**
 - ✅ Unified API for all protocols
 - ✅ Better TypeScript support
 - ✅ AI agent integrations (OpenAI, Claude, LangChain, Vercel)
@@ -42,33 +42,33 @@ The following packages are **deprecated** and will no longer receive updates:
 
 ```bash
 # Remove old packages
-pnpm remove @payos/x402-client-sdk @payos/x402-provider-sdk @payos/api-client
+pnpm remove @sly/x402-client-sdk @sly/x402-provider-sdk @sly/api-client
 
 # Install new unified SDK
-pnpm add @payos/sdk
+pnpm add @sly/sdk
 ```
 
 ### Update Imports
 
 ```typescript
 // ❌ Old
-import { X402Client } from '@payos/x402-client-sdk';
-import { X402Provider } from '@payos/x402-provider-sdk';
-import { PayOSApiClient } from '@payos/api-client';
+import { X402Client } from '@sly/x402-client-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
+import { PayOSApiClient } from '@sly/api-client';
 
 // ✅ New
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 ```
 
 ---
 
 ## Migration by Package
 
-### 1. x402-client-sdk → @payos/sdk
+### 1. x402-client-sdk → @sly/sdk
 
 #### Old Code
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiKey: process.env.PAYOS_API_KEY,
@@ -80,7 +80,7 @@ const response = await client.fetch('https://api.example.com/protected');
 
 #### New Code
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: process.env.PAYOS_API_KEY!,
@@ -106,11 +106,11 @@ const response = await x402Client.fetch('https://api.example.com/protected');
 
 ---
 
-### 2. x402-provider-sdk → @payos/sdk
+### 2. x402-provider-sdk → @sly/sdk
 
 #### Old Code
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 import express from 'express';
 
 const app = express();
@@ -125,7 +125,7 @@ app.use('/api', provider.middleware());
 
 #### New Code
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 import express from 'express';
 
 const app = express();
@@ -158,11 +158,11 @@ app.use('/api', provider.middleware());
 
 ---
 
-### 3. api-client → @payos/sdk
+### 3. api-client → @sly/sdk
 
 #### Old Code
 ```typescript
-import { PayOSApiClient } from '@payos/api-client';
+import { PayOSApiClient } from '@sly/api-client';
 
 const client = new PayOSApiClient({
   apiKey: process.env.PAYOS_API_KEY,
@@ -183,7 +183,7 @@ const settlement = await client.post('/settlements', {
 
 #### New Code
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: process.env.PAYOS_API_KEY!,
@@ -259,7 +259,7 @@ const claudeTools = await payos.capabilities.toClaudeTools();
 const langchainTools = await payos.langchain.getTools();
 
 // Vercel AI SDK
-import { createPayOSVercelTools } from '@payos/sdk/vercel';
+import { createPayOSVercelTools } from '@sly/sdk/vercel';
 const vercelTools = createPayOSVercelTools(payos);
 ```
 
@@ -366,17 +366,17 @@ Or for errors:
 ### Step 1: Install New SDK
 
 ```bash
-pnpm add @payos/sdk
+pnpm add @sly/sdk
 ```
 
 ### Step 2: Update Imports (Don't Remove Old Yet)
 
 ```typescript
 // Keep old import temporarily
-import { X402Client as OldClient } from '@payos/x402-client-sdk';
+import { X402Client as OldClient } from '@sly/x402-client-sdk';
 
 // Add new import
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 ```
 
 ### Step 3: Initialize New SDK
@@ -426,17 +426,17 @@ it('should fetch protected resource', async () => {
 ### Step 6: Remove Old Packages
 
 ```bash
-pnpm remove @payos/x402-client-sdk @payos/x402-provider-sdk @payos/api-client
+pnpm remove @sly/x402-client-sdk @sly/x402-provider-sdk @sly/api-client
 ```
 
 ### Step 7: Clean Up Imports
 
 ```typescript
 // Remove old imports
--import { X402Client } from '@payos/x402-client-sdk';
+-import { X402Client } from '@sly/x402-client-sdk';
 
 // Keep only new
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 ```
 
 ---
@@ -455,13 +455,13 @@ const payos = new PayOS({
 });
 ```
 
-### Issue 2: "Module not found: @payos/x402-client-sdk"
+### Issue 2: "Module not found: @sly/x402-client-sdk"
 
 **Problem**: Trying to import old package.
 
 **Solution**: Update imports to use new SDK:
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 ```
 
 ### Issue 3: "TypeError: client.fetch is not a function"
@@ -565,7 +565,7 @@ Contact: enterprise@payos.ai
 
 Use this checklist to track your migration:
 
-- [ ] Install `@payos/sdk`
+- [ ] Install `@sly/sdk`
 - [ ] Update environment configuration
 - [ ] Migrate x402 client code
 - [ ] Migrate x402 provider code
@@ -584,7 +584,7 @@ Use this checklist to track your migration:
 
 ## Migration Complete? 🎉
 
-Congratulations! You're now using the unified `@payos/sdk` with:
+Congratulations! You're now using the unified `@sly/sdk` with:
 
 ✅ Better type safety  
 ✅ Multi-protocol support (x402, AP2, ACP)  

@@ -421,5 +421,5 @@ Created comprehensive E2E test suite covering:
 **Date**: January 3, 2026  
 **User Tenant**: haxaco@gmail.com  
 **Test Framework**: Vitest  
-**SDK Version**: @payos/sdk v0.1.0
+**SDK Version**: @sly/sdk v0.1.0
 

@@ -1,12 +1,12 @@
 'use client';
 
-import { Badge } from '@payos/ui';
+import { Badge } from '@sly/ui';
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
-} from '@payos/ui';
+} from '@sly/ui';
 import { Eye, Edit, ShoppingCart, User, CreditCard, Settings } from 'lucide-react';
 
 // UCP Identity scopes - matches backend format

@@ -36,7 +36,7 @@ Create a protocol discovery and management API that enables tenants to discover 
 | `POST /v1/organization/protocols/:id/enable` | ❌ No | - | P1 | Dashboard only |
 
 **SDK Stories Required:**
-- [ ] Add `Protocol` and `ProtocolStatus` types to @payos/types
+- [ ] Add `Protocol` and `ProtocolStatus` types to @sly/types
 
 ---
 

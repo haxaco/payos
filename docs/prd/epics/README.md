@@ -22,7 +22,7 @@ Every epic MUST include an SDK Impact Assessment section near the top:
 | New webhook event | ⚠️ Types | Types only | P2 | Add TypeScript types |
 
 **SDK Stories Required:** 
-- [ ] Story 36.X: Add `foo` module to @payos/sdk
+- [ ] Story 36.X: Add `foo` module to @sly/sdk
 - [ ] Story 36.Y: Update MCP server with `payos_foo` tool
 ```
 
@@ -55,7 +55,7 @@ Every story must meet these criteria before completion:
 - [Epic 20: Streaming Payments & Agent Registry](./epic-20-streaming-payments.md) 🌊 - Streaming payments + Agent Identity
 
 ### Developer Experience & SDK
-- [Epic 36: SDK & Developer Experience](./epic-36-sdk-developer-experience.md) 🛠️ ✅ - Unified @payos/sdk with x402/AP2/ACP support
+- [Epic 36: SDK & Developer Experience](./epic-36-sdk-developer-experience.md) 🛠️ ✅ - Unified @sly/sdk with x402/AP2/ACP support
 
 ### Quality & Operations
 - [Epic 21: Code Coverage Improvement](./epic-21-code-coverage.md) 📊 - Improve test coverage to 70%+

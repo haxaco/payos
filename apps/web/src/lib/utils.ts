@@ -6,4 +6,4 @@ export {
     formatDate,
     formatRelativeTime,
     formatRunway
-} from '@payos/ui';
+} from '@sly/ui';

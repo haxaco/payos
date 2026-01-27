@@ -23,7 +23,7 @@ import {
   Zap,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Transfer, TransferStatus, TransferType } from '@payos/api-client';
+import type { Transfer, TransferStatus, TransferType } from '@sly/api-client';
 import { InitiatedByBadgeCompact } from '@/components/transactions/initiated-by-badge';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { TransactionsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';

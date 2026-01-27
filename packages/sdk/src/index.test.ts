@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PayOS } from './index';
 import type { PayOSConfig } from './types';
 
-describe('@payos/sdk', () => {
+describe('@sly/sdk', () => {
   describe('PayOS class', () => {
     it('should instantiate with sandbox config', () => {
       const config: PayOSConfig = {

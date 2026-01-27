@@ -8,7 +8,7 @@ import {
     CardHeader,
     CardTitle,
     StatCard,
-} from '@payos/ui';
+} from '@sly/ui';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import {
     DollarSign,
@@ -21,7 +21,7 @@ import {
     Users,
     AlertCircle,
 } from 'lucide-react';
-import { ACPAnalytics } from '@payos/api-client';
+import { ACPAnalytics } from '@sly/api-client';
 
 type Period = '24h' | '7d' | '30d' | '90d' | '1y';
 

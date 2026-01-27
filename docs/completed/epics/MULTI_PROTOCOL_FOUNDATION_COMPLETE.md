@@ -194,7 +194,7 @@ idx_transfers_protocol_type ON transfers(type) WHERE type IN ('x402', 'ap2', 'ac
 node dist/workers/webhook-processor.js
 
 # In development:
-pnpm --filter @payos/api build
+pnpm --filter @sly/api build
 node apps/api/dist/workers/webhook-processor.js
 ```
 
@@ -249,7 +249,7 @@ await webhookService.queueWebhook(
 ### 4. Verify Webhook Signature (receiver side)
 
 ```typescript
-import { WebhookService } from '@payos/api/services/webhooks';
+import { WebhookService } from '@sly/api/services/webhooks';
 
 // In your webhook handler:
 const signature = request.headers['x-payos-signature'];
@@ -276,7 +276,7 @@ if (!isValid) {
 import { 
   validateProtocolMetadata,
   isX402Metadata 
-} from '@payos/types';
+} from '@sly/types';
 
 // When creating a transfer:
 const protocolMetadata = {

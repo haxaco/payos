@@ -1,4 +1,4 @@
-# Epic 36: @payos/sdk - Comprehensive Test Plan
+# Epic 36: @sly/sdk - Comprehensive Test Plan
 
 **Epic**: 36 - Unified SDK & Developer Experience  
 **Test Date**: January 3, 2026  
@@ -120,7 +120,7 @@
 
 ### 2.1 SDK Initialization
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: 'payos_sandbox_test',
@@ -238,7 +238,7 @@ const response = await anthropic.messages.create({
 
 ### 3.3 LangChain Agent
 ```typescript
-import { createPayOSLangChainTools } from '@payos/sdk/langchain';
+import { createPayOSLangChainTools } from '@sly/sdk/langchain';
 
 const tools = await createPayOSLangChainTools(payos);
 const agent = createReactAgent({ llm, tools });
@@ -254,7 +254,7 @@ const agent = createReactAgent({ llm, tools });
 
 ### 3.4 Vercel AI SDK
 ```typescript
-import { createPayOSVercelTools } from '@payos/sdk/vercel';
+import { createPayOSVercelTools } from '@sly/sdk/vercel';
 
 const result = await streamText({
   model: openai('gpt-4'),

@@ -8,7 +8,7 @@ import {
     TableHeader,
     TableRow,
     Badge,
-} from '@payos/ui';
+} from '@sly/ui';
 import { RefreshCcw, RotateCcw, Gift, DollarSign } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { format, isValid, parseISO } from 'date-fns';

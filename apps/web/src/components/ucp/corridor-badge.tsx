@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '@payos/ui';
+import { Badge } from '@sly/ui';
 import { Landmark, Globe } from 'lucide-react';
 
 type Corridor = 'pix' | 'spei';

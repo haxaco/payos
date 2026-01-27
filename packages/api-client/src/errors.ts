@@ -1,7 +1,7 @@
 /**
- * PayOS API Error
+ * Sly API Error
  */
-export class PayOSError extends Error {
+export class SlyError extends Error {
   public readonly status: number;
   public readonly code?: string;
   public readonly details?: unknown;
@@ -15,7 +15,7 @@ export class PayOSError extends Error {
     retryAfter?: number
   ) {
     super(message);
-    this.name = 'PayOSError';
+    this.name = 'SlyError';
     this.status = status;
     this.code = code;
     this.details = details;
@@ -51,12 +51,12 @@ export class PayOSError extends Error {
       const message = errorObj.message || 'Unknown error';
       const code = errorObj.code || response.code;
       const details = errorObj.details || response.details;
-      return new PayOSError(message, status, code, details, retryAfter);
+      return new SlyError(message, status, code, details, retryAfter);
     }
 
     // Handle simple error response (legacy format)
     // { error: "message", code: "CODE" }
-    return new PayOSError(response.error || 'Unknown error', status, response.code, response.details, retryAfter);
+    return new SlyError(response.error || 'Unknown error', status, response.code, response.details, retryAfter);
   }
 
   /**
@@ -67,7 +67,11 @@ export class PayOSError extends Error {
   }
 }
 
-export function isPayOSError(error: unknown): error is PayOSError {
-  return error instanceof PayOSError;
+export function isSlyError(error: unknown): error is SlyError {
+  return error instanceof SlyError;
 }
+
+// Backward compatibility aliases
+export { SlyError as PayOSError };
+export { isSlyError as isPayOSError };
 

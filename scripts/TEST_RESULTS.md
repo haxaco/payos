@@ -121,7 +121,7 @@ Both tables have full RLS policies:
 
 ## SDKs Status
 
-### ✅ Consumer SDK (`@payos/x402-client-sdk`)
+### ✅ Consumer SDK (`@sly/x402-client-sdk`)
 
 **Purpose:** For API consumers and agents making x402 payments
 
@@ -140,7 +140,7 @@ Both tables have full RLS policies:
 
 **Status:** ✅ Ready for testing
 
-### ✅ Provider SDK (`@payos/x402-provider-sdk`)
+### ✅ Provider SDK (`@sly/x402-provider-sdk`)
 
 **Purpose:** For API providers monetizing their endpoints
 

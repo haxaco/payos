@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
-import { Card, Button, Badge as UIBadge, Progress } from '@payos/ui';
+import { Card, Button, Badge as UIBadge, Progress } from '@sly/ui';
 import {
     ArrowLeft,
     Calendar,
@@ -22,7 +22,7 @@ import {
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatCurrency } from '@payos/ui';
+import { formatCurrency } from '@sly/ui';
 
 export default function ScheduleDetailPage() {
     const { id } = useParams<{ id: string }>();

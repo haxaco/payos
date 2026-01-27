@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@payos/ui';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@sly/ui';
 import { TrendingUp, TrendingDown, Minus, Zap, Bot, ShoppingCart, DollarSign, Activity, CheckCircle, ArrowRight, Globe } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import Link from 'next/link';

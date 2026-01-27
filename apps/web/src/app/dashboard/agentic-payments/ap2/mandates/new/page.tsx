@@ -31,7 +31,7 @@ import {
     CardDescription,
     CardHeader,
     CardTitle
-} from "@payos/ui";
+} from "@sly/ui";
 
 const formSchema = z.object({
     mandateId: z.string().min(3, "Mandate ID must be at least 3 characters"),

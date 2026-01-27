@@ -18,7 +18,7 @@ import {
     SelectItem,
     SelectTrigger,
     SelectValue
-} from '@payos/ui';
+} from '@sly/ui';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import {
     DollarSign,

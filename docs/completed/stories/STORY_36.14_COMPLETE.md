@@ -6,7 +6,7 @@
 
 ## Summary
 
-Created comprehensive sample applications demonstrating the new `@payos/sdk` unified SDK with extensive documentation, code examples, and real-world use cases for all major protocols.
+Created comprehensive sample applications demonstrating the new `@sly/sdk` unified SDK with extensive documentation, code examples, and real-world use cases for all major protocols.
 
 ## What Was Built
 

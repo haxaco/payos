@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { Button } from '@payos/ui';
+import { Button } from '@sly/ui';
 import { PaginationControls as PaginationState } from '@/hooks/usePagination';
 import { useState, KeyboardEvent } from 'react';
 

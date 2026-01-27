@@ -9,7 +9,7 @@ import {
   responseWrapperMiddleware,
   structuredErrorHandler,
 } from '../../../src/middleware/response-wrapper.js';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 
 describe('Enhanced Suggested Actions (Story 30.3)', () => {
   let app: Hono;

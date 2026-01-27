@@ -81,7 +81,7 @@ Vercel also runs TypeScript checks during deployment, but by this point, errors 
 
 2. **Missing Properties:**
    - If adding new fields to API routes, update the types file
-   - Rebuild packages: `pnpm build --filter=@payos/api-client`
+   - Rebuild packages: `pnpm build --filter=@sly/api-client`
 
 3. **Optional vs Required:**
    - Check if properties are marked `?` (optional)
@@ -96,7 +96,7 @@ Vercel also runs TypeScript checks during deployment, but by this point, errors 
 | `./scripts/pre-commit-check.sh` | Check changed packages before commit |
 | `cd apps/web && pnpm tsc --noEmit` | Check web app only |
 | `pnpm typecheck` | Check ALL packages (slower, may have errors) |
-| `pnpm build --filter=@payos/api-client` | Rebuild api-client after type changes |
+| `pnpm build --filter=@sly/api-client` | Rebuild api-client after type changes |
 
 ---
 

@@ -7,7 +7,7 @@ import {
     CardTitle,
     Button,
     Badge,
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     Link2,
     Mail,

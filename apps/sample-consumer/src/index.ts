@@ -18,7 +18,7 @@
  */
 
 import 'dotenv/config';
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 import chalk from 'chalk';
 import ora from 'ora';
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@payos/ui';
+import { Card, CardContent, CardHeader, CardTitle } from '@sly/ui';
 import { Calculator } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 

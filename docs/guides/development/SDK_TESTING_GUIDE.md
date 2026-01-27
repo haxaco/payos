@@ -8,8 +8,8 @@ This guide covers testing 3 scenarios:
 
 | Scenario | SDK | Description |
 |----------|-----|-------------|
-| **Provider** | `@payos/x402-provider-sdk` | API monetization - register endpoints, verify payments |
-| **Consumer** | `@payos/x402-client-sdk` | Call paid APIs - auto-pay and retry on 402 |
+| **Provider** | `@sly/x402-provider-sdk` | API monetization - register endpoints, verify payments |
+| **Consumer** | `@sly/x402-client-sdk` | Call paid APIs - auto-pay and retry on 402 |
 | **E2E Flow** | Both | Full payment flow from consumer to provider |
 
 ---
@@ -20,7 +20,7 @@ This guide covers testing 3 scenarios:
 ```bash
 cd /Users/haxaco/Dev/PayOS
 pnpm install
-pnpm dev --filter=@payos/api
+pnpm dev --filter=@sly/api
 ```
 API should be running at `http://localhost:3456`
 
@@ -54,13 +54,13 @@ Create a simple API that charges for premium weather data.
 mkdir -p apps/sample-provider
 cd apps/sample-provider
 npm init -y
-npm install express @payos/x402-provider-sdk
+npm install express @sly/x402-provider-sdk
 ```
 
 #### Step 2: Create `server.ts`
 ```typescript
 import express from 'express';
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const app = express();
 app.use(express.json());
@@ -167,12 +167,12 @@ Create a client app that calls paid weather APIs.
 mkdir -p apps/sample-consumer
 cd apps/sample-consumer
 npm init -y
-npm install @payos/x402-client-sdk node-fetch
+npm install @sly/x402-client-sdk node-fetch
 ```
 
 #### Step 2: Create `client.ts`
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiUrl: 'http://localhost:3456',

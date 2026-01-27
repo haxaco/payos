@@ -8,7 +8,7 @@
  *
  * @example
  * ```typescript
- * import { PayOS } from '@payos/sdk';
+ * import { PayOS } from '@sly/sdk';
  *
  * const payos = new PayOS({ apiKey: '...' });
  *

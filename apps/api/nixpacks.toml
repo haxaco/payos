@@ -6,9 +6,9 @@ cmds = ["npm install -g pnpm@9", "pnpm install --frozen-lockfile"]
 
 [phases.build]
 cmds = [
-  "pnpm --filter @payos/types build",
-  "pnpm --filter @payos/utils build",
-  "pnpm --filter @payos/api build"
+  "pnpm --filter @sly/types build",
+  "pnpm --filter @sly/utils build",
+  "pnpm --filter @sly/api build"
 ]
 
 [start]

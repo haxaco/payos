@@ -12,7 +12,7 @@ import {
   signWebBotRequest,
   verifyWebBotAuth,
   parseSignatureInput,
-} from '@payos/cards';
+} from '@sly/cards';
 
 describe('Agent Signing (RFC 9421)', () => {
   describe('Key Pair Generation', () => {

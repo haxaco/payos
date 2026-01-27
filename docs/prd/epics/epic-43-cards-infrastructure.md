@@ -459,7 +459,7 @@ Implement wallet deposit functionality for sandbox testing.
 
 ## API Client Updates
 
-Add to `@payos/api-client`:
+Add to `@sly/api-client`:
 
 ```typescript
 // Card methods

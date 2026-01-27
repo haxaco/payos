@@ -10,7 +10,7 @@ import type { SandboxFacilitatorConfig } from './types';
  * @example
  * ```typescript
  * import express from 'express';
- * import { createSandboxFacilitatorRouter } from '@payos/sdk/facilitator';
+ * import { createSandboxFacilitatorRouter } from '@sly/sdk/facilitator';
  * 
  * const app = express();
  * const facilitator = createSandboxFacilitatorRouter({

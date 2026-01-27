@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Wallet, Loader2, CheckCircle, Info, Zap, Shield } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
 

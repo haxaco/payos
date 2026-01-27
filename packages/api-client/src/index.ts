@@ -1,10 +1,12 @@
-// PayOS API Client
-// A typed SDK for communicating with the PayOS API
+// Sly API Client
+// A typed SDK for communicating with the Sly API
 
-export { PayOSClient, type PayOSClientConfig } from './client';
-export { PayOSError, isPayOSError } from './errors';
+// Primary exports (Sly naming)
+export { SlyClient, type SlyClientConfig, createSlyClient } from './client';
+export { SlyError, isSlyError } from './errors';
 export * from './types';
 
-// Re-export for convenience
-export { createPayOSClient } from './client';
+// Backward compatibility exports (PayOS naming)
+export { PayOSClient, type PayOSClientConfig, createPayOSClient } from './client';
+export { PayOSError, isPayOSError } from './errors';
 

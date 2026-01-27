@@ -21,7 +21,7 @@ import {
   Globe,
   RotateCcw,
 } from 'lucide-react';
-import type { Transfer } from '@payos/api-client';
+import type { Transfer } from '@sly/api-client';
 import { RefundModal } from '@/components/transfers/refund-modal';
 
 export default function TransferDetailPage() {

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { Button, cn } from '@payos/ui';
+import { Button, cn } from '@sly/ui';
 
 interface CodeBlockProps {
     code: string;

@@ -39,13 +39,13 @@ We successfully implemented a **complete x402 payment infrastructure** from scra
 ### **SDKs (Days 7-8)**
 
 **2 TypeScript SDKs:**
-- ✅ `@payos/x402-client-sdk` - For API consumers & agents
+- ✅ `@sly/x402-client-sdk` - For API consumers & agents
   - Automatic payment handling
   - Auto-retry after payment
   - Payment verification
   - Pricing quotes
   
-- ✅ `@payos/x402-provider-sdk` - For API providers
+- ✅ `@sly/x402-provider-sdk` - For API providers
   - Framework-agnostic middleware
   - Automatic 402 responses
   - Payment verification

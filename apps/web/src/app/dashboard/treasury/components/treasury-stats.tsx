@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Wallet, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
-import { Card, Skeleton } from '@payos/ui';
-import { DashboardSummary } from '@payos/api-client';
+import { Card, Skeleton } from '@sly/ui';
+import { DashboardSummary } from '@sly/api-client';
 
 interface TreasuryStatsProps {
     stats?: DashboardSummary;

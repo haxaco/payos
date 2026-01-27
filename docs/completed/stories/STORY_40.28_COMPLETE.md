@@ -169,7 +169,7 @@ environmentManager.validateForOperation('createPixPayout', ['circlePayouts']);
 import { 
   createExtendedConfig,
   getEnvironmentHint 
-} from '@payos/sdk/config/environment';
+} from '@sly/sdk/config/environment';
 
 const config = createExtendedConfig({
   apiKey: 'pk_test_xxx',

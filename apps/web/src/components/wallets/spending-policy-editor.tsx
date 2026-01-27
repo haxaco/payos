@@ -11,8 +11,8 @@ import {
     Input,
     Label,
     Switch,
-} from "@payos/ui";
-import { SpendingPolicy, Wallet } from "@payos/api-client";
+} from "@sly/ui";
+import { SpendingPolicy, Wallet } from "@sly/api-client";
 import { SpendingProgress } from "./spending-progress";
 import { cn } from "@/lib/utils";
 

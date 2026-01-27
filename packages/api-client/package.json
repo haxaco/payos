@@ -1,5 +1,5 @@
 {
-  "name": "@payos/api-client",
+  "name": "@sly/api-client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@payos/types": "workspace:*"
+    "@sly/types": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

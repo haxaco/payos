@@ -11,7 +11,7 @@ import {
   CreditCard,
   ArrowRight,
 } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import { useApiConfig } from '@/lib/api-client';
 
 interface TestPaymentStepProps {

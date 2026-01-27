@@ -28,7 +28,7 @@ Rebrand the entire platform from **PayOS** to **Sly** — "The Agentic Settlemen
 ## Scope
 
 ### In Scope
-- Package renaming (`@payos/*` → `@sly/*`)
+- Package renaming (`@sly/*` → `@sly/*`)
 - Repository rename consideration
 - Documentation updates
 - UI/Dashboard branding
@@ -52,21 +52,21 @@ Rebrand the entire platform from **PayOS** to **Sly** — "The Agentic Settlemen
 **Priority:** P0
 
 **Description:**
-Rename all npm packages from `@payos/*` to `@sly/*`.
+Rename all npm packages from `@sly/*` to `@sly/*`.
 
 **Packages to Rename:**
-- `@payos/api` → `@sly/api`
-- `@payos/web` → `@sly/web`
-- `@payos/sdk` → `@sly/sdk`
-- `@payos/cards` → `@sly/cards`
-- `@payos/types` → `@sly/types`
-- `@payos/utils` → `@sly/utils`
-- `@payos/ui` → `@sly/ui`
-- `@payos/api-client` → `@sly/api-client`
-- `@payos/mcp-server` → `@sly/mcp-server`
-- `@payos/db` → `@sly/db`
-- `@payos/x402-client-sdk` → `@sly/x402-client-sdk`
-- `@payos/x402-provider-sdk` → `@sly/x402-provider-sdk`
+- `@sly/api` → `@sly/api`
+- `@sly/web` → `@sly/web`
+- `@sly/sdk` → `@sly/sdk`
+- `@sly/cards` → `@sly/cards`
+- `@sly/types` → `@sly/types`
+- `@sly/utils` → `@sly/utils`
+- `@sly/ui` → `@sly/ui`
+- `@sly/api-client` → `@sly/api-client`
+- `@sly/mcp-server` → `@sly/mcp-server`
+- `@sly/db` → `@sly/db`
+- `@sly/x402-client-sdk` → `@sly/x402-client-sdk`
+- `@sly/x402-provider-sdk` → `@sly/x402-provider-sdk`
 
 **Acceptance Criteria:**
 - [ ] All package.json files updated with new names
@@ -77,7 +77,7 @@ Rename all npm packages from `@payos/*` to `@sly/*`.
 
 **Files to Modify:**
 - All `package.json` files
-- All import statements referencing `@payos/*`
+- All import statements referencing `@sly/*`
 - `tsconfig.json` path mappings
 - `turbo.json` if applicable
 
@@ -150,7 +150,7 @@ Update SDK exports and class names for Sly branding.
 **Changes:**
 ```typescript
 // Before
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 const payos = new PayOS({ apiKey: '...' });
 
 // After
@@ -267,7 +267,7 @@ Update external assets and accounts.
 
 ### Phase 3: Package Rename
 1. Publish packages under `@sly/*`
-2. Keep `@payos/*` as deprecated aliases
+2. Keep `@sly/*` as deprecated aliases
 3. Announce migration timeline
 
 ### Phase 4: Cleanup
@@ -282,11 +282,11 @@ Update external assets and accounts.
 ```typescript
 // Step 1: Update package
 // npm install @sly/sdk
-// npm uninstall @payos/sdk
+// npm uninstall @sly/sdk
 
 // Step 2: Update imports
 // Before
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 const payos = new PayOS({ apiKey: process.env.PAYOS_API_KEY });
 
 // After
@@ -305,7 +305,7 @@ const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
 
 | Story | Points | Priority | Description |
 |-------|--------|----------|-------------|
-| 54.1 Package Namespace | 8 | P0 | Rename @payos/* → @sly/* |
+| 54.1 Package Namespace | 8 | P0 | Rename @sly/* → @sly/* |
 | 54.2 Documentation | 5 | P0 | Update all docs |
 | 54.3 Dashboard UI | 5 | P0 | Logo, titles, meta |
 | 54.4 SDK Public API | 5 | P0 | Sly class, deprecate PayOS |

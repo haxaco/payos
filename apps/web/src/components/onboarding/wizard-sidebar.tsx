@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckCircle, Circle, SkipForward, Clock } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import type { WizardStepDefinition } from '@/types/wizard';
 
 interface WizardSidebarProps {

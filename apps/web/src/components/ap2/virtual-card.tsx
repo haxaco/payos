@@ -13,8 +13,8 @@ import {
     CardHeader,
     CardTitle,
     CardFooter
-} from "@payos/ui";
-import { Mandate } from "@payos/api-client";
+} from "@sly/ui";
+import { Mandate } from "@sly/api-client";
 import { cn } from "@/lib/utils";
 
 interface VirtualCardProps {

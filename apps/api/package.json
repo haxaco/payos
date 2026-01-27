@@ -1,5 +1,5 @@
 {
-  "name": "@payos/api",
+  "name": "@sly/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -27,9 +27,9 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
-    "@payos/cards": "workspace:*",
-    "@payos/types": "workspace:*",
-    "@payos/utils": "workspace:*",
+    "@sly/cards": "workspace:*",
+    "@sly/types": "workspace:*",
+    "@sly/utils": "workspace:*",
     "@supabase/supabase-js": "^2.47.10",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",

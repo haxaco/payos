@@ -26,13 +26,13 @@
       "@/*": [
         "./src/*"
       ],
-      "@payos/api-client": [
+      "@sly/api-client": [
         "../../packages/api-client/src"
       ],
-      "@payos/types": [
+      "@sly/types": [
         "../../packages/types/src"
       ],
-      "@payos/ui": [
+      "@sly/ui": [
         "../../packages/ui/src"
       ]
     }

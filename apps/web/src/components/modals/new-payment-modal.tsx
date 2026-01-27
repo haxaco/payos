@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useApiClient } from '@/lib/api-client';
-import { formatCurrency } from '@payos/ui';
+import { formatCurrency } from '@sly/ui';
 import {
   X,
   ArrowRight,
@@ -18,7 +18,7 @@ import {
   Loader2,
   Eye,
 } from 'lucide-react';
-import type { Account } from '@payos/api-client';
+import type { Account } from '@sly/api-client';
 import { useSimulation } from '@/hooks/use-simulation';
 
 interface NewPaymentModalProps {

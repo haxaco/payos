@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { StatCard } from '@payos/ui';
+import { StatCard } from '@sly/ui';
 import { Users, Bot, Activity, Wallet } from 'lucide-react';
 import { useApiClient } from '@/lib/api-client';
 

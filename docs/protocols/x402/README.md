@@ -89,7 +89,7 @@ x402 is a lightweight protocol that adds payment capabilities to any HTTP API. W
 ### For Consumers (Using x402-protected APIs)
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 // Initialize client
 const client = new X402Client({
@@ -104,7 +104,7 @@ const data = await client.get('https://api.example.com/data');
 ### For Providers (Protecting your API)
 
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 // Initialize provider
 const provider = new X402Provider({
@@ -189,10 +189,10 @@ See [../../architecture/wallet-schema.md](../../architecture/wallet-schema.md) f
 
 ```bash
 # Run x402 unit tests
-pnpm --filter @payos/api test tests/unit/x402
+pnpm --filter @sly/api test tests/unit/x402
 
 # Run x402 integration tests
-INTEGRATION=true pnpm --filter @payos/api test tests/integration/x402
+INTEGRATION=true pnpm --filter @sly/api test tests/integration/x402
 ```
 
 ### AI-Assisted Testing

@@ -23,8 +23,8 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from "@payos/ui";
-import { Mandate } from "@payos/api-client";
+} from "@sly/ui";
+import { Mandate } from "@sly/api-client";
 import { EditMandateDialog } from "./edit-mandate-dialog";
 
 interface MandateActionsMenuProps {

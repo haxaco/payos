@@ -13,7 +13,7 @@ import {
   NotFoundError,
   InsufficientBalanceError,
 } from '../middleware/error.js';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 
 const refunds = new Hono();
 

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { FileText, Loader2, CheckCircle, Info, Calendar, DollarSign } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import { useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
 

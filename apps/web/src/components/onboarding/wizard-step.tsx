@@ -10,7 +10,7 @@ import {
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import type { WizardStepDefinition } from '@/types/wizard';
 
 interface WizardStepProps {

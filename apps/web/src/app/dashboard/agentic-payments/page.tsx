@@ -2,7 +2,7 @@
 
 import { Bot, Zap, ShoppingCart, TrendingUp, DollarSign, Activity, Globe } from 'lucide-react';
 import Link from 'next/link';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@payos/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@sly/ui';
 
 export default function AgenticPaymentsOverviewPage() {
     const protocols = [

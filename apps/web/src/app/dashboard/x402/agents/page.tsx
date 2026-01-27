@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Bot, Plus, Search, Filter, Wallet as WalletIcon, Settings, MoreVertical } from 'lucide-react';
 import Link from 'next/link';
-import type { Agent, Wallet } from '@payos/api-client';
+import type { Agent, Wallet } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 
 interface AgentWithWallet extends Agent {

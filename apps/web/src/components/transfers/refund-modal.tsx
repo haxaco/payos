@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useApiClient } from '@/lib/api-client';
 import { X, AlertCircle, Loader2, ArrowLeft, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { Button, Input, Label, cn } from '@payos/ui';
-import type { Transfer, RefundReason } from '@payos/api-client';
-import { formatCurrency } from '@payos/ui';
+import { Button, Input, Label, cn } from '@sly/ui';
+import type { Transfer, RefundReason } from '@sly/api-client';
+import { formatCurrency } from '@sly/ui';
 
 interface RefundModalProps {
   transfer: Transfer;

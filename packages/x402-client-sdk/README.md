@@ -1,4 +1,4 @@
-# @payos/x402-client-sdk
+# @sly/x402-client-sdk
 
 Client SDK for consuming x402-enabled APIs with automatic payment handling.
 
@@ -9,13 +9,13 @@ x402 is an open standard for HTTP 402 "Payment Required" responses, enabling mic
 ## Installation
 
 ```bash
-npm install @payos/x402-client-sdk
+npm install @sly/x402-client-sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 // Initialize client
 const client = new X402Client({
@@ -115,7 +115,7 @@ client.updateConfig({
 ### Basic Usage
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiUrl: 'https://api.payos.com',
@@ -215,7 +215,7 @@ const result = await complianceData.json();
 ### Custom Fetch Implementation
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 import { createFetch } from '@vercel/fetch';
 
 const client = new X402Client({
@@ -271,13 +271,13 @@ import {
   X402Error,
   is402Response,
   extract402Details
-} from '@payos/x402-client-sdk';
+} from '@sly/x402-client-sdk';
 ```
 
 ## Utility Functions
 
 ```typescript
-import { is402Response, extract402Details } from '@payos/x402-client-sdk';
+import { is402Response, extract402Details } from '@sly/x402-client-sdk';
 
 // Check if response is 402
 if (is402Response(response)) {

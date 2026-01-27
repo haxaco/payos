@@ -726,7 +726,7 @@ packages:
 ```json
 // apps/dashboard/package.json
 {
-  "name": "@payos/dashboard",
+  "name": "@sly/dashboard",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -737,8 +737,8 @@ packages:
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@payos/types": "workspace:*",
-    "@payos/utils": "workspace:*",
+    "@sly/types": "workspace:*",
+    "@sly/utils": "workspace:*",
     "next": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -751,7 +751,7 @@ packages:
 ```json
 // apps/api/package.json
 {
-  "name": "@payos/api",
+  "name": "@sly/api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -762,8 +762,8 @@ packages:
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@payos/types": "workspace:*",
-    "@payos/utils": "workspace:*",
+    "@sly/types": "workspace:*",
+    "@sly/utils": "workspace:*",
     "@supabase/supabase-js": "^2.38.0",
     "@hono/node-server": "^1.3.0",
     "hono": "^3.11.0",
@@ -779,7 +779,7 @@ packages:
 ```json
 // packages/types/package.json
 {
-  "name": "@payos/types",
+  "name": "@sly/types",
   "version": "0.1.0",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -848,7 +848,7 @@ import type {
   CreateAgentRequest,
   CreateTransferRequest,
   CreateStreamRequest,
-} from '@payos/types';
+} from '@sly/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -1428,8 +1428,8 @@ pnpm install
 pnpm dev
 
 # Or run specific apps
-pnpm --filter @payos/dashboard dev    # Dashboard on :3000
-pnpm --filter @payos/api dev          # API on :4000
+pnpm --filter @sly/dashboard dev    # Dashboard on :3000
+pnpm --filter @sly/api dev          # API on :4000
 
 # Build all packages and apps
 pnpm build
@@ -1441,12 +1441,12 @@ pnpm typecheck
 pnpm lint
 
 # Database operations
-pnpm --filter @payos/db migrate       # Run migrations
-pnpm --filter @payos/db seed          # Seed data
+pnpm --filter @sly/db migrate       # Run migrations
+pnpm --filter @sly/db seed          # Seed data
 
 # Add a dependency to a specific package
-pnpm --filter @payos/dashboard add zustand
-pnpm --filter @payos/api add zod
+pnpm --filter @sly/dashboard add zustand
+pnpm --filter @sly/api add zod
 ```
 
 ### 2.10 Deployment
@@ -1455,7 +1455,7 @@ pnpm --filter @payos/api add zod
 ┌─────────────────────────────────────────────────────────────┐
 │                        VERCEL                                │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │              @payos/dashboard                           ││
+│  │              @sly/dashboard                           ││
 │  │         https://dashboard.payos.dev                     ││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
@@ -1464,7 +1464,7 @@ pnpm --filter @payos/api add zod
 ┌─────────────────────────────────────────────────────────────┐
 │                   RAILWAY / RENDER                           │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │                  @payos/api                             ││
+│  │                  @sly/api                             ││
 │  │            https://api.payos.dev                        ││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
@@ -1496,7 +1496,7 @@ WORKDIR /app
 COPY . .
 RUN npm install -g pnpm
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @payos/api build
+RUN pnpm --filter @sly/api build
 
 FROM node:20-alpine
 WORKDIR /app
@@ -2483,7 +2483,7 @@ Implement GET (list) and POST (create) endpoints for accounts.
 import { Hono } from 'hono';
 import { createClient } from '../db/client';
 import { mapAccountFromDb, logAudit } from '../utils/helpers';
-import type { Account } from '@payos/types';
+import type { Account } from '@sly/types';
 
 const accounts = new Hono();
 
@@ -3905,8 +3905,8 @@ const AccountCard = () => {
 };
 
 // AFTER: Cleaned up with props and types
-import { Account } from '@payos/types';
-import { formatCurrency } from '@payos/utils';
+import { Account } from '@sly/types';
+import { formatCurrency } from '@sly/utils';
 
 interface AccountCardProps {
   account: Account;
@@ -8667,8 +8667,8 @@ pnpm install
 
 # 2. Set up Supabase
 # - Create project at supabase.com
-# - Run migrations: pnpm --filter @payos/db migrate
-# - Seed data: pnpm --filter @payos/db seed
+# - Run migrations: pnpm --filter @sly/db migrate
+# - Seed data: pnpm --filter @sly/db seed
 
 # 3. Configure environment
 cp .env.example .env
@@ -9777,7 +9777,7 @@ export function validateProtocolMetadata(
 - [x] `x402_metadata` column renamed to `protocol_metadata`
 - [ ] Transfer type constraint updated to include `ap2`, `acp`
 - [ ] Index created for protocol-type queries
-- [ ] TypeScript types exported from `@payos/types`
+- [ ] TypeScript types exported from `@sly/types`
 - [ ] Zod schemas validate all three protocols
 - [ ] Existing x402 transfers unaffected (backward compatible)
 
@@ -10657,7 +10657,7 @@ export interface VerifyX402PaymentResponse {
 - 3 new API route modules (`ap2.ts`, `acp.ts`, `agentic-payments.ts`)
 - Webhook service with worker process
 - Updated 7 existing files for protocol_metadata migration
-- Full TypeScript type definitions in `@payos/types` package
+- Full TypeScript type definitions in `@sly/types` package
 
 **Frontend:**
 - 8+ new pages across AP2 and ACP protocols
@@ -11875,7 +11875,7 @@ app.post('/v1/onboarding/setup-x402-consumer', async (c) => {
     message: 'x402 consumer setup complete',
     nextSteps: [
       '1. Save your agent token (shown once above)',
-      '2. Install SDK: npm install @payos/x402-client-sdk',
+      '2. Install SDK: npm install @sly/x402-client-sdk',
       '3. See sample code: https://docs.payos.ai/x402/quickstart'
     ]
   });
@@ -12775,12 +12775,12 @@ function getCachedEndpoint(endpointId: string): Endpoint | null {
     - Endpoint fetch: **166ms → 148ms** (cache hit)
 
 - **SDK Updates:**
-  - `@payos/x402-provider-sdk`:
+  - `@sly/x402-provider-sdk`:
     - Added `jwtSecret` config option for local verification
     - Added `preferLocalVerification` option (default: true)
     - `verifyPayment()` now accepts optional JWT parameter
     - Protect middleware reads `X-Payment-JWT` header
-  - `@payos/x402-client-sdk`:
+  - `@sly/x402-client-sdk`:
     - Updated `X402Payment.proof` type to include `jwt?: string`
     - Retry logic sends JWT in `X-Payment-JWT` header
 

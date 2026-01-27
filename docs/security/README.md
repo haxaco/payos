@@ -90,10 +90,10 @@ See [RLS_TESTING.md](RLS_TESTING.md) for testing procedures.
 **Automated testing:**
 ```bash
 # Run RLS coverage check
-pnpm --filter @payos/api check:rls
+pnpm --filter @sly/api check:rls
 
 # Run integration tests (includes RLS tests)
-INTEGRATION=true pnpm --filter @payos/api test
+INTEGRATION=true pnpm --filter @sly/api test
 ```
 
 ## Authentication & Authorization
@@ -380,10 +380,10 @@ System tracks compliance for:
 
 ```bash
 # Run security-focused tests
-pnpm --filter @payos/api test tests/integration/security
+pnpm --filter @sly/api test tests/integration/security
 
 # Check RLS coverage
-pnpm --filter @payos/api check:rls
+pnpm --filter @sly/api check:rls
 
 # Run full test suite
 pnpm test

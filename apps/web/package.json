@@ -1,5 +1,5 @@
 {
-  "name": "@payos/web",
+  "name": "@sly/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@payos/api-client": "workspace:*",
-    "@payos/types": "workspace:*",
-    "@payos/ui": "workspace:*",
+    "@sly/api-client": "workspace:*",
+    "@sly/types": "workspace:*",
+    "@sly/ui": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
     "@tanstack/react-query": "^5.90.12",

@@ -6,7 +6,7 @@
  * Populates the database with sample UCP checkout sessions and orders
  * for testing the UCP UI implementation.
  *
- * Usage: pnpm --filter @payos/api seed:ucp
+ * Usage: pnpm --filter @sly/api seed:ucp
  */
 
 import 'dotenv/config';
@@ -598,7 +598,7 @@ async function seedAdditionalOrders(tenantId: string): Promise<void> {
 async function main() {
   console.log('🚀 UCP Sample Data Seeding Script\n');
   console.log('='.repeat(50));
-  console.log('\nUsage: pnpm --filter @payos/api seed:ucp [--tenant-id <id>] [--force]');
+  console.log('\nUsage: pnpm --filter @sly/api seed:ucp [--tenant-id <id>] [--force]');
   console.log('  --tenant-id <id>  Specify tenant ID (default: first tenant)');
   console.log('  --force           Clear existing data before seeding\n');
 

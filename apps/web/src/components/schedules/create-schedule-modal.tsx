@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useApiClient } from '@/lib/api-client';
 import { X, Calendar, Loader2, AlertCircle } from 'lucide-react';
-import { Button, Input, Label, cn } from '@payos/ui';
-import type { Account, ScheduleFrequency } from '@payos/api-client';
+import { Button, Input, Label, cn } from '@sly/ui';
+import type { Account, ScheduleFrequency } from '@sly/api-client';
 
 interface CreateScheduleModalProps {
   onClose: () => void;

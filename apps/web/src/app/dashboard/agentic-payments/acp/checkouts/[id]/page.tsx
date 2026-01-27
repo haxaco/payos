@@ -16,7 +16,7 @@ import {
     Avatar,
     AvatarFallback,
     AvatarImage
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     ArrowLeft,
     Store,

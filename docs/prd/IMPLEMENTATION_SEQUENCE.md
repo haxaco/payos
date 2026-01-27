@@ -149,7 +149,7 @@ These stories create the unified SDK with x402 support. This is the **core produ
 | 12 | 36 | 36.7 | 3 | Main PayOS class |
 | 13 | 30 | 30.5 | 2 | Retry guidance (`retry_after`) |
 
-**Deliverable:** `@payos/sdk` works locally. x402 payments testable without gas fees or real USDC.
+**Deliverable:** `@sly/sdk` works locally. x402 payments testable without gas fees or real USDC.
 
 ---
 

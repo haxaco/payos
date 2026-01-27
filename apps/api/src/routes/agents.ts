@@ -14,7 +14,7 @@ import {
 import { createLimitService } from '../services/limits.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { generateAgentToken, hashApiKey, getKeyPrefix } from '../utils/crypto.js';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 
 const agents = new Hono();
 
@@ -1053,7 +1053,7 @@ agents.post('/:id/signing-keys', async (c) => {
   }
 
   // Generate key pair
-  const { generateAgentKeyPair } = await import('@payos/cards');
+  const { generateAgentKeyPair } = await import('@sly/cards');
   const keyPair = await generateAgentKeyPair(algorithm as 'ed25519' | 'rsa-sha256');
 
   // Create key ID
@@ -1349,7 +1349,7 @@ agents.post('/:id/sign-request', async (c) => {
   const privateKey = decryptedKey.privateKey as string;
 
   // Sign the request
-  const { WebBotAuthSigner } = await import('@payos/cards');
+  const { WebBotAuthSigner } = await import('@sly/cards');
   const signer = new WebBotAuthSigner({
     keyId: signingKey.key_id,
     privateKey,

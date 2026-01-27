@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Wallet as WalletIcon, Plus, Search, Filter, TrendingUp, ArrowUp, ArrowDown, MoreVertical, X } from 'lucide-react';
 import Link from 'next/link';
-import type { Wallet } from '@payos/api-client';
+import type { Wallet } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';

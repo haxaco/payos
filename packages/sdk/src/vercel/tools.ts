@@ -1,18 +1,18 @@
 /**
- * Vercel AI SDK Tools for PayOS
- * 
- * Provides PayOS capabilities as Vercel AI SDK tools for use with
+ * Vercel AI SDK Tools for Sly
+ *
+ * Provides Sly capabilities as Vercel AI SDK tools for use with
  * Next.js applications, streaming responses, and React hooks.
- * 
+ *
  * @example
  * ```typescript
- * import { createPayOSVercelTools } from '@payos/sdk/vercel';
+ * import { createSlyVercelTools } from '@sly/sdk/vercel';
  * import { openai } from '@ai-sdk/openai';
  * import { generateText } from 'ai';
- * 
- * const payos = new PayOS({ apiKey: '...', environment: 'sandbox' });
- * const tools = createPayOSVercelTools(payos);
- * 
+ *
+ * const sly = new Sly({ apiKey: '...', environment: 'sandbox' });
+ * const tools = createSlyVercelTools(sly);
+ *
  * const result = await generateText({
  *   model: openai('gpt-4'),
  *   prompt: 'Send $100 to Brazil via Pix',
@@ -23,15 +23,15 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { PayOS } from '../index';
+import type { Sly } from '../index';
 
 /**
- * Create Vercel AI SDK tools from a PayOS instance
- * 
+ * Create Vercel AI SDK tools from a Sly instance
+ *
  * Returns an object with tools that can be passed directly to
  * `generateText`, `streamText`, or `generateObject` from the `ai` package.
  */
-export function createPayOSVercelTools(payos: PayOS) {
+export function createSlyVercelTools(sly: Sly) {
   return {
     get_settlement_quote: tool({
       description: 'Get a settlement quote for cross-border payment with FX rates and fees. Use this when a user wants to know how much money will be received in another currency.',
@@ -43,7 +43,7 @@ export function createPayOSVercelTools(payos: PayOS) {
       }),
       execute: async ({ fromCurrency, toCurrency, amount, rail }) => {
         try {
-          const quote = await payos.getSettlementQuote({
+          const quote = await sly.getSettlementQuote({
             fromCurrency,
             toCurrency,
             amount,
@@ -71,7 +71,7 @@ export function createPayOSVercelTools(payos: PayOS) {
       }),
       execute: async ({ quoteId, destinationAccountId, metadata }) => {
         try {
-          const settlement = await payos.createSettlement({
+          const settlement = await sly.createSettlement({
             quoteId,
             destinationAccountId,
             metadata,
@@ -96,7 +96,7 @@ export function createPayOSVercelTools(payos: PayOS) {
       }),
       execute: async ({ settlementId }) => {
         try {
-          const settlement = await payos.getSettlement(settlementId);
+          const settlement = await sly.getSettlement(settlementId);
           return {
             success: true,
             data: settlement,
@@ -119,7 +119,7 @@ export function createPayOSVercelTools(payos: PayOS) {
       }),
       execute: async ({ recipientAccountId, amount, currency }) => {
         try {
-          const result = await payos.checkCompliance({
+          const result = await sly.checkCompliance({
             recipientAccountId,
             amount,
             currency,
@@ -140,9 +140,9 @@ export function createPayOSVercelTools(payos: PayOS) {
 }
 
 /**
- * System prompt for Vercel AI SDK agents using PayOS tools
+ * System prompt for Vercel AI SDK agents using Sly tools
  */
-export const PAYOS_VERCEL_SYSTEM_PROMPT = `You are a helpful AI assistant with access to PayOS payment operations.
+export const SLY_VERCEL_SYSTEM_PROMPT = `You are a helpful AI assistant with access to Sly payment operations.
 
 You can help users with:
 - Getting settlement quotes for cross-border payments (USD, BRL, MXN, USDC)
@@ -169,8 +169,17 @@ When presenting quotes:
 - Explain the estimated settlement time
 - Ask for confirmation before executing`;
 
+// Backward compatibility alias
+export { SLY_VERCEL_SYSTEM_PROMPT as PAYOS_VERCEL_SYSTEM_PROMPT };
+
 /**
  * Type for Vercel AI SDK tools
  */
-export type PayOSVercelTools = ReturnType<typeof createPayOSVercelTools>;
+export type SlyVercelTools = ReturnType<typeof createSlyVercelTools>;
+
+// Backward compatibility alias
+export type PayOSVercelTools = SlyVercelTools;
+
+// Backward compatibility alias for function
+export { createSlyVercelTools as createPayOSVercelTools };
 

@@ -1,4 +1,4 @@
-# @payos/db
+# @sly/db
 
 Database migrations and seed data for PayOS.
 

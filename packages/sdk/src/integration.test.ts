@@ -1,5 +1,5 @@
 /**
- * Integration tests for @payos/sdk
+ * Integration tests for @sly/sdk
  * 
  * These tests validate end-to-end workflows and component integration.
  * They use the real SDK components but mock network calls.

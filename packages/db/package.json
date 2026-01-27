@@ -1,5 +1,5 @@
 {
-  "name": "@payos/db",
+  "name": "@sly/db",
   "version": "0.1.0",
   "scripts": {
     "db:migrate": "echo 'Migrations are applied via Supabase MCP'",

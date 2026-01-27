@@ -1,5 +1,5 @@
 {
-  "name": "@payos-examples/x402-micropayments",
+  "name": "@sly-examples/x402-micropayments",
   "version": "1.0.0",
   "description": "x402 (HTTP 402) micropayments example - client and provider",
   "type": "module",
@@ -12,7 +12,7 @@
     "test:watch": "vitest src/index.test.ts"
   },
   "dependencies": {
-    "@payos/sdk": "workspace:*",
+    "@sly/sdk": "workspace:*",
     "express": "^4.18.0"
   },
   "devDependencies": {

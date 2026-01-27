@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Account, Agent, Transfer, Stream } from '@payos/types';
+import type { Account, Agent, Transfer, Stream } from '@sly/types';
 
 // ============================================
 // DATABASE ROW MAPPERS

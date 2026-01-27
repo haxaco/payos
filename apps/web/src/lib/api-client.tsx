@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
-import { PayOSClient, createPayOSClient, PayOSError } from '@payos/api-client';
+import { PayOSClient, createPayOSClient, PayOSError } from '@sly/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 

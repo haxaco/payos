@@ -61,15 +61,15 @@ export function createHandlerFromAccount(
     case 'visa_vic':
       // Epic 53: Visa VIC handler
       // Card network handlers use different interface - return null for payment handler
-      // Use VisaVICClient directly from @payos/cards package
-      console.log('Visa VIC configured - use @payos/cards for operations');
+      // Use VisaVICClient directly from @sly/cards package
+      console.log('Visa VIC configured - use @sly/cards for operations');
       return null;
 
     case 'mastercard_agent_pay':
       // Epic 53: Mastercard Agent Pay handler
       // Card network handlers use different interface - return null for payment handler
-      // Use MastercardAgentPayClient directly from @payos/cards package
-      console.log('Mastercard Agent Pay configured - use @payos/cards for operations');
+      // Use MastercardAgentPayClient directly from @sly/cards package
+      console.log('Mastercard Agent Pay configured - use @sly/cards for operations');
       return null;
 
     default:

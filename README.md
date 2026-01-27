@@ -49,7 +49,7 @@ pnpm build
 
 ```bash
 # Start API server
-pnpm --filter @payos/api dev
+pnpm --filter @sly/api dev
 
 # Or start everything
 pnpm dev
@@ -145,10 +145,10 @@ pnpm lint
 
 ```bash
 # Build specific package
-pnpm --filter @payos/types build
+pnpm --filter @sly/types build
 
 # Add dependency to app
-pnpm --filter @payos/api add zod
+pnpm --filter @sly/api add zod
 ```
 
 ## 📋 Implementation Status

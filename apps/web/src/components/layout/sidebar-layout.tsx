@@ -1,7 +1,7 @@
 'use client';
 
 import { useSidebar } from './sidebar-context';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 export function SidebarLayout({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar();

@@ -4,7 +4,7 @@
  * Demonstrates automatic payment for premium API endpoints
  */
 
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 import chalk from 'chalk';
 
 export async function runX402Demo(payos: PayOS, providerUrl: string) {

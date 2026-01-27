@@ -5,7 +5,7 @@ This example shows how to build a Next.js chat application with PayOS payment ca
 ## Setup
 
 ```bash
-npm install ai @ai-sdk/openai @payos/sdk
+npm install ai @ai-sdk/openai @sly/sdk
 ```
 
 ## API Route
@@ -13,8 +13,8 @@ npm install ai @ai-sdk/openai @payos/sdk
 Create `app/api/chat/route.ts`:
 
 ```typescript
-import { createPayOSVercelTools, PAYOS_VERCEL_SYSTEM_PROMPT } from '@payos/sdk/vercel';
-import { PayOS } from '@payos/sdk';
+import { createPayOSVercelTools, PAYOS_VERCEL_SYSTEM_PROMPT } from '@sly/sdk/vercel';
+import { PayOS } from '@sly/sdk';
 import { openai } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 
@@ -167,7 +167,7 @@ AI: [Calls check_compliance tool]
 You can also create custom tools alongside PayOS:
 
 ```typescript
-import { createPayOSVercelTools } from '@payos/sdk/vercel';
+import { createPayOSVercelTools } from '@sly/sdk/vercel';
 import { tool } from 'ai';
 import { z } from 'zod';
 

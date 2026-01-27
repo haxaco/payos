@@ -40,8 +40,8 @@ This document summarizes issues, missing features, and stability observations en
 - **Request:** Standardize all date fields to ISO 8601 strings across all endpoints (Wallets, Mandates, Transactions).
 
 ### Type Definitions
-- **Observation:** Some API response types didn't match the `@payos/api-client` definitions exactly (e.g., nested `data` objects vs flat responses), requiring frontend adjustments.
-- **Request:** Ensure the `@payos/api-client` package is kept in strict sync with the deployed API version.
+- **Observation:** Some API response types didn't match the `@sly/api-client` definitions exactly (e.g., nested `data` objects vs flat responses), requiring frontend adjustments.
+- **Request:** Ensure the `@sly/api-client` package is kept in strict sync with the deployed API version.
 
 ## 4. Dashboard & Analytics
 ### Balance Aggregation

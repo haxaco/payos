@@ -12,7 +12,7 @@ import {
     TabsContent,
     TabsList,
     TabsTrigger,
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     Key,
     Link2,

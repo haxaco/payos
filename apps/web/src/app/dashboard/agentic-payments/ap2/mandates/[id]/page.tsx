@@ -23,7 +23,7 @@ import {
     TableHead,
     TableHeader,
     TableRow
-} from "@payos/ui";
+} from "@sly/ui";
 
 import { MandateStatusBadge } from "@/components/ap2/mandate-status-badge";
 import { MandateUtilizationBar } from "@/components/ap2/mandate-utilization-bar";

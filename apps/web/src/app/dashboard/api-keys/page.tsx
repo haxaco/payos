@@ -11,7 +11,7 @@ import {
   Input,
   Label,
   Badge,
-} from '@payos/ui';
+} from '@sly/ui';
 import { useApiConfig } from '@/lib/api-client';
 import { Key, Eye, EyeOff, Check, Copy, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';

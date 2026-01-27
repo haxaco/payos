@@ -1,5 +1,5 @@
-import { Badge } from "@payos/ui";
-import { MandateStatus } from "@payos/api-client";
+import { Badge } from "@sly/ui";
+import { MandateStatus } from "@sly/api-client";
 import { cn } from "@/lib/utils";
 
 interface MandateStatusBadgeProps {

@@ -9,7 +9,7 @@ import {
   ExternalLink,
   CreditCard,
 } from 'lucide-react';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import { toast } from 'sonner';
 import {
   useConnectedAccounts,

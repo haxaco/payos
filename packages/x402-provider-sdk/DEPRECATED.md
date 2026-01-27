@@ -1,10 +1,10 @@
-# ⚠️ DEPRECATED: @payos/x402-provider-sdk
+# ⚠️ DEPRECATED: @sly/x402-provider-sdk
 
 **This package is deprecated and will no longer receive updates.**
 
 ## 🚨 Action Required
 
-**Please migrate to `@payos/sdk` before April 1, 2026.**
+**Please migrate to `@sly/sdk` before April 1, 2026.**
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### Before (Old)
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 import express from 'express';
 
 const app = express();
@@ -27,7 +27,7 @@ app.use('/api', provider.middleware());
 
 ### After (New)
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 import express from 'express';
 
 const app = express();
@@ -50,7 +50,7 @@ app.use('/api', provider.middleware());
 
 ## Why Migrate?
 
-The new `@payos/sdk` provides:
+The new `@sly/sdk` provides:
 
 ✅ **Unified API** - One SDK for x402, AP2, and ACP protocols  
 ✅ **Better TypeScript** - Improved type safety and IntelliSense  

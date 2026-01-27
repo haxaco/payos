@@ -379,7 +379,7 @@ After running tests:
 
 **User Tenant**: haxaco@gmail.com  
 **Test Framework**: Vitest  
-**SDK Version**: @payos/sdk v0.1.0  
+**SDK Version**: @sly/sdk v0.1.0  
 **Report Format**: Markdown  
 **Coverage**: 19 scenarios across 2 sample apps
 

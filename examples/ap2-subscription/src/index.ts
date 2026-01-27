@@ -5,7 +5,7 @@
  * for mandate-based recurring payments and subscriptions.
  */
 
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Initialize PayOS SDK
 const payos = new PayOS({

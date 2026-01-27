@@ -1,10 +1,10 @@
-# ⚠️ DEPRECATED: @payos/x402-client-sdk
+# ⚠️ DEPRECATED: @sly/x402-client-sdk
 
 **This package is deprecated and will no longer receive updates.**
 
 ## 🚨 Action Required
 
-**Please migrate to `@payos/sdk` before April 1, 2026.**
+**Please migrate to `@sly/sdk` before April 1, 2026.**
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### Before (Old)
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiKey: process.env.PAYOS_API_KEY,
@@ -24,7 +24,7 @@ const response = await client.fetch('https://api.example.com/protected');
 
 ### After (New)
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: process.env.PAYOS_API_KEY!,
@@ -40,7 +40,7 @@ const response = await x402Client.fetch('https://api.example.com/protected');
 
 ## Why Migrate?
 
-The new `@payos/sdk` provides:
+The new `@sly/sdk` provides:
 
 ✅ **Unified API** - One SDK for x402, AP2, and ACP protocols  
 ✅ **Better TypeScript** - Improved type safety and IntelliSense  

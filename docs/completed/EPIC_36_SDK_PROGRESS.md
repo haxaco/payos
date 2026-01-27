@@ -14,7 +14,7 @@ Successfully implemented the core SDK infrastructure and x402 protocol support. 
 ## Completed Stories (24 points)
 
 ### ✅ Story 36.1: Package Structure (3 pts)
-- Created `@payos/sdk` package with monorepo structure
+- Created `@sly/sdk` package with monorepo structure
 - Multiple entry points: main, x402, ap2, acp
 - Dual CJS/ESM build with TypeScript types
 - **Tests:** 21 passing
@@ -75,13 +75,13 @@ Successfully implemented the core SDK infrastructure and x402 protocol support. 
 ### Installation
 
 ```bash
-pnpm add @payos/sdk
+pnpm add @sly/sdk
 ```
 
 ### Basic Usage
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: 'payos_...',

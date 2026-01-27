@@ -10,7 +10,7 @@
  */
 
 import 'dotenv/config';
-import { PayOS, createWithPassword } from '@payos/sdk';
+import { PayOS, createWithPassword } from '@sly/sdk';
 import chalk from 'chalk';
 import { runX402Demo } from './x402-demo';
 import { runAP2Demo } from './ap2-demo';

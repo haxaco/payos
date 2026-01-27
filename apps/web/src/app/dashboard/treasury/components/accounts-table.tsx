@@ -1,7 +1,7 @@
 'use client';
 
-import { TreasuryAccount } from '@payos/api-client';
-import { Skeleton, Badge } from '@payos/ui';
+import { TreasuryAccount } from '@sly/api-client';
+import { Skeleton, Badge } from '@sly/ui';
 import { ArrowRight } from 'lucide-react';
 import { formatCurrencyStandalone } from '@/lib/locale';
 

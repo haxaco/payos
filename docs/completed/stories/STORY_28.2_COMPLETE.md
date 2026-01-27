@@ -38,7 +38,7 @@ function calculateTransferFees(
 
 ### 2. FX Rate Integration
 
-Integrated with `@payos/utils` FX rate service:
+Integrated with `@sly/utils` FX rate service:
 
 - Uses `getExchangeRate()` for real-time rates
 - Supports all major LatAm currencies (BRL, MXN, ARS, COP)

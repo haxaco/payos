@@ -15,8 +15,8 @@ import {
     DialogTitle,
     Input,
     Label,
-} from "@payos/ui";
-import { Mandate } from "@payos/api-client";
+} from "@sly/ui";
+import { Mandate } from "@sly/api-client";
 
 interface EditMandateDialogProps {
     mandate: Mandate;

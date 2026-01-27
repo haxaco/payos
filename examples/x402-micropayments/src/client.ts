@@ -12,7 +12,7 @@
  * - Sandbox mode (no real payments)
  */
 
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const USER_EMAIL = 'haxaco@gmail.com';
 const USER_ACCOUNT_ID = 'acct_haxaco_test';

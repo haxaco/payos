@@ -240,7 +240,7 @@ Copy this into your PR description:
 - [ ] SDK exposure decision documented in story/PR
 - [ ] If SDK needed:
   - [ ] Epic 36 story created/updated
-  - [ ] Types added to `@payos/sdk`
+  - [ ] Types added to `@sly/sdk`
   - [ ] MCP tool added (if applicable)
 - [ ] If SDK NOT needed:
   - [ ] Reason documented: _______________

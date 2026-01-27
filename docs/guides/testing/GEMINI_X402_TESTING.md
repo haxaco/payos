@@ -14,8 +14,8 @@ Before testing, ensure:
 ### Start Services
 ```bash
 cd /Users/haxaco/Dev/PayOS
-pnpm dev --filter=@payos/api &
-pnpm dev --filter=@payos/web &
+pnpm dev --filter=@sly/api &
+pnpm dev --filter=@sly/web &
 ```
 
 ---

@@ -220,12 +220,12 @@ Save the `id` - this is your **Wallet ID** (`wal_x1y2z3w4v5u6`).
 
 Install the SDK:
 ```bash
-npm install @payos/x402-provider-sdk
+npm install @sly/x402-provider-sdk
 ```
 
 Initialize with your API key:
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const x402 = new X402Provider({
   apiKey: 'pk_live_your_api_key'
@@ -376,12 +376,12 @@ curl -X POST https://api.payos.ai/v1/wallets/wal_s1t2u3v4w5x6/deposit \
 
 Install the SDK:
 ```bash
-npm install @payos/x402-client-sdk
+npm install @sly/x402-client-sdk
 ```
 
 Initialize with your API key and agent ID:
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const x402 = new X402Client({
   apiKey: 'pk_live_your_api_key',
@@ -415,7 +415,7 @@ A complete example of an API that monetizes endpoints using x402.
 mkdir weather-api
 cd weather-api
 npm init -y
-npm install express @payos/x402-provider-sdk
+npm install express @sly/x402-provider-sdk
 npm install -D typescript @types/express @types/node tsx
 ```
 
@@ -439,7 +439,7 @@ Create `src/server.ts`:
 
 ```typescript
 import express from 'express';
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const app = express();
 app.use(express.json());
@@ -589,7 +589,7 @@ A complete example of an AI agent that calls paid APIs with automatic payment.
 mkdir weather-agent
 cd weather-agent
 npm init -y
-npm install @payos/x402-client-sdk
+npm install @sly/x402-client-sdk
 npm install -D typescript @types/node tsx
 ```
 
@@ -612,7 +612,7 @@ WEATHER_API_URL=http://localhost:4000
 Create `src/agent.ts`:
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 // ============================================
 // Initialize x402 Client
@@ -800,7 +800,7 @@ PAYOS_API_KEY=pk_xxx PAYOS_AGENT_ID=agt_xxx npx tsx src/agent.ts
 ### Provider SDK
 
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 // Initialize
 const x402 = new X402Provider({
@@ -838,7 +838,7 @@ const analytics = await x402.getAnalytics(period?: '7d' | '30d' | '90d');
 ### Consumer SDK
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 // Initialize
 const x402 = new X402Client({
@@ -899,7 +899,7 @@ Currently, API keys are user-scoped. For better security with AI agents, conside
 - [ ] Get API key from Settings → API Keys
 - [ ] Create an Account via API
 - [ ] Create a Wallet for that Account
-- [ ] Install `@payos/x402-provider-sdk`
+- [ ] Install `@sly/x402-provider-sdk`
 - [ ] Initialize with `apiKey` (and `accountId` if multiple)
 - [ ] Register endpoints with `x402.register()`
 - [ ] Protect routes with `x402.protect()`
@@ -912,7 +912,7 @@ Currently, API keys are user-scoped. For better security with AI agents, conside
 - [ ] Create a Wallet via API
 - [ ] Assign Wallet to Agent via API
 - [ ] Fund the Wallet via API or dashboard
-- [ ] Install `@payos/x402-client-sdk`
+- [ ] Install `@sly/x402-client-sdk`
 - [ ] Initialize with `apiKey` and `agentId`
 - [ ] Use `x402.fetch()` for automatic payments
 

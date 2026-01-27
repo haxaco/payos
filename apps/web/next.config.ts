@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
   },
 
   // Transpile workspace packages
-  transpilePackages: ['@payos/api-client', '@payos/types', '@payos/ui'],
+  transpilePackages: ['@sly/api-client', '@sly/types', '@sly/ui'],
 
   // Experimental features
   experimental: {

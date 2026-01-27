@@ -183,7 +183,7 @@ Tracks fulfillment → Handles returns
 
 ```typescript
 // Provider: Accept x402 payments
-import { x402Middleware } from '@payos/x402-provider-sdk';
+import { x402Middleware } from '@sly/x402-provider-sdk';
 
 app.use('/api/data', x402Middleware({
   price: '0.001 USDC',
@@ -192,7 +192,7 @@ app.use('/api/data', x402Middleware({
 }));
 
 // Client: Make x402 payments  
-import { payWithX402 } from '@payos/x402-client-sdk';
+import { payWithX402 } from '@sly/x402-client-sdk';
 
 const response = await payWithX402(fetch, 'https://api.example.com/data');
 ```
@@ -200,7 +200,7 @@ const response = await payWithX402(fetch, 'https://api.example.com/data');
 ### AP2 Implementation
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Verify mandate and execute payment
 const result = await payos.ap2.executeMandate({
@@ -215,7 +215,7 @@ const result = await payos.ap2.executeMandate({
 ### ACP Implementation
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Complete ACP checkout with settlement
 const order = await payos.acp.completeCheckout({
@@ -229,7 +229,7 @@ const order = await payos.acp.completeCheckout({
 ### UCP Implementation (Epic 43)
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Discover UCP merchant
 const profile = await payos.ucp.discover('https://merchant.example.com');

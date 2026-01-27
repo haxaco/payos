@@ -195,7 +195,7 @@ npx tsx scripts/generate-x402-test-data.ts
 ### Fixed Issues
 1. ✅ **Hook Name Typo:** Changed `useAPIClient` → `useApiClient` across all x402 pages
 2. ✅ **Transfer Property Access:** Fixed nested object access for `tx.from?.accountId` and `tx.x402Metadata?.settlement_fee`
-3. ✅ **UI Component Imports:** Corrected import paths from `@/components/ui/*` to `@payos/ui`
+3. ✅ **UI Component Imports:** Corrected import paths from `@/components/ui/*` to `@sly/ui`
 
 ### Confirmed Working
 - All pages use `useApiClient()` and `useApiConfig()` correctly

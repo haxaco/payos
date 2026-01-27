@@ -199,7 +199,7 @@ Extend the existing `accounts` table to support agent-type accounts with spendin
 - [ ] `agent` type added to account_type enum
 - [ ] `agent_config` JSONB column added to accounts table
 - [ ] Migration is backward compatible with existing accounts
-- [ ] TypeScript types updated in `@payos/types`
+- [ ] TypeScript types updated in `@sly/types`
 - [ ] Zod validation schema for agent_config
 - [ ] Database migration tested
 
@@ -449,7 +449,7 @@ Create JavaScript SDK for AI agents to make x402 payments with automatic policy 
 
 **SDK Features:**
 ```typescript
-import { AgentPaymentClient } from '@payos/agent-payment-sdk';
+import { AgentPaymentClient } from '@sly/agent-payment-sdk';
 
 const client = new AgentPaymentClient({
   apiKey: 'agent_...',

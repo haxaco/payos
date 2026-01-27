@@ -1,5 +1,5 @@
-import type { 
-  PayOSConfig, 
+import type {
+  SlyConfig,
   SettlementQuoteRequest,
   SettlementQuote,
   CreateSettlementRequest,
@@ -11,13 +11,13 @@ import type {
 import { getEnvironmentConfig, validateEnvironment } from './config';
 
 /**
- * Base API client for PayOS
+ * Base API client for Sly
  */
-export class PayOSClient {
+export class SlyClient {
   private apiKey: string;
   private apiUrl: string;
 
-  constructor(config: PayOSConfig) {
+  constructor(config: SlyConfig) {
     validateEnvironment(config.environment, config.evmPrivateKey);
 
     this.apiKey = config.apiKey;
@@ -108,4 +108,7 @@ export class PayOSClient {
     return this.request<CapabilitiesResponse>('/v1/capabilities');
   }
 }
+
+// Backward compatibility alias
+export { SlyClient as PayOSClient };
 

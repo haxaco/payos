@@ -88,7 +88,7 @@ Epic 17 has been successfully completed, delivering a production-ready x402 Gate
 
 **Delivered:**
 
-#### Provider SDK (`@payos/x402-provider-sdk`)
+#### Provider SDK (`@sly/x402-provider-sdk`)
 - Framework-agnostic middleware (Express, Hono, Fastify)
 - Endpoint registration and management
 - Automatic 402 response generation
@@ -104,7 +104,7 @@ Epic 17 has been successfully completed, delivering a production-ready x402 Gate
 - clearCache()
 ```
 
-#### Consumer SDK (`@payos/x402-client-sdk`)
+#### Consumer SDK (`@sly/x402-client-sdk`)
 - Automatic payment handling
 - Transparent 402 retry logic
 - Idempotency support
@@ -245,13 +245,13 @@ Epic 17 has been successfully completed, delivering a production-ready x402 Gate
 ## SDKs Published
 
 ### Provider SDK
-- **Package:** `@payos/x402-provider-sdk@0.1.0`
+- **Package:** `@sly/x402-provider-sdk@0.1.0`
 - **Size:** ~15KB (minified)
 - **Dependencies:** None
 - **Frameworks:** Express, Hono, Fastify, vanilla Node.js
 
 ### Consumer SDK
-- **Package:** `@payos/x402-client-sdk@0.1.0`
+- **Package:** `@sly/x402-client-sdk@0.1.0`
 - **Size:** ~12KB (minified)
 - **Dependencies:** `uuid`
 - **Platforms:** Browser, Node.js, Deno

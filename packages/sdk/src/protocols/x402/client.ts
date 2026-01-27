@@ -10,11 +10,11 @@ import { SandboxFacilitator } from '../../facilitator/sandbox-facilitator';
 
 /**
  * x402 Client for making payments
- * 
+ *
  * Automatically handles 402 responses by creating payments and retrying.
  * Supports sandbox mode (no blockchain) and production mode (real EVM).
  */
-export class PayOSX402Client {
+export class SlyX402Client {
   private config: Required<Omit<X402ClientConfig, 'evmPrivateKey' | 'onPayment' | 'onSettlement' | 'settleToRail'>> & {
     evmPrivateKey?: string;
     onPayment?: (payment: X402PaymentInfo) => void | Promise<void>;
@@ -243,4 +243,7 @@ export class PayOSX402Client {
     }
   }
 }
+
+// Backward compatibility alias
+export { SlyX402Client as PayOSX402Client };
 

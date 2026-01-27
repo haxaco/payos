@@ -4,7 +4,7 @@
  * Demonstrates mandate-based recurring payments
  */
 
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 import chalk from 'chalk';
 
 export async function runAP2Demo(payos: PayOS, userEmail: string, accountId: string) {

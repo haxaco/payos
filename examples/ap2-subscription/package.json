@@ -1,5 +1,5 @@
 {
-  "name": "@payos-examples/ap2-subscription",
+  "name": "@sly-examples/ap2-subscription",
   "version": "1.0.0",
   "description": "AP2 (Agent-to-Agent Protocol) mandate-based subscription example",
   "type": "module",
@@ -10,7 +10,7 @@
     "test:watch": "vitest src/index.test.ts"
   },
   "dependencies": {
-    "@payos/sdk": "workspace:*"
+    "@sly/sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Mandate } from "@payos/api-client";
+import { Mandate } from "@sly/api-client";
 import { useApiClient } from "@/lib/api-client";
 
 import {
@@ -25,7 +25,7 @@ import {
     FormMessage,
     Input,
     Button
-} from "@payos/ui";
+} from "@sly/ui";
 import { formatCurrency } from "@/lib/utils";
 
 const formSchema = z.object({

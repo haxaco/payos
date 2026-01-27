@@ -199,7 +199,7 @@ export function validateProtocolMetadata(
 - [x] `x402_metadata` column renamed to `protocol_metadata`
 - [ ] Transfer type constraint updated to include `ap2`, `acp`
 - [ ] Index created for protocol-type queries
-- [ ] TypeScript types exported from `@payos/types`
+- [ ] TypeScript types exported from `@sly/types`
 - [ ] Zod schemas validate all three protocols
 - [ ] Existing x402 transfers unaffected (backward compatible)
 
@@ -1079,7 +1079,7 @@ export interface VerifyX402PaymentResponse {
 - 3 new API route modules (`ap2.ts`, `acp.ts`, `agentic-payments.ts`)
 - Webhook service with worker process
 - Updated 7 existing files for protocol_metadata migration
-- Full TypeScript type definitions in `@payos/types` package
+- Full TypeScript type definitions in `@sly/types` package
 
 **Frontend:**
 - 8+ new pages across AP2 and ACP protocols

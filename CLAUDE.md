@@ -13,12 +13,12 @@ All UI work MUST be done in `apps/web/` (Next.js application).
 
 ```bash
 # Start the CORRECT UI
-pnpm --filter @payos/web dev
+pnpm --filter @sly/web dev
 ```
 
 ## Project Overview
 
-PayOS is a B2B stablecoin payout operating system for LATAM. It's a monorepo featuring a Hono-based API server, a Vite+React dashboard UI, and shared packages. The system enables fintech partners to offer stablecoin-powered payouts with AI-native agent support and money streaming capabilities.
+Sly is a B2B stablecoin payout operating system for LATAM. It's a monorepo featuring a Hono-based API server, a Next.js dashboard UI, and shared packages. The system enables fintech partners to offer stablecoin-powered payouts with AI-native agent support and money streaming capabilities.
 
 **Key Differentiators:**
 - **KYA (Know Your Agent) Framework**: AI agents are first-class actors with formal verification tiers
@@ -37,10 +37,10 @@ pnpm install
 pnpm build
 
 # Start API server (http://localhost:4000)
-pnpm --filter @payos/api dev
+pnpm --filter @sly/api dev
 
 # Start UI (http://localhost:3000) - USE THIS, NOT payos-ui
-pnpm --filter @payos/web dev
+pnpm --filter @sly/web dev
 
 # Start everything
 pnpm dev
@@ -58,7 +58,7 @@ pnpm test:unit
 INTEGRATION=true pnpm test:integration
 
 # Run specific test file
-pnpm --filter @payos/api test tests/unit/helpers.test.ts
+pnpm --filter @sly/api test tests/unit/helpers.test.ts
 
 # Coverage report
 pnpm test:coverage
@@ -67,13 +67,13 @@ pnpm test:coverage
 ### Database Operations
 ```bash
 # Seed demo data (Demo Fintech tenant with sample accounts/agents/transfers)
-pnpm --filter @payos/api seed:db
+pnpm --filter @sly/api seed:db
 
 # Check RLS policy coverage
-pnpm --filter @payos/api check:rls
+pnpm --filter @sly/api check:rls
 
 # Run custom scripts
-pnpm --filter @payos/api tsx scripts/setup-beta-tenant.ts
+pnpm --filter @sly/api tsx scripts/setup-beta-tenant.ts
 ```
 
 ### Type Checking & Linting
@@ -89,7 +89,7 @@ pnpm lint
 
 ### Monorepo Structure
 ```
-payos/
+sly/
 ├── apps/
 │   ├── api/              # Hono API server (port 4000)
 │   │   ├── src/
@@ -111,8 +111,10 @@ payos/
 │       │   ├── lib/      # API client, utilities
 │       │   └── hooks/    # Custom hooks
 ├── packages/
+│   ├── sdk/              # Unified SDK (@sly/sdk)
 │   ├── types/            # Shared TypeScript types
 │   ├── utils/            # Shared utilities
+│   ├── cards/            # Card network integrations (Visa VIC, Mastercard Agent Pay)
 │   ├── api-client/       # API client library
 │   ├── ui/               # Shared UI components
 │   └── db/               # Database migration utilities
@@ -172,7 +174,7 @@ const { data } = await supabase
 const { data } = await supabase.from('accounts').select('*');
 ```
 
-**RLS Policies**: Located in `apps/api/supabase/migrations/`. All tables have RLS enabled. Use `pnpm --filter @payos/api check:rls` to audit coverage.
+**RLS Policies**: Located in `apps/api/supabase/migrations/`. All tables have RLS enabled. Use `pnpm --filter @sly/api check:rls` to audit coverage.
 
 **Database Clients**:
 - `src/db/client.ts`: Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS - use with explicit tenant filtering)
@@ -332,9 +334,9 @@ return c.json({
 
 ## Documentation
 
-**PRD**: `docs/prd/PayOS_PRD_Master.md` - Product requirements with Epic Dashboard (see also `docs/prd/`)
+**PRD**: `docs/prd/` - Product requirements with Epic Dashboard
 **Migration Docs**: `docs/guides/development/mock-to-api-migration.md` - Guide for transitioning from mock to real APIs
-**Gemini Start**: `docs/guides/onboarding/gemini-start-here.md` - Onboarding guide for Gemini AI context
+**Onboarding**: `docs/guides/onboarding/` - Onboarding guides
 **Completed Work**: `docs/completed/` - Epic/Story implementation summaries and session notes
 
 ## Common Issues
@@ -349,7 +351,7 @@ return c.json({
 
 **Cross-tenant data leak**: Verify all Supabase queries include `.eq('tenant_id', ctx.tenantId)`.
 
-**Type errors in UI**: Make sure `@payos/types` package is built and up-to-date.
+**Type errors in UI**: Make sure `@sly/types` package is built and up-to-date.
 
 ## Key Files Reference
 

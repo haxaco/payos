@@ -303,7 +303,7 @@ curl "http://localhost:8787/v1/transfers?type=x402&endpointId=endpoint-uuid&curr
 
 ```typescript
 // test-provider.ts
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 import express from 'express';
 
 const provider = new X402Provider({
@@ -439,7 +439,7 @@ const endpoint = await provider.registerEndpoint('/api/volume', 'GET', {
 
 ```typescript
 // test-consumer.ts
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiUrl: 'http://localhost:8787',

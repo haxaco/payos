@@ -19,7 +19,7 @@ import { ProtocolActivityChart } from '@/components/dashboard/protocol-activity-
 import { ProtocolStats } from '@/components/dashboard/protocol-stats';
 import { ProtocolActivityFeed } from '@/components/dashboard/protocol-activity-feed';
 import { RateLimitCard } from '@/components/dashboard/rate-limit-card';
-import { formatCurrency } from '@payos/ui';
+import { formatCurrency } from '@sly/ui';
 
 interface Stats {
   accounts: number;

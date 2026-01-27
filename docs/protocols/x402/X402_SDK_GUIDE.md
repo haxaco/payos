@@ -42,13 +42,13 @@ Monetize your APIs in minutes.
 ### Installation
 
 ```bash
-npm install @payos/x402-provider-sdk
+npm install @sly/x402-provider-sdk
 ```
 
 ### Quick Start
 
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 import express from 'express';
 
 const app = express();
@@ -202,13 +202,13 @@ Call x402-protected APIs with transparent payment handling.
 ### Installation
 
 ```bash
-npm install @payos/x402-client-sdk
+npm install @sly/x402-client-sdk
 ```
 
 ### Quick Start
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 // Initialize client
 const client = new X402Client({
@@ -282,7 +282,7 @@ if (response.status === 402) {
 ### React Integration
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 import { useState, useEffect } from 'react';
 
 function PremiumData() {
@@ -314,7 +314,7 @@ function PremiumData() {
 
 ```typescript
 #!/usr/bin/env node
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiUrl: 'https://api.payos.com',
@@ -410,7 +410,7 @@ Provider → Consumer: 200 OK
 
 ```typescript
 import { Hono } from 'hono';
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const app = new Hono();
 
@@ -442,7 +442,7 @@ export default app;
 ### Consumer: Fetch Wrapper
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 class APIClient {
   private x402: X402Client;
@@ -487,7 +487,7 @@ const weather = await client.get('https://api.example.com/weather');
 ### Provider Testing
 
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 import { describe, it, expect } from 'vitest';
 
 describe('Protected Endpoint', () => {
@@ -509,7 +509,7 @@ describe('Protected Endpoint', () => {
 ### Consumer Testing
 
 ```typescript
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 import { describe, it, expect } from 'vitest';
 
 describe('X402 Client', () => {

@@ -1,4 +1,4 @@
-# Epic 36: @payos/sdk — Unified SDK & Developer Experience
+# Epic 36: @sly/sdk — Unified SDK & Developer Experience
 
 **Status:** ✅ Complete  
 **Phase:** 3.5 / 4 (External Integrations / Customer Validation)  
@@ -15,7 +15,7 @@
 
 ## Executive Summary
 
-Build `@payos/sdk` — a unified SDK that makes PayOS the **settlement layer** for all agentic payments in LATAM.
+Build `@sly/sdk` — a unified SDK that makes PayOS the **settlement layer** for all agentic payments in LATAM.
 
 **The Core Insight:**
 > "We don't compete with protocol SDKs. We complete them."
@@ -34,7 +34,7 @@ Protocol SDKs (x402, AP2, ACP) handle authorization and payment intent. They sto
          │               │                 │              │
          ▼               ▼                 ▼              ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           @payos/sdk                                        │
+│                           @sly/sdk                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │     sandbox (mock) ←→ testnet (x402.org) ←→ production (CDP)        │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -77,7 +77,7 @@ Protocol SDKs (x402, AP2, ACP) handle authorization and payment intent. They sto
 
 ### Part 1: Core SDK Foundation
 
-#### Story 36.1: Create @payos/sdk Package Structure
+#### Story 36.1: Create @sly/sdk Package Structure
 
 **Points:** 3  
 **Priority:** P0  
@@ -92,15 +92,15 @@ Create the unified SDK package with proper monorepo structure, build configurati
 
 1. **Package Setup:**
    - Create `packages/sdk/` directory
-   - Configure `package.json` with name `@payos/sdk`
+   - Configure `package.json` with name `@sly/sdk`
    - Add dependencies on official x402 packages
    - Configure TypeScript and build tooling
 
 2. **Multiple Entry Points:**
-   - `@payos/sdk` — Main entry, exports PayOS class
-   - `@payos/sdk/x402` — x402 client and provider
-   - `@payos/sdk/ap2` — AP2 mandate handling
-   - `@payos/sdk/acp` — ACP checkout handling
+   - `@sly/sdk` — Main entry, exports PayOS class
+   - `@sly/sdk/x402` — x402 client and provider
+   - `@sly/sdk/ap2` — AP2 mandate handling
+   - `@sly/sdk/acp` — ACP checkout handling
 
 3. **Directory Structure:**
    ```
@@ -132,7 +132,7 @@ Create the unified SDK package with proper monorepo structure, build configurati
 
 - [x] Package created with correct structure
 - [x] Dependencies include `@x402/core`, `@x402/evm`, `@x402/fetch`, `@x402/express`
-- [x] Multiple entry points work (`import { PayOS } from '@payos/sdk'`)
+- [x] Multiple entry points work (`import { PayOS } from '@sly/sdk'`)
 - [x] TypeScript types are exported
 - [x] `pnpm build` succeeds
 - [x] Package can be imported from other packages in monorepo
@@ -768,7 +768,7 @@ Build an MCP (Model Context Protocol) server so Claude and other LLMs can native
    - `payos_capabilities` — List available operations
 
 2. **Package:**
-   - Published as `@payos/mcp-server` on npm
+   - Published as `@sly/mcp-server` on npm
    - Standalone executable
    - Configuration via env vars or config file
 
@@ -872,8 +872,8 @@ Build Vercel AI SDK tools and OpenAI function definitions for JavaScript/TypeScr
 ##### Requirements
 
 1. **Packages:**
-   - `@payos/ai-sdk` — Vercel AI SDK tools
-   - `@payos/openai` — OpenAI function definitions
+   - `@sly/ai-sdk` — Vercel AI SDK tools
+   - `@sly/openai` — OpenAI function definitions
 
 2. **Vercel AI SDK Integration:**
    - Compatible with Vercel AI SDK 3.x
@@ -975,9 +975,9 @@ Add deprecation warnings to old SDK packages and create migration documentation.
 ##### Requirements
 
 1. **Deprecation Notices:**
-   - `@payos/x402-client-sdk` — Console warning on import
-   - `@payos/x402-provider-sdk` — Console warning on import
-   - Point to new `@payos/sdk`
+   - `@sly/x402-client-sdk` — Console warning on import
+   - `@sly/x402-provider-sdk` — Console warning on import
+   - Point to new `@sly/sdk`
 
 2. **Migration Guide:**
    - Document all breaking changes

@@ -1,4 +1,4 @@
-# 🎉 Epic 36: @payos/sdk - Unified SDK & Developer Experience - COMPLETE!
+# 🎉 Epic 36: @sly/sdk - Unified SDK & Developer Experience - COMPLETE!
 
 **Status**: ✅ **COMPLETE**  
 **Total Points**: 57/57 (100%)  
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-Successfully built and shipped the unified `@payos/sdk` package, providing developers with a single, powerful SDK for all PayOS payment protocols with comprehensive AI agent integrations, extensive testing, sample applications, and smooth migration path from old SDKs.
+Successfully built and shipped the unified `@sly/sdk` package, providing developers with a single, powerful SDK for all PayOS payment protocols with comprehensive AI agent integrations, extensive testing, sample applications, and smooth migration path from old SDKs.
 
 ---
 
@@ -38,7 +38,7 @@ Successfully built and shipped the unified `@payos/sdk` package, providing devel
 
 ## What Was Built
 
-### 1. Unified SDK Package (`@payos/sdk`)
+### 1. Unified SDK Package (`@sly/sdk`)
 
 **Core Features**:
 - ✅ Single package for all protocols
@@ -50,7 +50,7 @@ Successfully built and shipped the unified `@payos/sdk` package, providing devel
 
 **Package Structure**:
 ```
-@payos/sdk
+@sly/sdk
 ├── index           (Main entry)
 ├── x402            (HTTP 402 micropayments)
 ├── ap2             (Agent-to-Agent Protocol)
@@ -142,7 +142,7 @@ const tools = await payos.langchain.getTools();
 
 #### Vercel AI SDK
 ```typescript
-import { createPayOSVercelTools } from '@payos/sdk/vercel';
+import { createPayOSVercelTools } from '@sly/sdk/vercel';
 const tools = createPayOSVercelTools(payos);
 ```
 
@@ -319,9 +319,9 @@ packages/sdk/
 ### Old SDKs Deprecated
 
 Deprecated 3 old packages:
-- ❌ `@payos/x402-client-sdk`
-- ❌ `@payos/x402-provider-sdk`
-- ❌ `@payos/api-client`
+- ❌ `@sly/x402-client-sdk`
+- ❌ `@sly/x402-provider-sdk`
+- ❌ `@sly/api-client`
 
 ### Migration Timeline
 
@@ -446,7 +446,7 @@ Special thanks to:
 ## Next Steps
 
 ### Immediate (This Week)
-1. Publish `@payos/sdk` to npm
+1. Publish `@sly/sdk` to npm
 2. Update docs site with new SDK
 3. Send migration emails to users
 4. Post announcements (Discord, Twitter, blog)
@@ -480,7 +480,7 @@ Special thanks to:
 - 📖 [Docs](https://docs.payos.ai)
 
 ### Source Code
-- 📦 [npm Package](https://npmjs.com/package/@payos/sdk)
+- 📦 [npm Package](https://npmjs.com/package/@sly/sdk)
 - 🐙 [GitHub Repo](https://github.com/payos/sdk)
 - 📚 [Monorepo](../../packages/sdk/)
 

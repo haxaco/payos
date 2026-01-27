@@ -1,6 +1,6 @@
 # PayOS Sample Consumer - Multi-Protocol Demo
 
-Demonstrates the new unified `@payos/sdk` with support for:
+Demonstrates the new unified `@sly/sdk` with support for:
 - **x402**: Micropayments for API monetization
 - **AP2**: Mandate-based subscriptions (Google AP2)
 - **ACP**: E-commerce checkout (Stripe/OpenAI ACP)

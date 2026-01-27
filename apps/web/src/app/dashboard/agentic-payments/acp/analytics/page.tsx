@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@payos/ui';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@sly/ui';
 import { AcpAnalytics } from '@/components/acp/acp-analytics';
 
 export default function AcpAnalyticsPage() {

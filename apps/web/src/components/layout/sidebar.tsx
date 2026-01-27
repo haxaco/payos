@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api-client';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import {
   Home,
   Users,

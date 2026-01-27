@@ -1,4 +1,4 @@
-# @payos/x402-provider-sdk
+# @sly/x402-provider-sdk
 
 Provider SDK for monetizing APIs with x402 - HTTP 402 Payment Required middleware.
 
@@ -9,13 +9,13 @@ x402 is an open standard for HTTP 402 "Payment Required" responses, enabling mic
 ## Installation
 
 ```bash
-npm install @payos/x402-provider-sdk
+npm install @sly/x402-provider-sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 import express from 'express';
 
 const app = express();
@@ -142,7 +142,7 @@ const payment = await provider.verifyPayment(requestId: string, transferId: stri
 
 ```typescript
 import express from 'express';
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const app = express();
 const provider = new X402Provider({
@@ -171,7 +171,7 @@ app.get('/api/premium',
 
 ```typescript
 import { Hono } from 'hono';
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const app = new Hono();
 const provider = new X402Provider({
@@ -200,7 +200,7 @@ app.get('/api/premium', async (c, next) => {
 
 ```typescript
 import Fastify from 'fastify';
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const fastify = Fastify();
 const provider = new X402Provider({
@@ -359,7 +359,7 @@ app.use('/api/premium', middleware);
 ## Utility Functions
 
 ```typescript
-import { createX402Middleware, create402Response } from '@payos/x402-provider-sdk';
+import { createX402Middleware, create402Response } from '@sly/x402-provider-sdk';
 
 // Create middleware without instantiating provider
 const middleware = createX402Middleware({
@@ -414,7 +414,7 @@ import {
   X402Payment,
   createX402Middleware,
   create402Response
-} from '@payos/x402-provider-sdk';
+} from '@sly/x402-provider-sdk';
 ```
 
 ## Best Practices
@@ -470,7 +470,7 @@ MIT © PayOS
 - [x402 Whitepaper](https://www.x402.org/x402-whitepaper.pdf)
 - [PayOS Documentation](https://docs.payos.com)
 - [GitHub Repository](https://github.com/payos/x402-provider-sdk)
-- [Consumer SDK](@payos/x402-client-sdk)
+- [Consumer SDK](@sly/x402-client-sdk)
 
 ## Support
 

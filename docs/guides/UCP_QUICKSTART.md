@@ -256,10 +256,10 @@ UCP Agent ──▶ UCP Business ──▶ PayOS Handler ──▶ Circle ──
 
 ### SDK Integration
 
-The PayOS SDK (`@payos/sdk`) will add a `payos.ucp` module:
+The PayOS SDK (`@sly/sdk`) will add a `payos.ucp` module:
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({ apiKey: 'pk_...' });
 
@@ -402,7 +402,7 @@ This means:
 
 5. 🔲 **Implement `/.well-known/ucp`** endpoint for PayOS
 6. 🔲 **Define PayOS payment handler spec** (`com.payos.latam_settlement`)
-7. 🔲 **Add UCP client module** to @payos/sdk
+7. 🔲 **Add UCP client module** to @sly/sdk
 
 ### Medium-term (1 Month)
 

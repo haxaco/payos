@@ -165,15 +165,15 @@ GET    /v1/acp/merchants          # List merchants
 
 ### Client SDKs
 
-- **x402 Client SDK**: `@payos/x402-client-sdk` - For service consumers
-- **x402 Provider SDK**: `@payos/x402-provider-sdk` - For service providers
-- **PayOS API Client**: `@payos/api-client` - General API access
+- **x402 Client SDK**: `@sly/x402-client-sdk` - For service consumers
+- **x402 Provider SDK**: `@sly/x402-provider-sdk` - For service providers
+- **PayOS API Client**: `@sly/api-client` - General API access
 
 ### Example Code
 
 ```typescript
 // x402 Consumer
-import { X402Client } from '@payos/x402-client-sdk';
+import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiKey: 'pk_test_...',
@@ -183,7 +183,7 @@ const client = new X402Client({
 const response = await client.get('https://api.example.com/data');
 
 // x402 Provider
-import { X402Provider } from '@payos/x402-provider-sdk';
+import { X402Provider } from '@sly/x402-provider-sdk';
 
 const provider = new X402Provider({
   apiKey: 'pk_test_...',

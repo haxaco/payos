@@ -1,5 +1,5 @@
 {
-  "name": "@payos-examples/test-runner",
+  "name": "@sly-examples/test-runner",
   "version": "1.0.0",
   "description": "Test runner for PayOS sample apps",
   "private": true,

@@ -1,14 +1,14 @@
 # Epic 36: SDK Comprehensive Test Summary
 
 **Date**: January 3, 2026  
-**Epic**: 36 - @payos/sdk Unified SDK & Developer Experience  
+**Epic**: 36 - @sly/sdk Unified SDK & Developer Experience  
 **Test Status**: ✅ **PASS** (with notes)
 
 ---
 
 ## Executive Summary
 
-The @payos/sdk has been comprehensively tested with **123 passing unit tests** across all major components. Integration testing revealed some minor type mismatches in the capabilities formatters that don't affect core functionality. All critical paths are working correctly.
+The @sly/sdk has been comprehensively tested with **123 passing unit tests** across all major components. Integration testing revealed some minor type mismatches in the capabilities formatters that don't affect core functionality. All critical paths are working correctly.
 
 ### Overall Results
 - ✅ **Unit Tests**: 123/123 passing (100%)
@@ -241,7 +241,7 @@ const tools = await payos.langchain.getTools();
 
 ### ✅ Vercel AI SDK Integration
 ```typescript
-import { createPayOSVercelTools } from '@payos/sdk/vercel';
+import { createPayOSVercelTools } from '@sly/sdk/vercel';
 const tools = createPayOSVercelTools(payos);
 // ✅ Works
 ```

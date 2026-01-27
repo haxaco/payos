@@ -21,9 +21,9 @@ import {
   XCircle,
   Pause,
 } from 'lucide-react';
-import type { Account, Agent, Stream, LedgerEntry, Transfer } from '@payos/api-client';
+import type { Account, Agent, Stream, LedgerEntry, Transfer } from '@sly/api-client';
 import { useLocale } from '@/lib/locale';
-import { formatCurrency } from '@payos/ui';
+import { formatCurrency } from '@sly/ui';
 
 import { ScreeningTab } from '@/components/dashboard/account-360/screening-tab';
 import { toast } from 'sonner';

@@ -72,7 +72,7 @@ export async function loginWithPassword(
  * 
  * @example
  * ```ts
- * import { PayOS, createWithPassword } from '@payos/sdk';
+ * import { PayOS, createWithPassword } from '@sly/sdk';
  * 
  * const payos = await createWithPassword({
  *   email: 'user@example.com',

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { ValidationError } from '../middleware/error.js';
-import { getExchangeRate, MOCK_FX_RATES } from '@payos/utils';
+import { getExchangeRate, MOCK_FX_RATES } from '@sly/utils';
 import { getCircleFXService } from '../services/circle/fx.js';
 import { getMultiCurrencyService, SUPPORTED_CORRIDORS, type SupportedCurrency } from '../services/fx/index.js';
 

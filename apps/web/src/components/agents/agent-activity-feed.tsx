@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { cn, formatCurrency, formatRelativeTime } from '@payos/ui';
+import { cn, formatCurrency, formatRelativeTime } from '@sly/ui';
 import type { AgentAction, AgentActionType } from '@/lib/mock-data/agent-activity';
 
 const actionIcons: Record<AgentActionType, string> = {

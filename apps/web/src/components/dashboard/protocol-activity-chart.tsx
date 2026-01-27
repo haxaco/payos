@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, TrendingUp, Hash, Loader2 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
 type TimeRange = '24h' | '7d' | '30d';

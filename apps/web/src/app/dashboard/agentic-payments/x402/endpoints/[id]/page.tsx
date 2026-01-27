@@ -23,7 +23,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger
-} from '@payos/ui';
+} from '@sly/ui';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import {
   DollarSign,
@@ -83,7 +83,7 @@ export default function X402EndpointDetailPage() {
       : (Array.isArray(rawTransactions?.data?.data) ? rawTransactions.data.data : []));
 
   // Generate SDK code samples
-  const providerSdkSample = `import { X402Provider } from '@payos/x402-provider-sdk';
+  const providerSdkSample = `import { X402Provider } from '@sly/x402-provider-sdk';
 
 const provider = new X402Provider({
   apiUrl: 'https://api.payos.com',
@@ -102,7 +102,7 @@ await provider.registerEndpoint('${endpoint?.path || '/api/endpoint'}', '${endpo
 app.use('${endpoint?.path || '/api/endpoint'}', provider.middleware());
 `;
 
-  const consumerSdkSample = `import { X402Client } from '@payos/x402-client-sdk';
+  const consumerSdkSample = `import { X402Client } from '@sly/x402-client-sdk';
 
 const client = new X402Client({
   apiUrl: 'https://api.payos.com',
@@ -419,13 +419,13 @@ const response = await client.fetch('https://your-api.com${endpoint?.path || '/a
               <div>
                 <p className="text-sm font-medium mb-2">Provider SDK:</p>
                 <pre className="p-3 bg-gray-100 dark:bg-gray-900 rounded">
-                  <code className="text-sm">npm install @payos/x402-provider-sdk</code>
+                  <code className="text-sm">npm install @sly/x402-provider-sdk</code>
                 </pre>
               </div>
               <div>
                 <p className="text-sm font-medium mb-2">Consumer SDK:</p>
                 <pre className="p-3 bg-gray-100 dark:bg-gray-900 rounded">
-                  <code className="text-sm">npm install @payos/x402-client-sdk</code>
+                  <code className="text-sm">npm install @sly/x402-client-sdk</code>
                 </pre>
               </div>
             </CardContent>

@@ -224,11 +224,11 @@ npm publish
 ```bash
 # Update sample consumer to use latest SDK
 cd /Users/haxaco/Dev/PayOS/apps/sample-consumer
-npm update @payos/x402-client-sdk
+npm update @sly/x402-client-sdk
 
 # Update sample provider to use latest SDK
 cd /Users/haxaco/Dev/PayOS/apps/sample-provider
-npm update @payos/x402-provider-sdk
+npm update @sly/x402-provider-sdk
 ```
 
 **5. Post-Deployment Validation**

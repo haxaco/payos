@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '@payos/ui';
+import { Badge } from '@sly/ui';
 import { CheckCircle2, XCircle, Clock, Loader2, ShieldAlert } from 'lucide-react';
 
 type CheckoutStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'pending_approval';

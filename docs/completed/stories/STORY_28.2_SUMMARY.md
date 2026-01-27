@@ -22,7 +22,7 @@ Enhanced the PayOS Simulation Engine with production-ready transfer simulation c
 - Matches actual transfer fee structure
 
 ### 2. **Real FX Rate Integration**
-- Integrated with `@payos/utils` FX service
+- Integrated with `@sly/utils` FX service
 - Supports BRL, MXN, ARS, COP
 - Calculates spreads (0.35% emerging markets)
 - Provides rate expiry information

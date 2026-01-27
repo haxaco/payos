@@ -164,7 +164,7 @@ After resolving authentication issues and creating proper test credentials, **St
 - [x] FX fees calculated correctly
 
 ### FX Rate Integration
-- [x] Real rate lookup from @payos/utils
+- [x] Real rate lookup from @sly/utils
 - [x] BRL rate: 4.97
 - [x] MXN rate: 17.15
 - [x] Spread calculation: 0.35%

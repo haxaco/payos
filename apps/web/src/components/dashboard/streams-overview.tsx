@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Badge, formatCurrency, StreamHealthBadge, EmptyState } from '@payos/ui';
+import { Badge, formatCurrency, StreamHealthBadge, EmptyState } from '@sly/ui';
 import { useApiClient } from '@/lib/api-client';
-import type { Stream } from '@payos/api-client';
+import type { Stream } from '@sly/api-client';
 import { Activity, Plus } from 'lucide-react';
 import Link from 'next/link';
 

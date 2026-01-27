@@ -1,12 +1,12 @@
 /**
- * @payos/x402-provider-sdk
+ * @sly/x402-provider-sdk
  * 
  * Provider SDK for monetizing APIs with x402 - HTTP 402 Payment Required.
  * Framework-agnostic middleware for Express, Hono, Fastify, and more.
  * 
  * Simple Usage:
  * ```typescript
- * import { X402Provider } from '@payos/x402-provider-sdk';
+ * import { X402Provider } from '@sly/x402-provider-sdk';
  * 
  * const x402 = new X402Provider({
  *   apiKey: 'pk_live_xxxxx'  // That's it!

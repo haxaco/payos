@@ -7,7 +7,7 @@ import {
     CardHeader,
     CardTitle,
     Button,
-} from '@payos/ui';
+} from '@sly/ui';
 import {
     ArrowLeft,
     User,

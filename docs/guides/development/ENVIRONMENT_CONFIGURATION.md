@@ -251,11 +251,11 @@ environmentManager.validateForOperation('createPixPayout', ['circlePayouts']);
 ### SDK
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 import { 
   createExtendedConfig,
   getEnvironmentHint 
-} from '@payos/sdk/config/environment';
+} from '@sly/sdk/config/environment';
 
 // Create SDK with extended config
 const config = createExtendedConfig({

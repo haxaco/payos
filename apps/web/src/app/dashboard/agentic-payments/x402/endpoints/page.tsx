@@ -19,7 +19,7 @@ import {
   Badge,
   Button,
   Input
-} from '@payos/ui';
+} from '@sly/ui';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import {
   Plus,

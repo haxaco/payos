@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useApiClient } from '@/lib/api-client';
 import { X, Download, Loader2, AlertCircle, FileSpreadsheet, CheckCircle } from 'lucide-react';
-import { Button, Input, Label, cn } from '@payos/ui';
-import type { ExportFormat, DateFormatType } from '@payos/api-client';
+import { Button, Input, Label, cn } from '@sly/ui';
+import type { ExportFormat, DateFormatType } from '@sly/api-client';
 
 interface ExportModalProps {
   onClose: () => void;

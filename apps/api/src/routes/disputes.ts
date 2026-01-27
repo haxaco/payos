@@ -8,7 +8,7 @@ import {
   paginationResponse,
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 
 const disputes = new Hono();
 

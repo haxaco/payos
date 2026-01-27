@@ -17,7 +17,7 @@ import {
     Copy,
     Check
 } from 'lucide-react';
-import { Card, Button, Input, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '@payos/ui';
+import { Card, Button, Input, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '@sly/ui';
 import { CodeBlock } from './components/code-block';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -57,7 +57,7 @@ export default function DevelopersPage() {
 
     const codeExamples = {
         'x402-provider':
-            `import { PayOSServer } from '@payos/node';
+            `import { PayOSServer } from '@sly/node';
 
 // Initialize server SDK
 const payos = new PayOSServer(process.env.PAYOS_SECRET_KEY);
@@ -90,7 +90,7 @@ app.post('/api/generate-image', async (req, res) => {
   res.json({ url: image });
 });`,
         'x402-consumer':
-            `import { PayOSClient } from '@payos/web';
+            `import { PayOSClient } from '@sly/web';
 
 // Initialize client SDK
 const payos = new PayOSClient(process.env.NEXT_PUBLIC_PAYOS_KEY);
@@ -111,7 +111,7 @@ async function fetchPaidContent() {
   }
 }`,
         'ap2-agent':
-            `import { AP2Client } from '@payos/ap2-sdk';
+            `import { AP2Client } from '@sly/ap2-sdk';
 
 const client = new AP2Client({
   agentId: 'agent_12345',
@@ -133,7 +133,7 @@ const mandate = await client.mandates.request({
 
 console.log('Mandate Status:', mandate.status); // 'pending_approval'`,
         'acp-checkout':
-            `import { ACPCheckout } from '@payos/react';
+            `import { ACPCheckout } from '@sly/react';
 
 function CheckoutPage() {
   return (

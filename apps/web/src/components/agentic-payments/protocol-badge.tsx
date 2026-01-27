@@ -1,7 +1,7 @@
 
 import { Zap, Bot, ShoppingCart } from 'lucide-react';
-import { Badge } from '@payos/ui';
-import { cn } from '@payos/ui';
+import { Badge } from '@sly/ui';
+import { cn } from '@sly/ui';
 
 interface ProtocolBadgeProps {
     protocol?: 'x402' | 'ap2' | 'acp' | null | string; // loose typing for now

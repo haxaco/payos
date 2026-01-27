@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Badge, formatRelativeTime } from '@payos/ui';
+import { Badge, formatRelativeTime } from '@sly/ui';
 import { useApiClient } from '@/lib/api-client';
 import { ArrowRight, Bot, Users, Activity } from 'lucide-react';
 

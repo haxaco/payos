@@ -529,7 +529,7 @@ These will need to be added when we locate the wallet routes:
 
 ## Implementation Steps
 
-1. ✅ Add `import { ErrorCode } from '@payos/types'` to agents.ts
+1. ✅ Add `import { ErrorCode } from '@sly/types'` to agents.ts
 2. ⏭️ Systematically replace all `return c.json({ error: ... }, 500)` with `throw new Error(...)`
 3. ⏭️ Add specific error codes for agent scenarios (business account check, suspend/activate state, active streams, KYA tier, token rotation)
 4. ⏭️ Add links to all success responses

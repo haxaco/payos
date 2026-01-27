@@ -17,7 +17,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 import Link from 'next/link';
 import { toast } from 'sonner';
 

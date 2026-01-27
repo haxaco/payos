@@ -3,7 +3,7 @@
 import { CreditCard, Plus, Search, AlertCircle } from 'lucide-react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { useState, useEffect } from 'react';
-import { Button } from '@payos/ui';
+import { Button } from '@sly/ui';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';

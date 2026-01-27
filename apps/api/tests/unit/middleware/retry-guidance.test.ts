@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import { ErrorCode } from '@payos/types';
+import { ErrorCode } from '@sly/types';
 import {
   timingMiddleware,
   responseWrapperMiddleware,

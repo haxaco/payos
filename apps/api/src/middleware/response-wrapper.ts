@@ -16,7 +16,7 @@ import {
   ApiPaginatedResponse,
   ResponseMeta,
   SuggestedAction,
-} from '@payos/types';
+} from '@sly/types';
 import { ZodError } from 'zod';
 
 // ============================================

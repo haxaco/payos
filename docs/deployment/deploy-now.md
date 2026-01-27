@@ -131,7 +131,7 @@ Select: ✅ Production, ✅ Preview, ✅ Development
 3. Configure:
    - **Framework:** Next.js (auto-detected)
    - **Root Directory:** Browse → Select `apps/web`
-   - **Build Command:** `cd ../.. && pnpm build --filter=@payos/web`
+   - **Build Command:** `cd ../.. && pnpm build --filter=@sly/web`
    - Click **"Continue"**
 
 ### 3.2 Add Environment Variables

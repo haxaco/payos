@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 describe('ACP E-commerce E2E Tests', () => {
   let payos: PayOS;

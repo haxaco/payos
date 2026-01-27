@@ -36,7 +36,7 @@ cards.post('/verify', async (c) => {
   }
 
   // Dynamic import to avoid bundling issues
-  const { verifyWebBotAuth } = await import('@payos/cards');
+  const { verifyWebBotAuth } = await import('@sly/cards');
 
   const result = await verifyWebBotAuth(
     {
@@ -189,7 +189,7 @@ cards.post('/networks/:network/test', async (c) => {
   let result: { success: boolean; error?: string };
 
   if (network === 'visa') {
-    const { VisaVICClient } = await import('@payos/cards');
+    const { VisaVICClient } = await import('@sly/cards');
     const client = new VisaVICClient({
       apiKey: credentials.api_key as string,
       sharedSecret: credentials.shared_secret as string | undefined,
@@ -197,7 +197,7 @@ cards.post('/networks/:network/test', async (c) => {
     });
     result = await client.testConnection();
   } else {
-    const { MastercardAgentPayClient } = await import('@payos/cards');
+    const { MastercardAgentPayClient } = await import('@sly/cards');
     const client = new MastercardAgentPayClient({
       consumerKey: credentials.consumer_key as string,
       privateKeyPem: credentials.private_key_pem as string | undefined,
@@ -352,7 +352,7 @@ cards.post('/visa/instructions', async (c) => {
   const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
   const credentials = deserializeAndDecrypt(account.credentials_encrypted);
 
-  const { VisaVICClient } = await import('@payos/cards');
+  const { VisaVICClient } = await import('@sly/cards');
   const client = new VisaVICClient({
     apiKey: credentials.api_key as string,
     sandbox: credentials.sandbox !== false,
@@ -502,7 +502,7 @@ cards.post('/mastercard/agents', async (c) => {
   const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
   const credentials = deserializeAndDecrypt(account.credentials_encrypted);
 
-  const { MastercardAgentPayClient } = await import('@payos/cards');
+  const { MastercardAgentPayClient } = await import('@sly/cards');
   const client = new MastercardAgentPayClient({
     consumerKey: credentials.consumer_key as string,
     privateKeyPem: credentials.private_key_pem as string | undefined,
@@ -846,7 +846,7 @@ cards.post('/visa/tokens', async (c) => {
   const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
   const credentials = deserializeAndDecrypt(account.credentials_encrypted);
 
-  const { VisaVICClient } = await import('@payos/cards');
+  const { VisaVICClient } = await import('@sly/cards');
   const client = new VisaVICClient({
     apiKey: credentials.api_key as string,
     sandbox: credentials.sandbox !== false,
@@ -971,7 +971,7 @@ cards.delete('/visa/tokens/:id', async (c) => {
       const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
       const credentials = deserializeAndDecrypt(account.credentials_encrypted);
 
-      const { VisaVICClient } = await import('@payos/cards');
+      const { VisaVICClient } = await import('@sly/cards');
       const client = new VisaVICClient({
         apiKey: credentials.api_key as string,
         sandbox: credentials.sandbox !== false,
@@ -1045,7 +1045,7 @@ cards.post('/mastercard/tokens', async (c) => {
   const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
   const credentials = deserializeAndDecrypt(account.credentials_encrypted);
 
-  const { MastercardAgentPayClient } = await import('@payos/cards');
+  const { MastercardAgentPayClient } = await import('@sly/cards');
   const client = new MastercardAgentPayClient({
     consumerKey: credentials.consumer_key as string,
     privateKeyPem: credentials.private_key_pem as string | undefined,
@@ -1159,7 +1159,7 @@ cards.get('/mastercard/tokens/:id', async (c) => {
         const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
         const credentials = deserializeAndDecrypt(account.credentials_encrypted);
 
-        const { MastercardAgentPayClient } = await import('@payos/cards');
+        const { MastercardAgentPayClient } = await import('@sly/cards');
         const client = new MastercardAgentPayClient({
           consumerKey: credentials.consumer_key as string,
           privateKeyPem: credentials.private_key_pem as string | undefined,
@@ -1223,7 +1223,7 @@ cards.delete('/mastercard/tokens/:id', async (c) => {
       const { deserializeAndDecrypt } = await import('../../services/credential-vault/index.js');
       const credentials = deserializeAndDecrypt(account.credentials_encrypted);
 
-      const { MastercardAgentPayClient } = await import('@payos/cards');
+      const { MastercardAgentPayClient } = await import('@sly/cards');
       const client = new MastercardAgentPayClient({
         consumerKey: credentials.consumer_key as string,
         privateKeyPem: credentials.private_key_pem as string | undefined,

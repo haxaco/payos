@@ -19,12 +19,12 @@ import {
   Loader2
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Approval, ApprovalStatus, PaymentProtocol, PendingApprovalsSummary } from '@payos/api-client';
+import type { Approval, ApprovalStatus, PaymentProtocol, PendingApprovalsSummary } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { toast } from 'sonner';
-import { cn } from '@payos/ui';
+import { cn } from '@sly/ui';
 
 // Protocol configuration
 const PROTOCOL_CONFIG: Record<PaymentProtocol, { name: string; icon: typeof Zap; color: string; bgColor: string }> = {

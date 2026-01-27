@@ -18,7 +18,7 @@ import {
   History,
   AlertTriangle,
 } from 'lucide-react';
-import type { Stream, StreamEvent } from '@payos/api-client';
+import type { Stream, StreamEvent } from '@sly/api-client';
 
 export default function StreamDetailPage() {
   const params = useParams();

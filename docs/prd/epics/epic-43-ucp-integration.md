@@ -413,7 +413,7 @@ Add `payos.ucp` module to SDK for consuming UCP-enabled merchants.
 
 **SDK Usage:**
 ```typescript
-import PayOS from '@payos/sdk';
+import PayOS from '@sly/sdk';
 
 const payos = new PayOS({ apiKey: '...' });
 

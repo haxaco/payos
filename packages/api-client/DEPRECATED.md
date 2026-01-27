@@ -1,10 +1,10 @@
-# ⚠️ DEPRECATED: @payos/api-client
+# ⚠️ DEPRECATED: @sly/api-client
 
 **This package is deprecated and will no longer receive updates.**
 
 ## 🚨 Action Required
 
-**Please migrate to `@payos/sdk` before April 1, 2026.**
+**Please migrate to `@sly/sdk` before April 1, 2026.**
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### Before (Old)
 ```typescript
-import { PayOSApiClient } from '@payos/api-client';
+import { PayOSApiClient } from '@sly/api-client';
 
 const client = new PayOSApiClient({
   apiKey: process.env.PAYOS_API_KEY,
@@ -33,7 +33,7 @@ const settlement = await client.post('/settlements', {
 
 ### After (New)
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: process.env.PAYOS_API_KEY!,
@@ -56,7 +56,7 @@ const settlement = await payos.createSettlement({
 
 ## Why Migrate?
 
-The new `@payos/sdk` provides:
+The new `@sly/sdk` provides:
 
 ✅ **Type-Safe Methods** - No more raw path strings  
 ✅ **IntelliSense** - Full autocomplete support  

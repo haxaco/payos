@@ -7,7 +7,7 @@
  * Exposes PayOS payment capabilities as MCP tools.
  * 
  * Usage:
- *   npx @payos/mcp-server
+ *   npx @sly/mcp-server
  * 
  * Configuration via environment variables:
  *   PAYOS_API_KEY - Your PayOS API key (required)
@@ -21,7 +21,7 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Get configuration from environment
 const PAYOS_API_KEY = process.env.PAYOS_API_KEY;
@@ -41,7 +41,7 @@ const payos = new PayOS({
 // Create MCP server
 const server = new Server(
   {
-    name: '@payos/mcp-server',
+    name: '@sly/mcp-server',
     version: '0.1.0',
   },
   {

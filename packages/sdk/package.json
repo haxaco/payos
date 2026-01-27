@@ -1,5 +1,5 @@
 {
-  "name": "@payos/sdk",
+  "name": "@sly/sdk",
   "version": "0.1.0",
   "description": "Unified PayOS SDK for multi-protocol settlement in LATAM",
   "main": "./dist/index.js",
@@ -76,7 +76,7 @@
     "agentic-commerce"
   ],
   "dependencies": {
-    "@payos/types": "workspace:*",
+    "@sly/types": "workspace:*",
     "@x402/core": "^2.1.0",
     "@x402/evm": "^2.1.0",
     "@x402/express": "^2.1.0",

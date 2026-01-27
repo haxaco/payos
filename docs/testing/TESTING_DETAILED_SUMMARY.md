@@ -8,7 +8,7 @@
 
 ## What Was Tested
 
-I conducted comprehensive testing of the new `@payos/sdk` unified SDK across all components, protocols, and integration points. Here's exactly what I did:
+I conducted comprehensive testing of the new `@sly/sdk` unified SDK across all components, protocols, and integration points. Here's exactly what I did:
 
 ---
 
@@ -165,12 +165,12 @@ pnpm test -- --reporter=verbose --coverage
 
 #### 9. Module Exports (8 tests) ✅
 **What was tested:**
-- Main PayOS class export from `@payos/sdk`
-- x402 exports from `@payos/sdk/x402`
-- AP2 exports from `@payos/sdk/ap2`
-- ACP exports from `@payos/sdk/acp`
-- LangChain exports from `@payos/sdk/langchain`
-- Vercel exports from `@payos/sdk/vercel`
+- Main PayOS class export from `@sly/sdk`
+- x402 exports from `@sly/sdk/x402`
+- AP2 exports from `@sly/sdk/ap2`
+- ACP exports from `@sly/sdk/acp`
+- LangChain exports from `@sly/sdk/langchain`
+- Vercel exports from `@sly/sdk/vercel`
 - Config utilities
 - Facilitator classes
 

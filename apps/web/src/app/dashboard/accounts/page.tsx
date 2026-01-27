@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Users, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
-import type { Account } from '@payos/api-client';
+import type { Account } from '@sly/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
 import { AccountsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
 import { useLocale } from '@/lib/locale';

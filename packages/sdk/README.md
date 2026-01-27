@@ -1,4 +1,4 @@
-# @payos/sdk
+# @sly/sdk
 
 Unified SDK for PayOS multi-protocol settlement infrastructure in LATAM.
 
@@ -18,11 +18,11 @@ PayOS SDK provides a single, unified interface for settling payments across mult
 ## Installation
 
 ```bash
-npm install @payos/sdk
+npm install @sly/sdk
 # or
-pnpm add @payos/sdk
+pnpm add @sly/sdk
 # or
-yarn add @payos/sdk
+yarn add @sly/sdk
 ```
 
 ## Quick Start
@@ -32,7 +32,7 @@ yarn add @payos/sdk
 Perfect for local development:
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: 'payos_...',
@@ -80,7 +80,7 @@ const payos = new PayOS({
 Coming in Story 36.3/36.4 - Client and Provider implementations
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 // Client: Make x402 payments
 const client = payos.x402.createClient({ maxPayment: '$0.01' });
@@ -130,7 +130,7 @@ await payos.acp.completeCheckout({
 Accept payments from AI agents using Web Bot Auth signature verification:
 
 ```typescript
-import { PayOS } from '@payos/sdk';
+import { PayOS } from '@sly/sdk';
 
 const payos = new PayOS({
   apiKey: 'pk_live_...',
@@ -271,7 +271,7 @@ import type {
   SettlementQuote,
   Currency,
   SettlementRail,
-} from '@payos/sdk';
+} from '@sly/sdk';
 ```
 
 ## Sandbox Facilitator
@@ -279,7 +279,7 @@ import type {
 The Sandbox Facilitator enables local x402 testing without blockchain:
 
 ```typescript
-import { SandboxFacilitator } from '@payos/sdk/facilitator';
+import { SandboxFacilitator } from '@sly/sdk/facilitator';
 
 const facilitator = new SandboxFacilitator({
   apiUrl: 'http://localhost:4000',
@@ -303,7 +303,7 @@ Mount as API endpoints:
 
 ```typescript
 import express from 'express';
-import { createSandboxFacilitatorRouter } from '@payos/sdk/facilitator';
+import { createSandboxFacilitatorRouter } from '@sly/sdk/facilitator';
 
 const app = express();
 app.use(express.json());
