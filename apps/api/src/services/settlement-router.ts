@@ -18,6 +18,15 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { createSettlementService, SettlementResult } from './settlement.js';
 import { getCircleService } from './circle-mock.js';
 
+// Card network types
+interface CardNetworkCredentials {
+  apiKey?: string;
+  sharedSecret?: string;
+  consumerKey?: string;
+  privateKeyPem?: string;
+  sandbox?: boolean;
+}
+
 // ============================================
 // Types & Interfaces
 // ============================================
@@ -525,6 +534,60 @@ export class SettlementRouter {
     };
   }
 
+  /**
+   * Check if a card network is configured for the tenant
+   */
+  async isCardNetworkConfigured(tenantId: string, network: 'visa' | 'mastercard'): Promise<boolean> {
+    const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
+
+    const { data } = await this.supabase
+      .from('connected_accounts')
+      .select('id, status')
+      .eq('tenant_id', tenantId)
+      .eq('handler_type', handlerType)
+      .eq('status', 'active')
+      .single();
+
+    return !!data;
+  }
+
+  /**
+   * Get card network credentials for a tenant
+   */
+  private async getCardNetworkCredentials(
+    tenantId: string,
+    network: 'visa' | 'mastercard'
+  ): Promise<CardNetworkCredentials | null> {
+    const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
+
+    const { data, error } = await this.supabase
+      .from('connected_accounts')
+      .select('credentials_encrypted')
+      .eq('tenant_id', tenantId)
+      .eq('handler_type', handlerType)
+      .eq('status', 'active')
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    try {
+      // Dynamic import to avoid bundling issues
+      const { deserializeAndDecrypt } = await import('./credential-vault/index.js');
+      const credentials = deserializeAndDecrypt(data.credentials_encrypted);
+      return {
+        apiKey: credentials.api_key as string | undefined,
+        sharedSecret: credentials.shared_secret as string | undefined,
+        consumerKey: credentials.consumer_key as string | undefined,
+        privateKeyPem: credentials.private_key_pem as string | undefined,
+        sandbox: credentials.sandbox !== false,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private async executeVisaPullSettlement(
     request: SettlementRequest,
     feeAmount: number,
@@ -533,23 +596,95 @@ export class SettlementRouter {
     // Epic 53: Visa VIC card pull settlement
     console.log(`[Settlement Router] Visa VIC settlement for ${request.amount} ${request.currency}`);
 
-    // In production, this would:
-    // 1. Get Visa VIC credentials from connected_accounts
-    // 2. Create payment instruction via VisaVICClient
-    // 3. Wait for commerce signal from agent
-    // 4. Complete the transaction
+    // Get Visa credentials from connected_accounts
+    const credentials = await this.getCardNetworkCredentials(request.tenantId, 'visa');
 
-    return {
-      success: true,
-      transferId: request.transferId,
-      status: 'pending',
-      rail: 'visa_pull',
-      settlementId: `vic_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      grossAmount: request.amount,
-      feeAmount,
-      netAmount,
-      estimatedCompletion: new Date(Date.now() + 86400000).toISOString(), // T+1
-    };
+    if (!credentials || !credentials.apiKey) {
+      return {
+        success: false,
+        transferId: request.transferId,
+        status: 'failed',
+        rail: 'visa_pull',
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        error: {
+          code: 'VISA_NOT_CONFIGURED',
+          message: 'Visa VIC credentials not configured or inactive',
+          retryable: false,
+        },
+      };
+    }
+
+    try {
+      // Dynamic import to avoid bundling issues
+      const { VisaVICClient } = await import('@payos/cards');
+
+      const client = new VisaVICClient({
+        apiKey: credentials.apiKey,
+        sharedSecret: credentials.sharedSecret,
+        sandbox: credentials.sandbox !== false,
+      });
+
+      // Create payment instruction for the transfer
+      const instruction = await client.createPaymentInstruction({
+        merchantRef: `payos_settlement_${request.transferId.slice(0, 8)}`,
+        amount: request.amount,
+        currency: request.currency,
+        merchant: {
+          name: 'PayOS Settlement',
+          categoryCode: '6012', // Financial services
+          country: 'US',
+        },
+        expiresInSeconds: 3600, // 1 hour to complete
+        metadata: {
+          transferId: request.transferId,
+          tenantId: request.tenantId,
+          settlementType: 'visa_pull',
+        },
+      });
+
+      // Store instruction reference in transfer metadata
+      await this.supabase
+        .from('transfers')
+        .update({
+          settlement_metadata: {
+            rail: 'visa_pull',
+            visaInstructionId: instruction.instructionId,
+            visaMerchantRef: instruction.merchantRef,
+            instructionExpiresAt: instruction.expiresAt,
+          },
+        })
+        .eq('id', request.transferId);
+
+      return {
+        success: true,
+        transferId: request.transferId,
+        status: 'pending', // Pending until agent completes payment
+        rail: 'visa_pull',
+        settlementId: instruction.instructionId,
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        estimatedCompletion: new Date(Date.now() + 86400000).toISOString(), // T+1
+      };
+    } catch (error: any) {
+      console.error('[Settlement Router] Visa VIC settlement error:', error);
+      return {
+        success: false,
+        transferId: request.transferId,
+        status: 'failed',
+        rail: 'visa_pull',
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        error: {
+          code: 'VISA_SETTLEMENT_ERROR',
+          message: error.message || 'Failed to create Visa payment instruction',
+          retryable: this.isRetryableError(error),
+        },
+      };
+    }
   }
 
   private async executeMastercardPullSettlement(
@@ -560,23 +695,107 @@ export class SettlementRouter {
     // Epic 53: Mastercard Agent Pay card pull settlement
     console.log(`[Settlement Router] Mastercard Agent Pay settlement for ${request.amount} ${request.currency}`);
 
-    // In production, this would:
-    // 1. Get Mastercard credentials from connected_accounts
-    // 2. Create payment request via MastercardAgentPayClient
-    // 3. Generate DTVC and submit transaction
-    // 4. Complete the transaction
+    // Get Mastercard credentials from connected_accounts
+    const credentials = await this.getCardNetworkCredentials(request.tenantId, 'mastercard');
 
-    return {
-      success: true,
-      transferId: request.transferId,
-      status: 'pending',
-      rail: 'mastercard_pull',
-      settlementId: `mc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      grossAmount: request.amount,
-      feeAmount,
-      netAmount,
-      estimatedCompletion: new Date(Date.now() + 86400000).toISOString(), // T+1
-    };
+    if (!credentials || !credentials.consumerKey) {
+      return {
+        success: false,
+        transferId: request.transferId,
+        status: 'failed',
+        rail: 'mastercard_pull',
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        error: {
+          code: 'MASTERCARD_NOT_CONFIGURED',
+          message: 'Mastercard Agent Pay credentials not configured or inactive',
+          retryable: false,
+        },
+      };
+    }
+
+    try {
+      // Dynamic import to avoid bundling issues
+      const { MastercardAgentPayClient } = await import('@payos/cards');
+
+      const client = new MastercardAgentPayClient({
+        consumerKey: credentials.consumerKey,
+        privateKeyPem: credentials.privateKeyPem,
+        sandbox: credentials.sandbox !== false,
+      });
+
+      await client.initialize();
+
+      // Get agent info if available from protocol metadata
+      const agentId = request.protocolMetadata?.agentId;
+
+      // If we have an agent ID, check if it's registered with Mastercard
+      let mcAgentId: string | undefined;
+      if (agentId) {
+        const { data: mcAgent } = await this.supabase
+          .from('mastercard_agents')
+          .select('mc_agent_id')
+          .eq('tenant_id', request.tenantId)
+          .eq('agent_id', agentId)
+          .eq('agent_status', 'active')
+          .single();
+
+        mcAgentId = mcAgent?.mc_agent_id;
+      }
+
+      // Create agentic token with DTVC for the settlement
+      const tokenReference = `mc_token_${request.transferId.slice(0, 8)}_${Date.now()}`;
+      const dtvc = await client.generateDTVC({
+        tokenReference,
+        agentId: mcAgentId,
+        amount: request.amount,
+        currency: request.currency,
+        merchantId: 'payos_settlement',
+      });
+
+      // Store token reference in transfer metadata
+      await this.supabase
+        .from('transfers')
+        .update({
+          settlement_metadata: {
+            rail: 'mastercard_pull',
+            mcTokenReference: tokenReference,
+            mcAgentId,
+            dtvcGenerated: true,
+            dtvcExpiresAt: dtvc.expiresAt,
+          },
+        })
+        .eq('id', request.transferId);
+
+      return {
+        success: true,
+        transferId: request.transferId,
+        status: 'pending', // Pending until agent completes payment
+        rail: 'mastercard_pull',
+        settlementId: tokenReference,
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        estimatedCompletion: new Date(Date.now() + 86400000).toISOString(), // T+1
+      };
+    } catch (error: any) {
+      console.error('[Settlement Router] Mastercard Agent Pay settlement error:', error);
+      return {
+        success: false,
+        transferId: request.transferId,
+        status: 'failed',
+        rail: 'mastercard_pull',
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        error: {
+          code: 'MASTERCARD_SETTLEMENT_ERROR',
+          message: error.message || 'Failed to create Mastercard agentic token',
+          retryable: this.isRetryableError(error),
+        },
+      };
+    }
   }
 
   private async executeMockSettlement(
@@ -639,6 +858,21 @@ export class SettlementRouter {
 
     // TODO: Check actual rail status from monitoring
     return true;
+  }
+
+  /**
+   * Get available card rails for a tenant (checks if networks are configured)
+   */
+  async getAvailableCardRails(tenantId: string): Promise<{ visa: boolean; mastercard: boolean }> {
+    const [visaConfigured, mastercardConfigured] = await Promise.all([
+      this.isCardNetworkConfigured(tenantId, 'visa'),
+      this.isCardNetworkConfigured(tenantId, 'mastercard'),
+    ]);
+
+    return {
+      visa: visaConfigured,
+      mastercard: mastercardConfigured,
+    };
   }
 
   private selectBestRail(
