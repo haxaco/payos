@@ -1,11 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Rocket, CheckCircle, Circle, ChevronRight, X, Sparkles } from 'lucide-react';
+import { Rocket, CheckCircle, ChevronRight, X, Sparkles, PartyPopper } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { cn } from '@payos/ui';
 import Link from 'next/link';
+
+const STORAGE_KEY_DISMISSED = 'payos_onboarding_dismissed';
+const STORAGE_KEY_COMPLETE = 'payos_onboarding_complete';
+const CELEBRATION_DURATION_MS = 3000;
 
 interface TenantOnboardingState {
   tenant_id: string;
@@ -46,6 +50,19 @@ interface OnboardingStep {
 export function OnboardingBanner() {
   const { authToken, isConfigured } = useApiConfig();
   const [dismissed, setDismissed] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationComplete, setCelebrationComplete] = useState(false);
+
+  // Check localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isDismissed = localStorage.getItem(STORAGE_KEY_DISMISSED) === 'true';
+      const isComplete = localStorage.getItem(STORAGE_KEY_COMPLETE) === 'true';
+      if (isDismissed || isComplete) {
+        setDismissed(true);
+      }
+    }
+  }, []);
 
   const { data: onboardingState, isLoading } = useQuery({
     queryKey: ['onboarding-state-banner'],
@@ -54,43 +71,67 @@ export function OnboardingBanner() {
     staleTime: 60 * 1000,
   });
 
-  // Don't show if dismissed, loading, or setup is complete
-  if (dismissed || isLoading || !onboardingState) {
-    return null;
-  }
-
-  // Hide banner if setup is mostly complete (>80%)
-  if (onboardingState.overall_progress >= 80) {
-    return null;
-  }
-
   // Build steps based on onboarding state
-  const steps: OnboardingStep[] = [
-    {
-      id: 'connect',
-      title: 'Connect Payment Account',
-      description: 'Link Stripe, PayPal, or create a wallet',
-      completed: onboardingState.has_payment_handler || onboardingState.has_wallet,
-      link: onboardingState.has_wallet ? '/dashboard/wallets' : '/dashboard/payment-handlers',
-    },
-    {
-      id: 'enable',
-      title: 'Enable Protocol',
-      description: 'Choose x402, AP2, ACP, or UCP',
-      completed: onboardingState.has_any_protocol_enabled,
-      link: '/dashboard/protocols',
-    },
-    {
-      id: 'configure',
-      title: 'Complete Setup',
-      description: 'Finish protocol configuration',
-      completed: onboardingState.overall_progress >= 50,
-      link: '/dashboard/onboarding',
-    },
-  ];
+  const steps: OnboardingStep[] = onboardingState
+    ? [
+        {
+          id: 'connect',
+          title: 'Connect Payment Account',
+          description: 'Link Stripe, PayPal, or create a wallet',
+          completed: onboardingState.has_payment_handler || onboardingState.has_wallet,
+          link: onboardingState.has_wallet ? '/dashboard/wallets' : '/dashboard/payment-handlers',
+        },
+        {
+          id: 'enable',
+          title: 'Enable Protocol',
+          description: 'Choose x402, AP2, ACP, or UCP',
+          completed: onboardingState.has_any_protocol_enabled,
+          link: '/dashboard/protocols',
+        },
+        {
+          id: 'configure',
+          title: 'Configure Protocol',
+          description: 'Complete your protocol setup',
+          completed: onboardingState.overall_progress >= 50,
+          link: '/dashboard/onboarding',
+        },
+      ]
+    : [];
 
   const completedSteps = steps.filter((s) => s.completed).length;
   const currentStep = steps.find((s) => !s.completed);
+  const isComplete = completedSteps === 3;
+
+  // Handle celebration when all steps complete
+  useEffect(() => {
+    if (isComplete && !celebrationComplete && !dismissed) {
+      setShowCelebration(true);
+
+      const timer = setTimeout(() => {
+        // Mark as complete in localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY_COMPLETE, 'true');
+        }
+        setCelebrationComplete(true);
+        setDismissed(true);
+      }, CELEBRATION_DURATION_MS);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isComplete, celebrationComplete, dismissed]);
+
+  // Handle dismiss
+  const handleDismiss = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_DISMISSED, 'true');
+    }
+    setDismissed(true);
+  };
+
+  // Don't show if dismissed, loading, or no data
+  if (dismissed || isLoading || !onboardingState) {
+    return null;
+  }
 
   // New user - show welcome banner
   if (onboardingState.overall_progress === 0) {
@@ -114,8 +155,9 @@ export function OnboardingBanner() {
               </div>
             </div>
             <button
-              onClick={() => setDismissed(true)}
+              onClick={handleDismiss}
               className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              aria-label="Dismiss banner"
             >
               <X className="w-5 h-5" />
             </button>
@@ -166,7 +208,43 @@ export function OnboardingBanner() {
               href="/dashboard/onboarding"
               className="inline-flex items-center gap-2 px-4 py-2 bg-white text-blue-600 font-medium rounded-lg hover:bg-blue-50 transition-colors"
             >
-              View Setup Guide
+              Start Setup
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show celebration banner when all complete
+  if (showCelebration) {
+    return (
+      <div className="bg-gradient-to-r from-emerald-500 to-green-600 rounded-2xl p-5 text-white mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center animate-bounce">
+              <PartyPopper className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-semibold text-lg">All done!</h3>
+                <span className="px-2 py-0.5 bg-white/20 text-xs font-medium rounded-full">
+                  {completedSteps}/{steps.length} complete
+                </span>
+              </div>
+              <p className="text-green-100 text-sm">
+                Setup complete. You're ready to accept agentic payments!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/onboarding"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              View Templates
               <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
@@ -207,7 +285,7 @@ export function OnboardingBanner() {
               <div
                 key={step.id}
                 className={cn(
-                  'w-3 h-3 rounded-full',
+                  'w-3 h-3 rounded-full transition-colors',
                   step.completed
                     ? 'bg-green-500'
                     : 'bg-gray-300 dark:bg-gray-700'
@@ -225,8 +303,9 @@ export function OnboardingBanner() {
           </Link>
 
           <button
-            onClick={() => setDismissed(true)}
+            onClick={handleDismiss}
             className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            aria-label="Dismiss banner"
           >
             <X className="w-4 h-4" />
           </button>

@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus, Trash2, CheckCircle, AlertCircle, Clock, RefreshCw, ExternalLink } from 'lucide-react';
+import { Plug, Plus, Trash2, CheckCircle, AlertCircle, Clock, RefreshCw, ExternalLink, CreditCard, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 import { useApiConfig } from '@/lib/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
@@ -623,6 +624,59 @@ export default function PaymentHandlersPage() {
           </div>
         )}
       </div>
+
+      {/* Card Networks Section */}
+      <section className="mt-8 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-950 rounded-xl flex items-center justify-center">
+            <CreditCard className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Card Networks (Agentic Commerce)</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              For AI agent verification and card-based settlements
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="flex items-center gap-3 p-4 bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800">
+            <svg viewBox="0 0 48 16" className="h-4 w-auto">
+              <path
+                fill="#1434CB"
+                d="M17.88 1.42L14.56 14.5h-3.12L14.76 1.42h3.12zM30.48 9.86l1.64-4.5.94 4.5h-2.58zm3.48 4.64h2.88L34.4 1.42h-2.66c-.6 0-1.1.35-1.32.88l-4.66 12.2h3.26l.65-1.78h3.98l.37 1.78zM25.44 10.12c.02-3.44-4.76-3.64-4.72-5.18.02-.46.46-.96 1.44-1.08.48-.06 1.82-.1 3.34.54l.6-2.78C25.02 1.24 23.64 1 21.98 1c-3.08 0-5.24 1.64-5.26 3.98-.02 1.74 1.54 2.7 2.72 3.28 1.22.58 1.62.96 1.62 1.48-.02.8-.98 1.16-1.88 1.18-1.58.02-2.5-.42-3.22-.76l-.58 2.68c.74.34 2.1.64 3.5.66 3.28 0 5.42-1.62 5.44-4.12l.12-.26zM11.36 1.42L6.1 14.5H2.78L.14 3.9c-.16-.62-.3-.84-.78-1.1-.78-.42-2.08-.82-3.22-1.06l.08-.32h5.28c.68 0 1.28.44 1.44 1.22l1.3 6.92 3.22-8.14h3.26z"
+              />
+            </svg>
+            <div className="flex-1">
+              <div className="font-medium text-gray-900 dark:text-white">Visa VIC</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Agent payments via Visa Intelligent Commerce</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-4 bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800">
+            <svg viewBox="0 0 48 30" className="h-5 w-auto">
+              <circle cx="17" cy="15" r="15" fill="#EB001B" />
+              <circle cx="31" cy="15" r="15" fill="#F79E1B" />
+              <path
+                d="M24 5.02c2.8 2.2 4.6 5.6 4.6 9.48s-1.8 7.28-4.6 9.48a12.54 12.54 0 01-4.6-9.48c0-3.88 1.8-7.28 4.6-9.48z"
+                fill="#FF5F00"
+              />
+            </svg>
+            <div className="flex-1">
+              <div className="font-medium text-gray-900 dark:text-white">Mastercard Agent Pay</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Agent payments via Mastercard</div>
+            </div>
+          </div>
+        </div>
+
+        <Link
+          href="/dashboard/card-networks"
+          className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+        >
+          Manage Card Networks
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </section>
 
       {/* Connect Dialog */}
       <ConnectDialog

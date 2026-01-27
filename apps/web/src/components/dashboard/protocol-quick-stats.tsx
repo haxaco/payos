@@ -252,26 +252,34 @@ function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps
               {ui.setupLabel}
             </Link>
           ) : (
+            /* iOS-style toggle switch */
             <button
               onClick={(e) => {
                 e.preventDefault();
                 onToggle(!isEnabled);
               }}
               disabled={isToggling}
+              aria-label={isEnabled ? 'Disable protocol' : 'Enable protocol'}
               className={cn(
-                'w-7 h-7 rounded-lg flex items-center justify-center transition-all',
+                'relative w-11 h-6 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2',
                 isEnabled
-                  ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-500 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  ? 'bg-emerald-500 focus:ring-emerald-500'
+                  : 'bg-gray-300 dark:bg-gray-600 focus:ring-gray-400'
               )}
             >
-              {isToggling ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : isEnabled ? (
-                <Check className="w-3.5 h-3.5" />
-              ) : (
-                <div className="w-2 h-2 rounded-full bg-current" />
-              )}
+              {/* Toggle knob */}
+              <span
+                className={cn(
+                  'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ease-in-out flex items-center justify-center',
+                  isEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                )}
+              >
+                {isToggling ? (
+                  <Loader2 className="w-3 h-3 text-gray-400 animate-spin" />
+                ) : isEnabled ? (
+                  <Check className="w-3 h-3 text-emerald-500" />
+                ) : null}
+              </span>
             </button>
           )}
         </div>
@@ -306,8 +314,15 @@ function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps
       </div>
 
       {/* Status label */}
-      {!isEnabled && !showWarning && (
-        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">Click to enable</div>
+      {!showWarning && (
+        <div className="mt-3 flex items-center gap-1.5">
+          <span className={cn(
+            'text-xs font-medium',
+            isEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'
+          )}>
+            {isEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
       )}
     </div>
   );

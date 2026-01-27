@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap,
@@ -21,11 +21,18 @@ import {
   FlaskConical,
   AlertCircle,
   Power,
+  ArrowRight,
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@payos/ui';
 import Link from 'next/link';
+import {
+  hasInProgressWizard,
+  getWizardProgressPercent,
+  useAllWizardProgress,
+} from '@/hooks/useWizardProgress';
+import { WIZARD_TEMPLATES, LEGACY_TEMPLATE_MAP, type TemplateId } from '@/types/wizard';
 
 // Types
 type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
@@ -574,16 +581,30 @@ function TemplateCard({
 }) {
   const IconComponent = TEMPLATE_ICONS[template.icon] || Rocket;
 
+  // Map template ID to wizard template ID
+  const wizardTemplateId = LEGACY_TEMPLATE_MAP[template.id] || template.id as TemplateId;
+  const hasProgress = hasInProgressWizard(wizardTemplateId);
+  const progressPercent = getWizardProgressPercent(wizardTemplateId);
+  const wizardConfig = WIZARD_TEMPLATES[wizardTemplateId];
+
   return (
     <div
       className={cn(
         'relative bg-white dark:bg-gray-950 rounded-2xl border p-6 transition-colors',
-        isRecommended
+        hasProgress
+          ? 'border-green-300 dark:border-green-700 ring-2 ring-green-100 dark:ring-green-900'
+          : isRecommended
           ? 'border-blue-300 dark:border-blue-700 ring-2 ring-blue-100 dark:ring-blue-900'
           : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
       )}
     >
-      {isRecommended && (
+      {/* Progress badge - takes priority over recommended */}
+      {hasProgress && (
+        <div className="absolute -top-3 left-4 px-2 py-0.5 bg-green-600 text-white text-xs font-medium rounded-full">
+          {progressPercent}% Complete
+        </div>
+      )}
+      {!hasProgress && isRecommended && (
         <div className="absolute -top-3 left-4 px-2 py-0.5 bg-blue-600 text-white text-xs font-medium rounded-full">
           Recommended
         </div>
@@ -616,15 +637,104 @@ function TemplateCard({
             </span>
           </div>
 
+          {/* Progress bar for in-progress wizards */}
+          {hasProgress && (
+            <div className="mt-3">
+              <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 rounded-full transition-all duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="mt-4">
             <Link
-              href={template.steps[0]?.action_url || '/dashboard'}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-medium rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors"
+              href={wizardConfig ? `/dashboard/onboarding/wizard/${wizardTemplateId}` : (template.steps[0]?.action_url || '/dashboard')}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+                hasProgress
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100'
+              )}
             >
-              <Play className="w-4 h-4" />
-              Start Setup
+              {hasProgress ? (
+                <>
+                  <ArrowRight className="w-4 h-4" />
+                  Resume Setup
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Start Setup
+                </>
+              )}
             </Link>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Resume Setup Card - Shows when there are in-progress wizards
+function ResumeSetupCard() {
+  const { wizards, refresh } = useAllWizardProgress();
+
+  // Refresh on mount
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  if (wizards.length === 0) return null;
+
+  // Get the most recent in-progress wizard
+  const mostRecent = wizards.sort(
+    (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
+  )[0];
+
+  const templateConfig = WIZARD_TEMPLATES[mostRecent.templateId];
+  if (!templateConfig) return null;
+
+  const IconComponent = TEMPLATE_ICONS[templateConfig.icon] || Rocket;
+  const progressPercent = Math.round(
+    ((mostRecent.completedSteps.length + mostRecent.skippedSteps.length) /
+      templateConfig.steps.length) *
+      100
+  );
+
+  return (
+    <div className="mb-8">
+      <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
+              <IconComponent className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <div className="text-sm text-green-100 mb-1">Continue where you left off</div>
+              <h3 className="text-xl font-semibold">{templateConfig.name} Setup</h3>
+              <div className="flex items-center gap-3 mt-2">
+                <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden max-w-[200px]">
+                  <div
+                    className="h-full bg-white rounded-full transition-all duration-500"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <span className="text-sm text-green-100">
+                  {mostRecent.completedSteps.length + mostRecent.skippedSteps.length}/{templateConfig.steps.length} steps
+                </span>
+              </div>
+            </div>
+          </div>
+          <Link
+            href={`/dashboard/onboarding/wizard/${mostRecent.templateId}`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-green-700 font-medium rounded-lg hover:bg-green-50 transition-colors"
+          >
+            Resume
+            <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
       </div>
     </div>
@@ -844,23 +954,24 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {/* Quick Start Templates */}
-      {(!onboardingState?.has_any_protocol_enabled || onboardingState?.overall_progress < 50) && (
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            Quick Start Templates
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {templates.map((template) => (
-              <TemplateCard
-                key={template.id}
-                template={template}
-                isRecommended={template.id === onboardingState?.recommended_template?.id}
-              />
-            ))}
-          </div>
+      {/* Resume Setup Card - Show when there are in-progress wizards */}
+      <ResumeSetupCard />
+
+      {/* Quick Start Templates - Always visible for easy access */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+          Quick Start Templates
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {templates.map((template) => (
+            <TemplateCard
+              key={template.id}
+              template={template}
+              isRecommended={template.id === onboardingState?.recommended_template?.id}
+            />
+          ))}
         </div>
-      )}
+      </div>
 
       {/* Protocol Onboarding */}
       <div>

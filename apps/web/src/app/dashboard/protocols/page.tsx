@@ -13,7 +13,8 @@ import {
   ExternalLink,
   ToggleLeft,
   ToggleRight,
-  Loader2
+  Loader2,
+  CreditCard
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -473,7 +474,7 @@ export default function ProtocolsPage() {
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
           Each protocol has specific prerequisites that must be met before enabling. Common requirements include:
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-yellow-100 dark:bg-yellow-950 flex items-center justify-center flex-shrink-0">
               <Zap className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
@@ -498,7 +499,76 @@ export default function ProtocolsPage() {
               </Link>
             </div>
           </div>
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center flex-shrink-0">
+              <CreditCard className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <div className="font-medium text-gray-900 dark:text-white">Card Payments</div>
+              <div className="text-gray-500 dark:text-gray-400">Enable Visa/Mastercard for agent commerce</div>
+              <Link href="/dashboard/card-networks" className="text-blue-600 dark:text-blue-400 hover:underline">
+                Configure cards &rarr;
+              </Link>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Payment Methods Info */}
+      <div className="mt-4 bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Payment Methods by Protocol</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-800">
+                <th className="text-left py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Protocol</th>
+                <th className="text-center py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">USDC</th>
+                <th className="text-center py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Pix/SPEI</th>
+                <th className="text-center py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Visa</th>
+                <th className="text-center py-2 px-3 text-gray-500 dark:text-gray-400 font-medium">Mastercard</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-gray-100 dark:border-gray-800/50">
+                <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">x402</td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center text-gray-400">-</td>
+                <td className="py-2 px-3 text-center text-gray-400">-</td>
+                <td className="py-2 px-3 text-center text-gray-400">-</td>
+              </tr>
+              <tr className="border-b border-gray-100 dark:border-gray-800/50">
+                <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">AP2</td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><AlertCircle className="h-4 w-4 text-yellow-500 mx-auto" title="Fallback" /></td>
+                <td className="py-2 px-3 text-center"><AlertCircle className="h-4 w-4 text-yellow-500 mx-auto" title="Fallback" /></td>
+              </tr>
+              <tr className="border-b border-gray-100 dark:border-gray-800/50">
+                <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">ACP</td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+              </tr>
+              <tr>
+                <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">UCP</td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+                <td className="py-2 px-3 text-center"><CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mx-auto" /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400 inline mr-1" />
+          Full support
+          <span className="mx-2">|</span>
+          <AlertCircle className="h-3 w-3 text-yellow-500 inline mr-1" />
+          Fallback option
+          <span className="mx-2">|</span>
+          <span className="text-gray-400">- Not available</span>
+        </p>
       </div>
     </div>
   );
