@@ -94,6 +94,9 @@ Every story must meet these criteria before completion:
 ### Card Network Integration ⭐ NEW
 - [Epic 53: Card Network Agentic Commerce](./epic-53-card-network-agentic-commerce.md) 💳 **P1** - Visa VIC + Mastercard Agent Pay, unified Web Bot Auth, multi-rail routing
 
+### Brand & Identity ⭐ NEW
+- [Epic 54: Sly Rebranding](./epic-54-sly-rebranding.md) 🎨 **P0** - PayOS → Sly rename across codebase, packages, docs, UI
+
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) 🏭 - x402 facilitator for LATAM ecosystem
 - [Epic 38: Payment-Optimized Chains](./epic-38-payment-optimized-chains.md) ⛓️ - Tempo & future chain integration
@@ -145,6 +148,7 @@ Strategic explorations before committing to implementation:
 
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
+| **Epic 54: Sly Rebranding** | **P0** | 34 | PayOS → Sly rename |
 | **Epic 53: Card Networks** | **P1** | 62 | Visa VIC + Mastercard Agent Pay |
 | Epic 29: Workflow Engine | P0 | 52 | Multi-step workflows |
 | Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
