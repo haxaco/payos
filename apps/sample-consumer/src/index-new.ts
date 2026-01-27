@@ -1,32 +1,32 @@
 /**
- * PayOS Sample Consumer - Multi-Protocol Demo
- * 
+ * Sly Sample Consumer - Multi-Protocol Demo
+ *
  * Demonstrates all three payment protocols:
  * - x402: Micropayments for APIs
- * - AP2: Subscription mandates  
+ * - AP2: Subscription mandates
  * - ACP: E-commerce checkout
- * 
+ *
  * User: haxaco@gmail.com
  */
 
 import 'dotenv/config';
-import { PayOS, createWithPassword } from '@sly/sdk';
+import { Sly, createWithPassword } from '@sly/sdk';
 import chalk from 'chalk';
 import { runX402Demo } from './x402-demo';
 import { runAP2Demo } from './ap2-demo';
 import { runACPDemo } from './acp-demo';
 
-// Configuration from environment
-const API_KEY = process.env.PAYOS_API_KEY;
+// Configuration from environment (supports both SLY_ and legacy PAYOS_ prefixes)
+const API_KEY = process.env.SLY_API_KEY || process.env.PAYOS_API_KEY;
 const USER_EMAIL = process.env.USER_EMAIL || 'haxaco@gmail.com';
 const USER_PASSWORD = process.env.USER_PASSWORD || '';
-const ENVIRONMENT = (process.env.PAYOS_ENVIRONMENT as any) || 'sandbox';
-const API_URL = process.env.PAYOS_API_URL || 'http://localhost:4000';
+const ENVIRONMENT = (process.env.SLY_ENVIRONMENT || process.env.PAYOS_ENVIRONMENT as any) || 'sandbox';
+const API_URL = process.env.SLY_API_URL || process.env.PAYOS_API_URL || 'http://localhost:4000';
 const USER_ACCOUNT_ID = process.env.USER_ACCOUNT_ID || 'acct_haxaco_test';
 const PROVIDER_URL = process.env.PROVIDER_API_URL || 'http://localhost:4001';
 
-// Initialize PayOS SDK (will be set in main)
-let payos: PayOS;
+// Initialize Sly SDK (will be set in main)
+let sly: Sly;
 
 function printHeader() {
   console.log(chalk.cyan(`

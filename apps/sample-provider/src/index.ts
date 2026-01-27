@@ -1,13 +1,13 @@
 /**
  * Sample Weather API Provider
- * 
+ *
  * Demonstrates x402 Provider SDK for monetizing API endpoints.
- * 
+ *
  * Setup:
- *   1. Get API key from PayOS dashboard
- *   2. Create .env file with: PAYOS_API_KEY=pk_xxx
+ *   1. Get API key from Sly dashboard
+ *   2. Create .env file with: SLY_API_KEY=pk_xxx
  *   3. Run: pnpm dev
- * 
+ *
  * Test:
  *   curl http://localhost:4001/api/weather/current      # Free
  *   curl -v http://localhost:4001/api/weather/forecast  # Returns 402
@@ -203,20 +203,24 @@ const PORT = parseInt(process.env.PORT || '4000');
 const DEBUG = process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development';
 const VERBOSE_LOGGING = true; // Always log x402 details for validation
 
+// Support both SLY_ (new) and PAYOS_ (legacy) prefixes
+const API_KEY = process.env.SLY_API_KEY || process.env.PAYOS_API_KEY;
+const API_URL = process.env.SLY_API_URL || process.env.PAYOS_API_URL;
+
 // Validate API key
-if (!process.env.PAYOS_API_KEY) {
+if (!API_KEY) {
   console.error(`
 ╔══════════════════════════════════════════════════════════════════╗
-║  ❌ Missing PAYOS_API_KEY environment variable                   ║
+║  ❌ Missing SLY_API_KEY environment variable                     ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
 ║  To get your API key:                                            ║
-║  1. Go to PayOS dashboard (http://localhost:3000)                ║
+║  1. Go to Sly dashboard (http://localhost:3000)                  ║
 ║  2. Create a business account                                    ║
 ║  3. Generate an API key with endpoint permissions                ║
 ║                                                                  ║
 ║  Then run:                                                       ║
-║  PAYOS_API_KEY=pk_xxx pnpm dev                                   ║
+║  SLY_API_KEY=pk_xxx pnpm dev                                     ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
   `);
@@ -228,12 +232,12 @@ if (!process.env.PAYOS_API_KEY) {
 // ============================================
 
 const x402 = new X402Provider({
-  apiKey: process.env.PAYOS_API_KEY,
-  apiUrl: process.env.PAYOS_API_URL,
+  apiKey: API_KEY,
+  apiUrl: API_URL,
   debug: DEBUG,
-  
+
   // Phase 2: JWT secret for local payment verification (~1ms vs ~140ms API call)
-  jwtSecret: process.env.X402_JWT_SECRET || 'payos-x402-jwt-secret-change-in-prod',
+  jwtSecret: process.env.X402_JWT_SECRET || 'sly-x402-jwt-secret-change-in-prod',
   preferLocalVerification: true
 });
 
