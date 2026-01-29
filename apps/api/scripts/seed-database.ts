@@ -257,6 +257,74 @@ async function createAgent(tenantId: string, accountId: string, agent: any) {
   return data.id;
 }
 
+async function createWallet(tenantId: string, accountId: string, wallet: any) {
+  const { data: existing } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('owner_account_id', accountId)
+    .eq('name', wallet.name)
+    .maybeSingle();
+
+  if (existing) return existing.id;
+
+  const { data, error } = await supabase
+    .from('wallets')
+    .insert({
+      tenant_id: tenantId,
+      owner_account_id: accountId,
+      balance: wallet.balance || 0,
+      currency: wallet.currency || 'USDC',
+      wallet_address: wallet.walletAddress || null,
+      network: wallet.network || 'base-mainnet',
+      status: wallet.status || 'active',
+      name: wallet.name,
+      purpose: wallet.purpose || null,
+      spending_policy: wallet.spendingPolicy || null,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data.id;
+}
+
+async function createConnectedAccount(tenantId: string, account: any) {
+  const { data: existing } = await supabase
+    .from('connected_accounts')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('handler_type', account.handlerType)
+    .eq('handler_name', account.handlerName)
+    .maybeSingle();
+
+  if (existing) return existing.id;
+
+  // Use a placeholder encrypted credential (in production this would be properly encrypted)
+  const placeholderCredential = Buffer.from(JSON.stringify({
+    placeholder: true,
+    note: 'Demo credentials - do not use in production'
+  })).toString('base64');
+
+  const { data, error } = await supabase
+    .from('connected_accounts')
+    .insert({
+      tenant_id: tenantId,
+      handler_type: account.handlerType,
+      handler_name: account.handlerName,
+      credentials_encrypted: placeholderCredential,
+      credentials_key_id: 'v1-demo',
+      status: account.status || 'active',
+      last_verified_at: new Date().toISOString(),
+      metadata: account.metadata || {},
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data.id;
+}
+
 async function createStream(tenantId: string, stream: any) {
   // Convert monthly amount to flow rate per second
   // $2000/month = 2000 / (30 * 24 * 60 * 60) = ~0.000771604 per second
@@ -607,9 +675,88 @@ async function seedDatabase() {
     console.log('');
     
     // ============================================
-    // 6. Create Streams
+    // 6. Create Wallets (Required for x402/AP2 protocols)
     // ============================================
-    console.log('6️⃣  Creating payment streams...');
+    console.log('6️⃣  Creating wallets (for protocol enablement)...');
+
+    // Create a main treasury wallet for the tenant
+    const treasuryWalletId = await createWallet(acmeTenantId, acmeAccountIds['accounting'], {
+      name: 'Treasury Wallet',
+      balance: 50000,
+      currency: 'USDC',
+      network: 'base-mainnet',
+      status: 'active',
+      purpose: 'Main treasury wallet for protocol operations',
+    });
+    console.log('  ✓ Treasury Wallet (50,000 USDC)');
+
+    // Create wallets for individual accounts
+    await createWallet(acmeTenantId, acmeAccountIds['maria'], {
+      name: 'Maria Operations Wallet',
+      balance: 5000,
+      currency: 'USDC',
+      network: 'base-mainnet',
+      status: 'active',
+      purpose: 'Operations wallet for x402 payments',
+    });
+    console.log('  ✓ Maria Operations Wallet (5,000 USDC)');
+
+    await createWallet(acmeTenantId, acmeAccountIds['ana'], {
+      name: 'Ana Contractor Wallet',
+      balance: 2500,
+      currency: 'USDC',
+      network: 'base-mainnet',
+      status: 'active',
+      purpose: 'Contractor wallet',
+    });
+    console.log('  ✓ Ana Contractor Wallet (2,500 USDC)');
+    console.log('');
+
+    // ============================================
+    // 7. Create Connected Accounts (Required for ACP/UCP protocols)
+    // ============================================
+    console.log('7️⃣  Creating connected accounts (payment handlers)...');
+
+    await createConnectedAccount(acmeTenantId, {
+      handlerType: 'stripe',
+      handlerName: 'Stripe Production',
+      status: 'active',
+      metadata: {
+        account_id: 'acct_demo_stripe_123',
+        business_name: 'Acme Corporation',
+        country: 'US',
+      },
+    });
+    console.log('  ✓ Connected: Stripe Production');
+
+    await createConnectedAccount(acmeTenantId, {
+      handlerType: 'circle',
+      handlerName: 'Circle USDC',
+      status: 'active',
+      metadata: {
+        entity_id: 'entity_demo_circle_456',
+        supported_currencies: ['USDC', 'EURC'],
+      },
+    });
+    console.log('  ✓ Connected: Circle USDC');
+
+    await createConnectedAccount(acmeTenantId, {
+      handlerType: 'payos_native',
+      handlerName: 'Sly Native (Pix/SPEI)',
+      status: 'active',
+      metadata: {
+        pix_enabled: true,
+        spei_enabled: true,
+        settlement_currency: 'USDC',
+      },
+    });
+    console.log('  ✓ Connected: Sly Native (Pix/SPEI)');
+    console.log('');
+
+    // ============================================
+    // 8. Create Streams
+    // ============================================
+    console.log('8️⃣  Creating payment streams...');
     
     await createStream(acmeTenantId, {
       senderAccountId: acmeAccountIds['accounting'],
@@ -633,9 +780,9 @@ async function seedDatabase() {
     console.log('');
     
     // ============================================
-    // 7. Create Compliance Flags
+    // 9. Create Compliance Flags
     // ============================================
-    console.log('7️⃣  Creating compliance flags...');
+    console.log('9️⃣  Creating compliance flags...');
     
     // Get some transfer IDs for flagging
     const { data: recentTransfers } = await supabase
@@ -807,6 +954,8 @@ async function seedDatabase() {
     console.log(`   Transfers: ${transfers.length}`);
     console.log(`   Payment Methods: 4`);
     console.log(`   Agents: 3`);
+    console.log(`   Wallets: 3 (enables x402/AP2 protocols)`);
+    console.log(`   Connected Accounts: 3 (enables ACP/UCP protocols)`);
     console.log(`   Streams: 2`);
     console.log(`   Compliance Flags: 5`);
     console.log('');

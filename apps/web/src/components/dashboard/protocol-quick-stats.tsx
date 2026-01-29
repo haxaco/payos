@@ -129,7 +129,9 @@ async function fetchProtocolStatus(authToken: string): Promise<ProtocolStatusRes
   if (!response.ok) {
     throw new Error('Failed to fetch protocol status');
   }
-  return response.json();
+  const json = await response.json();
+  // Handle wrapped API response format
+  return json.data || json;
 }
 
 async function toggleProtocol(
@@ -313,17 +315,6 @@ function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps
         </div>
       </div>
 
-      {/* Status label */}
-      {!showWarning && (
-        <div className="mt-3 flex items-center gap-1.5">
-          <span className={cn(
-            'text-xs font-medium',
-            isEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'
-          )}>
-            {isEnabled ? 'ON' : 'OFF'}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,23 +1,24 @@
-# PayOS Developer Guides
+# Sly Developer Guides
 
-This directory contains practical guides for developers working on PayOS. These guides cover development workflows, testing, deployment, and onboarding.
+This directory contains practical guides for developers working on Sly. These guides cover development workflows, testing, deployment, integration, and onboarding.
 
 ## Directory Structure
 
 ```
 guides/
 ├── README.md                    # This file
-├── onboarding/                  # Getting started with PayOS
+├── onboarding/                  # Getting started with Sly
 ├── development/                 # Development workflows and tools
 ├── testing/                     # Testing guides and procedures
-└── deployment/                  # Deployment and production guides
+├── deployment/                  # Deployment and production guides
+└── integration/                 # B2B/B2C integration requirements
 ```
 
 ## Guide Categories
 
 ### Onboarding Guides
 
-Get started with PayOS development quickly and effectively.
+Get started with Sly development quickly and effectively.
 
 | Document | Description |
 |----------|-------------|
@@ -47,7 +48,7 @@ Learn development workflows, migration strategies, and SDK usage.
 
 ### Testing Guides
 
-Comprehensive testing documentation for all aspects of PayOS.
+Comprehensive testing documentation for all aspects of Sly.
 
 | Document | Description |
 |----------|-------------|
@@ -60,6 +61,16 @@ Comprehensive testing documentation for all aspects of PayOS.
 | [TEST_STATUS_REPORT.md](testing/TEST_STATUS_REPORT.md) | Current test status and coverage |
 
 **Start here:** [testing/VALIDATION_GUIDE.md](testing/VALIDATION_GUIDE.md)
+
+### Integration Guides
+
+Understand how different customer types integrate with Sly.
+
+| Document | Description |
+|----------|-------------|
+| [INTEGRATION_REQUIREMENTS.md](integration/INTEGRATION_REQUIREMENTS.md) | B2B vs B2C integration requirements, protocols, and external registration needs |
+
+**Key topics:** B2B partners, B2C end users, AI agents, protocol selection, card networks, settlement rails
 
 ### Deployment Guides
 
@@ -80,6 +91,8 @@ Production deployment strategies and business scenarios.
 | Task | Guide |
 |------|-------|
 | Get started as a new developer | [onboarding/GEMINI_START_HERE.md](onboarding/GEMINI_START_HERE.md) |
+| Understand B2B vs B2C integration | [integration/INTEGRATION_REQUIREMENTS.md](integration/INTEGRATION_REQUIREMENTS.md) |
+| Choose the right protocol | [integration/INTEGRATION_REQUIREMENTS.md](integration/INTEGRATION_REQUIREMENTS.md#protocol-selection-guide) |
 | Migrate from mock to real data | [development/MOCK_TO_API_MIGRATION.md](development/MOCK_TO_API_MIGRATION.md) |
 | Test the SDK | [development/SDK_TESTING_GUIDE.md](development/SDK_TESTING_GUIDE.md) |
 | Test the UI | [testing/UI_VALIDATION_GUIDE.md](testing/UI_VALIDATION_GUIDE.md) |
@@ -119,7 +132,7 @@ All guides should:
 
 ---
 
-**Last Updated:** December 29, 2025
-**Maintained By:** PayOS Team
+**Last Updated:** January 27, 2026
+**Maintained By:** Sly Team
 
 For the main documentation index, see [/docs/README.md](../README.md)
