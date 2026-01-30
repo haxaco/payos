@@ -91,11 +91,11 @@ Every story must meet these criteria before completion:
 - [Epic 51: Unified Onboarding](./epic-51-unified-onboarding.md) 🚀 ✅ - Protocol-specific onboarding
 - [Epic 52: Dashboard Redesign](./epic-52-dashboard-redesign.md) 📊 ✅ - Agentic protocol focus
 
-### Card Network Integration ⭐ NEW
-- [Epic 53: Card Network Agentic Commerce](./epic-53-card-network-agentic-commerce.md) 💳 **P1** - Visa VIC + Mastercard Agent Pay, unified Web Bot Auth, multi-rail routing
+### Card Network Integration
+- [Epic 53: Card Network Agentic Commerce](./epic-53-card-network-agentic-commerce.md) 💳 ✅ - Visa VIC + Mastercard Agent Pay, unified Web Bot Auth, multi-rail routing
 
-### Brand & Identity ⭐ NEW
-- [Epic 54: Sly Rebranding](./epic-54-sly-rebranding.md) 🎨 **P0** - PayOS → Sly rename across codebase, packages, docs, UI
+### Brand & Identity
+- [Epic 54: Sly Rebranding](./epic-54-sly-rebranding.md) 🎨 ✅ - PayOS → Sly rename across codebase, packages, docs, UI
 
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) 🏭 - x402 facilitator for LATAM ecosystem
@@ -142,14 +142,14 @@ Strategic explorations before committing to implementation:
 | Epic 49: Protocol Discovery | Jan 22, 2026 | 18 | Protocol registry & enablement |
 | Epic 50: Settlement Decoupling | Jan 22, 2026 | 26 | Settlement trigger rules |
 | Epic 51: Unified Onboarding | Jan 22, 2026 | 52 | Protocol-specific onboarding |
-| **Total Completed** | | **~635** | |
+| Epic 53: Card Networks | Jan 27, 2026 | 62 | Visa VIC + Mastercard Agent Pay |
+| Epic 54: Sly Rebranding | Jan 27, 2026 | 34 | PayOS → Sly rename |
+| **Total Completed** | | **~731** | |
 
 ### Current Focus 🚧
 
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
-| **Epic 54: Sly Rebranding** | **P0** | 34 | PayOS → Sly rename |
-| **Epic 53: Card Networks** | **P1** | 62 | Visa VIC + Mastercard Agent Pay |
 | Epic 29: Workflow Engine | P0 | 52 | Multi-step workflows |
 | Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
 
@@ -186,16 +186,32 @@ Strategic explorations before committing to implementation:
 
 ### Points Summary
 
-- **Completed:** ~635 points
-- **Current Focus:** ~224 points (53, 29, 41)
+- **Completed:** ~731 points
+- **Current Focus:** ~162 points (29, 41)
 - **P0/P1 Planned:** ~36 points
 - **P2 Planned:** ~153 points
 - **P3 Future:** ~268 points
-- **Total Defined:** ~1,254 points
+- **Total Defined:** ~1,350 points
 
 ---
 
 ## Recent Changes (January 2026)
+
+### January 27, 2026
+- **Epic 54: Sly Rebranding** — COMPLETE ✅ (34 points)
+  - Renamed PayOS to Sly across entire codebase
+  - Updated all packages (@payos/* → @sly/*)
+  - Updated UI branding, logos, and documentation
+  - Support for SLY_ environment variable prefix
+- **Epic 53: Card Network Agentic Commerce** — COMPLETE ✅ (62 points)
+  - Visa VIC integration with TAP (Trusted Agent Protocol)
+  - Mastercard Agent Pay with DTVC tokens
+  - Unified Web Bot Auth verification (RFC 9421)
+  - Settlement router with 5 rails: Visa, MC, USDC, Pix, SPEI
+  - Dashboard UI for card network management
+  - SDK modules: `sly.cards.visa`, `sly.cards.mastercard`
+- **Security:** Enabled RLS on `runs` and `run_logs` tables
+- **Fix:** Protocol toggles now work correctly on dashboard home page
 
 ### January 22, 2026
 - **Epic 52: Dashboard Redesign** — COMPLETE ✅ (21 points)
@@ -278,10 +294,10 @@ PayOS supports **FOUR** agentic payment protocols:
 
 **Card Network Support:**
 
-| Network | Protocol | PayOS Status |
-|---------|----------|---------------|
-| **Visa** | VIC / TAP | 🚧 Epic 53 (P1) |
-| **Mastercard** | Agent Pay | 🚧 Epic 53 (P1) |
+| Network | Protocol | Sly Status |
+|---------|----------|------------|
+| **Visa** | VIC / TAP | ✅ Epic 53 |
+| **Mastercard** | Agent Pay | ✅ Epic 53 |
 
 > **"We don't care which protocol wins. PayOS makes them all work."**
 
@@ -313,4 +329,4 @@ PayOS supports **FOUR** agentic payment protocols:
 
 ---
 
-*Last updated: January 22, 2026*
+*Last updated: January 27, 2026*
