@@ -197,6 +197,15 @@ Strategic explorations before committing to implementation:
 
 ## Recent Changes (January 2026)
 
+### January 30, 2026
+- **Story 36.10: Function-Calling Format** — COMPLETE ✅
+  - `GET /v1/capabilities/function-calling` endpoint implemented
+  - OpenAI function format (`?format=openai`)
+  - Anthropic tool format (`?format=anthropic`)
+  - Protocol-specific capabilities at `/v1/capabilities/protocols`
+  - LLM-optimized descriptions for all 8 core operations
+- **Docs:** Updated TODO.md with recent completions and demo checklist progress
+
 ### January 27, 2026
 - **Epic 54: Sly Rebranding** — COMPLETE ✅ (34 points)
   - Renamed PayOS to Sly across entire codebase
