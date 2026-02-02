@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sly - Technical Architecture</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      padding: 32px;
+      font-size: 13px;
+    }
+
+    .slide {
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .logo {
+      font-size: 32px;
+      font-weight: 700;
+      color: #58a6ff;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    .date {
+      font-size: 12px;
+      color: #484f58;
+    }
+
+    /* Grid Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    /* Service Cards */
+    .service-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .service-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #21262d;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .service-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .service-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .service-port {
+      margin-left: auto;
+      font-size: 11px;
+      color: #7ee787;
+      background: rgba(126, 231, 135, 0.1);
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .service-body {
+      padding: 16px;
+    }
+
+    /* Detail Rows */
+    .detail-section {
+      margin-bottom: 16px;
+    }
+
+    .detail-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .detail-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .detail-list {
+      list-style: none;
+    }
+
+    .detail-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+
+    .detail-list li::before {
+      content: "›";
+      color: #484f58;
+      font-weight: bold;
+    }
+
+    .detail-value {
+      color: #c9d1d9;
+    }
+
+    .detail-meta {
+      color: #6e7681;
+      font-size: 11px;
+    }
+
+    /* Code blocks */
+    .code-block {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 11px;
+      overflow-x: auto;
+    }
+
+    .code-block .comment {
+      color: #8b949e;
+    }
+
+    .code-block .keyword {
+      color: #ff7b72;
+    }
+
+    .code-block .string {
+      color: #a5d6ff;
+    }
+
+    .code-block .number {
+      color: #79c0ff;
+    }
+
+    /* Tags */
+    .tag {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-right: 4px;
+      margin-bottom: 4px;
+    }
+
+    .tag-blue { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
+    .tag-green { background: rgba(126, 231, 135, 0.15); color: #7ee787; }
+    .tag-purple { background: rgba(188, 140, 255, 0.15); color: #bc8cff; }
+    .tag-orange { background: rgba(255, 166, 87, 0.15); color: #ffa657; }
+    .tag-red { background: rgba(255, 123, 114, 0.15); color: #ff7b72; }
+    .tag-cyan { background: rgba(121, 192, 255, 0.15); color: #79c0ff; }
+
+    /* Service Colors */
+    .bg-api { background: linear-gradient(135deg, #238636, #2ea043); }
+    .bg-web { background: linear-gradient(135deg, #1f6feb, #388bfd); }
+    .bg-db { background: linear-gradient(135deg, #8957e5, #a371f7); }
+    .bg-worker { background: linear-gradient(135deg, #da3633, #f85149); }
+    .bg-sdk { background: linear-gradient(135deg, #bf8700, #d29922); }
+    .bg-types { background: linear-gradient(135deg, #6e7681, #8b949e); }
+
+    /* Wide card */
+    .span-2 {
+      grid-column: span 2;
+    }
+
+    .span-3 {
+      grid-column: span 3;
+    }
+
+    /* Table */
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+
+    .detail-table th {
+      text-align: left;
+      padding: 6px 8px;
+      background: #0d1117;
+      color: #8b949e;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-table td {
+      padding: 6px 8px;
+      border-top: 1px solid #21262d;
+    }
+
+    .detail-table tr:hover {
+      background: rgba(88, 166, 255, 0.05);
+    }
+
+    /* Middleware Stack */
+    .middleware-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .middleware-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: #0d1117;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .middleware-order {
+      width: 18px;
+      height: 18px;
+      background: #21262d;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #8b949e;
+    }
+
+    .middleware-name {
+      color: #79c0ff;
+    }
+
+    .middleware-desc {
+      color: #6e7681;
+      margin-left: auto;
+    }
+
+    /* Directory Tree */
+    .tree {
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .tree-folder {
+      color: #58a6ff;
+    }
+
+    .tree-file {
+      color: #c9d1d9;
+    }
+
+    .tree-comment {
+      color: #6e7681;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #21262d;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #6e7681;
+    }
+
+    .footer-links a {
+      color: #58a6ff;
+      text-decoration: none;
+      margin-left: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <div class="logo">Sly Technical Architecture</div>
+        <div class="subtitle">B2B Stablecoin Payout Operating System</div>
+      </div>
+      <div class="date">January 2026 | v2026.01</div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+
+      <!-- API Server -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon bg-api">⚡</div>
+          <div class="service-name">API Server</div>
+          <div class="service-port">:4000</div>
+        </div>
+        <div class="service-body">
+          <div class="detail-section">
+            <div class="detail-label">Framework</div>
+            <div class="code-block">
+              <span class="keyword">Hono</span> v4.x <span class="comment">// Ultrafast, 0 deps</span><br>
+              <span class="string">apps/api/src/index.ts</span>
+            </div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Key Files</div>
+            <ul class="detail-list">
+              <li><span class="detail-value">src/app.ts</span> <span class="detail-meta">— Middleware & routes</span></li>
+              <li><span class="detail-value">src/routes/*</span> <span class="detail-meta">— 15+ route modules</span></li>
+              <li><span class="detail-value">src/middleware/auth.ts</span> <span class="detail-meta">— Triple auth</span></li>
+              <li><span class="detail-value">src/services/*</span> <span class="detail-meta">— Business logic</span></li>
+            </ul>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Technologies</div>
+            <span class="tag tag-green">Hono</span>
+            <span class="tag tag-blue">TypeScript</span>
+            <span class="tag tag-purple">Zod</span>
+            <span class="tag tag-orange">Node.js 20</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Web UI -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon bg-web">🖥️</div>
+          <div class="service-name">Web Dashboard</div>
+          <div class="service-port">:3000</div>
+        </div>
+        <div class="service-body">
+          <div class="detail-section">
+            <div class="detail-label">Framework</div>
+            <div class="code-block">
+              <span class="keyword">Next.js</span> 14 <span class="comment">// App Router</span><br>
+              <span class="string">apps/web/src/app/</span>
+            </div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Key Features</div>
+            <ul class="detail-list">
+              <li><span class="detail-value">App Router</span> <span class="detail-meta">— Server components</span></li>
+              <li><span class="detail-value">React Query</span> <span class="detail-meta">— Data fetching</span></li>
+              <li><span class="detail-value">Tailwind CSS</span> <span class="detail-meta">— Styling</span></li>
+              <li><span class="detail-value">Recharts</span> <span class="detail-meta">— Analytics charts</span></li>
+            </ul>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Technologies</div>
+            <span class="tag tag-blue">Next.js 14</span>
+            <span class="tag tag-cyan">React 18</span>
+            <span class="tag tag-purple">Tailwind</span>
+            <span class="tag tag-green">React Query</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Database -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon bg-db">🗄️</div>
+          <div class="service-name">Database</div>
+          <div class="service-port">Supabase</div>
+        </div>
+        <div class="service-body">
+          <div class="detail-section">
+            <div class="detail-label">Platform</div>
+            <div class="code-block">
+              <span class="keyword">PostgreSQL</span> 15 <span class="comment">// via Supabase</span><br>
+              <span class="string">apps/api/supabase/migrations/</span>
+            </div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Security</div>
+            <ul class="detail-list">
+              <li><span class="detail-value">Row Level Security</span> <span class="detail-meta">— All tables</span></li>
+              <li><span class="detail-value">tenant_id filtering</span> <span class="detail-meta">— Multi-tenant</span></li>
+              <li><span class="detail-value">Service role key</span> <span class="detail-meta">— Bypasses RLS</span></li>
+            </ul>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Key Tables</div>
+            <span class="tag tag-purple">tenants</span>
+            <span class="tag tag-blue">accounts</span>
+            <span class="tag tag-green">transfers</span>
+            <span class="tag tag-orange">agents</span>
+            <span class="tag tag-cyan">settlements</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Middleware Stack -->
+      <div class="service-card span-2">
+        <div class="service-header">
+          <div class="service-icon bg-api">🔗</div>
+          <div class="service-name">API Middleware Stack</div>
+          <div class="service-port">app.ts:34</div>
+        </div>
+        <div class="service-body">
+          <div class="middleware-stack">
+            <div class="middleware-item">
+              <div class="middleware-order">1</div>
+              <div class="middleware-name">requestId</div>
+              <div class="middleware-desc">X-Request-ID for distributed tracing</div>
+            </div>
+            <div class="middleware-item">
+              <div class="middleware-order">2</div>
+              <div class="middleware-name">securityHeaders</div>
+              <div class="middleware-desc">CSP, HSTS, X-Frame-Options, X-Content-Type</div>
+            </div>
+            <div class="middleware-item">
+              <div class="middleware-order">3</div>
+              <div class="middleware-name">cors</div>
+              <div class="middleware-desc">Configurable origins via CORS_ORIGINS env</div>
+            </div>
+            <div class="middleware-item">
+              <div class="middleware-order">4</div>
+              <div class="middleware-name">logger</div>
+              <div class="middleware-desc">Request logging (dev only)</div>
+            </div>
+            <div class="middleware-item">
+              <div class="middleware-order">5</div>
+              <div class="middleware-name">rateLimiter</div>
+              <div class="middleware-desc">100 req/min per IP (5 req/min for auth)</div>
+            </div>
+            <div class="middleware-item">
+              <div class="middleware-order">6</div>
+              <div class="middleware-name">authMiddleware</div>
+              <div class="middleware-desc">API key / JWT / Agent token validation</div>
+            </div>
+            <div class="middleware-item">
+              <div class="middleware-order">7</div>
+              <div class="middleware-name">errorHandler</div>
+              <div class="middleware-desc">Global error catching & formatting</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Background Workers -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon bg-worker">⏱️</div>
+          <div class="service-name">Background Workers</div>
+          <div class="service-port">async</div>
+        </div>
+        <div class="service-body">
+          <div class="detail-section">
+            <div class="detail-label">Scheduled Transfers</div>
+            <div class="code-block">
+              <span class="comment">// Poll interval</span><br>
+              <span class="keyword">dev:</span> <span class="number">30s</span><br>
+              <span class="keyword">prod:</span> <span class="number">60s</span>
+            </div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Features</div>
+            <ul class="detail-list">
+              <li><span class="detail-value">Graceful shutdown</span></li>
+              <li><span class="detail-value">SIGTERM/SIGINT handling</span></li>
+              <li><span class="detail-value">Mock mode for dev</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Authentication -->
+      <div class="service-card span-2">
+        <div class="service-header">
+          <div class="service-icon bg-db">🔐</div>
+          <div class="service-name">Triple Authentication</div>
+          <div class="service-port">auth.ts:76</div>
+        </div>
+        <div class="service-body">
+          <table class="detail-table">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Token Format</th>
+                <th>Storage</th>
+                <th>Use Case</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="tag tag-green">API Key</span></td>
+                <td><code>pk_test_*</code> / <code>pk_live_*</code></td>
+                <td>api_keys table (prefix + hash)</td>
+                <td>Partner integrations, server-to-server</td>
+              </tr>
+              <tr>
+                <td><span class="tag tag-blue">JWT Session</span></td>
+                <td><code>eyJ*</code> (Supabase JWT)</td>
+                <td>Supabase Auth + user_profiles</td>
+                <td>Dashboard UI, logged-in users</td>
+              </tr>
+              <tr>
+                <td><span class="tag tag-purple">Agent Token</span></td>
+                <td><code>agent_*</code></td>
+                <td>agents table (prefix + hash)</td>
+                <td>AI agents acting autonomously</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SDK Package -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon bg-sdk">📦</div>
+          <div class="service-name">@sly/sdk</div>
+          <div class="service-port">npm</div>
+        </div>
+        <div class="service-body">
+          <div class="detail-section">
+            <div class="detail-label">Modules</div>
+            <ul class="detail-list">
+              <li><span class="detail-value">sly.x402</span> <span class="detail-meta">— Micropayments</span></li>
+              <li><span class="detail-value">sly.ap2</span> <span class="detail-meta">— Mandates</span></li>
+              <li><span class="detail-value">sly.acp</span> <span class="detail-meta">— Checkout</span></li>
+              <li><span class="detail-value">sly.ucp</span> <span class="detail-meta">— Commerce</span></li>
+              <li><span class="detail-value">sly.settlements</span> <span class="detail-meta">— Quotes</span></li>
+              <li><span class="detail-value">sly.cards.visa</span> <span class="detail-meta">— VIC</span></li>
+              <li><span class="detail-value">sly.cards.mastercard</span> <span class="detail-meta">— Agent Pay</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monorepo Structure -->
+      <div class="service-card span-3">
+        <div class="service-header">
+          <div class="service-icon bg-types">📁</div>
+          <div class="service-name">Monorepo Structure</div>
+          <div class="service-port">pnpm workspaces</div>
+        </div>
+        <div class="service-body">
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+            <div>
+              <div class="detail-label">Apps</div>
+              <div class="tree">
+                <span class="tree-folder">apps/</span><br>
+                ├── <span class="tree-folder">api/</span> <span class="tree-comment"># Hono API server</span><br>
+                │   ├── src/routes/<br>
+                │   ├── src/middleware/<br>
+                │   ├── src/services/<br>
+                │   ├── supabase/migrations/<br>
+                │   └── tests/<br>
+                └── <span class="tree-folder">web/</span> <span class="tree-comment"># Next.js dashboard</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;├── src/app/<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;├── src/components/<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;└── src/lib/
+              </div>
+            </div>
+            <div>
+              <div class="detail-label">Packages</div>
+              <div class="tree">
+                <span class="tree-folder">packages/</span><br>
+                ├── <span class="tree-folder">sdk/</span> <span class="tree-comment"># @sly/sdk</span><br>
+                ├── <span class="tree-folder">types/</span> <span class="tree-comment"># @sly/types</span><br>
+                ├── <span class="tree-folder">utils/</span> <span class="tree-comment"># @sly/utils</span><br>
+                ├── <span class="tree-folder">cards/</span> <span class="tree-comment"># @sly/cards</span><br>
+                ├── <span class="tree-folder">api-client/</span> <span class="tree-comment"># @sly/api-client</span><br>
+                ├── <span class="tree-folder">ui/</span> <span class="tree-comment"># @sly/ui</span><br>
+                └── <span class="tree-folder">db/</span> <span class="tree-comment"># @sly/db</span>
+              </div>
+            </div>
+            <div>
+              <div class="detail-label">Commands</div>
+              <div class="code-block">
+                <span class="comment"># Install</span><br>
+                pnpm install<br><br>
+                <span class="comment"># Build all</span><br>
+                pnpm build<br><br>
+                <span class="comment"># Dev servers</span><br>
+                pnpm dev <span class="comment"># both</span><br>
+                pnpm --filter @sly/api dev<br>
+                pnpm --filter @sly/web dev<br><br>
+                <span class="comment"># Tests</span><br>
+                pnpm test<br>
+                pnpm test:integration
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Routes -->
+      <div class="service-card span-2">
+        <div class="service-header">
+          <div class="service-icon bg-api">🛣️</div>
+          <div class="service-name">API Routes</div>
+          <div class="service-port">/v1/*</div>
+        </div>
+        <div class="service-body">
+          <table class="detail-table">
+            <thead>
+              <tr>
+                <th>Route</th>
+                <th>Description</th>
+                <th>Auth</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>/v1/accounts</code></td>
+                <td>Account CRUD, balances, KYC status</td>
+                <td><span class="tag tag-green">API</span><span class="tag tag-blue">JWT</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/agents</code></td>
+                <td>Agent CRUD, KYA tiers, permissions</td>
+                <td><span class="tag tag-green">API</span><span class="tag tag-blue">JWT</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/transfers</code></td>
+                <td>Create/list transfers, scheduling</td>
+                <td><span class="tag tag-green">API</span><span class="tag tag-purple">Agent</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/settlements</code></td>
+                <td>Quotes, execution, status</td>
+                <td><span class="tag tag-green">API</span><span class="tag tag-purple">Agent</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/protocols</code></td>
+                <td>Protocol discovery & enablement</td>
+                <td><span class="tag tag-green">API</span><span class="tag tag-blue">JWT</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/capabilities</code></td>
+                <td>Tool discovery, function-calling formats</td>
+                <td><span class="tag tag-green">API</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/x402/*</code></td>
+                <td>x402 micropayment endpoints</td>
+                <td><span class="tag tag-green">API</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/acp/*</code></td>
+                <td>ACP checkout sessions</td>
+                <td><span class="tag tag-green">API</span></td>
+              </tr>
+              <tr>
+                <td><code>/v1/ucp/*</code></td>
+                <td>UCP tokens & settlement</td>
+                <td><span class="tag tag-green">API</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Environment Variables -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon bg-worker">🔧</div>
+          <div class="service-name">Environment</div>
+          <div class="service-port">.env</div>
+        </div>
+        <div class="service-body">
+          <div class="code-block">
+            <span class="comment"># API Server</span><br>
+            API_PORT=<span class="number">4000</span><br>
+            CORS_ORIGINS=<span class="string">"..."</span><br><br>
+            <span class="comment"># Supabase</span><br>
+            SUPABASE_URL=<span class="string">"..."</span><br>
+            SUPABASE_SERVICE_ROLE_KEY=<span class="string">"..."</span><br><br>
+            <span class="comment"># External (optional)</span><br>
+            CIRCLE_API_KEY=<span class="string">"..."</span><br>
+            STRIPE_SECRET_KEY=<span class="string">"..."</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div>Sly Technical Architecture — January 2026</div>
+      <div class="footer-links">
+        <a href="https://github.com/sly-dev/sly">GitHub</a>
+        <a href="https://docs.sly.dev">Docs</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
