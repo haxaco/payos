@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sly - Technology Stack & Features</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0f0f23 100%);
+      color: #ffffff;
+      min-height: 100vh;
+      padding: 40px;
+    }
+
+    .slide {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 40px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .logo {
+      font-size: 48px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .tagline {
+      font-size: 18px;
+      color: #a0a0c0;
+      font-weight: 300;
+    }
+
+    .version {
+      font-size: 14px;
+      color: #606080;
+      padding: 8px 16px;
+      border: 1px solid #404060;
+      border-radius: 20px;
+    }
+
+    /* Main Grid */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-bottom: 30px;
+    }
+
+    /* Cards */
+    .card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .card-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    /* Protocol Cards */
+    .protocols-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .protocol-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .protocol-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .protocol-name {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .protocol-owner {
+      font-size: 11px;
+      color: #808090;
+      margin-bottom: 8px;
+    }
+
+    .protocol-desc {
+      font-size: 12px;
+      color: #a0a0b0;
+      line-height: 1.4;
+    }
+
+    /* x402 */
+    .protocol-x402 { border-top: 3px solid #0052ff; }
+    .protocol-x402 .protocol-name { color: #0052ff; }
+
+    /* AP2 */
+    .protocol-ap2 { border-top: 3px solid #4285f4; }
+    .protocol-ap2 .protocol-name { color: #4285f4; }
+
+    /* ACP */
+    .protocol-acp { border-top: 3px solid #635bff; }
+    .protocol-acp .protocol-name { color: #635bff; }
+
+    /* UCP */
+    .protocol-ucp { border-top: 3px solid #34a853; }
+    .protocol-ucp .protocol-name { color: #34a853; }
+
+    /* Tech Stack */
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .tech-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 8px;
+    }
+
+    .tech-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .tech-info h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .tech-info p {
+      font-size: 11px;
+      color: #808090;
+    }
+
+    /* Card Networks */
+    .networks-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .network-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+    }
+
+    .network-logo {
+      width: 50px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+
+    .visa-logo {
+      background: linear-gradient(135deg, #1a1f71 0%, #0066b2 100%);
+      color: white;
+    }
+
+    .mc-logo {
+      background: linear-gradient(135deg, #eb001b 0%, #f79e1b 100%);
+      color: white;
+    }
+
+    .network-info h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .network-info p {
+      font-size: 11px;
+      color: #808090;
+    }
+
+    /* Settlement Rails */
+    .rails-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .rail-card {
+      text-align: center;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 10px;
+    }
+
+    .rail-flag {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .rail-name {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .rail-speed {
+      font-size: 11px;
+      color: #00d4aa;
+    }
+
+    /* Features */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 8px;
+    }
+
+    .feature-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .feature-info h4 {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .feature-info p {
+      font-size: 11px;
+      color: #808090;
+      line-height: 1.3;
+    }
+
+    /* Stats Bar */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 20px;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      margin-top: 30px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #808090;
+      margin-top: 4px;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 30px;
+      text-align: center;
+      color: #606080;
+      font-size: 12px;
+    }
+
+    /* Color Accents */
+    .bg-blue { background: rgba(0, 82, 255, 0.2); }
+    .bg-purple { background: rgba(124, 58, 237, 0.2); }
+    .bg-green { background: rgba(0, 212, 170, 0.2); }
+    .bg-orange { background: rgba(255, 159, 64, 0.2); }
+    .bg-pink { background: rgba(236, 72, 153, 0.2); }
+    .bg-cyan { background: rgba(0, 212, 255, 0.2); }
+
+    /* Full Width Card */
+    .full-width {
+      grid-column: span 2;
+    }
+
+    /* Architecture Diagram */
+    .arch-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 12px;
+      margin-top: 16px;
+    }
+
+    .arch-box {
+      padding: 12px 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .arch-arrow {
+      color: #00d4ff;
+      font-size: 20px;
+    }
+
+    .arch-box.highlight {
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%);
+      border-color: rgba(0, 212, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <div class="logo">Sly</div>
+        <div class="tagline">B2B Stablecoin Payout Operating System for LATAM</div>
+      </div>
+      <div class="version">v2026.01 | January 2026</div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+      <!-- Agentic Protocols -->
+      <div class="card full-width">
+        <div class="card-header">
+          <div class="card-icon bg-purple">🤖</div>
+          <div class="card-title">4 Agentic Payment Protocols</div>
+        </div>
+        <div class="protocols-grid">
+          <div class="protocol-card protocol-x402">
+            <div class="protocol-name">x402</div>
+            <div class="protocol-owner">Coinbase</div>
+            <div class="protocol-desc">HTTP 402 micropayments for API monetization</div>
+          </div>
+          <div class="protocol-card protocol-ap2">
+            <div class="protocol-name">AP2</div>
+            <div class="protocol-owner">Google</div>
+            <div class="protocol-desc">Mandate-based payments for autonomous agents</div>
+          </div>
+          <div class="protocol-card protocol-acp">
+            <div class="protocol-name">ACP</div>
+            <div class="protocol-owner">Stripe + OpenAI</div>
+            <div class="protocol-desc">E-commerce checkout for AI agents</div>
+          </div>
+          <div class="protocol-card protocol-ucp">
+            <div class="protocol-name">UCP</div>
+            <div class="protocol-owner">Google + Shopify</div>
+            <div class="protocol-desc">Full commerce lifecycle protocol</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tech Stack -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-blue">⚡</div>
+          <div class="card-title">Core Technology Stack</div>
+        </div>
+        <div class="tech-grid">
+          <div class="tech-item">
+            <div class="tech-badge bg-orange">H</div>
+            <div class="tech-info">
+              <h4>Hono</h4>
+              <p>Ultrafast API framework</p>
+            </div>
+          </div>
+          <div class="tech-item">
+            <div class="tech-badge bg-purple">N</div>
+            <div class="tech-info">
+              <h4>Next.js 14</h4>
+              <p>React dashboard UI</p>
+            </div>
+          </div>
+          <div class="tech-item">
+            <div class="tech-badge bg-green">S</div>
+            <div class="tech-info">
+              <h4>Supabase</h4>
+              <p>Postgres + RLS + Auth</p>
+            </div>
+          </div>
+          <div class="tech-item">
+            <div class="tech-badge bg-blue">TS</div>
+            <div class="tech-info">
+              <h4>TypeScript</h4>
+              <p>End-to-end type safety</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card Networks -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-pink">💳</div>
+          <div class="card-title">Card Network Integration</div>
+        </div>
+        <div class="networks-grid">
+          <div class="network-card">
+            <div class="network-logo visa-logo">VISA</div>
+            <div class="network-info">
+              <h4>Visa Intelligent Commerce</h4>
+              <p>VIC + TAP protocol for agent payments</p>
+            </div>
+          </div>
+          <div class="network-card">
+            <div class="network-logo mc-logo">MC</div>
+            <div class="network-info">
+              <h4>Mastercard Agent Pay</h4>
+              <p>DTVC tokens for LATAM agents</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settlement Rails -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon bg-green">🌎</div>
+          <div class="card-title">LATAM Settlement Rails</div>
+        </div>
+        <div class="rails-grid">
+          <div class="rail-card">
+            <div class="rail-flag">🇧🇷</div>
+            <div class="rail-name">Pix</div>
+            <div class="rail-speed">< 10 seconds</div>
+          </div>
+          <div class="rail-card">
+            <div class="rail-flag">🇲🇽</div>
+            <div class="rail-name">SPEI</div>
+            <div class="rail-speed">< 30 minutes</div>
+          </div>
+          <div class="rail-card">
+            <div class="rail-flag">🌐</div>
+            <div class="rail-name">USDC</div>
+            <div class="rail-speed">< 5 seconds</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Key Features -->
+      <div class="card full-width">
+        <div class="card-header">
+          <div class="card-icon bg-cyan">✨</div>
+          <div class="card-title">Platform Capabilities</div>
+        </div>
+        <div class="features-grid">
+          <div class="feature-item">
+            <div class="feature-icon bg-purple">🔐</div>
+            <div class="feature-info">
+              <h4>KYA Framework</h4>
+              <p>Know Your Agent verification tiers (0-3)</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon bg-blue">🏢</div>
+            <div class="feature-info">
+              <h4>Multi-Tenant</h4>
+              <p>RLS-enforced tenant isolation</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon bg-green">🔑</div>
+            <div class="feature-info">
+              <h4>Triple Auth</h4>
+              <p>API keys, JWT, agent tokens</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon bg-orange">📊</div>
+            <div class="feature-info">
+              <h4>Simulation API</h4>
+              <p>Dry-run any transaction</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon bg-pink">🔄</div>
+            <div class="feature-info">
+              <h4>Settlement Rules</h4>
+              <p>Threshold, schedule, or instant</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon bg-cyan">🤖</div>
+            <div class="feature-info">
+              <h4>MCP Server</h4>
+              <p>Claude-ready commerce tools</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Architecture Flow -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon bg-purple">🏗️</div>
+        <div class="card-title">Architecture Flow</div>
+      </div>
+      <div class="arch-flow">
+        <div class="arch-box">AI Agent</div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box">Protocol<br/><small style="color:#808090">x402/AP2/ACP/UCP</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box highlight">Sly API<br/><small style="color:#00d4ff">Settlement Layer</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box">Circle/PSP<br/><small style="color:#808090">USDC Rails</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box">Local Rail<br/><small style="color:#808090">Pix/SPEI</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box">Recipient<br/><small style="color:#00d4aa">BRL/MXN</small></div>
+      </div>
+    </div>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <div class="stat-value">4</div>
+        <div class="stat-label">Agentic Protocols</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">2</div>
+        <div class="stat-label">Card Networks</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">5</div>
+        <div class="stat-label">Settlement Rails</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">731+</div>
+        <div class="stat-label">Story Points Shipped</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">18</div>
+        <div class="stat-label">Epics Complete</div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>"We don't care which protocol wins. Sly makes them all work."</p>
+      <p style="margin-top: 8px;">sly.dev | January 2026</p>
+    </div>
+  </div>
+</body>
+</html>
