@@ -97,6 +97,9 @@ Every story must meet these criteria before completion:
 ### Brand & Identity
 - [Epic 54: Sly Rebranding](./epic-54-sly-rebranding.md) 🎨 ✅ - PayOS → Sly rename across codebase, packages, docs, UI
 
+### Demo & Sales Enablement
+- [Epic 55: Demo Scenario Readiness](./epic-55-demo-scenario-readiness.md) 🎯 - Seed data, KPI panels, settlement timeline, demo walkthrough for all 8 scenarios
+
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) 🏭 - x402 facilitator for LATAM ecosystem
 - [Epic 38: Payment-Optimized Chains](./epic-38-payment-optimized-chains.md) ⛓️ - Tempo & future chain integration
@@ -150,6 +153,7 @@ Strategic explorations before committing to implementation:
 
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
+| Epic 55: Demo Readiness | P0 | 89 | Seed data + demo UI for 8 scenarios |
 | Epic 29: Workflow Engine | P0 | 52 | Multi-step workflows |
 | Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
 
@@ -187,15 +191,22 @@ Strategic explorations before committing to implementation:
 ### Points Summary
 
 - **Completed:** ~731 points
-- **Current Focus:** ~162 points (29, 41)
+- **Current Focus:** ~251 points (55, 29, 41)
 - **P0/P1 Planned:** ~36 points
 - **P2 Planned:** ~153 points
 - **P3 Future:** ~268 points
-- **Total Defined:** ~1,350 points
+- **Total Defined:** ~1,439 points
 
 ---
 
-## Recent Changes (January 2026)
+## Recent Changes
+
+### February 6, 2026
+- **Epic 55: Demo Scenario Readiness** — NEW (89 points, P0)
+  - Comprehensive dashboard validation against all 8 demo scenarios
+  - 20 screens validated: 1 good to go, 18 need seed data, 1 partially ready
+  - 12 stories: seed data (40 pts), UI components (34 pts), polish (15 pts)
+  - Key deliverables: scenario-specific seed script, KPI panels, settlement timeline, policy check viz, demo mode navigation
 
 ### January 30, 2026
 - **Story 36.10: Function-Calling Format** — COMPLETE ✅
@@ -338,4 +349,4 @@ PayOS supports **FOUR** agentic payment protocols:
 
 ---
 
-*Last updated: January 27, 2026*
+*Last updated: February 6, 2026*

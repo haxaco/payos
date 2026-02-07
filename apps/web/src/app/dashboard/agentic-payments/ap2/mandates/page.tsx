@@ -48,6 +48,7 @@ export default function MandatesPage() {
                 status: status === "all" ? undefined : (status as MandateStatus),
                 search: search || undefined,
             }),
+        enabled: !!api,
     });
 
     // The API client now returns data directly (not double-nested)

@@ -96,19 +96,39 @@ ap2.post('/mandates', async (c) => {
 
 /**
  * GET /v1/ap2/mandates/:id
- * Get mandate details
+ * Get mandate details (reads from database)
  */
 ap2.get('/mandates/:id', async (c) => {
   const id = c.req.param('id');
-  const mandateService = getAP2MandateService();
-  
-  const mandate = await mandateService.getMandate(id);
-  
-  if (!mandate) {
-    return c.json({ error: 'Mandate not found' }, 404);
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  // Query database for mandate with executions
+  const { data: mandate, error } = await supabase
+    .from('ap2_mandates')
+    .select('*')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('id', id)
+    .single();
+
+  if (error || !mandate) {
+    // Fallback to in-memory service for mandates created via API
+    const mandateService = getAP2MandateService();
+    const inMemMandate = await mandateService.getMandate(id);
+    if (!inMemMandate) {
+      return c.json({ error: 'Mandate not found' }, 404);
+    }
+    return c.json({ data: inMemMandate });
   }
-  
-  return c.json({ data: mandate });
+
+  // Fetch executions for this mandate
+  const { data: executions } = await supabase
+    .from('ap2_mandate_executions')
+    .select('*')
+    .eq('mandate_id', mandate.id)
+    .order('execution_index', { ascending: true });
+
+  return c.json({ data: { ...mandate, executions: executions || [] } });
 });
 
 /**
@@ -175,16 +195,60 @@ ap2.post('/mandates/:id/revoke', async (c) => {
 
 /**
  * GET /v1/ap2/mandates
- * List mandates for current user
+ * List mandates for current tenant (reads from database)
  */
 ap2.get('/mandates', async (c) => {
-    const ctx = c.get('ctx');
-  const payer_id = c.req.query('payer_id') || ctx.tenantId;
-  
-  const mandateService = getAP2MandateService();
-  const mandates = await mandateService.listMandates(payer_id);
-  
-  return c.json({ data: mandates });
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  // Parse query params
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = parseInt(c.req.query('limit') || '20');
+  const status = c.req.query('status');
+  const agentId = c.req.query('agent_id');
+  const accountId = c.req.query('account_id');
+  const search = c.req.query('search');
+  const offset = (page - 1) * limit;
+
+  // Build query
+  let query = supabase
+    .from('ap2_mandates')
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+  if (agentId) {
+    query = query.eq('agent_id', agentId);
+  }
+  if (accountId) {
+    query = query.eq('account_id', accountId);
+  }
+  if (search) {
+    query = query.or(`mandate_id.ilike.%${search}%,agent_name.ilike.%${search}%`);
+  }
+
+  const { data: mandates, error, count } = await query;
+
+  if (error) {
+    console.error('[AP2] List mandates error:', error);
+    return c.json({ error: 'Failed to fetch mandates' }, 500);
+  }
+
+  const total = count || 0;
+
+  return c.json({
+    data: mandates || [],
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  });
 });
 
 // =============================================================================
