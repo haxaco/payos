@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { Transfer } from '@sly/api-client';
 import { RefundModal } from '@/components/transfers/refund-modal';
+import { SettlementTimeline } from '@/components/transfers/settlement-timeline';
 
 export default function TransferDetailPage() {
   const params = useParams();
@@ -498,71 +499,7 @@ export default function TransferDetailPage() {
               Settlement Timeline
             </h3>
 
-            {/* Timeline */}
-            <div className="relative pl-8 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-gray-200 dark:before:bg-gray-800">
-              {/* Created */}
-              <div className="relative">
-                <div className={`absolute -left-[37px] w-[9px] h-[9px] rounded-full border-2 ${safeTransfer.createdAt
-                  ? 'bg-emerald-500 border-emerald-500'
-                  : 'bg-white border-gray-300'
-                  }`}></div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">Transfer Initiated</h4>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {new Date(safeTransfer.createdAt).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-
-              {/* Cleared (Simulated based on status) */}
-              <div className="relative">
-                <div className={`absolute -left-[37px] w-[9px] h-[9px] rounded-full border-2 ${safeTransfer.status === 'completed' || safeTransfer.status === 'processing'
-                  ? 'bg-emerald-500 border-emerald-500'
-                  : 'bg-white dark:bg-gray-950 border-gray-300 dark:border-gray-700'
-                  }`}></div>
-                <div>
-                  <h4 className={`text-sm font-medium ${safeTransfer.status === 'completed' || safeTransfer.status === 'processing'
-                    ? 'text-gray-900 dark:text-white'
-                    : 'text-gray-400 dark:text-gray-600'
-                    }`}>Cleared via Network</h4>
-                  {safeTransfer.status !== 'failed' && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Validating ledger and compliance checks.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Settled */}
-              <div className="relative">
-                <div className={`absolute -left-[37px] w-[9px] h-[9px] rounded-full border-2 ${safeTransfer.status === 'completed'
-                  ? 'bg-emerald-500 border-emerald-500'
-                  : safeTransfer.status === 'failed'
-                    ? 'bg-red-500 border-red-500'
-                    : 'bg-white dark:bg-gray-950 border-gray-300 dark:border-gray-700'
-                  }`}></div>
-                <div>
-                  <h4 className={`text-sm font-medium ${safeTransfer.status === 'completed'
-                    ? 'text-gray-900 dark:text-white'
-                    : safeTransfer.status === 'failed'
-                      ? 'text-red-700 dark:text-red-400'
-                      : 'text-gray-400 dark:text-gray-600'
-                    }`}>
-                    {safeTransfer.status === 'completed' ? 'Settled to Beneficiary' : safeTransfer.status === 'failed' ? 'Settlement Failed' : 'Pending Settlement'}
-                  </h4>
-                  {safeTransfer.completedAt && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {new Date(safeTransfer.completedAt).toLocaleString()}
-                    </p>
-                  )}
-                  {safeTransfer.failedAt && (
-                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">
-                      {new Date(safeTransfer.failedAt).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
+            <SettlementTimeline transfer={safeTransfer} />
           </div>
 
           {isX402 && safeTransfer.x402Metadata && (

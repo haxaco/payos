@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Filter } from "lucide-react";
+import { Plus, Search, Filter, FileText, CheckCircle, DollarSign, BarChart3 } from "lucide-react";
 import { useApiClient } from "@/lib/api-client";
 import { formatDate, formatCurrency } from "@/lib/utils";
 
@@ -51,6 +51,14 @@ export default function MandatesPage() {
         enabled: !!api,
     });
 
+    const { data: analyticsData } = useQuery({
+        queryKey: ["ap2-analytics"],
+        queryFn: () => api!.ap2.getAnalytics({ period: '30d' }),
+        enabled: !!api,
+    });
+
+    const analytics = (analyticsData as any)?.summary;
+
     // The API client now returns data directly (not double-nested)
     const mandates = (rawData as any)?.data || [];
     const pagination = (rawData as any)?.pagination;
@@ -71,6 +79,56 @@ export default function MandatesPage() {
                     </Link>
                 </Button>
             </div>
+
+            {/* KPI Stats */}
+            {analytics && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Mandates</p>
+                                    <p className="text-2xl font-bold mt-1">{analytics.totalMandates ?? 0}</p>
+                                </div>
+                                <FileText className="h-8 w-8 text-blue-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Active Mandates</p>
+                                    <p className="text-2xl font-bold mt-1 text-green-600">{analytics.activeMandates ?? 0}</p>
+                                </div>
+                                <CheckCircle className="h-8 w-8 text-green-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Authorized</p>
+                                    <p className="text-2xl font-bold mt-1">${(analytics.totalAuthorized ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                </div>
+                                <DollarSign className="h-8 w-8 text-blue-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Utilization Rate</p>
+                                    <p className="text-2xl font-bold mt-1">{analytics.utilizationRate ?? 0}%</p>
+                                </div>
+                                <BarChart3 className="h-8 w-8 text-purple-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
 
             <Card>
                 <CardHeader>

@@ -26,6 +26,8 @@ import {
     ArrowLeftRight,
     User,
     Filter,
+    DollarSign,
+    CheckCircle,
 } from 'lucide-react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/utils';
@@ -58,6 +60,14 @@ export default function UcpSettlementsPage() {
         },
         enabled: !!api
     });
+
+    const { data: analyticsData } = useQuery({
+        queryKey: ['ucp-analytics'],
+        queryFn: () => api!.ucp.getAnalytics({ period: '30d' }),
+        enabled: !!api,
+    });
+
+    const analytics = analyticsData as any;
 
     const settlements = data?.data || [];
     const pagination = data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 };
@@ -95,6 +105,56 @@ export default function UcpSettlementsPage() {
                     </p>
                 </div>
             </div>
+
+            {/* KPI Stats */}
+            {analytics?.summary && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Volume</p>
+                                    <p className="text-2xl font-bold mt-1">${(analytics.summary.totalVolume ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                </div>
+                                <DollarSign className="h-8 w-8 text-blue-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Completed</p>
+                                    <p className="text-2xl font-bold mt-1 text-green-600">{analytics.summary.completedSettlements ?? 0}</p>
+                                </div>
+                                <CheckCircle className="h-8 w-8 text-green-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Pix Volume</p>
+                                    <p className="text-2xl font-bold mt-1">${(analytics.byCorridor?.pix?.volume ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                </div>
+                                <ArrowLeftRight className="h-8 w-8 text-green-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="pt-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">SPEI Volume</p>
+                                    <p className="text-2xl font-bold mt-1">${(analytics.byCorridor?.spei?.volume ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                </div>
+                                <ArrowLeftRight className="h-8 w-8 text-orange-500" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
 
             <Card>
                 <CardHeader>
