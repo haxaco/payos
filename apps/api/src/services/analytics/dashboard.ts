@@ -5,6 +5,13 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
+/** Extract the total amount from UCP's JSONB totals array */
+function extractUcpTotal(totals: unknown): number {
+  if (!Array.isArray(totals)) return 0;
+  const entry = totals.find((t: any) => t.type === 'total');
+  return Number(entry?.amount || 0) / 100;
+}
+
 export type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
 export type TimeRange = '24h' | '7d' | '30d';
 
@@ -83,11 +90,12 @@ export async function getProtocolDistribution(
       break;
   }
 
-  // Query x402 payments
+  // Query x402 payments (stored as transfers with type = 'x402')
   const { data: x402Data } = await supabase
-    .from('x402_payments')
+    .from('transfers')
     .select('amount')
     .eq('tenant_id', tenantId)
+    .eq('type', 'x402')
     .gte('created_at', startTime.toISOString());
 
   // Query AP2 mandate executions
@@ -105,10 +113,10 @@ export async function getProtocolDistribution(
     .eq('status', 'completed')
     .gte('created_at', startTime.toISOString());
 
-  // Query UCP checkouts (completed)
+  // Query UCP checkouts (completed) — total is inside JSONB `totals` array
   const { data: ucpData } = await supabase
-    .from('ucp_checkouts')
-    .select('amount')
+    .from('ucp_checkout_sessions')
+    .select('totals')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
     .gte('created_at', startTime.toISOString());
@@ -123,7 +131,7 @@ export async function getProtocolDistribution(
   const acpVolume = acpData?.reduce((sum, c) => sum + Number(c.total_amount || 0), 0) || 0;
   const acpCount = acpData?.length || 0;
 
-  const ucpVolume = ucpData?.reduce((sum, c) => sum + Number(c.amount || 0), 0) || 0;
+  const ucpVolume = ucpData?.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0) || 0;
   const ucpCount = ucpData?.length || 0;
 
   const totalVolume = x402Volume + ap2Volume + acpVolume + ucpVolume;
@@ -203,9 +211,10 @@ export async function getProtocolActivity(
   // Query all protocol data
   const [x402Result, ap2Result, acpResult, ucpResult] = await Promise.all([
     supabase
-      .from('x402_payments')
+      .from('transfers')
       .select('amount, created_at')
       .eq('tenant_id', tenantId)
+      .eq('type', 'x402')
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('ap2_mandate_executions')
@@ -219,8 +228,8 @@ export async function getProtocolActivity(
       .eq('status', 'completed')
       .gte('created_at', startTime.toISOString()),
     supabase
-      .from('ucp_checkouts')
-      .select('amount, created_at')
+      .from('ucp_checkout_sessions')
+      .select('totals, created_at')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', startTime.toISOString()),
@@ -249,7 +258,7 @@ export async function getProtocolActivity(
         x402: x402InBucket.reduce((sum, p) => sum + Number(p.amount || 0), 0),
         ap2: ap2InBucket.reduce((sum, e) => sum + Number(e.amount || 0), 0),
         acp: acpInBucket.reduce((sum, c) => sum + Number(c.total_amount || 0), 0),
-        ucp: ucpInBucket.reduce((sum, c) => sum + Number(c.amount || 0), 0),
+        ucp: ucpInBucket.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0),
       });
     } else {
       activity.push({
@@ -273,8 +282,8 @@ export async function getProtocolStats(
   tenantId: string
 ): Promise<ProtocolStats[]> {
   const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
   // Get protocol enablement status
   const { data: tenant } = await supabase
@@ -299,16 +308,18 @@ export async function getProtocolStats(
       .eq('tenant_id', tenantId)
       .eq('status', 'active'),
     supabase
-      .from('x402_payments')
+      .from('transfers')
       .select('amount')
       .eq('tenant_id', tenantId)
-      .gte('created_at', yesterday.toISOString()),
+      .eq('type', 'x402')
+      .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
-      .from('x402_payments')
+      .from('transfers')
       .select('amount')
       .eq('tenant_id', tenantId)
-      .gte('created_at', twoDaysAgo.toISOString())
-      .lt('created_at', yesterday.toISOString()),
+      .eq('type', 'x402')
+      .gte('created_at', sixtyDaysAgo.toISOString())
+      .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
   const x402TodayVolume = x402Today.data?.reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;
@@ -326,7 +337,7 @@ export async function getProtocolStats(
       value: x402Endpoints.data?.length || 0,
     },
     secondary_metric: {
-      label: '24h Revenue',
+      label: '30d Revenue',
       value: x402TodayVolume,
     },
     trend: {
@@ -336,20 +347,31 @@ export async function getProtocolStats(
   });
 
   // AP2 Stats
-  const [ap2Mandates, ap2Executions] = await Promise.all([
+  const [ap2Mandates, ap2Today, ap2Yesterday] = await Promise.all([
     supabase
       .from('ap2_mandates')
-      .select('id, max_amount')
+      .select('id, authorized_amount')
       .eq('tenant_id', tenantId)
       .eq('status', 'active'),
     supabase
       .from('ap2_mandate_executions')
-      .select('id')
+      .select('amount')
       .eq('tenant_id', tenantId)
-      .gte('created_at', yesterday.toISOString()),
+      .gte('created_at', thirtyDaysAgo.toISOString()),
+    supabase
+      .from('ap2_mandate_executions')
+      .select('amount')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', sixtyDaysAgo.toISOString())
+      .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
-  const authorizedAmount = ap2Mandates.data?.reduce((sum, m) => sum + Number(m.max_amount || 0), 0) || 0;
+  const authorizedAmount = ap2Mandates.data?.reduce((sum, m) => sum + Number(m.authorized_amount || 0), 0) || 0;
+  const ap2TodayVolume = ap2Today.data?.reduce((sum, e) => sum + Number(e.amount || 0), 0) || 0;
+  const ap2YesterdayVolume = ap2Yesterday.data?.reduce((sum, e) => sum + Number(e.amount || 0), 0) || 0;
+  const ap2Trend = ap2YesterdayVolume > 0
+    ? Math.round(((ap2TodayVolume - ap2YesterdayVolume) / ap2YesterdayVolume) * 100)
+    : 0;
 
   stats.push({
     protocol: 'ap2',
@@ -364,8 +386,8 @@ export async function getProtocolStats(
       value: authorizedAmount,
     },
     trend: {
-      value: ap2Executions.data?.length || 0,
-      direction: 'flat',
+      value: Math.abs(ap2Trend),
+      direction: ap2Trend > 0 ? 'up' : ap2Trend < 0 ? 'down' : 'flat',
     },
   });
 
@@ -376,14 +398,14 @@ export async function getProtocolStats(
       .select('total_amount')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
-      .gte('created_at', yesterday.toISOString()),
+      .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('acp_checkouts')
       .select('total_amount')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
-      .gte('created_at', twoDaysAgo.toISOString())
-      .lt('created_at', yesterday.toISOString()),
+      .gte('created_at', sixtyDaysAgo.toISOString())
+      .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
   const acpTodayVolume = acpToday.data?.reduce((sum, c) => sum + Number(c.total_amount || 0), 0) || 0;
@@ -397,11 +419,11 @@ export async function getProtocolStats(
     protocol_name: 'ACP Commerce',
     enabled: isProtocolEnabled('acp'),
     primary_metric: {
-      label: 'Checkouts (24h)',
+      label: 'Checkouts (30d)',
       value: acpToday.data?.length || 0,
     },
     secondary_metric: {
-      label: '24h Volume',
+      label: '30d Volume',
       value: acpTodayVolume,
     },
     trend: {
@@ -410,39 +432,39 @@ export async function getProtocolStats(
     },
   });
 
-  // UCP Stats
+  // UCP Stats — total is inside JSONB `totals` array
   const [ucpToday, ucpYesterday] = await Promise.all([
     supabase
-      .from('ucp_checkouts')
-      .select('amount')
+      .from('ucp_checkout_sessions')
+      .select('totals')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
-      .gte('created_at', yesterday.toISOString()),
+      .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
-      .from('ucp_checkouts')
-      .select('amount')
+      .from('ucp_checkout_sessions')
+      .select('totals')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
-      .gte('created_at', twoDaysAgo.toISOString())
-      .lt('created_at', yesterday.toISOString()),
+      .gte('created_at', sixtyDaysAgo.toISOString())
+      .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
-  const ucpTodayVolume = ucpToday.data?.reduce((sum, c) => sum + Number(c.amount || 0), 0) || 0;
-  const ucpYesterdayVolume = ucpYesterday.data?.reduce((sum, c) => sum + Number(c.amount || 0), 0) || 0;
+  const ucpTodayVolume = ucpToday.data?.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0) || 0;
+  const ucpYesterdayVolume = ucpYesterday.data?.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0) || 0;
   const ucpTrend = ucpYesterdayVolume > 0
     ? Math.round(((ucpTodayVolume - ucpYesterdayVolume) / ucpYesterdayVolume) * 100)
     : 0;
 
   stats.push({
     protocol: 'ucp',
-    protocol_name: 'UCP Commerce',
+    protocol_name: 'UCP Checkouts',
     enabled: isProtocolEnabled('ucp'),
     primary_metric: {
-      label: 'Checkouts (24h)',
+      label: 'Checkouts (30d)',
       value: ucpToday.data?.length || 0,
     },
     secondary_metric: {
-      label: '24h Volume',
+      label: '30d Volume',
       value: ucpTodayVolume,
     },
     trend: {
@@ -464,11 +486,12 @@ export async function getRecentActivity(
 ): Promise<RecentActivity[]> {
   const activities: RecentActivity[] = [];
 
-  // Query recent x402 payments
+  // Query recent x402 payments (stored as transfers with type = 'x402')
   const { data: x402 } = await supabase
-    .from('x402_payments')
-    .select('id, amount, currency, description, created_at, agent:agents(id, name)')
+    .from('transfers')
+    .select('id, amount, currency, description, created_at')
     .eq('tenant_id', tenantId)
+    .eq('type', 'x402')
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -479,8 +502,7 @@ export async function getRecentActivity(
       type: 'payment',
       amount: Number(p.amount),
       currency: p.currency || 'USDC',
-      description: p.description || 'API payment',
-      agent: p.agent ? { id: p.agent.id, name: p.agent.name } : undefined,
+      description: p.description || 'x402 API payment',
       timestamp: p.created_at,
     });
   });
@@ -488,7 +510,7 @@ export async function getRecentActivity(
   // Query recent AP2 executions
   const { data: ap2 } = await supabase
     .from('ap2_mandate_executions')
-    .select('id, amount, currency, description, created_at, agent:agents(id, name)')
+    .select('id, amount, currency, created_at')
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -500,8 +522,7 @@ export async function getRecentActivity(
       type: 'mandate_execution',
       amount: Number(e.amount),
       currency: e.currency || 'USDC',
-      description: e.description || 'Mandate execution',
-      agent: e.agent ? { id: e.agent.id, name: e.agent.name } : undefined,
+      description: 'Mandate execution',
       timestamp: e.created_at,
     });
   });
@@ -527,10 +548,10 @@ export async function getRecentActivity(
     });
   });
 
-  // Query recent UCP checkouts
+  // Query recent UCP checkouts — total is inside JSONB `totals` array
   const { data: ucp } = await supabase
-    .from('ucp_checkouts')
-    .select('id, amount, currency, created_at')
+    .from('ucp_checkout_sessions')
+    .select('id, totals, currency, created_at')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
     .order('created_at', { ascending: false })
@@ -541,9 +562,9 @@ export async function getRecentActivity(
       id: c.id,
       protocol: 'ucp',
       type: 'checkout',
-      amount: Number(c.amount),
-      currency: c.currency || 'USD',
-      description: 'Commerce checkout',
+      amount: extractUcpTotal(c.totals),
+      currency: c.currency || 'USDC',
+      description: 'UCP checkout',
       timestamp: c.created_at,
     });
   });

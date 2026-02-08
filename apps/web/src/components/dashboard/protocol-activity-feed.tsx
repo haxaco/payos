@@ -150,7 +150,7 @@ export function ProtocolActivityFeed() {
     refetchInterval: 60 * 1000, // Auto-refresh every minute
   });
 
-  const activities = Array.isArray(data?.data) ? data.data : [];
+  const activities = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
 
   return (
     <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">

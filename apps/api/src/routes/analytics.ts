@@ -43,13 +43,7 @@ app.get('/protocol-distribution', async (c) => {
       metric,
     });
 
-    return c.json({
-      data: distribution,
-      meta: {
-        time_range: timeRange,
-        metric,
-      },
-    });
+    return c.json({ data: distribution });
   } catch (error) {
     console.error('Failed to get protocol distribution:', error);
     return c.json({ error: 'Failed to get protocol distribution' }, 500);
@@ -84,13 +78,7 @@ app.get('/protocol-activity', async (c) => {
       metric,
     });
 
-    return c.json({
-      data: activity,
-      meta: {
-        time_range: timeRange,
-        metric,
-      },
-    });
+    return c.json({ data: activity });
   } catch (error) {
     console.error('Failed to get protocol activity:', error);
     return c.json({ error: 'Failed to get protocol activity' }, 500);

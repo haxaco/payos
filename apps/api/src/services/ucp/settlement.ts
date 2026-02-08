@@ -51,6 +51,40 @@ interface StoredSettlement {
 const settlementStore = new Map<string, StoredSettlement>();
 
 // =============================================================================
+// DB Row Mapping
+// =============================================================================
+
+/**
+ * Map a database row (snake_case) to the UCPSettlement API response
+ */
+function mapSettlementFromDb(row: any): UCPSettlement {
+  return {
+    id: row.id,
+    status: row.status,
+    token: row.token || '',
+    transfer_id: row.transfer_id || undefined,
+    amount: {
+      source: Number(row.source_amount),
+      source_currency: row.source_currency,
+      destination: Number(row.destination_amount),
+      destination_currency: row.destination_currency,
+      fx_rate: Number(row.fx_rate),
+      fees: Number(row.fees),
+    },
+    recipient: row.recipient || {},
+    corridor: row.corridor,
+    estimated_completion: row.estimated_completion || undefined,
+    completed_at: row.completed_at || undefined,
+    failed_at: row.failed_at || undefined,
+    failure_reason: row.failure_reason || undefined,
+    deferred_to_rules: row.deferred_to_rules || undefined,
+    settlement_rule_id: row.settlement_rule_id || undefined,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+// =============================================================================
 // Settlement Operations
 // =============================================================================
 
@@ -148,6 +182,24 @@ export async function executeSettlement(
   };
   settlementStore.set(stored.id, stored);
 
+  // Persist to database
+  await supabase.from('ucp_settlements').insert({
+    id: stored.id,
+    tenant_id: tenantId,
+    status: stored.status,
+    token: stored.token,
+    corridor: stored.corridor,
+    source_amount: stored.amount.source,
+    source_currency: stored.amount.sourceCurrency,
+    destination_amount: stored.amount.destination,
+    destination_currency: stored.amount.destinationCurrency,
+    fx_rate: stored.amount.fxRate,
+    fees: stored.amount.fees,
+    recipient: stored.recipient,
+    estimated_completion: stored.estimatedCompletion?.toISOString() || null,
+    deferred_to_rules: stored.deferredToRules || false,
+  });
+
   // Epic 50.3: If deferred, the rules engine will execute this later
   // Otherwise, execute immediately (PoC simulation)
   if (!shouldDefer) {
@@ -182,6 +234,7 @@ async function simulateSettlementExecution(
       s.status = 'processing';
       s.updatedAt = new Date();
       settlementStore.set(settlementId, s);
+      supabase.from('ucp_settlements').update({ status: 'processing' }).eq('id', settlementId).then(() => {});
     }
   }, 1000);
 
@@ -196,6 +249,12 @@ async function simulateSettlementExecution(
       s.transferId = randomUUID();
       settlementStore.set(settlementId, s);
 
+      supabase.from('ucp_settlements').update({
+        status: 'completed',
+        completed_at: s.completedAt.toISOString(),
+        transfer_id: s.transferId,
+      }).eq('id', settlementId).then(() => {});
+
       // In production, would send webhook here
       console.log(`[UCP] Settlement ${settlementId} completed`);
     }
@@ -207,13 +266,27 @@ async function simulateSettlementExecution(
  */
 export async function getSettlement(
   settlementId: string,
-  tenantId: string
+  tenantId: string,
+  supabase?: SupabaseClient
 ): Promise<UCPSettlement | null> {
+  // Check in-memory store first (for active settlements)
   const stored = settlementStore.get(settlementId);
-  if (!stored || stored.tenantId !== tenantId) {
-    return null;
+  if (stored && stored.tenantId === tenantId) {
+    return mapSettlement(stored);
   }
-  return mapSettlement(stored);
+
+  // Fall back to database
+  if (supabase) {
+    const { data } = await supabase
+      .from('ucp_settlements')
+      .select('*')
+      .eq('id', settlementId)
+      .eq('tenant_id', tenantId)
+      .single();
+    if (data) return mapSettlementFromDb(data);
+  }
+
+  return null;
 }
 
 /**
@@ -226,10 +299,31 @@ export async function listSettlements(
     corridor?: string;
     limit?: number;
     offset?: number;
-  } = {}
+  } = {},
+  supabase?: SupabaseClient
 ): Promise<{ data: UCPSettlement[]; total: number }> {
   const { status, corridor, limit = 20, offset = 0 } = options;
 
+  // Query database when supabase client is provided
+  if (supabase) {
+    let query = supabase
+      .from('ucp_settlements')
+      .select('*', { count: 'exact' })
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (status) query = query.eq('status', status);
+    if (corridor) query = query.eq('corridor', corridor);
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, count } = await query;
+    return {
+      data: (data || []).map(mapSettlementFromDb),
+      total: count || 0,
+    };
+  }
+
+  // Fallback: in-memory store
   let settlements = Array.from(settlementStore.values()).filter(
     (s) => s.tenantId === tenantId
   );
@@ -345,6 +439,25 @@ export async function executeSettlementWithMandate(
   };
   settlementStore.set(stored.id, stored);
 
+  // Persist to database
+  await supabase.from('ucp_settlements').insert({
+    id: stored.id,
+    tenant_id: tenantId,
+    status: stored.status,
+    token: stored.token,
+    mandate_id: stored.mandateId || null,
+    corridor: stored.corridor,
+    source_amount: stored.amount.source,
+    source_currency: stored.amount.sourceCurrency,
+    destination_amount: stored.amount.destination,
+    destination_currency: stored.amount.destinationCurrency,
+    fx_rate: stored.amount.fxRate,
+    fees: stored.amount.fees,
+    recipient: stored.recipient,
+    estimated_completion: stored.estimatedCompletion?.toISOString() || null,
+    deferred_to_rules: stored.deferredToRules || false,
+  });
+
   // Epic 50.3: If deferred, the rules engine will execute this later
   if (shouldDefer) {
     console.log(`[UCP] Mandate settlement ${stored.id} deferred to rules engine`);
@@ -370,6 +483,12 @@ export async function executeSettlementWithMandate(
     stored.failedAt = now;
     stored.failureReason = paymentResponse.error_message || 'Mandate payment rejected';
     settlementStore.set(stored.id, stored);
+
+    await supabase.from('ucp_settlements').update({
+      status: 'failed',
+      failed_at: now.toISOString(),
+      failure_reason: stored.failureReason,
+    }).eq('id', stored.id);
 
     return mapSettlement(stored);
   }
@@ -501,6 +620,18 @@ export async function executeDeferredSettlement(
   stored.updatedAt = new Date();
 
   settlementStore.set(settlementId, stored);
+
+  // Update database
+  await supabase.from('ucp_settlements').update({
+    corridor,
+    status: 'pending',
+    destination_amount: stored.amount.destination,
+    destination_currency: stored.amount.destinationCurrency,
+    fx_rate: stored.amount.fxRate,
+    settlement_rule_id: ruleId,
+    deferred_to_rules: false,
+    estimated_completion: stored.estimatedCompletion?.toISOString() || null,
+  }).eq('id', settlementId);
 
   console.log(`[UCP] Deferred settlement ${settlementId} now executing via ${corridor} (rule: ${ruleId})`);
 

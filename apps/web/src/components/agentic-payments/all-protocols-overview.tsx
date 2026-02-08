@@ -292,7 +292,7 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
             </Card>
 
             {/* Volume Distribution Visual */}
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
                 {protocols.map((protocol) => {
                     const volume = protocol.data?.volume || 0;
                     const transactions = protocol.data?.transactions || 0;

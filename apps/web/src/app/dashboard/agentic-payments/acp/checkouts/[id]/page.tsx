@@ -34,6 +34,8 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { CheckoutStatusBadge } from '@/components/acp/checkout-status-badge';
 import { CompleteCheckoutDialog } from '@/components/acp/complete-checkout-dialog';
+import { PolicyCheckPanel, deriveCheckoutPolicyRules } from '@/components/policy-check-panel';
+import { PaymentHandlerDisplay } from '@/components/payment/payment-logos';
 import { toast } from 'sonner';
 import { useState } from 'react';
 
@@ -157,6 +159,13 @@ export default function CheckoutDetailPage() {
                         </CardContent>
                     </Card>
 
+                    {/* Policy Evaluation */}
+                    {(() => {
+                        const checkoutData = (checkout as any).checkout_data;
+                        const policyRules = deriveCheckoutPolicyRules(checkoutData, checkout.total_amount, checkout.status);
+                        return policyRules.length > 0 ? <PolicyCheckPanel rules={policyRules} /> : null;
+                    })()}
+
                     {/* Payment Info (if completed) */}
                     {checkout.status === 'completed' && (
                         <Card>
@@ -169,7 +178,13 @@ export default function CheckoutDetailPage() {
                             <CardContent className="grid grid-cols-2 gap-4">
                                 <div>
                                     <div className="text-sm font-medium text-muted-foreground">Payment Method</div>
-                                    <div className="mt-1 capitalize">{checkout.payment_method || 'Unknown'}</div>
+                                    <div className="mt-1">
+                                        <PaymentHandlerDisplay
+                                            handler={checkout.checkout_data?.payment_handler}
+                                            network={checkout.checkout_data?.card_network}
+                                            paymentType={checkout.payment_method}
+                                        />
+                                    </div>
                                 </div>
                                 <div>
                                     <div className="text-sm font-medium text-muted-foreground">Token</div>

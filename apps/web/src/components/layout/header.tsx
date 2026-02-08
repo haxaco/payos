@@ -2,12 +2,14 @@
 
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { LogOut, Settings, User, Search, ChevronDown, Check } from 'lucide-react';
+import { LogOut, Settings, User, Search, ChevronDown, Check, Play, Square } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { useState } from 'react';
 import { ThemeToggleSimple } from '@/components/theme-toggle';
 import { GlobalSearch, useGlobalSearch } from '@/components/search/global-search';
 import { NotificationsCenter } from '@/components/notifications/notifications-center';
+import { useDemoMode } from '@/components/demo/demo-mode-context';
+import { ScenarioSelector } from '@/components/demo/scenario-selector';
 
 type Environment = 'sandbox' | 'production';
 
@@ -19,8 +21,10 @@ export function Header({ user }: HeaderProps) {
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvMenu, setShowEnvMenu] = useState(false);
+  const [showScenarioSelector, setShowScenarioSelector] = useState(false);
   const [environment, setEnvironment] = useState<Environment>('sandbox');
   const globalSearch = useGlobalSearch();
+  const demoMode = useDemoMode();
 
   const handleSignOut = async () => {
     const supabase = createSupabaseBrowserClient();
@@ -108,6 +112,37 @@ export function Header({ user }: HeaderProps) {
               </>
             )}
           </div>
+
+          {/* Demo Mode Toggle — sandbox only */}
+          {environment === 'sandbox' && (
+            <div className="relative">
+              <button
+                onClick={() => {
+                  if (demoMode.active) {
+                    setShowScenarioSelector(!showScenarioSelector);
+                  } else {
+                    demoMode.setActive(true);
+                    setShowScenarioSelector(true);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  demoMode.active
+                    ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }`}
+              >
+                {demoMode.active ? (
+                  <Square className="w-3.5 h-3.5" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                Demo
+              </button>
+              {showScenarioSelector && (
+                <ScenarioSelector onClose={() => setShowScenarioSelector(false)} />
+              )}
+            </div>
+          )}
 
           {/* Theme Toggle */}
           <ThemeToggleSimple />

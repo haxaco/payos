@@ -13,7 +13,7 @@ export default function AgenticPaymentsOverviewPage() {
             icon: Globe,
             color: 'text-green-600 dark:text-green-400',
             bgColor: 'bg-green-100 dark:bg-green-950',
-            href: '/dashboard/agentic-payments/ucp/checkouts',
+            href: '/dashboard/agentic-payments/ucp/hosted-checkouts',
             stats: { checkouts: 0, volume: '$0' }
         },
         {

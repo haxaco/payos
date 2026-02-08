@@ -273,7 +273,7 @@ export default function CheckoutsPage() {
                                         <TableCell>
                                             <div className="flex items-center gap-1 text-sm">
                                                 <ShoppingCart className="h-3 w-3 text-muted-foreground" />
-                                                <span>{checkout.items?.length || 0}</span>
+                                                <span>{checkout.item_count ?? checkout.items?.length ?? 0}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="font-medium">

@@ -10,6 +10,7 @@
  *   pnpm --filter @sly/api seed:demo              # Seed demo data
  *   pnpm --filter @sly/api seed:demo -- --reset    # Clear + reseed
  *   pnpm --filter @sly/api seed:demo -- --tenant-id <id>  # Specific tenant
+ *   pnpm --filter @sly/api seed:demo -- --scenario 1,3,5  # Specific scenarios only
  */
 
 import 'dotenv/config';
@@ -37,13 +38,27 @@ function parseArgs() {
   const args = process.argv.slice(2);
   let tenantId: string | undefined;
   let reset = false;
+  let scenarios: number[] = [];
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--tenant-id' && args[i + 1]) tenantId = args[++i];
     if (args[i] === '--reset') reset = true;
+    if (args[i] === '--scenario' && args[i + 1]) {
+      scenarios = args[++i].split(',').map(Number).filter(n => !isNaN(n));
+    }
   }
 
-  return { tenantId, reset };
+  return { tenantId, reset, scenarios };
+}
+
+/**
+ * Check if a set of scenarios should be seeded.
+ * Returns true if no --scenario filter was given, or if any of the specified
+ * scenarios matches the filter.
+ */
+function shouldSeed(filter: number[], ...scenarioNums: number[]): boolean {
+  if (filter.length === 0) return true;
+  return scenarioNums.some(n => filter.includes(n));
 }
 
 // ============================================
@@ -114,6 +129,8 @@ async function resetDemoData(tenantId: string) {
 
   // Order matters: children before parents
   const tables = [
+    'agent_usage',
+    'ucp_settlements',
     'settlement_rule_executions',
     'settlement_rules',
     'agent_payment_approvals',
@@ -220,7 +237,7 @@ async function upsertWallet(tenantId: string, accountId: string, data: any): Pro
 // Main Seed Function
 // ============================================
 
-async function seedDemoScenarios(tenantId: string) {
+async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []) {
   const ids: Record<string, string> = {};
   let transferCount = 0;
   // Short tenant prefix for globally-unique fields (mandate_id, checkout_id)
@@ -262,26 +279,107 @@ async function seedDemoScenarios(tenantId: string) {
 
   const agents = [
     // Scenario 1 — Shopping Agent
-    { key: 'shopping_agent', accountKey: 'maria', name: 'Perplexity Shopping Agent', description: 'AI shopping assistant for product discovery and checkout', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 4520.75, totalTransactions: 32 },
+    { key: 'shopping_agent', accountKey: 'maria', name: 'AI Shopping Agent', description: 'AI shopping assistant for product discovery and checkout', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 550.99, totalTransactions: 3 },
     // Scenario 2 — Travel Agent
-    { key: 'travel_agent', accountKey: 'david', name: 'Hopper Travel Agent', description: 'AI travel planner with multi-vendor booking capability', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 12840.00, totalTransactions: 8 },
+    { key: 'travel_agent', accountKey: 'david', name: 'Hopper Travel Agent', description: 'AI travel planner with multi-vendor booking capability', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 3720, totalTransactions: 6 },
     // Scenario 3 — Inference API Consumer
     { key: 'inference_agent', accountKey: 'techstart', name: 'Inference API Consumer', description: 'AI agent consuming pay-per-call inference APIs', type: 'custom', kyaTier: 1, kyaStatus: 'verified', x402Enabled: true, totalVolume: 847.23, totalTransactions: 282410 },
     // Scenario 3/8 — Content Scraper
-    { key: 'content_agent', accountKey: 'techstart', name: 'Content Access Agent', description: 'Licensed content access agent for media APIs', type: 'custom', kyaTier: 2, kyaStatus: 'verified', x402Enabled: true, totalVolume: 1234.56, totalTransactions: 61728 },
+    { key: 'content_agent', accountKey: 'techstart', name: 'Content Access Agent', description: 'Licensed content access agent for media APIs', type: 'custom', kyaTier: 2, kyaStatus: 'verified', x402Enabled: true, totalVolume: 1168.40, totalTransactions: 58420 },
     // Scenario 4 — Corporate Travel Agent
-    { key: 'corp_travel_agent', accountKey: 'acme', name: 'Acme Corporate Travel Agent', description: 'Corporate travel booking with policy enforcement', type: 'treasury', kyaTier: 3, kyaStatus: 'verified', x402Enabled: false, totalVolume: 45200.00, totalTransactions: 24 },
+    { key: 'corp_travel_agent', accountKey: 'acme', name: 'Acme Corporate Travel Agent', description: 'Corporate travel booking with policy enforcement', type: 'treasury', kyaTier: 3, kyaStatus: 'verified', x402Enabled: false, totalVolume: 1850, totalTransactions: 3 },
     // Scenario 5 — Bill Pay Agent
-    { key: 'billpay_agent', accountKey: 'david', name: 'Smart Bill Pay Agent', description: 'Neobank bill prioritization and auto-pay agent', type: 'payment', kyaTier: 1, kyaStatus: 'verified', x402Enabled: false, totalVolume: 8750.00, totalTransactions: 47 },
+    { key: 'billpay_agent', accountKey: 'david', name: 'Smart Bill Pay Agent', description: 'Neobank bill prioritization and auto-pay agent', type: 'payment', kyaTier: 1, kyaStatus: 'verified', x402Enabled: false, totalVolume: 3075, totalTransactions: 4 },
     // Scenario 6 — Smart Payout Agent
-    { key: 'payout_agent', accountKey: 'rideplatform', name: 'Smart Payout Agent', description: 'Gig economy auto-allocation payout agent', type: 'treasury', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 156000.00, totalTransactions: 2340 },
+    { key: 'payout_agent', accountKey: 'rideplatform', name: 'Smart Payout Agent', description: 'Gig economy auto-allocation payout agent', type: 'treasury', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 3710, totalTransactions: 14 },
     // Scenario 7 — Remittance Agent
-    { key: 'remittance_agent', accountKey: 'maria', name: 'Remittance Optimizer Agent', description: 'FX-optimized recurring remittance agent', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 6000.00, totalTransactions: 12 },
+    { key: 'remittance_agent', accountKey: 'maria', name: 'Remittance Optimizer Agent', description: 'FX-optimized recurring remittance agent', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 1500, totalTransactions: 4 },
+    // Scenario 9 — Data Pipeline Agent
+    { key: 'data_pipeline_agent', accountKey: 'techstart', name: 'Data Pipeline Agent', description: 'ETL and data processing agent consuming compute and storage APIs', type: 'custom', kyaTier: 1, kyaStatus: 'verified', x402Enabled: true, totalVolume: 284.50, totalTransactions: 9420 },
   ];
 
   for (const agent of agents) {
     ids[agent.key] = await upsertAgent(tenantId, ids[agent.accountKey], agent);
     console.log(`  + ${agent.name} (KYA ${agent.kyaTier})`);
+  }
+
+  // ── Scenario 9: Agent budget limits ──
+  if (shouldSeed(scenarioFilter, 9)) {
+    console.log('\n  Setting Scenario 9 agent budget limits...');
+    const agentLimits = [
+      { key: 'inference_agent', perTx: 0.10, daily: 50, monthly: 500 },
+      { key: 'content_agent', perTx: 1.00, daily: 100, monthly: 1000 },
+      { key: 'data_pipeline_agent', perTx: 0.50, daily: 30, monthly: 300 },
+    ];
+    for (const al of agentLimits) {
+      await supabase.from('agents').update({
+        limit_per_transaction: al.perTx,
+        limit_daily: al.daily,
+        limit_monthly: al.monthly,
+        effective_limit_per_tx: al.perTx,
+        effective_limit_daily: al.daily,
+        effective_limit_monthly: al.monthly,
+      }).eq('id', ids[al.key]);
+    }
+  }
+
+  // ── Scenario 9: Agent usage records (near-limit utilization) ──
+  if (shouldSeed(scenarioFilter, 9)) {
+    console.log('\n  Seeding agent usage records...');
+    const usageProfiles = [
+      { agentKey: 'inference_agent', todayAmount: 42, avgDaily: 14, variance: 3 },
+      { agentKey: 'content_agent', todayAmount: 65, avgDaily: 28, variance: 5 },
+      { agentKey: 'data_pipeline_agent', todayAmount: 28, avgDaily: 9.2, variance: 1.5 },
+    ];
+    // Columns: id, tenant_id, agent_id, date, daily_amount, monthly_amount, transaction_count, created_at, updated_at
+    const usageRecords: any[] = [];
+    for (const profile of usageProfiles) {
+      // Calculate cumulative monthly amount for each day
+      let monthlyRunning = 0;
+      for (let day = 29; day >= 0; day--) {
+        const date = new Date(); date.setDate(date.getDate() - day);
+        const amount = day === 0
+          ? profile.todayAmount
+          : profile.avgDaily + (Math.random() - 0.5) * profile.variance * 2;
+        monthlyRunning += amount;
+        usageRecords.push({
+          tenant_id: tenantId,
+          agent_id: ids[profile.agentKey],
+          date: date.toISOString().split('T')[0],
+          daily_amount: parseFloat(amount.toFixed(4)),
+          monthly_amount: parseFloat(monthlyRunning.toFixed(4)),
+          transaction_count: Math.floor(amount * 100),
+        });
+      }
+    }
+    const { error: usageErr } = await supabase.from('agent_usage').insert(usageRecords);
+    if (usageErr) console.log(`  ! agent_usage insert failed: ${usageErr.message}`);
+    else console.log(`  + ${usageRecords.length} agent_usage records`);
+  }
+
+  // ── Scenario 2: Travel Agent budget limits + usage ──
+  if (shouldSeed(scenarioFilter, 2)) {
+    console.log('\n  Setting Scenario 2 travel agent budget limits...');
+    await supabase.from('agents').update({
+      limit_per_transaction: 2000,
+      limit_daily: 4000,
+      limit_monthly: 8000,
+      effective_limit_per_tx: 2000,
+      effective_limit_daily: 4000,
+      effective_limit_monthly: 8000,
+    }).eq('id', ids.travel_agent);
+
+    const today = new Date().toISOString().split('T')[0];
+    const { error: travelUsageErr } = await supabase.from('agent_usage').insert({
+      tenant_id: tenantId,
+      agent_id: ids.travel_agent,
+      date: today,
+      daily_amount: 3720,
+      monthly_amount: 3720,
+      transaction_count: 6,
+    });
+    if (travelUsageErr) console.log(`  ! travel agent usage insert failed: ${travelUsageErr.message}`);
+    else console.log('  + travel agent usage: $3,720 / $4,000 daily');
   }
 
   // ──────────────────────────────────────────
@@ -293,26 +391,42 @@ async function seedDemoScenarios(tenantId: string) {
     // Enterprise treasury
     { key: 'acme_treasury', accountKey: 'acme', name: 'Acme Treasury', balance: 250000, purpose: 'Main corporate treasury', spendingPolicy: { daily_limit: 50000, monthly_limit: 500000, requires_approval_above: 10000 } },
     // x402 provider revenue wallet
-    { key: 'acme_x402_revenue', accountKey: 'acme', name: 'x402 Revenue Wallet', balance: 48230.42, purpose: 'x402 micropayment revenue collection' },
+    { key: 'acme_x402_revenue', accountKey: 'acme', name: 'x402 Revenue Wallet', balance: 5480, purpose: 'x402 micropayment revenue collection' },
     // Inference consumer wallet
     { key: 'techstart_ops', accountKey: 'techstart', name: 'TechStartup Operations', balance: 5000, purpose: 'Agent operations wallet', spendingPolicy: { daily_limit: 200, per_transaction_limit: 1 } },
     // Shopping consumer wallet
-    { key: 'maria_wallet', accountKey: 'maria', name: 'Maria Personal Wallet', balance: 1200, purpose: 'Shopping and remittance', spendingPolicy: { daily_limit: 500, monthly_limit: 2000 } },
+    { key: 'maria_wallet', accountKey: 'maria', name: 'Maria Personal Wallet', balance: 850, purpose: 'Shopping and remittance', spendingPolicy: { daily_limit: 250, monthly_limit: 750 } },
     // Travel consumer wallet
-    { key: 'david_wallet', accountKey: 'david', name: 'David Personal Wallet', balance: 4500, purpose: 'Travel and bill pay', spendingPolicy: { daily_limit: 4000, monthly_limit: 8000, requires_approval_above: 2000 } },
+    { key: 'david_wallet', accountKey: 'david', name: 'David Personal Wallet', balance: 3500, purpose: 'Travel and bill pay', spendingPolicy: { daily_limit: 4000, monthly_limit: 7000, requires_approval_above: 3000 } },
     // Gig worker wallets (tax, savings, spending)
-    { key: 'carlos_spending', accountKey: 'carlos', name: 'Carlos Spending', balance: 1680, purpose: 'Instant payout spending wallet' },
-    { key: 'carlos_tax', accountKey: 'carlos', name: 'Carlos Tax Reserve', balance: 14400, purpose: 'Tax reserve — locked', spendingPolicy: { locked: true, unlock_date: '2026-04-15' } },
-    { key: 'carlos_savings', accountKey: 'carlos', name: 'Carlos Emergency Savings', balance: 7200, purpose: 'Emergency savings with friction' },
+    { key: 'carlos_spending', accountKey: 'carlos', name: 'Carlos Spending', balance: 200, purpose: 'Instant payout spending wallet' },
+    { key: 'carlos_tax', accountKey: 'carlos', name: 'Carlos Tax Reserve', balance: 930, purpose: 'Tax reserve — locked', spendingPolicy: { locked: true, unlock_date: '2026-04-15' } },
+    { key: 'carlos_savings', accountKey: 'carlos', name: 'Carlos Emergency Savings', balance: 740, purpose: 'Emergency savings with friction' },
     // Corporate travel wallet
     { key: 'acme_travel', accountKey: 'acme', name: 'Acme Travel Budget', balance: 75000, purpose: 'Corporate travel expenses', spendingPolicy: { per_trip_limit: 5000, hotel_per_night_max: 500, class: 'economy' } },
     // Remittance sender wallet
     { key: 'maria_remittance', accountKey: 'maria', name: 'Maria Remittance Fund', balance: 650, purpose: 'Monthly remittance to family' },
+    // Scenario 9 — Per-agent operations wallets
+    { key: 'inference_ops', accountKey: 'techstart', name: 'Inference API Budget', balance: 150, purpose: 'Budget for LLM inference API calls', spendingPolicy: { daily_limit: 50, monthly_limit: 500, per_transaction_limit: 0.10, approvedVendors: ['openai.com', 'anthropic.com'] } },
+    { key: 'content_ops', accountKey: 'techstart', name: 'Content License Budget', balance: 350, purpose: 'Budget for licensed content access APIs', spendingPolicy: { daily_limit: 100, monthly_limit: 1000, per_transaction_limit: 1.00, approvedVendors: ['reuters.com', 'apnews.com'] } },
+    { key: 'data_pipeline_ops', accountKey: 'techstart', name: 'Data Pipeline Budget', balance: 80, purpose: 'Budget for compute and storage APIs', spendingPolicy: { daily_limit: 30, monthly_limit: 300, per_transaction_limit: 0.50, requires_approval_above: 0.25, approvedVendors: ['snowflake.com', 'aws.amazon.com'] } },
   ];
 
   for (const w of wallets) {
     ids[w.key] = await upsertWallet(tenantId, ids[w.accountKey], w);
     console.log(`  + ${w.name} ($${w.balance.toLocaleString()})`);
+  }
+
+  // Link per-agent wallets to their managing agents
+  const agentWalletLinks: [string, string][] = [
+    ['inference_ops', 'inference_agent'],
+    ['content_ops', 'content_agent'],
+    ['data_pipeline_ops', 'data_pipeline_agent'],
+  ];
+  for (const [walletKey, agentKey] of agentWalletLinks) {
+    if (ids[walletKey] && ids[agentKey]) {
+      await supabase.from('wallets').update({ managed_by_agent_id: ids[agentKey] }).eq('id', ids[walletKey]);
+    }
   }
 
   // ──────────────────────────────────────────
@@ -322,31 +436,26 @@ async function seedDemoScenarios(tenantId: string) {
 
   const transferDefs = [
     // Scenario 1 — Shopping completed purchase
-    { from: 'maria', to: 'merchant', amount: 299, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Tissot PRX watch purchase (ACP checkout)', created: daysAgo(2), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'Perplexity Shopping Agent' },
-    { from: 'maria', to: 'merchant', amount: 45.99, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Leather watch strap purchase', created: daysAgo(5), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'Perplexity Shopping Agent' },
-    { from: 'maria', to: 'merchant', amount: 89.00, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Running shoes — Nike Pegasus 41', created: daysAgo(12), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'Perplexity Shopping Agent' },
+    { from: 'maria', to: 'merchant', amount: 375, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'Tissot PRX watch purchase (ACP checkout)', created: daysAgo(2), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
+    { from: 'maria', to: 'merchant', amount: 45.99, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'Leather watch strap purchase', created: daysAgo(5), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
+    { from: 'maria', to: 'merchant', amount: 130, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'Running shoes — Nike Pegasus 41', created: daysAgo(12), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
 
-    // Scenario 2 — Travel multi-vendor
-    { from: 'david', to: 'merchant', amount: 680, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'LATAM Airlines — round-trip flight (BCN)', created: daysAgo(8), initiatorType: 'agent', initiatorId: 'travel_agent', initiatorName: 'Hopper Travel Agent' },
-    { from: 'david', to: 'merchant', amount: 1680, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Hotel Casa Camper — 5 nights Barcelona', created: daysAgo(8), initiatorType: 'agent', initiatorId: 'travel_agent', initiatorName: 'Hopper Travel Agent' },
-    { from: 'david', to: 'merchant', amount: 560, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Restaurant bookings — 5 dinners Barcelona', created: daysAgo(8), initiatorType: 'agent', initiatorId: 'travel_agent', initiatorName: 'Hopper Travel Agent' },
-    { from: 'david', to: 'merchant', amount: 450, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Penedès wine tour — 2 guests', created: daysAgo(8), initiatorType: 'agent', initiatorId: 'travel_agent', initiatorName: 'Hopper Travel Agent' },
-    { from: 'david', to: 'merchant', amount: 350, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Sagrada Familia + Park Güell tickets', created: daysAgo(8), initiatorType: 'agent', initiatorId: 'travel_agent', initiatorName: 'Hopper Travel Agent' },
+    // Scenario 2 — Travel payments handled via UCP checkout sessions (no separate transfers)
 
-    // Scenario 4 — Corporate travel
-    { from: 'acme', to: 'merchant', amount: 680, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'LATAM Airlines — VP Sales São Paulo RT', created: daysAgo(3), initiatorType: 'agent', initiatorId: 'corp_travel_agent', initiatorName: 'Acme Corporate Travel Agent' },
-    { from: 'acme', to: 'merchant', amount: 840, currency: 'USDC', status: 'completed', type: 'cross_border', desc: 'Hotel Fasano — 2 nights São Paulo', created: daysAgo(3), initiatorType: 'agent', initiatorId: 'corp_travel_agent', initiatorName: 'Acme Corporate Travel Agent' },
-    { from: 'acme', to: 'merchant', amount: 120, currency: 'USDC', status: 'processing', type: 'cross_border', desc: 'Ground transport São Paulo', created: daysAgo(1), initiatorType: 'agent', initiatorId: 'corp_travel_agent', initiatorName: 'Acme Corporate Travel Agent' },
+    // Scenario 4 — Corporate travel (USD + Visa AgentPay)
+    { from: 'acme', to: 'merchant', amount: 890, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'LATAM Airlines — VP Sales São Paulo RT', created: daysAgo(3), initiatorType: 'agent', initiatorId: 'corp_travel_agent', initiatorName: 'Acme Corporate Travel Agent' },
+    { from: 'acme', to: 'merchant', amount: 840, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'Hotel Fasano — 2 nights São Paulo', created: daysAgo(3), initiatorType: 'agent', initiatorId: 'corp_travel_agent', initiatorName: 'Acme Corporate Travel Agent' },
+    { from: 'acme', to: 'merchant', amount: 120, currency: 'USD', status: 'processing', type: 'cross_border', desc: 'Ground transport São Paulo', created: daysAgo(1), initiatorType: 'agent', initiatorId: 'corp_travel_agent', initiatorName: 'Acme Corporate Travel Agent' },
 
-    // Scenario 5 — Bill pay
-    { from: 'david', to: 'merchant', amount: 1200, currency: 'USDC', status: 'completed', type: 'internal', desc: 'Rent payment — Feb 2026', created: daysAgo(6), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
-    { from: 'david', to: 'merchant', amount: 180, currency: 'USDC', status: 'completed', type: 'internal', desc: 'Electric bill — deferred, paid on Friday', created: daysAgo(4), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
-    { from: 'david', to: 'merchant', amount: 80, currency: 'USDC', status: 'completed', type: 'internal', desc: 'Internet bill — deferred, paid on Friday', created: daysAgo(4), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
-    { from: 'david', to: 'merchant', amount: 15, currency: 'USDC', status: 'completed', type: 'internal', desc: 'Netflix subscription — deferred, paid on Friday', created: daysAgo(4), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
+    // Scenario 5 — Bill pay (USD)
+    { from: 'david', to: 'merchant', amount: 2800, currency: 'USD', status: 'completed', type: 'internal', desc: 'Rent payment — Feb 2026', created: daysAgo(6), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
+    { from: 'david', to: 'merchant', amount: 180, currency: 'USD', status: 'completed', type: 'internal', desc: 'Electric bill — deferred, paid on Friday', created: daysAgo(4), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
+    { from: 'david', to: 'merchant', amount: 80, currency: 'USD', status: 'completed', type: 'internal', desc: 'Internet bill — deferred, paid on Friday', created: daysAgo(4), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
+    { from: 'david', to: 'merchant', amount: 15, currency: 'USD', status: 'completed', type: 'internal', desc: 'Netflix subscription — deferred, paid on Friday', created: daysAgo(4), initiatorType: 'agent', initiatorId: 'billpay_agent', initiatorName: 'Smart Bill Pay Agent' },
 
     // Scenario 6 — Gig payouts (multiple daily payouts over 2 weeks)
     ...Array.from({ length: 14 }, (_, i) => ({
-      from: 'rideplatform', to: 'carlos', amount: 1800 + Math.round(Math.random() * 600), currency: 'USDC', status: 'completed' as const, type: 'internal' as const,
+      from: 'rideplatform', to: 'carlos', amount: 180 + Math.round(Math.random() * 170), currency: 'USDC', status: 'completed' as const, type: 'internal' as const,
       desc: `Daily ride earnings — ${12 + Math.floor(Math.random() * 4)} rides`, created: daysAgo(i + 1),
       initiatorType: 'agent', initiatorId: 'payout_agent', initiatorName: 'Smart Payout Agent',
     })),
@@ -409,6 +518,8 @@ async function seedDemoScenarios(tenantId: string) {
   // ──────────────────────────────────────────
   // 5. x402 ENDPOINTS (Scenarios 3, 8)
   // ──────────────────────────────────────────
+
+  if (shouldSeed(scenarioFilter, 3, 8)) {
   console.log('\n5. Creating x402 endpoints...');
 
   const x402Endpoints = [
@@ -427,10 +538,15 @@ async function seedDemoScenarios(tenantId: string) {
     // Additional endpoints
     { name: 'Speech-to-Text', path: '/v1/audio/transcribe', method: 'POST', description: 'Audio transcription API', base_price: 0.006, total_calls: 42100, total_revenue: 252.60, status: 'active' },
     { name: 'Deprecated — v0 Inference', path: '/v0/inference', method: 'POST', description: 'Legacy inference endpoint (deprecated)', base_price: 0.005, total_calls: 1200, total_revenue: 6.00, status: 'paused' },
+
+    // Scenario 9 — Data Pipeline compute endpoints
+    { name: 'Snowflake Compute', path: '/v1/compute', method: 'POST', description: 'Snowflake warehouse compute credits for ETL pipelines', base_price: 0.035, total_calls: 4710, total_revenue: 164.85, status: 'active' },
+    { name: 'AWS Bedrock Embeddings', path: '/v1/data/embeddings', method: 'POST', description: 'AWS Bedrock embedding inference for data enrichment', base_price: 0.025, total_calls: 4400, total_revenue: 110.00, status: 'active' },
   ];
 
+  const x402EndpointIds: Record<string, string> = {};
   for (const ep of x402Endpoints) {
-    const { error } = await supabase.from('x402_endpoints').insert({
+    const { data: epRow, error } = await supabase.from('x402_endpoints').insert({
       tenant_id: tenantId,
       account_id: ids.acme,
       name: ep.name,
@@ -445,67 +561,185 @@ async function seedDemoScenarios(tenantId: string) {
       total_calls: ep.total_calls,
       total_revenue: ep.total_revenue,
       status: ep.status,
-    });
+    }).select('id').single();
 
     if (error) console.log(`  ! x402 endpoint failed: ${ep.name} — ${error.message}`);
-    else console.log(`  + ${ep.name} ($${ep.base_price}/call, ${ep.total_calls.toLocaleString()} calls)`);
+    else {
+      if (epRow) x402EndpointIds[ep.path] = epRow.id;
+      console.log(`  + ${ep.name} ($${ep.base_price}/call, ${ep.total_calls.toLocaleString()} calls)`);
+    }
   }
+
+  // Create x402 transfer records (micropayments)
+  console.log('\n5b. Creating x402 transfer records...');
+
+  const x402TransferDefs: Array<{ endpoint_path: string; base_price: number; count: number; from: string; to: string }> = [
+    // Scenario 3 — Inference API consumer → provider
+    { endpoint_path: '/v1/inference', base_price: 0.003, count: 6, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/v1/embeddings', base_price: 0.0005, count: 5, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/v1/images/generate', base_price: 0.02, count: 4, from: 'techstart', to: 'acme' },
+    // Scenario 8 — Content access
+    { endpoint_path: '/content/articles/:id', base_price: 0.15, count: 5, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/content/articles/:id/summary', base_price: 0.005, count: 4, from: 'techstart', to: 'acme' },
+  ];
+
+  let x402TransferCount = 0;
+  for (const def of x402TransferDefs) {
+    const endpointId = x402EndpointIds[def.endpoint_path];
+    if (!endpointId) continue;
+
+    for (let i = 0; i < def.count; i++) {
+      const variation = 0.8 + Math.random() * 0.4; // 80-120% of base price
+      const amount = parseFloat((def.base_price * variation * (50 + Math.floor(Math.random() * 200))).toFixed(6));
+      const callCount = 50 + Math.floor(Math.random() * 200);
+      const day = Math.floor(Math.random() * 30) + 1;
+      const fromId = ids[def.from];
+      const toId = ids[def.to];
+      const fromName = accounts.find(a => a.key === def.from)?.name || def.from;
+      const toName = accounts.find(a => a.key === def.to)?.name || def.to;
+
+      const { data: xferRow, error: xferErr } = await supabase.from('transfers').insert({
+        tenant_id: tenantId,
+        from_account_id: fromId,
+        from_account_name: fromName,
+        to_account_id: toId,
+        to_account_name: toName,
+        amount,
+        currency: 'USDC',
+        status: 'completed',
+        type: 'x402',
+        description: `x402 micropayment — ${def.endpoint_path} (${callCount} calls)`,
+        initiated_by_type: 'agent',
+        initiated_by_id: ids.inference_agent || fromId,
+        initiated_by_name: 'Inference API Consumer',
+        protocol_metadata: { endpoint_id: endpointId, endpoint_path: def.endpoint_path, call_count: callCount, price_per_call: def.base_price, settlement_fee: parseFloat((amount * 0.01).toFixed(6)) },
+        created_at: daysAgo(day),
+      }).select('id').single();
+
+      if (!xferErr && xferRow) {
+        x402TransferCount++;
+        // Create ledger entries
+        await supabase.from('ledger_entries').insert([
+          { tenant_id: tenantId, account_id: fromId, transfer_id: xferRow.id, amount: -amount, currency: 'USDC', entry_type: 'debit', description: `x402 ${def.endpoint_path}` },
+          { tenant_id: tenantId, account_id: toId, transfer_id: xferRow.id, amount, currency: 'USDC', entry_type: 'credit', description: `x402 ${def.endpoint_path}` },
+        ]);
+      }
+    }
+  }
+  console.log(`  + ${x402TransferCount} x402 transfers created`);
+
+  // Scenario 9 — Data Pipeline Agent x402 micropayments (fixed amounts to match daily/monthly usage)
+  console.log('\n5c. Creating Data Pipeline Agent x402 transfers...');
+  const dataPipelineTransfers = [
+    // Today — $28 total ($16.80 Snowflake + $11.20 Bedrock)
+    { path: '/v1/compute', amount: 5.60, calls: 160, day: 0 },
+    { path: '/v1/compute', amount: 5.80, calls: 166, day: 0 },
+    { path: '/v1/compute', amount: 5.40, calls: 154, day: 0 },
+    { path: '/v1/data/embeddings', amount: 3.80, calls: 152, day: 0 },
+    { path: '/v1/data/embeddings', amount: 3.90, calls: 156, day: 0 },
+    { path: '/v1/data/embeddings', amount: 3.50, calls: 140, day: 0 },
+    // Yesterday — ~$9.20
+    { path: '/v1/compute', amount: 5.20, calls: 149, day: 1 },
+    { path: '/v1/data/embeddings', amount: 4.00, calls: 160, day: 1 },
+    // Day 2-7 — spread to reach ~$275 monthly
+    { path: '/v1/compute', amount: 5.50, calls: 157, day: 2 },
+    { path: '/v1/data/embeddings', amount: 3.70, calls: 148, day: 2 },
+    { path: '/v1/compute', amount: 5.30, calls: 151, day: 3 },
+    { path: '/v1/data/embeddings', amount: 3.60, calls: 144, day: 3 },
+    { path: '/v1/compute', amount: 5.70, calls: 163, day: 5 },
+    { path: '/v1/data/embeddings', amount: 3.80, calls: 152, day: 5 },
+    { path: '/v1/compute', amount: 5.40, calls: 154, day: 7 },
+    { path: '/v1/data/embeddings', amount: 3.50, calls: 140, day: 7 },
+    // Older days — larger batches representing weekly settlement
+    { path: '/v1/compute', amount: 38.00, calls: 1086, day: 14 },
+    { path: '/v1/data/embeddings', amount: 25.00, calls: 1000, day: 14 },
+    { path: '/v1/compute', amount: 40.00, calls: 1143, day: 21 },
+    { path: '/v1/data/embeddings', amount: 27.00, calls: 1080, day: 21 },
+    { path: '/v1/compute', amount: 42.00, calls: 1200, day: 28 },
+    { path: '/v1/data/embeddings', amount: 28.00, calls: 1120, day: 28 },
+  ];
+
+  let dpTransferCount = 0;
+  for (const t of dataPipelineTransfers) {
+    const endpointId = x402EndpointIds[t.path];
+    if (!endpointId) continue;
+
+    const fromId = ids.techstart;
+    const toId = ids.acme;
+    const fromName = accounts.find(a => a.key === 'techstart')?.name || 'TechStart Inc';
+    const toName = accounts.find(a => a.key === 'acme')?.name || 'Acme Corp';
+
+    const { data: xferRow, error: xferErr } = await supabase.from('transfers').insert({
+      tenant_id: tenantId,
+      from_account_id: fromId,
+      from_account_name: fromName,
+      to_account_id: toId,
+      to_account_name: toName,
+      amount: t.amount,
+      currency: 'USDC',
+      status: 'completed',
+      type: 'x402',
+      description: `x402 micropayment — ${t.path} (${t.calls} calls)`,
+      initiated_by_type: 'agent',
+      initiated_by_id: ids.data_pipeline_agent,
+      initiated_by_name: 'Data Pipeline Agent',
+      protocol_metadata: { endpoint_id: endpointId, endpoint_path: t.path, call_count: t.calls, price_per_call: t.path.includes('compute') ? 0.035 : 0.025, settlement_fee: parseFloat((t.amount * 0.01).toFixed(6)) },
+      created_at: daysAgo(t.day),
+    }).select('id').single();
+
+    if (!xferErr && xferRow) {
+      dpTransferCount++;
+      await supabase.from('ledger_entries').insert([
+        { tenant_id: tenantId, account_id: fromId, transfer_id: xferRow.id, amount: -t.amount, currency: 'USDC', entry_type: 'debit', description: `x402 ${t.path}` },
+        { tenant_id: tenantId, account_id: toId, transfer_id: xferRow.id, amount: t.amount, currency: 'USDC', entry_type: 'credit', description: `x402 ${t.path}` },
+      ]);
+    }
+  }
+  console.log(`  + ${dpTransferCount} Data Pipeline x402 transfers created`);
+
+  } // end x402 guard
 
   // ──────────────────────────────────────────
   // 6. ACP CHECKOUTS (Scenarios 1, 2, 4)
   // ──────────────────────────────────────────
+
+  if (shouldSeed(scenarioFilter, 1, 2, 4)) {
   console.log('\n6. Creating ACP checkouts...');
 
   const acpCheckouts = [
     // Scenario 1 — Shopping Agent "Birthday Gift"
     {
       checkout_id: 'chk_tissot_watch', session_id: 'sess_shop_001',
-      agent_id: ids.shopping_agent, agent_name: 'Perplexity Shopping Agent',
+      agent_id: ids.shopping_agent, agent_name: 'AI Shopping Agent',
       customer_id: 'cust_maria', customer_email: 'maria@demo-consumer.com',
       account_id: ids.maria, merchant_id: 'merch_global_retail', merchant_name: 'Global Retail Co',
       merchant_url: 'https://globalretail-demo.com',
-      subtotal: 299, tax_amount: 26.16, shipping_amount: 0, discount_amount: 0, total_amount: 325.16,
-      status: 'completed', payment_method: 'wallet',
+      subtotal: 375, tax_amount: 32.81, shipping_amount: 0, discount_amount: 0, total_amount: 407.81,
+      currency: 'USD',
+      status: 'completed', payment_method: 'card',
       transfer_id: transferIds[0] || null,
-      checkout_data: { scenario: 'birthday_gift', policy_check: 'passed', auto_approved: true },
+      checkout_data: { scenario: 'birthday_gift', policy_check: 'passed', auto_approved: true, payment_handler: 'stripe', card_network: 'mastercard' },
       created_at: daysAgo(2),
       items: [
-        { item_id: 'tissot_prx_001', name: 'Tissot PRX Powermatic 80', description: 'Swiss automatic watch, 40mm, blue dial', quantity: 1, unit_price: 299, total_price: 299, image_url: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200' },
+        { item_id: 'tissot_prx_001', name: 'Tissot PRX', description: 'Swiss watch, 40mm, blue dial', quantity: 1, unit_price: 375, total_price: 375, image_url: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200' },
       ],
     },
     {
       checkout_id: 'chk_shoes_nike', session_id: 'sess_shop_002',
-      agent_id: ids.shopping_agent, agent_name: 'Perplexity Shopping Agent',
+      agent_id: ids.shopping_agent, agent_name: 'AI Shopping Agent',
       customer_id: 'cust_maria', customer_email: 'maria@demo-consumer.com',
       account_id: ids.maria, merchant_id: 'merch_global_retail', merchant_name: 'Global Retail Co',
-      subtotal: 89, tax_amount: 7.79, shipping_amount: 5.99, total_amount: 102.78,
-      status: 'completed', payment_method: 'wallet',
+      subtotal: 130, tax_amount: 11.38, shipping_amount: 5.99, total_amount: 147.37,
+      currency: 'USD',
+      status: 'completed', payment_method: 'card',
+      checkout_data: { scenario: 'shopping', payment_handler: 'stripe', card_network: 'mastercard' },
       created_at: daysAgo(12),
       items: [
-        { item_id: 'nike_pegasus_001', name: 'Nike Pegasus 41', description: 'Running shoes, size 9', quantity: 1, unit_price: 89, total_price: 89 },
+        { item_id: 'nike_pegasus_001', name: 'Nike Pegasus 41', description: 'Running shoes, size 9', quantity: 1, unit_price: 130, total_price: 130 },
       ],
     },
 
-    // Scenario 2 — Travel multi-vendor (6 parallel checkouts)
-    ...[
-      { id: 'chk_flight_bcn', name: 'LATAM Airlines RT Flight', desc: 'Round-trip Dallas → Barcelona', price: 680, merchant: 'LATAM Airlines' },
-      { id: 'chk_hotel_bcn', name: 'Hotel Casa Camper', desc: '5 nights, double room, Las Ramblas', price: 1680, merchant: 'Booking.com' },
-      { id: 'chk_restaurants_bcn', name: 'Restaurant Reservations', desc: '5 dinner reservations — curated by agent', price: 560, merchant: 'TheFork' },
-      { id: 'chk_wine_tour', name: 'Penedès Wine Tour', desc: 'Full-day wine tour, 2 guests', price: 450, merchant: 'Viator' },
-      { id: 'chk_museum_bcn', name: 'Sagrada Familia + Park Güell', desc: 'Skip-the-line tickets, 2 guests', price: 350, merchant: 'Tiqets' },
-    ].map((item, i) => ({
-      checkout_id: item.id, session_id: 'sess_travel_bcn',
-      agent_id: ids.travel_agent, agent_name: 'Hopper Travel Agent',
-      customer_id: 'cust_david', customer_email: 'david@demo-consumer.com',
-      account_id: ids.david, merchant_id: `merch_${item.merchant.toLowerCase().replace(/\s+/g, '_')}`, merchant_name: item.merchant,
-      subtotal: item.price, tax_amount: 0, shipping_amount: 0, discount_amount: 0, total_amount: item.price,
-      status: 'completed', payment_method: 'wallet',
-      checkout_data: { scenario: 'anniversary_trip', checkout_group_id: 'grp_bcn_trip', vendor_index: i + 1, total_vendors: 5 },
-      created_at: daysAgo(8),
-      items: [
-        { item_id: `item_${item.id}`, name: item.name, description: item.desc, quantity: item.price > 600 ? 1 : 2, unit_price: item.price > 600 ? item.price : item.price / 2, total_price: item.price },
-      ],
-    })),
+    // Scenario 2 — Travel multi-vendor: Moved to UCP-only (no ACP checkouts)
 
     // Scenario 4 — Corporate travel São Paulo
     {
@@ -513,12 +747,13 @@ async function seedDemoScenarios(tenantId: string) {
       agent_id: ids.corp_travel_agent, agent_name: 'Acme Corporate Travel Agent',
       customer_id: 'cust_acme_vp', customer_email: 'vp.sales@acme-demo.com',
       account_id: ids.acme, merchant_id: 'merch_latam_airlines', merchant_name: 'LATAM Airlines',
-      subtotal: 680, tax_amount: 0, shipping_amount: 0, total_amount: 680,
+      subtotal: 890, tax_amount: 0, shipping_amount: 0, total_amount: 890,
       status: 'completed', payment_method: 'corporate_wallet',
-      checkout_data: { scenario: 'corporate_travel', policy_check: 'all_passed', auto_approved: true, gl_code: 'Travel-Sales', cost_center: 'LATAM Expansion' },
+      currency: 'USD', payment_method: 'corporate_card',
+      checkout_data: { scenario: 'corporate_travel', policy_check: 'all_passed', auto_approved: true, gl_code: 'Travel-Sales', cost_center: 'LATAM Expansion', payment_handler: 'visa_agentpay', card_network: 'visa' },
       created_at: daysAgo(3),
       items: [
-        { item_id: 'corp_flight_001', name: 'LATAM Airlines Economy — NYC to GRU', description: 'Round-trip, Feb 12-14', quantity: 1, unit_price: 680, total_price: 680 },
+        { item_id: 'corp_flight_001', name: 'LATAM Airlines Economy — NYC to GRU', description: 'Round-trip, Feb 12-14', quantity: 1, unit_price: 890, total_price: 890 },
       ],
     },
     {
@@ -527,8 +762,8 @@ async function seedDemoScenarios(tenantId: string) {
       customer_id: 'cust_acme_vp', customer_email: 'vp.sales@acme-demo.com',
       account_id: ids.acme, merchant_id: 'merch_booking', merchant_name: 'Booking.com',
       subtotal: 840, tax_amount: 0, shipping_amount: 0, total_amount: 840,
-      status: 'completed', payment_method: 'corporate_wallet',
-      checkout_data: { scenario: 'corporate_travel', policy_check: 'all_passed', auto_approved: true, gl_code: 'Travel-Sales', cost_center: 'LATAM Expansion' },
+      currency: 'USD', payment_method: 'corporate_card',
+      checkout_data: { scenario: 'corporate_travel', policy_check: 'all_passed', auto_approved: true, gl_code: 'Travel-Sales', cost_center: 'LATAM Expansion', payment_handler: 'visa_agentpay', card_network: 'visa' },
       created_at: daysAgo(3),
       items: [
         { item_id: 'corp_hotel_001', name: 'Hotel Fasano São Paulo', description: '2 nights, standard room, $420/night', quantity: 2, unit_price: 420, total_price: 840 },
@@ -538,7 +773,7 @@ async function seedDemoScenarios(tenantId: string) {
     // Active/pending checkout
     {
       checkout_id: 'chk_pending_headphones', session_id: 'sess_shop_003',
-      agent_id: ids.shopping_agent, agent_name: 'Perplexity Shopping Agent',
+      agent_id: ids.shopping_agent, agent_name: 'AI Shopping Agent',
       customer_id: 'cust_maria', customer_email: 'maria@demo-consumer.com',
       account_id: ids.maria, merchant_id: 'merch_global_retail', merchant_name: 'Global Retail Co',
       subtotal: 349, tax_amount: 30.54, shipping_amount: 0, total_amount: 379.54,
@@ -571,7 +806,7 @@ async function seedDemoScenarios(tenantId: string) {
       shipping_amount: checkoutData.shipping_amount || 0,
       discount_amount: checkoutData.discount_amount || 0,
       total_amount: checkoutData.total_amount,
-      currency: 'USDC',
+      currency: (checkoutData as any).currency || 'USDC',
       status: checkoutData.status,
       payment_method: checkoutData.payment_method || null,
       transfer_id: checkoutData.transfer_id || null,
@@ -598,7 +833,7 @@ async function seedDemoScenarios(tenantId: string) {
           quantity: item.quantity,
           unit_price: item.unit_price,
           total_price: item.total_price,
-          currency: 'USDC',
+          currency: (checkoutData as any).currency || 'USDC',
         });
       }
     }
@@ -606,40 +841,78 @@ async function seedDemoScenarios(tenantId: string) {
     console.log(`  + ${checkoutData.checkout_id} (${checkoutData.status}, $${checkoutData.total_amount})`);
   }
 
+  // Historical ACP checkouts (30-60 days ago) for dashboard trend comparison
+  console.log('  + Adding historical ACP checkouts for trend data...');
+  const historicalAcpCheckouts = [
+    { subtotal: 325, total_amount: 350, currency: 'USD', created_at: daysAgo(38) },
+    { subtotal: 260, total_amount: 280, currency: 'USD', created_at: daysAgo(45) },
+    { subtotal: 250, total_amount: 270, currency: 'USD', created_at: daysAgo(52) },
+  ];
+  let histAcpCount = 0;
+  for (const h of historicalAcpCheckouts) {
+    const { error } = await supabase.from('acp_checkouts').insert({
+      tenant_id: tenantId,
+      checkout_id: `chk_hist_${randomUUID().slice(0, 8)}`,
+      session_id: `sess_hist_${randomUUID().slice(0, 8)}`,
+      agent_id: ids.shopping_agent,
+      agent_name: 'AI Shopping Agent',
+      account_id: ids.maria,
+      merchant_id: 'merch_global_retail',
+      merchant_name: 'Global Retail Co',
+      subtotal: h.subtotal,
+      tax_amount: h.total_amount - h.subtotal,
+      total_amount: h.total_amount,
+      currency: h.currency,
+      status: 'completed',
+      created_at: h.created_at,
+      completed_at: h.created_at,
+    });
+    if (error) console.log(`  ! Historical ACP insert failed: ${error.message}`);
+    else histAcpCount++;
+  }
+  console.log(`  + ${histAcpCount}/${historicalAcpCheckouts.length} historical ACP checkouts (trend baseline)`);
+  } // end ACP guard
+
   // ──────────────────────────────────────────
   // 7. AP2 MANDATES (Scenarios 4, 5, 7)
   // ──────────────────────────────────────────
+
+  if (shouldSeed(scenarioFilter, 4, 5, 6, 7, 9)) {
   console.log('\n7. Creating AP2 mandates...');
 
   const mandates = [
-    // Scenario 4 — Corporate travel mandate chain
+    // Scenario 4 — Corporate travel mandate chain (USD)
     {
       mandate_id: `${tp}_mandate_corp_travel_intent`, mandate_type: 'intent',
       account_id: ids.acme, agent_id: ids.corp_travel_agent, agent_name: 'Acme Corporate Travel Agent',
-      authorized_amount: 5000, used_amount: 0, execution_count: 0, status: 'completed',
+      authorized_amount: 5000, used_amount: 1850, execution_count: 1, status: 'completed',
+      currency: 'USD',
       mandate_data: { traveler: 'VP of Sales', destination: 'São Paulo', dates: 'Feb 12-14', purpose: 'Client meeting — $2M deal' },
       created_at: daysAgo(5),
     },
     {
       mandate_id: `${tp}_mandate_corp_travel_cart`, mandate_type: 'cart',
       account_id: ids.acme, agent_id: ids.corp_travel_agent, agent_name: 'Acme Corporate Travel Agent',
-      authorized_amount: 1640, used_amount: 0, execution_count: 0, status: 'completed',
-      mandate_data: { items: [{ type: 'flight', vendor: 'LATAM Airlines', amount: 680 }, { type: 'hotel', vendor: 'Hotel Fasano', amount: 840, nights: 2 }, { type: 'transport', vendor: 'Transfer service', amount: 120 }] },
+      authorized_amount: 1850, used_amount: 1850, execution_count: 3, status: 'completed',
+      currency: 'USD',
+      mandate_data: { items: [{ type: 'flight', vendor: 'LATAM Airlines', amount: 890 }, { type: 'hotel', vendor: 'Hotel Fasano', amount: 840, nights: 2 }, { type: 'transport', vendor: 'Transfer service', amount: 120 }] },
       created_at: daysAgo(4),
     },
     {
       mandate_id: `${tp}_mandate_corp_travel_payment`, mandate_type: 'payment',
       account_id: ids.acme, agent_id: ids.corp_travel_agent, agent_name: 'Acme Corporate Travel Agent',
-      authorized_amount: 1640, used_amount: 1520, execution_count: 2, status: 'active',
-      mandate_data: { gl_code: 'Travel-Sales', cost_center: 'LATAM Expansion', policy_result: 'all_passed' },
+      authorized_amount: 1850, used_amount: 1730, execution_count: 2, status: 'active',
+      currency: 'USD',
+      mandate_data: { gl_code: 'Travel-Sales', cost_center: 'LATAM Expansion', policy_result: 'all_passed', payment_handler: 'visa_agentpay', card_network: 'visa' },
       created_at: daysAgo(3),
     },
 
-    // Scenario 5 — Bill pay recurring mandates
+    // Scenario 5 — Bill pay recurring mandates (USD)
     {
       mandate_id: `${tp}_mandate_rent_recurring`, mandate_type: 'payment',
       account_id: ids.david, agent_id: ids.billpay_agent, agent_name: 'Smart Bill Pay Agent',
-      authorized_amount: 1200, used_amount: 1200, execution_count: 1, status: 'completed',
+      authorized_amount: 2800, used_amount: 2800, execution_count: 1, status: 'completed',
+      currency: 'USD',
       mandate_data: { bill_type: 'rent', priority: 'P0', frequency: 'monthly', payee: 'Landlord', auto_resume: true },
       metadata: { priority_tier: 'P0_essential' },
       created_at: daysAgo(6),
@@ -648,6 +921,7 @@ async function seedDemoScenarios(tenantId: string) {
       mandate_id: `${tp}_mandate_electric_recurring`, mandate_type: 'payment',
       account_id: ids.david, agent_id: ids.billpay_agent, agent_name: 'Smart Bill Pay Agent',
       authorized_amount: 180, used_amount: 180, execution_count: 1, status: 'completed',
+      currency: 'USD',
       mandate_data: { bill_type: 'electric', priority: 'P1', frequency: 'monthly', payee: 'Electric Co', deferred: true, deferred_until: 'paycheck_friday' },
       metadata: { priority_tier: 'P1_important' },
       created_at: daysAgo(6),
@@ -656,6 +930,7 @@ async function seedDemoScenarios(tenantId: string) {
       mandate_id: `${tp}_mandate_internet_recurring`, mandate_type: 'payment',
       account_id: ids.david, agent_id: ids.billpay_agent, agent_name: 'Smart Bill Pay Agent',
       authorized_amount: 80, used_amount: 80, execution_count: 1, status: 'completed',
+      currency: 'USD',
       mandate_data: { bill_type: 'internet', priority: 'P2', frequency: 'monthly', payee: 'ISP Corp' },
       metadata: { priority_tier: 'P2_discretionary' },
       created_at: daysAgo(6),
@@ -664,6 +939,7 @@ async function seedDemoScenarios(tenantId: string) {
       mandate_id: `${tp}_mandate_netflix_recurring`, mandate_type: 'payment',
       account_id: ids.david, agent_id: ids.billpay_agent, agent_name: 'Smart Bill Pay Agent',
       authorized_amount: 15, used_amount: 15, execution_count: 1, status: 'completed',
+      currency: 'USD',
       mandate_data: { bill_type: 'streaming', priority: 'P3', frequency: 'monthly', payee: 'Netflix' },
       metadata: { priority_tier: 'P3_deferrable' },
       created_at: daysAgo(6),
@@ -679,13 +955,66 @@ async function seedDemoScenarios(tenantId: string) {
       created_at: daysAgo(67),
     },
 
+    // Scenario 6 — Gig payout daily mandate
+    {
+      mandate_id: `${tp}_mandate_gig_daily_payout`, mandate_type: 'payment',
+      account_id: ids.rideplatform, agent_id: ids.payout_agent, agent_name: 'Smart Payout Agent',
+      authorized_amount: 5000, used_amount: 3710, execution_count: 14, status: 'active',
+      mandate_data: { payout_type: 'daily_gig_earnings', worker: 'Carlos Mendez', frequency: 'daily', allocation: { spending: '55%', tax: '25%', savings: '20%' } },
+      created_at: daysAgo(15),
+    },
+
     // Active mandate — next month's bills
     {
       mandate_id: `${tp}_mandate_march_bills`, mandate_type: 'intent',
       account_id: ids.david, agent_id: ids.billpay_agent, agent_name: 'Smart Bill Pay Agent',
-      authorized_amount: 1475, used_amount: 0, execution_count: 0, status: 'active',
-      mandate_data: { month: 'March 2026', bills: ['rent', 'electric', 'internet', 'netflix'], total_estimated: 1475 },
+      authorized_amount: 3075, used_amount: 0, execution_count: 0, status: 'active',
+      mandate_data: { month: 'March 2026', bills: ['rent', 'electric', 'internet', 'netflix'], total_estimated: 3075 },
       created_at: hoursAgo(12),
+    },
+
+    // Scenario 9 — Per-vendor API budget mandates
+    {
+      mandate_id: `${tp}_mandate_openai_budget`, mandate_type: 'payment',
+      account_id: ids.techstart, agent_id: ids.inference_agent, agent_name: 'Inference API Consumer',
+      authorized_amount: 250, used_amount: 210, execution_count: 28241, status: 'active',
+      mandate_data: { vendor: 'OpenAI', endpoint: '/v1/inference', budget_period: 'monthly', description: 'Monthly budget for GPT-4o inference API calls' },
+      created_at: daysAgo(30),
+    },
+    {
+      mandate_id: `${tp}_mandate_anthropic_budget`, mandate_type: 'payment',
+      account_id: ids.techstart, agent_id: ids.inference_agent, agent_name: 'Inference API Consumer',
+      authorized_amount: 150, used_amount: 130, execution_count: 4520, status: 'active',
+      mandate_data: { vendor: 'Anthropic', endpoint: '/v1/inference', budget_period: 'monthly', description: 'Monthly budget for Claude inference calls' },
+      created_at: daysAgo(30),
+    },
+    {
+      mandate_id: `${tp}_mandate_reuters_license`, mandate_type: 'payment',
+      account_id: ids.techstart, agent_id: ids.content_agent, agent_name: 'Content Access Agent',
+      authorized_amount: 500, used_amount: 425, execution_count: 2833, status: 'active',
+      mandate_data: { vendor: 'Reuters', endpoint: '/content/articles/:id', budget_period: 'monthly', description: 'Reuters full-text article access license' },
+      created_at: daysAgo(30),
+    },
+    {
+      mandate_id: `${tp}_mandate_apnews_feed`, mandate_type: 'payment',
+      account_id: ids.techstart, agent_id: ids.content_agent, agent_name: 'Content Access Agent',
+      authorized_amount: 300, used_amount: 280, execution_count: 56000, status: 'active',
+      mandate_data: { vendor: 'AP News', endpoint: '/content/articles/:id/summary', budget_period: 'monthly', description: 'AP News summary data feed' },
+      created_at: daysAgo(30),
+    },
+    {
+      mandate_id: `${tp}_mandate_snowflake_compute`, mandate_type: 'payment',
+      account_id: ids.techstart, agent_id: ids.data_pipeline_agent, agent_name: 'Data Pipeline Agent',
+      authorized_amount: 180, used_amount: 165, execution_count: 4710, status: 'active',
+      mandate_data: { vendor: 'Snowflake', endpoint: '/v1/compute', budget_period: 'monthly', description: 'Snowflake compute credits for ETL pipelines' },
+      created_at: daysAgo(30),
+    },
+    {
+      mandate_id: `${tp}_mandate_aws_bedrock`, mandate_type: 'payment',
+      account_id: ids.techstart, agent_id: ids.data_pipeline_agent, agent_name: 'Data Pipeline Agent',
+      authorized_amount: 120, used_amount: 110, execution_count: 4400, status: 'active',
+      mandate_data: { vendor: 'AWS Bedrock', endpoint: '/v1/data/embeddings', budget_period: 'monthly', description: 'AWS Bedrock inference for data enrichment' },
+      created_at: daysAgo(30),
     },
   ];
 
@@ -700,7 +1029,7 @@ async function seedDemoScenarios(tenantId: string) {
       agent_id: m.agent_id,
       agent_name: m.agent_name,
       authorized_amount: m.authorized_amount,
-      currency: 'USDC',
+      currency: (m as any).currency || 'USDC',
       used_amount: m.used_amount,
       execution_count: m.execution_count,
       mandate_data: m.mandate_data,
@@ -720,18 +1049,63 @@ async function seedDemoScenarios(tenantId: string) {
     console.log(`  + ${m.mandate_id} (${m.mandate_type}, ${m.status})`);
   }
 
+  // Patch corporate mandate chain links with DB UUIDs
+  const intentDbId = mandateIdMap[`${tp}_mandate_corp_travel_intent`];
+  const cartDbId = mandateIdMap[`${tp}_mandate_corp_travel_cart`];
+  const paymentDbId = mandateIdMap[`${tp}_mandate_corp_travel_payment`];
+
+  if (intentDbId && cartDbId && paymentDbId) {
+    console.log('\n   Linking corporate mandate chain...');
+    await supabase.from('ap2_mandates').update({
+      mandate_data: { traveler: 'VP of Sales', destination: 'São Paulo', dates: 'Feb 12-14', purpose: 'Client meeting — $2M deal', chain: { type: 'root', child_id: cartDbId, child_mandate_id: `${tp}_mandate_corp_travel_cart` } },
+    }).eq('id', intentDbId);
+
+    await supabase.from('ap2_mandates').update({
+      mandate_data: { items: [{ type: 'flight', vendor: 'LATAM Airlines', amount: 890 }, { type: 'hotel', vendor: 'Hotel Fasano', amount: 840, nights: 2 }, { type: 'transport', vendor: 'Transfer service', amount: 120 }], chain: { type: 'middle', parent_id: intentDbId, parent_mandate_id: `${tp}_mandate_corp_travel_intent`, child_id: paymentDbId, child_mandate_id: `${tp}_mandate_corp_travel_payment` } },
+    }).eq('id', cartDbId);
+
+    await supabase.from('ap2_mandates').update({
+      mandate_data: { gl_code: 'Travel-Sales', cost_center: 'LATAM Expansion', policy_result: 'all_passed', payment_handler: 'visa_agentpay', card_network: 'visa', chain: { type: 'leaf', parent_id: cartDbId, parent_mandate_id: `${tp}_mandate_corp_travel_cart` } },
+    }).eq('id', paymentDbId);
+
+    console.log(`    + Intent (${intentDbId}) → Cart (${cartDbId}) → Payment (${paymentDbId})`);
+  }
+
   // AP2 Mandate Executions
   console.log('\n   Creating mandate executions...');
 
   const executions = [
-    { mandate_id: `${tp}_mandate_corp_travel_payment`, execution_index: 1, amount: 680, status: 'completed', created_at: daysAgo(3) },
-    { mandate_id: `${tp}_mandate_corp_travel_payment`, execution_index: 2, amount: 840, status: 'completed', created_at: daysAgo(3) },
-    { mandate_id: `${tp}_mandate_rent_recurring`, execution_index: 1, amount: 1200, status: 'completed', created_at: daysAgo(6) },
-    { mandate_id: `${tp}_mandate_electric_recurring`, execution_index: 1, amount: 180, status: 'completed', created_at: daysAgo(4) },
-    { mandate_id: `${tp}_mandate_internet_recurring`, execution_index: 1, amount: 80, status: 'completed', created_at: daysAgo(4) },
-    { mandate_id: `${tp}_mandate_netflix_recurring`, execution_index: 1, amount: 15, status: 'completed', created_at: daysAgo(4) },
-    { mandate_id: `${tp}_mandate_remittance_monthly`, execution_index: 1, amount: 380, status: 'completed', created_at: daysAgo(7) },
-    { mandate_id: `${tp}_mandate_remittance_monthly`, execution_index: 2, amount: 120, status: 'completed', created_at: daysAgo(5) },
+    { mandate_id: `${tp}_mandate_corp_travel_payment`, execution_index: 1, amount: 890, currency: 'USD', status: 'completed', created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_corp_travel_payment`, execution_index: 2, amount: 840, currency: 'USD', status: 'completed', created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_rent_recurring`, execution_index: 1, amount: 2800, currency: 'USD', status: 'completed', created_at: daysAgo(6) },
+    { mandate_id: `${tp}_mandate_electric_recurring`, execution_index: 1, amount: 180, currency: 'USD', status: 'completed', created_at: daysAgo(4) },
+    { mandate_id: `${tp}_mandate_internet_recurring`, execution_index: 1, amount: 80, currency: 'USD', status: 'completed', created_at: daysAgo(4) },
+    { mandate_id: `${tp}_mandate_netflix_recurring`, execution_index: 1, amount: 15, currency: 'USD', status: 'completed', created_at: daysAgo(4) },
+    { mandate_id: `${tp}_mandate_remittance_monthly`, execution_index: 1, amount: 380, currency: 'USDC', status: 'completed', created_at: daysAgo(7) },
+    { mandate_id: `${tp}_mandate_remittance_monthly`, execution_index: 2, amount: 120, currency: 'USDC', status: 'completed', created_at: daysAgo(5) },
+    // Scenario 6 — 14 daily gig payouts
+    ...Array.from({ length: 14 }, (_, i) => ({
+      mandate_id: `${tp}_mandate_gig_daily_payout`, execution_index: i + 1, amount: 180 + Math.round(Math.random() * 170), currency: 'USDC', status: 'completed' as const, created_at: daysAgo(i + 1),
+    })),
+    // Scenario 9 — Per-vendor budget mandate executions (3 recent per mandate)
+    { mandate_id: `${tp}_mandate_openai_budget`, execution_index: 1, amount: 72, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_openai_budget`, execution_index: 2, amount: 68, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(2) },
+    { mandate_id: `${tp}_mandate_openai_budget`, execution_index: 3, amount: 70, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(1) },
+    { mandate_id: `${tp}_mandate_anthropic_budget`, execution_index: 1, amount: 45, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_anthropic_budget`, execution_index: 2, amount: 42, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(2) },
+    { mandate_id: `${tp}_mandate_anthropic_budget`, execution_index: 3, amount: 43, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(1) },
+    { mandate_id: `${tp}_mandate_reuters_license`, execution_index: 1, amount: 145, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_reuters_license`, execution_index: 2, amount: 140, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(2) },
+    { mandate_id: `${tp}_mandate_reuters_license`, execution_index: 3, amount: 140, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(1) },
+    { mandate_id: `${tp}_mandate_apnews_feed`, execution_index: 1, amount: 95, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_apnews_feed`, execution_index: 2, amount: 92, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(2) },
+    { mandate_id: `${tp}_mandate_apnews_feed`, execution_index: 3, amount: 93, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(1) },
+    { mandate_id: `${tp}_mandate_snowflake_compute`, execution_index: 1, amount: 56, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_snowflake_compute`, execution_index: 2, amount: 55, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(2) },
+    { mandate_id: `${tp}_mandate_snowflake_compute`, execution_index: 3, amount: 54, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(1) },
+    { mandate_id: `${tp}_mandate_aws_bedrock`, execution_index: 1, amount: 38, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(3) },
+    { mandate_id: `${tp}_mandate_aws_bedrock`, execution_index: 2, amount: 36, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(2) },
+    { mandate_id: `${tp}_mandate_aws_bedrock`, execution_index: 3, amount: 36, currency: 'USDC', status: 'completed' as const, created_at: daysAgo(1) },
   ];
 
   for (const exec of executions) {
@@ -743,7 +1117,7 @@ async function seedDemoScenarios(tenantId: string) {
       mandate_id: dbMandateId,
       execution_index: exec.execution_index,
       amount: exec.amount,
-      currency: 'USDC',
+      currency: exec.currency || 'USDC',
       status: exec.status,
       created_at: exec.created_at,
       completed_at: exec.status === 'completed' ? exec.created_at : null,
@@ -753,36 +1127,129 @@ async function seedDemoScenarios(tenantId: string) {
     else console.log(`  + ${exec.mandate_id} #${exec.execution_index} ($${exec.amount})`);
   }
 
+  // Historical AP2 executions (30-60 days ago) for dashboard trend comparison
+  console.log('  + Adding historical AP2 executions for trend data...');
+  const historicalAp2 = [
+    { key: `${tp}_mandate_rent_recurring`, amount: 2800, currency: 'USD', created_at: daysAgo(36) },
+    { key: `${tp}_mandate_electric_recurring`, amount: 180, currency: 'USD', created_at: daysAgo(35) },
+    { key: `${tp}_mandate_internet_recurring`, amount: 80, currency: 'USD', created_at: daysAgo(35) },
+    { key: `${tp}_mandate_openai_budget`, amount: 65, currency: 'USDC', created_at: daysAgo(34) },
+    { key: `${tp}_mandate_anthropic_budget`, amount: 40, currency: 'USDC', created_at: daysAgo(34) },
+    { key: `${tp}_mandate_reuters_license`, amount: 138, currency: 'USDC', created_at: daysAgo(34) },
+    { key: `${tp}_mandate_apnews_feed`, amount: 90, currency: 'USDC', created_at: daysAgo(34) },
+    { key: `${tp}_mandate_snowflake_compute`, amount: 52, currency: 'USDC', created_at: daysAgo(34) },
+    { key: `${tp}_mandate_aws_bedrock`, amount: 35, currency: 'USDC', created_at: daysAgo(34) },
+    { key: `${tp}_mandate_remittance_monthly`, amount: 500, currency: 'USDC', created_at: daysAgo(37) },
+    { key: `${tp}_mandate_gig_daily_payout`, amount: 220, currency: 'USDC', created_at: daysAgo(38) },
+    { key: `${tp}_mandate_gig_daily_payout`, amount: 195, currency: 'USDC', created_at: daysAgo(39) },
+    { key: `${tp}_mandate_gig_daily_payout`, amount: 260, currency: 'USDC', created_at: daysAgo(40) },
+    { key: `${tp}_mandate_gig_daily_payout`, amount: 210, currency: 'USDC', created_at: daysAgo(41) },
+    { key: `${tp}_mandate_gig_daily_payout`, amount: 235, currency: 'USDC', created_at: daysAgo(42) },
+    { key: `${tp}_mandate_corp_travel_payment`, amount: 750, currency: 'USD', created_at: daysAgo(45) },
+  ];
+  let histAp2Count = 0;
+  for (const h of historicalAp2) {
+    const dbId = mandateIdMap[h.key];
+    if (!dbId) continue;
+    const { error } = await supabase.from('ap2_mandate_executions').insert({
+      tenant_id: tenantId,
+      mandate_id: dbId,
+      execution_index: 100 + histAp2Count,
+      amount: h.amount,
+      currency: h.currency,
+      status: 'completed',
+      created_at: h.created_at,
+      completed_at: h.created_at,
+    });
+    if (!error) histAp2Count++;
+  }
+  console.log(`  + ${histAp2Count} historical AP2 executions (trend baseline)`);
+  } // end AP2 guard
+
   // ──────────────────────────────────────────
-  // 8. UCP CHECKOUT SESSIONS & ORDERS (Scenarios 1, 2)
+  // 8. UCP CHECKOUT SESSIONS & ORDERS (Scenarios 1, 2, 4)
   // ──────────────────────────────────────────
+
+  if (shouldSeed(scenarioFilter, 1, 2, 4)) {
   console.log('\n8. Creating UCP checkout sessions & orders...');
 
   const ucpSessions = [
     // Scenario 1 — Shopping completed
     {
       status: 'completed', currency: 'USD',
-      line_items: [{ id: 'item_tissot', name: 'Tissot PRX Powermatic 80', description: 'Swiss automatic watch', quantity: 1, unit_price: 29900, total_price: 29900, image_url: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200' }],
-      totals: [{ type: 'subtotal', amount: 29900, label: 'Subtotal' }, { type: 'tax', amount: 2616, label: 'Tax (8.75%)' }, { type: 'total', amount: 32516, label: 'Total' }],
+      line_items: [{ id: 'item_tissot', name: 'Tissot PRX', description: 'Swiss watch', quantity: 1, unit_price: 37500, total_price: 37500, image_url: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200' }],
+      totals: [{ type: 'subtotal', amount: 37500, label: 'Subtotal' }, { type: 'tax', amount: 3281, label: 'Tax (8.75%)' }, { type: 'total', amount: 40781, label: 'Total' }],
       buyer: { email: 'maria@demo-consumer.com', name: 'Maria Rodriguez', phone: '+1-555-0201' },
       shipping_address: { line1: '456 Oak Ave', city: 'Dallas', state: 'TX', postal_code: '75201', country: 'US' },
-      metadata: { scenario: 'birthday_gift', agent: 'Perplexity Shopping Agent' },
+      metadata: { scenario: 'birthday_gift', agent: 'AI Shopping Agent' },
+      payment_config: { handlers: ['stripe'] }, payment_handler: 'stripe', payment_type: 'card', card_network: 'mastercard',
       created_at: daysAgo(2),
       order_status: 'shipped',
     },
-    // Scenario 2 — Travel multi-vendor completed
+    // Scenario 2 — Travel per-vendor sessions (6 separate UCP checkouts, group: grp_bcn_trip)
+    // 1. American Airlines (USD)
     {
       status: 'completed', currency: 'USD',
-      line_items: [
-        { id: 'item_flight', name: 'LATAM Airlines RT — Dallas to Barcelona', quantity: 2, unit_price: 34000, total_price: 68000 },
-        { id: 'item_hotel', name: 'Hotel Casa Camper — 5 nights', quantity: 1, unit_price: 168000, total_price: 168000 },
-        { id: 'item_restaurants', name: 'Restaurant Reservations (5 dinners)', quantity: 1, unit_price: 56000, total_price: 56000 },
-        { id: 'item_wine', name: 'Penedès Wine Tour', quantity: 2, unit_price: 22500, total_price: 45000 },
-        { id: 'item_museum', name: 'Sagrada Familia + Park Güell', quantity: 2, unit_price: 17500, total_price: 35000 },
-      ],
-      totals: [{ type: 'subtotal', amount: 372000, label: 'Subtotal' }, { type: 'total', amount: 372000, label: 'Total' }],
+      line_items: [{ id: 'item_aa_flight', name: 'American Airlines RT — Dallas to Barcelona', description: '2 passengers, economy', quantity: 2, unit_price: 55500, total_price: 111000 }],
+      totals: [{ type: 'subtotal', amount: 111000, label: 'Subtotal' }, { type: 'total', amount: 111000, label: 'Total' }],
       buyer: { email: 'david@demo-consumer.com', name: 'David Chen', phone: '+1-555-0202' },
-      metadata: { scenario: 'anniversary_trip', agent: 'Hopper Travel Agent', checkout_group: 'grp_bcn_trip' },
+      metadata: { scenario: 'anniversary_trip', agent: 'Hopper Travel Agent', merchant_name: 'American Airlines', checkout_group: 'grp_bcn_trip', price_optimized: true, savings: 86, price_watch_days: 9 },
+      payment_config: { handlers: ['google_pay'] }, payment_handler: 'google_pay', payment_type: 'digital_wallet',
+      created_at: daysAgo(8),
+      order_status: 'confirmed',
+    },
+    // 2. Hotel Casa Camper (EUR)
+    {
+      status: 'completed', currency: 'EUR',
+      line_items: [{ id: 'item_hotel_camper', name: 'Hotel Casa Camper — 5 nights', description: 'Superior room, El Born district', quantity: 5, unit_price: 26950, total_price: 134750 }],
+      totals: [{ type: 'subtotal', amount: 134750, label: 'Subtotal' }, { type: 'total', amount: 134750, label: 'Total' }],
+      buyer: { email: 'david@demo-consumer.com', name: 'David Chen' },
+      metadata: { scenario: 'anniversary_trip', agent: 'Hopper Travel Agent', merchant_name: 'Hotel Casa Camper', checkout_group: 'grp_bcn_trip' },
+      payment_config: { handlers: ['google_pay'] }, payment_handler: 'google_pay', payment_type: 'digital_wallet',
+      created_at: daysAgo(8),
+      order_status: 'confirmed',
+    },
+    // 3. OpenTable Barcelona (EUR)
+    {
+      status: 'completed', currency: 'EUR',
+      line_items: [{ id: 'item_restaurants', name: 'Restaurant Reservations — 5 dinners', description: 'Pre-paid dining experiences', quantity: 5, unit_price: 9600, total_price: 48000 }],
+      totals: [{ type: 'subtotal', amount: 48000, label: 'Subtotal' }, { type: 'total', amount: 48000, label: 'Total' }],
+      buyer: { email: 'david@demo-consumer.com', name: 'David Chen' },
+      metadata: { scenario: 'anniversary_trip', agent: 'Hopper Travel Agent', merchant_name: 'OpenTable Barcelona', checkout_group: 'grp_bcn_trip' },
+      payment_config: { handlers: ['google_pay'] }, payment_handler: 'google_pay', payment_type: 'digital_wallet',
+      created_at: daysAgo(8),
+      order_status: 'confirmed',
+    },
+    // 4. Viator Barcelona (EUR)
+    {
+      status: 'completed', currency: 'EUR',
+      line_items: [{ id: 'item_wine_tour', name: 'Penedès Wine Tour', description: 'Full-day wine country experience', quantity: 2, unit_price: 11500, total_price: 23000 }],
+      totals: [{ type: 'subtotal', amount: 23000, label: 'Subtotal' }, { type: 'total', amount: 23000, label: 'Total' }],
+      buyer: { email: 'david@demo-consumer.com', name: 'David Chen' },
+      metadata: { scenario: 'anniversary_trip', agent: 'Hopper Travel Agent', merchant_name: 'Viator Barcelona', checkout_group: 'grp_bcn_trip' },
+      payment_config: { handlers: ['google_pay'] }, payment_handler: 'google_pay', payment_type: 'digital_wallet',
+      created_at: daysAgo(8),
+      order_status: 'confirmed',
+    },
+    // 5. GetYourGuide (EUR)
+    {
+      status: 'completed', currency: 'EUR',
+      line_items: [{ id: 'item_museum_tix', name: 'Sagrada Familia + Park Güell', description: 'Skip-the-line combo tickets', quantity: 2, unit_price: 4700, total_price: 9400 }],
+      totals: [{ type: 'subtotal', amount: 9400, label: 'Subtotal' }, { type: 'total', amount: 9400, label: 'Total' }],
+      buyer: { email: 'david@demo-consumer.com', name: 'David Chen' },
+      metadata: { scenario: 'anniversary_trip', agent: 'Hopper Travel Agent', merchant_name: 'GetYourGuide', checkout_group: 'grp_bcn_trip' },
+      payment_config: { handlers: ['google_pay'] }, payment_handler: 'google_pay', payment_type: 'digital_wallet',
+      created_at: daysAgo(8),
+      order_status: 'confirmed',
+    },
+    // 6. Welcome Pickups (EUR)
+    {
+      status: 'completed', currency: 'EUR',
+      line_items: [{ id: 'item_airport_xfer', name: 'Airport Transfer — round-trip', description: 'BCN airport to El Born and back', quantity: 1, unit_price: 9000, total_price: 9000 }],
+      totals: [{ type: 'subtotal', amount: 9000, label: 'Subtotal' }, { type: 'total', amount: 9000, label: 'Total' }],
+      buyer: { email: 'david@demo-consumer.com', name: 'David Chen' },
+      metadata: { scenario: 'anniversary_trip', agent: 'Hopper Travel Agent', merchant_name: 'Welcome Pickups', checkout_group: 'grp_bcn_trip' },
+      payment_config: { handlers: ['google_pay'] }, payment_handler: 'google_pay', payment_type: 'digital_wallet',
       created_at: daysAgo(8),
       order_status: 'confirmed',
     },
@@ -821,8 +1288,15 @@ async function seedDemoScenarios(tenantId: string) {
       buyer: sessionData.buyer || null,
       shipping_address: sessionData.shipping_address || null,
       billing_address: sessionData.shipping_address || null,
-      payment_config: { handlers: ['payos'] },
-      payment_instruments: sessionData.status === 'completed' ? [{ id: `pi_${randomUUID().slice(0, 8)}`, handler: 'payos', type: 'wallet' }] : [],
+      payment_config: sessionData.payment_config || { handlers: ['payos'] },
+      payment_instruments: sessionData.status === 'completed'
+        ? [{
+            id: `pi_${randomUUID().slice(0, 8)}`,
+            handler: sessionData.payment_handler || 'payos',
+            type: sessionData.payment_type || 'wallet',
+            ...(sessionData.card_network ? { network: sessionData.card_network, last4: '4242' } : {}),
+          }]
+        : [],
       messages: sessionData.messages || [],
       metadata: sessionData.metadata || {},
       created_at: sessionData.created_at,
@@ -869,8 +1343,168 @@ async function seedDemoScenarios(tenantId: string) {
   }
 
   // ──────────────────────────────────────────
+  // 8b. UCP SETTLEMENTS (Story 55.4)
+  // ──────────────────────────────────────────
+  console.log('\n8b. Creating UCP settlements...');
+
+  const ucpSettlements = [
+    // Completed Pix — shopping scenario (2 days ago)
+    {
+      status: 'completed', corridor: 'pix',
+      source_amount: 375, source_currency: 'USD',
+      destination_amount: 2231.25, destination_currency: 'BRL',
+      fx_rate: 5.95, fees: 3.75,
+      recipient: { type: 'pix', pix_key: '12345678901', pix_key_type: 'cpf', name: 'Loja Online Brasil' },
+      token: `ucp_tok_${tp}_shop_pix`,
+      created_at: daysAgo(2), completed_at: daysAgo(2),
+    },
+    // Completed SPEI — travel scenario (8 days ago)
+    {
+      status: 'completed', corridor: 'spei',
+      source_amount: 3220, source_currency: 'USDC',
+      destination_amount: 55545, destination_currency: 'MXN',
+      fx_rate: 17.25, fees: 32.20,
+      recipient: { type: 'spei', clabe: '012345678901234567', name: 'Hoteles México SA de CV' },
+      token: `ucp_tok_${tp}_travel_spei`,
+      created_at: daysAgo(8), completed_at: daysAgo(8),
+    },
+    // Processing Pix — hotel booking (1 hour ago)
+    {
+      status: 'processing', corridor: 'pix',
+      source_amount: 840, source_currency: 'USDC',
+      destination_amount: 4998, destination_currency: 'BRL',
+      fx_rate: 5.95, fees: 8.40,
+      recipient: { type: 'pix', pix_key: 'hotel@fasano-demo.com.br', pix_key_type: 'email', name: 'Hotel Fasano São Paulo' },
+      token: `ucp_tok_${tp}_hotel_pix`,
+      estimated_completion: futureDate(0),
+      created_at: hoursAgo(1),
+    },
+    // Deferred/auto — remittance (6 hours ago, deferred to rules engine)
+    {
+      status: 'deferred', corridor: 'auto',
+      source_amount: 500, source_currency: 'USDC',
+      destination_amount: 0, destination_currency: 'MXN',
+      fx_rate: 0, fees: 5.00,
+      recipient: { type: 'spei', clabe: '098765432109876543', name: 'Elena Rodriguez' },
+      token: `ucp_tok_${tp}_remit_auto`,
+      deferred_to_rules: true,
+      created_at: hoursAgo(6),
+    },
+  ];
+
+  for (const stl of ucpSettlements) {
+    const { error } = await supabase.from('ucp_settlements').insert({
+      tenant_id: tenantId,
+      status: stl.status,
+      corridor: stl.corridor,
+      source_amount: stl.source_amount,
+      source_currency: stl.source_currency,
+      destination_amount: stl.destination_amount,
+      destination_currency: stl.destination_currency,
+      fx_rate: stl.fx_rate,
+      fees: stl.fees,
+      recipient: stl.recipient,
+      token: stl.token,
+      estimated_completion: stl.estimated_completion || null,
+      completed_at: stl.completed_at || null,
+      deferred_to_rules: stl.deferred_to_rules || false,
+      created_at: stl.created_at,
+    });
+
+    if (error) console.log(`  ! UCP settlement failed: ${error.message}`);
+    else console.log(`  + ${stl.corridor} settlement ($${stl.source_amount}, ${stl.status})`);
+  }
+
+  // 3rd UCP checkout session + order — Corporate travel São Paulo
+  console.log('\n   Creating 3rd UCP order (corporate travel)...');
+
+  const corpTravelSessId = randomUUID();
+  const { data: corpSess, error: corpSessErr } = await supabase.from('ucp_checkout_sessions').insert({
+    id: corpTravelSessId,
+    tenant_id: tenantId,
+    status: 'completed',
+    currency: 'USD',
+    line_items: [
+      { id: 'item_corp_flight', name: 'LATAM Airlines — NYC to GRU RT', quantity: 1, unit_price: 89000, total_price: 89000 },
+      { id: 'item_corp_hotel', name: 'Hotel Fasano São Paulo — 2 nights', quantity: 2, unit_price: 42000, total_price: 84000 },
+      { id: 'item_corp_transport', name: 'Airport transfer + ground transport', quantity: 1, unit_price: 12000, total_price: 12000 },
+    ],
+    totals: [
+      { type: 'subtotal', amount: 185000, label: 'Subtotal' },
+      { type: 'total', amount: 185000, label: 'Total' },
+    ],
+    buyer: { email: 'vp.sales@acme-demo.com', name: 'VP of Sales' },
+    payment_config: { handlers: ['visa_agentpay'] },
+    payment_instruments: [{ id: `pi_${randomUUID().slice(0, 8)}`, handler: 'visa_agentpay', type: 'corporate_card', network: 'visa', last4: '8901' }],
+    metadata: { scenario: 'corporate_travel', agent: 'Acme Corporate Travel Agent', cost_center: 'LATAM Expansion' },
+    created_at: daysAgo(3),
+    expires_at: futureDate(1),
+  }).select('id').single();
+
+  if (corpSessErr) {
+    console.log(`  ! Corporate travel session failed: ${corpSessErr.message}`);
+  } else if (corpSess) {
+    const { error: corpOrderErr } = await supabase.from('ucp_orders').insert({
+      tenant_id: tenantId,
+      checkout_id: corpSess.id,
+      status: 'confirmed',
+      currency: 'USD',
+      line_items: [
+        { id: 'item_corp_flight', name: 'LATAM Airlines — NYC to GRU RT', quantity: 1, unit_price: 89000, total_price: 89000 },
+        { id: 'item_corp_hotel', name: 'Hotel Fasano São Paulo — 2 nights', quantity: 2, unit_price: 42000, total_price: 84000 },
+        { id: 'item_corp_transport', name: 'Airport transfer + ground transport', quantity: 1, unit_price: 12000, total_price: 12000 },
+      ],
+      totals: [
+        { type: 'subtotal', amount: 185000, label: 'Subtotal' },
+        { type: 'total', amount: 185000, label: 'Total' },
+      ],
+      buyer: { email: 'vp.sales@acme-demo.com', name: 'VP of Sales' },
+      payment: { handler_id: 'payos', status: 'completed', amount: 185000, currency: 'USD' },
+      events: [
+        { id: `evt_${randomUUID().slice(0, 8)}`, type: 'confirmed', timestamp: daysAgo(3), description: 'Corporate travel booking confirmed' },
+      ],
+      metadata: { scenario: 'corporate_travel', cost_center: 'LATAM Expansion', gl_code: 'Travel-Sales' },
+      created_at: daysAgo(3),
+    });
+
+    if (corpOrderErr) console.log(`  ! Corporate travel order failed: ${corpOrderErr.message}`);
+    else console.log(`  + UCP order (corporate travel, confirmed)`);
+  }
+
+  // Historical UCP sessions (30-60 days ago) for dashboard trend comparison
+  console.log('  + Adding historical UCP sessions for trend data...');
+  const historicalUcp = [
+    { totals: [{ type: 'subtotal', amount: 89500, label: 'Subtotal' }, { type: 'total', amount: 95000, label: 'Total' }], currency: 'USD', created_at: daysAgo(36) },
+    { totals: [{ type: 'subtotal', amount: 118000, label: 'Subtotal' }, { type: 'total', amount: 125000, label: 'Total' }], currency: 'USD', created_at: daysAgo(42) },
+    { totals: [{ type: 'subtotal', amount: 95000, label: 'Subtotal' }, { type: 'total', amount: 100000, label: 'Total' }], currency: 'EUR', created_at: daysAgo(50) },
+  ];
+  let histUcpCount = 0;
+  for (const h of historicalUcp) {
+    const { error } = await supabase.from('ucp_checkout_sessions').insert({
+      id: randomUUID(),
+      tenant_id: tenantId,
+      status: 'completed',
+      currency: h.currency,
+      totals: h.totals,
+      line_items: [{ id: `hist_${randomUUID().slice(0, 8)}`, name: 'Historical order', quantity: 1, unit_price: h.totals[0].amount, total_price: h.totals[0].amount }],
+      payment_config: { handlers: ['payos'] },
+      payment_instruments: [{ id: `pi_hist_${randomUUID().slice(0, 8)}`, handler: 'payos', type: 'wallet' }],
+      messages: [],
+      metadata: { historical: true },
+      created_at: h.created_at,
+      expires_at: futureDate(1),
+    });
+    if (error) console.log(`  ! Historical UCP insert failed: ${error.message}`);
+    else histUcpCount++;
+  }
+  console.log(`  + ${histUcpCount}/${historicalUcp.length} historical UCP sessions (trend baseline)`);
+  } // end UCP guard
+
+  // ──────────────────────────────────────────
   // 9. COMPLIANCE FLAGS (5 records)
   // ──────────────────────────────────────────
+
+  if (shouldSeed(scenarioFilter, 1, 2, 6, 7, 9)) {
   console.log('\n9. Creating compliance flags...');
 
   const complianceFlags = [
@@ -913,6 +1547,31 @@ async function seedDemoScenarios(tenantId: string) {
       description: 'Agent split monthly remittance due to insufficient balance.',
       ai_analysis: { risk_score: 42, risk_explanation: 'Agent documented low-balance reason. Split pattern matches Balance Shield feature. Likely legitimate.', confidence_level: 82 },
     },
+    // Scenario 9 — Budget threshold alerts
+    {
+      flag_type: 'account', risk_level: 'high', status: 'open',
+      account_id: ids.techstart,
+      reason_code: 'budget_threshold_daily_93',
+      reasons: ['Data Pipeline Agent consumed 93% of daily budget ($28/$30)', 'Monthly: $275/$300 (92%)', 'Projected to exceed daily limit within 2 hours', 'Vendor: Snowflake compute — 47 calls remaining'],
+      description: 'Data Pipeline Agent approaching daily spend limit. Auto-pause recommended.',
+      ai_analysis: { risk_score: 78, risk_explanation: 'Agent burn rate exceeds sustainable daily pace. At current velocity, daily limit will be reached by 4:30 PM. Recommend throttling or pausing non-critical pipelines.', confidence_level: 92 },
+    },
+    {
+      flag_type: 'account', risk_level: 'medium', status: 'pending_review',
+      account_id: ids.techstart,
+      reason_code: 'budget_threshold_monthly_85',
+      reasons: ['Content Access Agent at 85% of monthly budget ($850/$1000)', '15 days remaining in billing period', 'Trending to exceed monthly limit by day 24'],
+      description: 'Content Access Agent monthly budget tracking ahead of pace.',
+      ai_analysis: { risk_score: 52, risk_explanation: 'Monthly burn rate slightly above linear pace. Content scraping patterns show seasonal spike. Consider requesting budget increase or prioritizing high-value content.', confidence_level: 88 },
+    },
+    {
+      flag_type: 'account', risk_level: 'low', status: 'resolved',
+      account_id: ids.techstart,
+      reason_code: 'budget_threshold_monthly_84',
+      reasons: ['Inference API Consumer at 84% of monthly budget ($420/$500)', 'Consistent usage pattern — within expected range'],
+      description: 'Inference agent monthly budget on track. Auto-resolved — usage within normal band.',
+      ai_analysis: { risk_score: 22, risk_explanation: 'Usage pattern consistent with previous months. 84% utilization at day 22 is within expected range. No action needed.', confidence_level: 95 },
+    },
   ];
 
   for (const flag of complianceFlags) {
@@ -936,21 +1595,24 @@ async function seedDemoScenarios(tenantId: string) {
     if (error) console.log(`  ! Compliance flag failed: ${error.message}`);
     else console.log(`  + ${flag.risk_level} — ${flag.reason_code}`);
   }
+  } // end compliance guard
 
   // ──────────────────────────────────────────
   // 10. APPROVAL WORKFLOWS (3 records)
   // ──────────────────────────────────────────
+
+  if (shouldSeed(scenarioFilter, 1, 5, 7)) {
   console.log('\n10. Creating approval workflows...');
 
   const approvals = [
     // Scenario 1 — First merchant confirmation (approved)
     {
       wallet_id: ids.maria_wallet, agent_id: ids.shopping_agent,
-      protocol: 'acp', amount: 299, currency: 'USDC',
+      protocol: 'acp', amount: 375, currency: 'USD',
       recipient: { name: 'Global Retail Co', type: 'merchant', merchant_id: 'merch_global_retail' },
       payment_context: { scenario: 'birthday_gift', reason: 'first_time_merchant', item: 'Tissot PRX watch' },
       status: 'approved', decided_at: daysAgo(2), decision_reason: 'Consumer confirmed via push notification',
-      requested_by_type: 'agent', requested_by_id: ids.shopping_agent, requested_by_name: 'Perplexity Shopping Agent',
+      requested_by_type: 'agent', requested_by_id: ids.shopping_agent, requested_by_name: 'AI Shopping Agent',
     },
     // Scenario 5 — Bill split approval (approved)
     {
@@ -968,7 +1630,7 @@ async function seedDemoScenarios(tenantId: string) {
       recipient: { name: 'AudioTech Store', type: 'merchant', merchant_id: 'merch_audiotech' },
       payment_context: { scenario: 'shopping', reason: 'first_time_merchant', item: 'Sony WH-1000XM5' },
       status: 'pending',
-      requested_by_type: 'agent', requested_by_id: ids.shopping_agent, requested_by_name: 'Perplexity Shopping Agent',
+      requested_by_type: 'agent', requested_by_id: ids.shopping_agent, requested_by_name: 'AI Shopping Agent',
     },
   ];
 
@@ -994,10 +1656,13 @@ async function seedDemoScenarios(tenantId: string) {
     if (error) console.log(`  ! Approval failed: ${error.message}`);
     else console.log(`  + ${approval.protocol} approval (${approval.status}, $${approval.amount})`);
   }
+  } // end approvals guard
 
   // ──────────────────────────────────────────
   // 11. SETTLEMENT RULES (2 rules + executions)
   // ──────────────────────────────────────────
+
+  if (shouldSeed(scenarioFilter, 3, 6)) {
   console.log('\n11. Creating settlement rules...');
 
   const settlementRules = [
@@ -1065,6 +1730,7 @@ async function seedDemoScenarios(tenantId: string) {
       console.log(`    + 5 execution history records`);
     }
   }
+  } // end settlement rules guard
 
   // ──────────────────────────────────────────
   // 12. CONNECTED ACCOUNTS
@@ -1144,14 +1810,18 @@ async function main() {
   console.log('  Sly Demo Scenario Seed Script (Epic 55)');
   console.log('='.repeat(60));
 
-  const { tenantId: specifiedId, reset } = parseArgs();
+  const { tenantId: specifiedId, reset, scenarios } = parseArgs();
   const tenantId = await resolveTenant(specifiedId);
+
+  if (scenarios.length > 0) {
+    console.log(`Scenario filter: ${scenarios.join(', ')}`);
+  }
 
   if (reset) {
     await resetDemoData(tenantId);
   }
 
-  const stats = await seedDemoScenarios(tenantId);
+  const stats = await seedDemoScenarios(tenantId, scenarios);
 
   console.log('\n' + '='.repeat(60));
   console.log('  Seeding Complete!');
@@ -1164,7 +1834,9 @@ async function main() {
   x402 Endpoints:    8
   ACP Checkouts:     11
   AP2 Mandates:      10
-  UCP Sessions:      4
+  UCP Sessions:      5 (incl. corporate travel)
+  UCP Settlements:   4
+  UCP Orders:        3
   Compliance Flags:  5
   Approvals:         3
   Settlement Rules:  2
@@ -1180,6 +1852,7 @@ async function main() {
     6. Gig Payout (Core transfers)
     7. Remittance (AP2 + FX)
     8. Media/Publishing (x402)
+    9. Agent Limits / ClawdBot (x402 + AP2)
 
   Dashboard URLs:
     http://localhost:3000/dashboard

@@ -49,7 +49,7 @@ function safeFormatDate(dateStr: string | undefined | null, formatStr: string): 
 function getTotalAmount(totals: any[] | undefined): number {
     if (!totals || !Array.isArray(totals)) return 0;
     const total = totals.find((t: any) => t.type === 'total');
-    return total?.amount || 0;
+    return (total?.amount || 0) / 100;
 }
 import { HostedCheckoutStatusBadge, type HostedCheckoutStatus } from '@/components/ucp/hosted-checkout-status-badge';
 

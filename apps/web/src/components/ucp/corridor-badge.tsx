@@ -3,7 +3,7 @@
 import { Badge } from '@sly/ui';
 import { Landmark, Globe } from 'lucide-react';
 
-type Corridor = 'pix' | 'spei';
+type Corridor = 'pix' | 'spei' | 'auto';
 
 const corridorConfig: Record<Corridor, {
     label: string;
@@ -25,6 +25,13 @@ const corridorConfig: Record<Corridor, {
         flag: '🇲🇽',
         icon: Globe,
         className: 'bg-blue-100 text-blue-800 border-blue-200',
+    },
+    auto: {
+        label: 'Auto',
+        country: 'Rules-based',
+        flag: '⚙️',
+        icon: Globe,
+        className: 'bg-purple-100 text-purple-800 border-purple-200',
     },
 };
 

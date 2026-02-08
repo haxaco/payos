@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Users,
+  Bot,
   DollarSign,
-  CreditCard,
+  ArrowLeftRight,
   AlertTriangle,
   ChevronRight,
 } from 'lucide-react';
@@ -22,25 +21,60 @@ import { RateLimitCard } from '@/components/dashboard/rate-limit-card';
 import { formatCurrency } from '@sly/ui';
 
 interface Stats {
-  accounts: number;
-  totalBalance: number;
-  cards: number;
+  agentsRegistered: number;
+  totalVolume: number;
+  transactions: number;
   pendingFlags: number;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
 export default function DashboardPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: configLoading } = useApiConfig();
+  const { isConfigured, isLoading: configLoading, authToken } = useApiConfig();
 
-  // Use React Query to fetch dashboard stats with caching
-  const { data: accountsData, isLoading: accountsLoading } = useQuery({
-    queryKey: ['dashboard', 'accounts-aggregated'],
+  // Fetch agents count
+  const { data: agentsData, isLoading: agentsLoading } = useQuery({
+    queryKey: ['dashboard', 'agents-count'],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
-      const result = await api.accounts.list({ limit: 50 });
-      return result;
+      return api.agents.list({ limit: 1 });
     },
     enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
+
+  // Fetch transfers count
+  const { data: transfersData, isLoading: transfersLoading } = useQuery({
+    queryKey: ['dashboard', 'transfers-count'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.transfers.list({ limit: 1 });
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
+
+  // Fetch total volume from protocol distribution
+  const { data: totalVolume, isLoading: volumeLoading } = useQuery({
+    queryKey: ['dashboard', 'total-volume'],
+    queryFn: async () => {
+      const response = await fetch(
+        `${API_URL}/v1/analytics/protocol-distribution?timeRange=30d&metric=volume`,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (!response.ok) return 0;
+      const json = await response.json();
+      const data = json.data || json;
+      if (!Array.isArray(data)) return 0;
+      return data.reduce((sum: number, d: any) => sum + Number(d.volume_usd || 0), 0);
+    },
+    enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
   });
 
@@ -55,17 +89,12 @@ export default function DashboardPage() {
     staleTime: 30 * 1000,
   });
 
-  const loading = accountsLoading || complianceLoading;
-
-  // Calculate total balance from fetched accounts
-  const aggregatedBalance = (accountsData as any)?.data?.reduce((sum: number, account: any) => {
-    return sum + (Number(account.balanceAvailable) || 0);
-  }, 0) || 0;
+  const loading = agentsLoading || transfersLoading || volumeLoading || complianceLoading;
 
   const stats: Stats = {
-    accounts: (accountsData as any)?.pagination?.total || 0,
-    totalBalance: aggregatedBalance,
-    cards: 0, // Will be populated when cards API is integrated
+    agentsRegistered: (agentsData as any)?.pagination?.total || 0,
+    totalVolume: totalVolume || 0,
+    transactions: (transfersData as any)?.pagination?.total || 0,
     pendingFlags: complianceCount || 0,
   };
 
@@ -148,42 +177,42 @@ export default function DashboardPage() {
 
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {/* Accounts */}
+          {/* Agents Registered */}
           <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
             <div className="flex items-start justify-between mb-4">
               <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
-                <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                <Bot className="w-6 h-6 text-blue-600 dark:text-blue-400" />
               </div>
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Accounts</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Agents Registered</div>
             <div className="text-3xl font-bold text-gray-900 dark:text-white">
-              {loading ? '...' : stats?.accounts.toLocaleString()}
+              {loading ? '...' : stats.agentsRegistered.toLocaleString()}
             </div>
           </div>
 
-          {/* Total Balance (Aggregated) */}
+          {/* Total Volume (30d) */}
           <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
             <div className="flex items-start justify-between mb-4">
               <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950 rounded-xl flex items-center justify-center">
                 <DollarSign className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
               </div>
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Balance</div>
-            <div className="text-3xl font-bold text-gray-900 dark:text-white truncate" title={loading ? 'Loading...' : formatCurrency(stats.totalBalance, 'USDC')}>
-              {loading ? '...' : formatCurrency(stats.totalBalance, 'USDC')}
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Volume (30d)</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white truncate" title={loading ? 'Loading...' : formatCurrency(stats.totalVolume, 'USD')}>
+              {loading ? '...' : formatCurrency(stats.totalVolume, 'USD')}
             </div>
           </div>
 
-          {/* Cards */}
+          {/* Transactions */}
           <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
             <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center">
-                <CreditCard className="w-6 h-6 text-gray-600 dark:text-gray-400" />
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-950 rounded-xl flex items-center justify-center">
+                <ArrowLeftRight className="w-6 h-6 text-purple-600 dark:text-purple-400" />
               </div>
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Cards</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Transactions</div>
             <div className="text-3xl font-bold text-gray-900 dark:text-white">
-              {loading ? '...' : stats?.cards.toLocaleString()}
+              {loading ? '...' : stats.transactions.toLocaleString()}
             </div>
           </div>
 

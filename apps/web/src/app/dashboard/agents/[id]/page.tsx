@@ -14,18 +14,35 @@ import {
   History,
   MoreVertical,
   CheckCircle,
+  CheckCircle2,
+  XCircle,
   Pause,
   Play,
   RefreshCw,
   Copy,
   AlertTriangle,
+  FileText,
+  ShoppingCart,
 } from 'lucide-react';
+import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import type { Agent, Stream, AgentLimits } from '@sly/api-client';
+import {
+  Badge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@sly/ui';
 import { AgentActivityFeed } from '@/components/agents/agent-activity-feed';
 import { AgentQuickActions } from '@/components/agents/agent-quick-actions';
+import { KyaTierBadge } from '@/components/agents/kya-tier-badge';
 import { getAgentActivity } from '@/lib/mock-data/agent-activity';
+import { formatCurrency } from '@/lib/utils';
+import { format } from 'date-fns';
 
-type TabType = 'overview' | 'streams' | 'kya' | 'activity';
+type TabType = 'overview' | 'streams' | 'mandates' | 'checkouts' | 'permissions' | 'kya' | 'activity';
 
 export default function AgentDetailPage() {
   const params = useParams();
@@ -163,6 +180,9 @@ export default function AgentDetailPage() {
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Bot },
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: Array.isArray(streams) ? streams.length : 0 },
+    { id: 'mandates' as TabType, label: 'Mandates', icon: FileText },
+    { id: 'checkouts' as TabType, label: 'Checkouts', icon: ShoppingCart },
+    { id: 'permissions' as TabType, label: 'Permissions', icon: Key },
     { id: 'kya' as TabType, label: 'KYA', icon: Shield },
     { id: 'activity' as TabType, label: 'Activity', icon: History },
   ];
@@ -309,16 +329,39 @@ export default function AgentDetailPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">KYA Tier</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-500" />
-            Tier {agent.kyaTier}
-          </div>
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Daily Limit</div>
+          {(() => {
+            const dailyLimit = limits?.effectiveLimits?.daily || 0;
+            const dailyUsed = limits?.usage?.daily || 0;
+            const remaining = Math.max(0, dailyLimit - dailyUsed);
+            const pct = dailyLimit ? (dailyUsed / dailyLimit) * 100 : 0;
+            const color = pct >= 90 ? 'text-red-600 dark:text-red-400' : pct >= 70 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
+            const barColor = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
+            return (
+              <>
+                <div className={`text-2xl font-bold ${color}`}>
+                  ${remaining.toLocaleString()}<span className="text-base text-gray-400">/${dailyLimit.toLocaleString()}</span>
+                </div>
+                <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mt-2">
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                </div>
+                <div className="text-xs text-gray-400 mt-1">remaining</div>
+              </>
+            );
+          })()}
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Active Streams</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Transactions</div>
           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-            {(Array.isArray(streams) ? streams : []).filter(s => s.status === 'active').length}
+            {((agent as any).totalTransactions ?? (agent as any).total_transactions)?.toLocaleString() || '0'}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">{formatCurrency((agent as any).totalVolume ?? (agent as any).total_volume ?? 0)} volume</div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">KYA Tier</div>
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-blue-500" />
+            <KyaTierBadge tier={agent.kyaTier} />
           </div>
         </div>
         <Link
@@ -331,12 +374,6 @@ export default function AgentDetailPage() {
             {agent.parentAccount?.name || 'View Account'}
           </div>
         </Link>
-        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Daily Limit</div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white">
-            ${limits?.effectiveLimits?.daily?.toLocaleString() || '0'}
-          </div>
-        </div>
       </div>
 
       {/* Tabs */}
@@ -370,6 +407,15 @@ export default function AgentDetailPage() {
       {activeTab === 'streams' && (
         <StreamsTab streams={streams} />
       )}
+      {activeTab === 'mandates' && (
+        <MandatesTab agentId={agentId} />
+      )}
+      {activeTab === 'checkouts' && (
+        <CheckoutsTab agentId={agentId} />
+      )}
+      {activeTab === 'permissions' && (
+        <PermissionsTab agent={agent} />
+      )}
       {activeTab === 'kya' && (
         <KYATab agent={agent} limits={limits} />
       )}
@@ -380,9 +426,18 @@ export default function AgentDetailPage() {
   );
 }
 
+// Permission categories and their possible permissions
+const permissionMatrix: Record<string, string[]> = {
+  transactions: ['view', 'initiate', 'approve'],
+  streams: ['view', 'create', 'modify', 'pause', 'terminate'],
+  accounts: ['view', 'create', 'modify'],
+  treasury: ['view', 'manage', 'rebalance'],
+};
+
 // Overview Tab
 function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | null }) {
   return (
+    <div className="space-y-6">
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Agent Details</h3>
@@ -395,9 +450,9 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
             <dt className="text-gray-500 dark:text-gray-400">Status</dt>
             <dd className="capitalize text-gray-900 dark:text-white">{agent.status}</dd>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <dt className="text-gray-500 dark:text-gray-400">KYA Tier</dt>
-            <dd className="text-gray-900 dark:text-white">Tier {agent.kyaTier}</dd>
+            <dd><KyaTierBadge tier={agent.kyaTier} /></dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-gray-500 dark:text-gray-400">Created</dt>
@@ -409,27 +464,288 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
       </div>
 
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Permissions</h3>
-        <div className="flex flex-wrap gap-2">
-          {agent.permissions && typeof agent.permissions === 'object' ? (
-            Object.entries(agent.permissions).map(([category, perms]) => {
-              const enabledPerms = Object.entries(perms as Record<string, boolean>)
-                .filter(([_, enabled]) => enabled)
-                .map(([name]) => `${category}.${name}`);
-              return enabledPerms.map((perm) => (
-                <span
-                  key={perm}
-                  className="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 rounded-full"
-                >
-                  {perm}
-                </span>
-              ));
-            })
-          ) : (
-            <span className="text-gray-500">No permissions configured</span>
-          )}
-        </div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
+        <RecentTransfers agentId={agent.id} />
       </div>
+    </div>
+    <WalletSpendingPolicies agent={agent} />
+    </div>
+  );
+}
+
+// Recent Transfers for Overview tab — merges transfers + UCP checkouts
+function RecentTransfers({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+
+  // Fetch agent name for UCP checkout filtering
+  const { data: agentData } = useTanstackQuery({
+    queryKey: ['agent', agentId],
+    queryFn: async () => {
+      if (!api) return null;
+      const res = await api.agents.get(agentId);
+      const raw = res as any;
+      return raw.data?.data || raw.data || raw;
+    },
+    enabled: !!api,
+  });
+  const agentName = (agentData as any)?.name;
+
+  // Fetch transfers initiated by this agent
+  const { data: transfersData, isLoading: transfersLoading } = useTanstackQuery({
+    queryKey: ['transfers', 'agent', agentId],
+    queryFn: async () => {
+      if (!api) return [];
+      const result = await api.transfers.list({ initiated_by_id: agentId, limit: 10 } as any);
+      const raw = result as any;
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+    },
+    enabled: !!api,
+  });
+
+  // Fetch UCP checkouts filtered by agent name
+  const { data: ucpData, isLoading: ucpLoading } = useTanstackQuery({
+    queryKey: ['ucp-checkouts', 'agent', agentName],
+    queryFn: async () => {
+      if (!api || !agentName) return [];
+      const result = await api.ucp.checkouts.list({ limit: 100 });
+      const raw = result as any;
+      const all = Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+      return all.filter((s: any) => s.metadata?.agent === agentName);
+    },
+    enabled: !!api && !!agentName,
+  });
+
+  const isLoading = transfersLoading || ucpLoading;
+
+  // Normalize and merge both sources
+  const transfers = (transfersData || []).map((tx: any) => ({
+    id: tx.id,
+    type: 'transfer' as const,
+    description: tx.description || `${tx.type} transfer`,
+    amount: tx.amount ?? 0,
+    currency: tx.currency ?? 'USDC',
+    status: tx.status,
+    date: tx.createdAt || tx.created_at,
+  }));
+
+  const checkouts = (ucpData || []).map((s: any) => ({
+    id: s.id,
+    type: 'ucp_checkout' as const,
+    description: s.metadata?.merchant_name || s.line_items?.[0]?.name || 'UCP Checkout',
+    amount: (s.totals?.find((t: any) => t.type === 'total')?.amount ?? 0) / 100,
+    currency: s.currency || 'USD',
+    status: s.status,
+    date: s.created_at || s.createdAt,
+  }));
+
+  const merged = [...transfers, ...checkouts]
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
+    .slice(0, 10);
+
+  if (isLoading) {
+    return <div className="h-20 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />;
+  }
+
+  if (merged.length === 0) {
+    return <p className="text-gray-500 text-sm">No recent activity</p>;
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300';
+      case 'confirmed': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300';
+      case 'pending': case 'processing': return 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300';
+      case 'failed': return 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300';
+      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+    }
+  };
+
+  return (
+    <div className="max-h-[320px] overflow-y-auto space-y-3 pr-1">
+      {merged.map((tx) => (
+        <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {tx.type === 'ucp_checkout' && (
+              <ShoppingCart className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+            )}
+            <div className="min-w-0">
+              <div className="text-sm text-gray-900 dark:text-white truncate">
+                {tx.description}
+              </div>
+              <div className="text-xs text-gray-400 mt-0.5">
+                {tx.date ? format(new Date(tx.date), 'MMM d, h:mm a') : ''}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+            <span className="text-sm font-medium text-gray-900 dark:text-white">
+              {formatCurrency(tx.amount, tx.currency)}
+            </span>
+            <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getStatusColor(tx.status)}`}>
+              {tx.status}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Wallet Spending Policies card
+function WalletSpendingPolicies({ agent }: { agent: Agent }) {
+  const api = useApiClient();
+  const parentAccountId = agent.parentAccount?.id || (agent as any).parent_account_id;
+
+  // Try agent-linked wallets first, fall back to parent account wallets
+  const { data: agentWalletsData, isLoading: agentLoading } = useTanstackQuery({
+    queryKey: ['wallets', 'agent', agent.id],
+    queryFn: async () => {
+      if (!api) return [];
+      const result = await api.wallets.list({ managed_by_agent_id: agent.id } as any);
+      const raw = result as any;
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : (Array.isArray(raw) ? raw : []));
+    },
+    enabled: !!api,
+  });
+
+  const { data: parentWalletsData, isLoading: parentLoading } = useTanstackQuery({
+    queryKey: ['wallets', 'parent', parentAccountId],
+    queryFn: async () => {
+      if (!api || !parentAccountId) return [];
+      const result = await api.wallets.list({ owner_account_id: parentAccountId, limit: 20 } as any);
+      const raw = result as any;
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : (Array.isArray(raw) ? raw : []));
+    },
+    enabled: !!api && !!parentAccountId && (agentWalletsData || []).length === 0 && !agentLoading,
+  });
+
+  const isLoading = agentLoading || parentLoading;
+  const agentWallets = agentWalletsData || [];
+  const usingParentFallback = agentWallets.length === 0;
+  const wallets = agentWallets.length > 0 ? agentWallets : (parentWalletsData || []);
+
+  if (isLoading) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Wallet Spending Policies</h3>
+        <div className="h-20 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
+      </div>
+    );
+  }
+
+  if (wallets.length === 0) return null;
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Wallet Spending Policies</h3>
+        {usingParentFallback && wallets.length > 0 && (
+          <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">Showing parent account wallets</span>
+        )}
+      </div>
+      <div className="space-y-4">
+        {wallets.map((wallet: any) => {
+          const policy = wallet.spending_policy || wallet.spendingPolicy;
+          return (
+            <div key={wallet.id} className="border border-gray-200 dark:border-gray-800 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <span className="font-medium text-gray-900 dark:text-white">{wallet.name}</span>
+                  {wallet.purpose && (
+                    <span className="ml-2 text-xs text-muted-foreground">{wallet.purpose}</span>
+                  )}
+                </div>
+                <span className="text-sm font-medium">{formatCurrency(wallet.balance, wallet.currency)}</span>
+              </div>
+              {policy ? (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {policy.daily_limit && (
+                    <Badge variant="outline" className="text-xs">Daily: ${policy.daily_limit.toLocaleString()}</Badge>
+                  )}
+                  {policy.monthly_limit && (
+                    <Badge variant="outline" className="text-xs">Monthly: ${policy.monthly_limit.toLocaleString()}</Badge>
+                  )}
+                  {policy.per_transaction_limit && (
+                    <Badge variant="outline" className="text-xs">Per-Tx: ${policy.per_transaction_limit.toLocaleString()}</Badge>
+                  )}
+                  {policy.requires_approval_above && (
+                    <Badge variant="outline" className="text-xs bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800">Approval &gt; ${policy.requires_approval_above.toLocaleString()}</Badge>
+                  )}
+                  {policy.per_trip_limit && (
+                    <Badge variant="outline" className="text-xs">Per-Trip: ${policy.per_trip_limit.toLocaleString()}</Badge>
+                  )}
+                  {policy.hotel_per_night_max && (
+                    <Badge variant="outline" className="text-xs">Hotel/Night: ${policy.hotel_per_night_max.toLocaleString()}</Badge>
+                  )}
+                  {policy.locked && (
+                    <Badge variant="outline" className="text-xs bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">Locked</Badge>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">No spending policy configured</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Permissions Tab
+function PermissionsTab({ agent }: { agent: Agent }) {
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Permission Matrix</h3>
+      {agent.permissions && typeof agent.permissions === 'object' ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-800">
+                <th className="text-left py-2 pr-4 text-gray-500 dark:text-gray-400 font-medium">Permission</th>
+                {Object.keys(permissionMatrix).map((cat) => (
+                  <th key={cat} className="text-center py-2 px-2 text-gray-500 dark:text-gray-400 font-medium capitalize">
+                    {cat}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const allPerms = new Set<string>();
+                Object.values(permissionMatrix).forEach((perms) =>
+                  perms.forEach((p) => allPerms.add(p))
+                );
+                return Array.from(allPerms).map((perm) => (
+                  <tr key={perm} className="border-b border-gray-100 dark:border-gray-900">
+                    <td className="py-2 pr-4 text-gray-700 dark:text-gray-300 capitalize">{perm}</td>
+                    {Object.keys(permissionMatrix).map((cat) => {
+                      const catPerms = (agent.permissions as any)?.[cat] as Record<string, boolean> | undefined;
+                      const hasPermInCategory = permissionMatrix[cat].includes(perm);
+                      const isEnabled = catPerms?.[perm] === true;
+                      return (
+                        <td key={cat} className="text-center py-2 px-2">
+                          {hasPermInCategory ? (
+                            isEnabled ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500 mx-auto" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-700 mx-auto" />
+                            )
+                          ) : (
+                            <span className="text-gray-200 dark:text-gray-800">--</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <span className="text-gray-500">No permissions configured</span>
+      )}
     </div>
   );
 }
@@ -492,6 +808,285 @@ function StreamsTab({ streams }: { streams: Stream[] }) {
   );
 }
 
+// Mandates Tab
+function MandatesTab({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+  const [mandates, setMandates] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchMandates() {
+      if (!api) return;
+      try {
+        const result = await api.ap2.list({ agentId, limit: 50 });
+        const raw = result as any;
+        const data = raw?.data || raw;
+        setMandates(Array.isArray(data) ? data : (data?.data || []));
+      } catch (error) {
+        console.error('Failed to fetch mandates:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchMandates();
+  }, [api, agentId]);
+
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
+        <div className="text-gray-500">Loading mandates...</div>
+      </div>
+    );
+  }
+
+  if (mandates.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
+        <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No mandates</h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          This agent has no linked AP2 mandates.
+        </p>
+      </div>
+    );
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100';
+      case 'completed': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100';
+      case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100';
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Mandate ID</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Authorized</TableHead>
+            <TableHead>Used</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead className="text-right">Action</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {mandates.map((m: any) => (
+            <TableRow key={m.id}>
+              <TableCell className="font-mono text-xs">
+                {m.mandateId || m.mandate_id || m.id?.slice(0, 12)}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className="capitalize">
+                  {m.type || m.mandate_type || 'payment'}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                {formatCurrency(m.amount?.authorized ?? m.authorized_amount ?? 0, m.amount?.currency ?? m.currency ?? 'USD')}
+              </TableCell>
+              <TableCell>
+                {formatCurrency(m.amount?.used ?? m.used_amount ?? 0, m.amount?.currency ?? m.currency ?? 'USD')}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className={`border-transparent ${getStatusColor(m.status)}`}>
+                  {m.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-sm">
+                {m.createdAt || m.created_at ? format(new Date(m.createdAt || m.created_at), 'MMM d, yyyy') : '—'}
+              </TableCell>
+              <TableCell className="text-right">
+                <Link
+                  href={`/dashboard/agentic-payments/ap2/mandates/${m.id}`}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  View
+                </Link>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+// Checkouts Tab — shows both ACP and UCP checkouts
+function CheckoutsTab({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+  const [checkouts, setCheckouts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchCheckouts() {
+      if (!api) return;
+      try {
+        // Fetch ACP checkouts (filtered by agent)
+        const acpResult = await api.acp.list({ agent_id: agentId, limit: 50 });
+        const acpRaw = acpResult as any;
+        const acpData = Array.isArray(acpRaw?.data) ? acpRaw.data : (Array.isArray(acpRaw?.data?.data) ? acpRaw.data.data : []);
+        const acpTagged = acpData.map((c: any) => ({ ...c, _protocol: 'acp' as const }));
+
+        // Fetch UCP checkout sessions (no agent filter on server, filter client-side)
+        let ucpTagged: any[] = [];
+        try {
+          const ucpResult = await api.ucp.checkouts.list({ limit: 100 });
+          const ucpRaw = ucpResult as any;
+          const ucpAll = Array.isArray(ucpRaw?.data) ? ucpRaw.data : (Array.isArray(ucpRaw?.data?.data) ? ucpRaw.data.data : []);
+          // Filter by agent name in metadata
+          const agentRes = await api.agents.get(agentId).catch(() => null);
+          const agentName = (agentRes as any)?.name || (agentRes as any)?.data?.name;
+          const ucpFiltered = agentName
+            ? ucpAll.filter((s: any) => s.metadata?.agent === agentName)
+            : [];
+          ucpTagged = ucpFiltered.map((s: any) => ({
+            id: s.id,
+            checkout_id: s.id?.slice(0, 12),
+            merchant_name: s.metadata?.merchant_name || s.line_items?.[0]?.name || s.metadata?.scenario || 'UCP Checkout',
+            total_amount: (s.totals?.find((t: any) => t.type === 'total')?.amount ?? 0) / 100,
+            currency: s.currency || 'USD',
+            status: s.status,
+            created_at: s.created_at || s.createdAt,
+            _protocol: 'ucp' as const,
+          }));
+        } catch {
+          // UCP fetch failed — show ACP only
+        }
+
+        // Merge and sort by date descending
+        const merged = [...acpTagged, ...ucpTagged].sort((a, b) => {
+          const da = new Date(a.created_at || 0).getTime();
+          const db = new Date(b.created_at || 0).getTime();
+          return db - da;
+        });
+
+        setCheckouts(merged);
+      } catch (error) {
+        console.error('Failed to fetch checkouts:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchCheckouts();
+  }, [api, agentId]);
+
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
+        <div className="text-gray-500">Loading checkouts...</div>
+      </div>
+    );
+  }
+
+  if (checkouts.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
+        <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No checkouts</h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          This agent has no linked checkouts.
+        </p>
+      </div>
+    );
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100';
+      case 'pending': case 'requires_escalation': return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100';
+      case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100';
+    }
+  };
+
+  const getProtocolColor = (protocol: string) => {
+    return protocol === 'ucp'
+      ? 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-100'
+      : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100';
+  };
+
+  const getDetailHref = (c: any) => {
+    return c._protocol === 'ucp'
+      ? `/dashboard/agentic-payments/ucp/checkouts/${c.id}`
+      : `/dashboard/agentic-payments/acp/checkouts/${c.id}`;
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Checkout ID</TableHead>
+            <TableHead>Protocol</TableHead>
+            <TableHead>Merchant</TableHead>
+            <TableHead>Total</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead className="text-right">Action</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {checkouts.map((c: any) => (
+            <TableRow key={`${c._protocol}-${c.id}`}>
+              <TableCell className="font-mono text-xs">
+                <Link href={getDetailHref(c)} className="text-blue-600 dark:text-blue-400 hover:underline">
+                  {c.checkout_id || c.id?.slice(0, 12)}
+                </Link>
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className={`border-transparent text-xs uppercase ${getProtocolColor(c._protocol)}`}>
+                  {c._protocol}
+                </Badge>
+              </TableCell>
+              <TableCell>{c.merchant_name || '—'}</TableCell>
+              <TableCell>
+                {formatCurrency(c.total_amount ?? 0, c.currency ?? 'USD')}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className={`border-transparent ${getStatusColor(c.status)}`}>
+                  {c.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-sm">
+                {c.created_at ? format(new Date(c.created_at), 'MMM d, yyyy') : '—'}
+              </TableCell>
+              <TableCell className="text-right">
+                <Link
+                  href={getDetailHref(c)}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  View
+                </Link>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+// KYA helpers — threshold-based usage bar colors
+function getUsageBarColor(used: number, limit: number): string {
+  if (!limit) return 'bg-blue-500';
+  const pct = (used / limit) * 100;
+  if (pct >= 90) return 'bg-red-500';
+  if (pct >= 70) return 'bg-amber-500';
+  return 'bg-blue-500';
+}
+
+function getUsageAlert(used: number, limit: number): { text: string; className: string } | null {
+  if (!limit) return null;
+  const pct = (used / limit) * 100;
+  if (pct >= 90) return { text: `${pct.toFixed(0)}% — Approaching limit`, className: 'text-red-600 dark:text-red-400' };
+  if (pct >= 80) return { text: `${pct.toFixed(0)}% — Elevated usage`, className: 'text-amber-600 dark:text-amber-400' };
+  return null;
+}
+
 // KYA Tab
 function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null }) {
   const tiers = [
@@ -511,10 +1106,8 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
             <Shield className="h-8 w-8 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">
-              Tier {agent.kyaTier}
-            </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <KyaTierBadge tier={agent.kyaTier} className="text-sm" />
+            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               {tiers.find(t => t.tier === agent.kyaTier)?.name || 'Unknown'} Verification Level
             </div>
           </div>
@@ -561,12 +1154,21 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 rounded-full"
+                className={`h-full rounded-full ${getUsageBarColor(limits?.usage?.daily || 0, limits?.effectiveLimits?.daily || 0)}`}
                 style={{
                   width: `${limits?.effectiveLimits?.daily ? (limits.usage.daily / limits.effectiveLimits.daily) * 100 : 0}%`,
                 }}
               />
             </div>
+            {(() => {
+              const alert = getUsageAlert(limits?.usage?.daily || 0, limits?.effectiveLimits?.daily || 0);
+              return alert ? (
+                <div className={`flex items-center gap-1 mt-1 text-xs ${alert.className}`}>
+                  <AlertTriangle className="h-3 w-3" />
+                  {alert.text}
+                </div>
+              ) : null;
+            })()}
           </div>
           <div>
             <div className="flex justify-between text-sm mb-1">
@@ -577,12 +1179,21 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 rounded-full"
+                className={`h-full rounded-full ${getUsageBarColor(limits?.usage?.monthly || 0, limits?.effectiveLimits?.monthly || 0)}`}
                 style={{
                   width: `${limits?.effectiveLimits?.monthly ? (limits.usage.monthly / limits.effectiveLimits.monthly) * 100 : 0}%`,
                 }}
               />
             </div>
+            {(() => {
+              const alert = getUsageAlert(limits?.usage?.monthly || 0, limits?.effectiveLimits?.monthly || 0);
+              return alert ? (
+                <div className={`flex items-center gap-1 mt-1 text-xs ${alert.className}`}>
+                  <AlertTriangle className="h-3 w-3" />
+                  {alert.text}
+                </div>
+              ) : null;
+            })()}
           </div>
         </div>
       </div>
@@ -614,4 +1225,3 @@ function ActivityTab({ agentId }: { agentId: string }) {
     </div>
   );
 }
-

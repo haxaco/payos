@@ -98,7 +98,7 @@ const PROTOCOL_UI: Record<
     color: 'text-green-600 dark:text-green-400',
     bgColor: 'bg-green-100 dark:bg-green-950',
     borderColor: 'border-green-300 dark:border-green-800',
-    link: '/dashboard/agentic-payments/ucp/checkouts',
+    link: '/dashboard/agentic-payments/ucp/hosted-checkouts',
     setupLink: '/dashboard/settings',
     setupLabel: 'Connect Handler',
   },

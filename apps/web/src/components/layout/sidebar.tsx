@@ -58,7 +58,6 @@ const agenticPaymentsChildren = [
     label: 'UCP',
     icon: Globe,
     children: [
-      { href: '/dashboard/agentic-payments/ucp/checkouts', label: 'Settlements', icon: ArrowLeftRight },
       { href: '/dashboard/agentic-payments/ucp/hosted-checkouts', label: 'Checkouts', icon: ShoppingCart },
       { href: '/dashboard/agentic-payments/ucp/orders', label: 'Orders', icon: Package },
       { href: '/dashboard/agentic-payments/ucp/identity', label: 'Identity', icon: Users },
@@ -144,16 +143,17 @@ export function Sidebar() {
   // Build main nav with dynamic compliance count
   const mainNav = [
     { href: '/dashboard', label: 'Home', icon: Home },
+    { href: '/dashboard/agents', label: 'Agents', icon: Bot },
     { href: '/dashboard/onboarding', label: 'Setup Guide', icon: Rocket },
     { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
     { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
+    { href: '/dashboard/settlements', label: 'Settlements', icon: Landmark },
     { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet },
     { href: '/dashboard/schedules', label: 'Schedules', icon: Calendar },
     { href: '/dashboard/refunds', label: 'Refunds', icon: RotateCcw },
     { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
     { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: complianceCount || undefined },
     { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark },
-    { href: '/dashboard/agents', label: 'Agents', icon: Bot },
     { href: '/dashboard/reports', label: 'Reports', icon: FileText },
   ];
 
@@ -180,6 +180,7 @@ export function Sidebar() {
             ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400'
             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
           collapsed && 'justify-center',
+          item.badge && 'relative',
           className
         )}
         title={collapsed ? item.label : undefined}
@@ -211,16 +212,24 @@ export function Sidebar() {
     )}>
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800">
-        {!collapsed && (
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-              </svg>
-            </div>
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <div
+            className="w-8 h-8 flex-shrink-0 bg-blue-600"
+            style={{
+              WebkitMaskImage: 'url(/sly-logo.png)',
+              WebkitMaskSize: 'contain',
+              WebkitMaskRepeat: 'no-repeat',
+              WebkitMaskPosition: 'center',
+              maskImage: 'url(/sly-logo.png)',
+              maskSize: 'contain',
+              maskRepeat: 'no-repeat',
+              maskPosition: 'center',
+            }}
+          />
+          {!collapsed && (
             <span className="text-xl font-bold text-gray-900 dark:text-white">Sly</span>
-          </Link>
-        )}
+          )}
+        </Link>
 
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -302,31 +311,24 @@ export function Sidebar() {
           <NavItem key={item.href} item={item} />
         ))}
 
-        {/* Configuration Section - Collapsible */}
-        <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
-          {!collapsed ? (
-            <>
-              <button
-                onClick={() => setConfigExpanded(!configExpanded)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-              >
-                <span>Configuration</span>
-                <ChevronDown className={cn(
-                  'w-4 h-4 transition-transform',
-                  configExpanded && 'rotate-180'
-                )} />
-              </button>
-              {configExpanded && configurationNav.map((item) => (
-                <NavItem key={item.href} item={item} />
-              ))}
-            </>
-          ) : (
-            // When sidebar is collapsed, still show config items
-            configurationNav.map((item) => (
+        {/* Configuration Section - Collapsible (hidden when collapsed) */}
+        {!collapsed && (
+          <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">
+            <button
+              onClick={() => setConfigExpanded(!configExpanded)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            >
+              <span>Configuration</span>
+              <ChevronDown className={cn(
+                'w-4 h-4 transition-transform',
+                configExpanded && 'rotate-180'
+              )} />
+            </button>
+            {configExpanded && configurationNav.map((item) => (
               <NavItem key={item.href} item={item} />
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Settings Section */}
         <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-800 space-y-1">

@@ -455,8 +455,9 @@ router.post('/settle/mandate', async (c) => {
 router.get('/settlements/:id', async (c) => {
   const ctx = c.get('ctx');
   const settlementId = c.req.param('id');
+  const supabase = createClient();
 
-  const settlement = await getSettlement(settlementId, ctx.tenantId);
+  const settlement = await getSettlement(settlementId, ctx.tenantId, supabase);
   if (!settlement) {
     throw new NotFoundError('Settlement', settlementId);
   }
@@ -472,6 +473,7 @@ router.get('/settlements/:id', async (c) => {
 router.get('/settlements', async (c) => {
   const ctx = c.get('ctx');
   const query = c.req.query();
+  const supabase = createClient();
 
   const status = query.status as string | undefined;
   const corridor = query.corridor as string | undefined;
@@ -483,7 +485,7 @@ router.get('/settlements', async (c) => {
     corridor,
     limit: Math.min(limit, 100),
     offset,
-  });
+  }, supabase);
 
   return c.json({
     data: result.data,
@@ -585,6 +587,7 @@ router.get('/analytics', async (c) => {
   const ctx = c.get('ctx');
   const query = c.req.query();
   const period = query.period || '30d';
+  const supabase = createClient();
 
   // Calculate date range based on period
   const now = new Date();
@@ -611,29 +614,29 @@ router.get('/analytics', async (c) => {
   const result = await listSettlements(ctx.tenantId, {
     limit: 1000,
     offset: 0,
-  });
+  }, supabase);
 
   // Filter by date range
-  const settlements = result.data.filter(s => new Date(s.createdAt) >= startDate);
+  const settlements = result.data.filter(s => new Date(s.created_at) >= startDate);
 
   // Calculate analytics
   const completed = settlements.filter(s => s.status === 'completed');
   const failed = settlements.filter(s => s.status === 'failed');
   const pending = settlements.filter(s => s.status === 'pending' || s.status === 'processing');
-  const pendingApproval = settlements.filter(s => s.status === 'pending_approval');
+  const deferred = settlements.filter(s => s.status === 'deferred');
 
   const pixSettlements = settlements.filter(s => s.corridor === 'pix');
   const speiSettlements = settlements.filter(s => s.corridor === 'spei');
 
-  const totalVolume = completed.reduce((sum, s) => sum + s.amount, 0);
-  const totalFees = completed.reduce((sum, s) => sum + (s.quote?.fees?.total || 0), 0);
+  const totalVolume = completed.reduce((sum, s) => sum + s.amount.source, 0);
+  const totalFees = completed.reduce((sum, s) => sum + s.amount.fees, 0);
 
   // Calculate average settlement time (in seconds) for completed settlements
   let avgSettlementTime = 0;
   if (completed.length > 0) {
     const times = completed
-      .filter(s => s.completedAt)
-      .map(s => new Date(s.completedAt!).getTime() - new Date(s.createdAt).getTime());
+      .filter(s => s.completed_at)
+      .map(s => new Date(s.completed_at!).getTime() - new Date(s.created_at).getTime());
     if (times.length > 0) {
       avgSettlementTime = Math.round(times.reduce((a, b) => a + b, 0) / times.length / 1000);
     }
@@ -647,7 +650,7 @@ router.get('/analytics', async (c) => {
         totalSettlements: settlements.length,
         completedSettlements: completed.length,
         failedSettlements: failed.length,
-        pendingSettlements: pending.length + pendingApproval.length,
+        pendingSettlements: pending.length + deferred.length,
         averageSettlementTime: avgSettlementTime,
         totalFees,
       },
@@ -656,16 +659,16 @@ router.get('/analytics', async (c) => {
         processing: pending.filter(s => s.status === 'processing').length,
         completed: completed.length,
         failed: failed.length,
-        pending_approval: pendingApproval.length,
+        deferred: deferred.length,
       },
       byCorridor: {
         pix: {
           count: pixSettlements.length,
-          volume: pixSettlements.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.amount, 0),
+          volume: pixSettlements.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.amount.source, 0),
         },
         spei: {
           count: speiSettlements.length,
-          volume: speiSettlements.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.amount, 0),
+          volume: speiSettlements.filter(s => s.status === 'completed').reduce((sum, s) => sum + s.amount.source, 0),
         },
       },
       startDate: startDate.toISOString(),

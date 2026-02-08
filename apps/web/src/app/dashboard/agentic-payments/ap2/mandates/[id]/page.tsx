@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Copy, Play, Calendar } from "lucide-react";
+import { Copy, Play, Calendar, ArrowRight, Link2 } from "lucide-react";
 import { useApiClient } from "@/lib/api-client";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
@@ -31,6 +31,8 @@ import { ExecutePaymentDialog } from "@/components/ap2/execute-payment-dialog";
 import { ProtocolBadge } from "@/components/agentic-payments/protocol-badge";
 import { MandateActionsMenu } from "@/components/ap2/mandate-actions-menu";
 import { VirtualCard } from "@/components/ap2/virtual-card";
+import { PolicyCheckPanel, deriveMandatePolicyRules } from "@/components/policy-check-panel";
+import { PaymentHandlerDisplay } from "@/components/payment/payment-logos";
 
 export default function MandateDetailPage() {
     const { id } = useParams();
@@ -215,6 +217,35 @@ export default function MandateDetailPage() {
                                 <div className="text-sm text-muted-foreground mb-1">Type</div>
                                 <Badge variant="outline" className="capitalize">{mandate.type}</Badge>
                             </div>
+                            {(() => {
+                                const md = (mandate as any).mandateData || (mandate as any).mandate_data;
+                                const meta = (mandate as any).metadata;
+                                return (
+                                    <>
+                                        {md?.payment_handler && (
+                                            <>
+                                                <Separator />
+                                                <div>
+                                                    <div className="text-sm text-muted-foreground mb-1">Payment Method</div>
+                                                    <PaymentHandlerDisplay
+                                                        handler={md.payment_handler}
+                                                        network={md.card_network}
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
+                                        {meta?.priority_tier && (
+                                            <>
+                                                <Separator />
+                                                <div>
+                                                    <div className="text-sm text-muted-foreground mb-1">Priority</div>
+                                                    <PriorityBadge tier={meta.priority_tier} />
+                                                </div>
+                                            </>
+                                        )}
+                                    </>
+                                );
+                            })()}
                             <Separator />
                             <div>
                                 <div className="text-sm text-muted-foreground mb-1">Created At</div>
@@ -241,6 +272,14 @@ export default function MandateDetailPage() {
                     <VirtualCard mandate={mandate} />
                 </div>
             </div>
+
+            <MandateChainCard mandate={mandate} />
+
+            {(() => {
+                const mandateData = (mandate as any).mandateData || (mandate as any).mandate_data;
+                const policyRules = deriveMandatePolicyRules(mandateData, mandate.amount.authorized, mandate.status);
+                return policyRules.length > 0 ? <PolicyCheckPanel rules={policyRules} /> : null;
+            })()}
 
             <Card>
                 <CardHeader>
@@ -305,5 +344,86 @@ export default function MandateDetailPage() {
                 )
             }
         </div >
+    );
+}
+
+const priorityConfig: Record<string, { label: string; className: string }> = {
+    P0_essential: { label: 'P0 Essential', className: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-100 dark:border-red-800' },
+    P1_important: { label: 'P1 Important', className: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900 dark:text-orange-100 dark:border-orange-800' },
+    P2_discretionary: { label: 'P2 Discretionary', className: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-100 dark:border-yellow-800' },
+    P3_deferrable: { label: 'P3 Deferrable', className: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700' },
+};
+
+function PriorityBadge({ tier }: { tier: string }) {
+    const config = priorityConfig[tier];
+    if (!config) return <Badge variant="outline" className="capitalize">{tier}</Badge>;
+    return <Badge variant="outline" className={config.className}>{config.label}</Badge>;
+}
+
+function MandateChainCard({ mandate }: { mandate: any }) {
+    const mandateData = mandate.mandateData || mandate.mandate_data;
+    const chain = mandateData?.chain;
+    if (!chain) return null;
+
+    const chainSteps = [
+        { type: 'intent', label: 'Intent' },
+        { type: 'cart', label: 'Cart' },
+        { type: 'payment', label: 'Payment' },
+    ];
+
+    const currentType = mandate.type || mandate.mandate_type;
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Link2 className="h-5 w-5 text-muted-foreground" />
+                    Mandate Chain
+                </CardTitle>
+                <CardDescription>This mandate is part of a linked chain.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {chainSteps.map((step, i) => {
+                        const isCurrent = step.type === currentType;
+                        const linkedId = step.type === currentType
+                            ? null
+                            : chain.parent_id && (
+                                (chain.type === 'leaf' && step.type === 'cart') ||
+                                (chain.type === 'middle' && step.type === 'intent')
+                            ) ? chain.parent_id
+                            : chain.child_id && (
+                                (chain.type === 'root' && step.type === 'cart') ||
+                                (chain.type === 'middle' && step.type === 'payment')
+                            ) ? chain.child_id
+                            : null;
+
+                        return (
+                            <span key={step.type} className="flex items-center gap-2">
+                                {i > 0 && <ArrowRight className="h-4 w-4 text-muted-foreground" />}
+                                {linkedId ? (
+                                    <Link
+                                        href={`/dashboard/agentic-payments/ap2/mandates/${linkedId}`}
+                                        className="text-sm px-3 py-1.5 rounded-md border bg-muted/50 hover:bg-muted transition-colors text-primary hover:underline"
+                                    >
+                                        {step.label}
+                                    </Link>
+                                ) : (
+                                    <span
+                                        className={`text-sm px-3 py-1.5 rounded-md border ${
+                                            isCurrent
+                                                ? 'bg-primary text-primary-foreground font-medium'
+                                                : 'bg-muted/50 text-muted-foreground'
+                                        }`}
+                                    >
+                                        {step.label}
+                                    </span>
+                                )}
+                            </span>
+                        );
+                    })}
+                </div>
+            </CardContent>
+        </Card>
     );
 }

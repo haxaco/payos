@@ -67,7 +67,7 @@ export function ProtocolActivityChart() {
     staleTime: 60 * 1000,
   });
 
-  const activity = Array.isArray(data?.data) ? data.data : [];
+  const activity = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
 
   // Calculate max value for scaling
   const maxValue = activity.length > 0

@@ -250,6 +250,19 @@ app.get('/checkouts', async (c) => {
       return c.json({ error: 'Failed to list checkouts' }, 500);
     }
 
+    // Batch-query item counts for all checkouts
+    const checkoutIds = checkouts?.map(co => co.id) || [];
+    let itemCounts: Record<string, number> = {};
+    if (checkoutIds.length > 0) {
+      const { data: items } = await supabase
+        .from('acp_checkout_items')
+        .select('checkout_id')
+        .in('checkout_id', checkoutIds);
+      for (const item of items || []) {
+        itemCounts[item.checkout_id] = (itemCounts[item.checkout_id] || 0) + 1;
+      }
+    }
+
     return c.json({
       data: checkouts?.map(co => ({
         id: co.id,
@@ -263,6 +276,7 @@ app.get('/checkouts', async (c) => {
         total_amount: parseFloat(co.total_amount),
         currency: co.currency,
         status: co.status,
+        item_count: itemCounts[co.id] || 0,
         created_at: co.created_at,
         completed_at: co.completed_at,
       })) || [],

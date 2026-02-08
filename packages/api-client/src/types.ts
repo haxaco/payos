@@ -1114,22 +1114,28 @@ export interface UCPCorridorInfo {
 
 export interface UCPSettlement {
   id: string;
-  tenantId: string;
+  tenant_id?: string;
   token?: string;
   corridor: UCPCorridorType;
   status: UCPSettlementStatus;
-  amount: number;
-  currency: string;
+  amount: {
+    source: number;
+    source_currency: string;
+    destination: number;
+    destination_currency: string;
+    fx_rate: number;
+    fees: number;
+  };
   recipient: UCPRecipient;
-  quote?: UCPQuote;
-  transferId?: string;
-  mandateId?: string;
-  failureReason?: string;
-  approvalId?: string;
+  transfer_id?: string;
+  mandate_id?: string;
+  failure_reason?: string;
+  approval_id?: string;
+  deferred_to_rules?: boolean;
+  settlement_rule_id?: string;
   metadata?: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UCPRecipient {

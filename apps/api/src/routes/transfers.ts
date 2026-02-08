@@ -47,6 +47,9 @@ transfers.get('/', async (c) => {
   const fromDate = query.fromDate;
   const toDate = query.toDate;
   
+  // Agent/actor filter
+  const initiatedById = query.initiated_by_id;
+
   // x402-specific filters
   const endpointId = query.endpointId;
   const providerId = query.providerId; // Filter by provider account (endpoint owner)
@@ -85,6 +88,10 @@ transfers.get('/', async (c) => {
     dbQuery = dbQuery.lte('amount', maxAmount);
   }
   
+  if (initiatedById) {
+    dbQuery = dbQuery.eq('initiated_by_id', initiatedById);
+  }
+
   // Protocol-specific filters using JSONB metadata
   if (endpointId && isValidUUID(endpointId)) {
     dbQuery = dbQuery.contains('protocol_metadata', { endpoint_id: endpointId });
