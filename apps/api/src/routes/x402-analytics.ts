@@ -383,7 +383,7 @@ app.get('/endpoint/:endpointId', async (c) => {
     // Get transactions for this endpoint
     const { data: txData, error: txError } = await supabase
       .from('transfers')
-      .select('amount, fee_amount, from_account_id, created_at, status')
+      .select('amount, fee_amount, from_account_id, created_at, status, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
       .eq('type', 'x402')
       .contains('protocol_metadata', { endpoint_id: endpointId })
@@ -401,6 +401,7 @@ app.get('/endpoint/:endpointId', async (c) => {
     const revenue = completedTxs.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
     const fees = completedTxs.reduce((sum, tx) => sum + parseFloat(tx.fee_amount || '0'), 0);
     const uniquePayers = new Set(completedTxs.map(tx => tx.from_account_id)).size;
+    const totalCalls = completedTxs.reduce((sum, tx) => sum + ((tx.protocol_metadata as any)?.call_count || 0), 0);
 
     return c.json({
       data: {
@@ -420,9 +421,9 @@ app.get('/endpoint/:endpointId', async (c) => {
           revenue: parseFloat(revenue.toFixed(8)),
           fees: parseFloat(fees.toFixed(8)),
           netRevenue: parseFloat((revenue - fees).toFixed(8)),
-          calls: completedTxs.length,
+          calls: totalCalls,
           uniquePayers,
-          averageCallValue: completedTxs.length > 0 ? parseFloat((revenue / completedTxs.length).toFixed(8)) : 0,
+          averageCallValue: totalCalls > 0 ? parseFloat((revenue / totalCalls).toFixed(8)) : 0,
           successRate: txData.length > 0 ? (completedTxs.length / txData.length) * 100 : 0,
         },
         startDate: start.toISOString(),

@@ -279,7 +279,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
 
   const agents = [
     // Scenario 1 — Shopping Agent
-    { key: 'shopping_agent', accountKey: 'maria', name: 'AI Shopping Agent', description: 'AI shopping assistant for product discovery and checkout', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 550.99, totalTransactions: 3 },
+    { key: 'shopping_agent', accountKey: 'maria', name: 'AI Shopping Agent', description: 'AI shopping assistant for product discovery and checkout', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 583.80, totalTransactions: 3 },
     // Scenario 2 — Travel Agent
     { key: 'travel_agent', accountKey: 'david', name: 'Hopper Travel Agent', description: 'AI travel planner with multi-vendor booking capability', type: 'payment', kyaTier: 2, kyaStatus: 'verified', x402Enabled: false, totalVolume: 3720, totalTransactions: 6 },
     // Scenario 3 — Inference API Consumer
@@ -321,6 +321,32 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
         effective_limit_monthly: al.monthly,
       }).eq('id', ids[al.key]);
     }
+  }
+
+  // ── Scenario 1: Shopping Agent budget limits ──
+  if (shouldSeed(scenarioFilter, 1)) {
+    console.log('\n  Setting Scenario 1 shopping agent budget limits...');
+    await supabase.from('agents').update({
+      limit_per_transaction: 500,
+      limit_daily: 1000,
+      limit_monthly: 5000,
+      effective_limit_per_tx: 500,
+      effective_limit_daily: 1000,
+      effective_limit_monthly: 5000,
+    }).eq('id', ids.shopping_agent);
+
+    // Seed shopping agent daily usage so the Daily Limit card shows $625/$1,000 remaining
+    const today = new Date().toISOString().split('T')[0];
+    const { error: shopUsageErr } = await supabase.from('agent_usage').insert({
+      tenant_id: tenantId,
+      agent_id: ids.shopping_agent,
+      date: today,
+      daily_amount: 407.81,    // Tissot purchase today ($375 + $32.81 tax)
+      monthly_amount: 583.80,  // All 3 transfers: 407.81 + 45.99 + 130
+      transaction_count: 1,
+    });
+    if (shopUsageErr) console.log(`  ! shopping agent usage insert failed: ${shopUsageErr.message}`);
+    else console.log('  + shopping agent usage: $407.81 / $1,000 daily');
   }
 
   // ── Scenario 9: Agent usage records (near-limit utilization) ──
@@ -395,7 +421,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
     // Inference consumer wallet
     { key: 'techstart_ops', accountKey: 'techstart', name: 'TechStartup Operations', balance: 5000, purpose: 'Agent operations wallet', spendingPolicy: { daily_limit: 200, per_transaction_limit: 1 } },
     // Shopping consumer wallet
-    { key: 'maria_wallet', accountKey: 'maria', name: 'Maria Personal Wallet', balance: 850, purpose: 'Shopping and remittance', spendingPolicy: { daily_limit: 250, monthly_limit: 750 } },
+    { key: 'maria_wallet', accountKey: 'maria', name: 'Maria Personal Wallet', balance: 850, purpose: 'Shopping and remittance', spendingPolicy: { daily_limit: 1000, monthly_limit: 5000 } },
     // Travel consumer wallet
     { key: 'david_wallet', accountKey: 'david', name: 'David Personal Wallet', balance: 3500, purpose: 'Travel and bill pay', spendingPolicy: { daily_limit: 4000, monthly_limit: 7000, requires_approval_above: 3000 } },
     // Gig worker wallets (tax, savings, spending)
@@ -422,6 +448,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
     ['inference_ops', 'inference_agent'],
     ['content_ops', 'content_agent'],
     ['data_pipeline_ops', 'data_pipeline_agent'],
+    ['maria_wallet', 'shopping_agent'],
   ];
   for (const [walletKey, agentKey] of agentWalletLinks) {
     if (ids[walletKey] && ids[agentKey]) {
@@ -435,10 +462,10 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
   console.log('\n4. Creating transfers...');
 
   const transferDefs = [
-    // Scenario 1 — Shopping completed purchase
-    { from: 'maria', to: 'merchant', amount: 375, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'Tissot PRX watch purchase (ACP checkout)', created: daysAgo(2), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
-    { from: 'maria', to: 'merchant', amount: 45.99, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'Leather watch strap purchase', created: daysAgo(5), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
-    { from: 'maria', to: 'merchant', amount: 130, currency: 'USD', status: 'completed', type: 'cross_border', desc: 'Running shoes — Nike Pegasus 41', created: daysAgo(12), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
+    // Scenario 1 — Shopping completed purchase (domestic e-commerce, internal transfers)
+    { from: 'maria', to: 'merchant', amount: 407.81, currency: 'USD', status: 'completed', type: 'internal', desc: 'Tissot PRX watch purchase (ACP checkout)', created: hoursAgo(2), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
+    { from: 'maria', to: 'merchant', amount: 45.99, currency: 'USD', status: 'completed', type: 'internal', desc: 'Leather watch strap purchase', created: daysAgo(5), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
+    { from: 'maria', to: 'merchant', amount: 130, currency: 'USD', status: 'completed', type: 'internal', desc: 'Running shoes — Nike Pegasus 41', created: daysAgo(12), initiatorType: 'agent', initiatorId: 'shopping_agent', initiatorName: 'AI Shopping Agent' },
 
     // Scenario 2 — Travel payments handled via UCP checkout sessions (no separate transfers)
 
@@ -563,24 +590,55 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
       status: ep.status,
     }).select('id').single();
 
-    if (error) console.log(`  ! x402 endpoint failed: ${ep.name} — ${error.message}`);
-    else {
+    if (error) {
+      // If duplicate, fetch existing endpoint ID
+      const { data: existing } = await supabase.from('x402_endpoints').select('id')
+        .eq('tenant_id', tenantId).eq('path', ep.path).eq('method', ep.method).single();
+      if (existing) {
+        x402EndpointIds[ep.path] = existing.id;
+        console.log(`  = ${ep.name} (exists)`);
+      } else {
+        console.log(`  ! x402 endpoint failed: ${ep.name} — ${error.message}`);
+      }
+    } else {
       if (epRow) x402EndpointIds[ep.path] = epRow.id;
       console.log(`  + ${ep.name} ($${ep.base_price}/call, ${ep.total_calls.toLocaleString()} calls)`);
     }
   }
 
+  // Delete existing x402 transfers so we can re-seed with diversified payers
+  const { count: deletedX402 } = await supabase.from('transfers')
+    .delete({ count: 'exact' })
+    .eq('tenant_id', tenantId)
+    .eq('type', 'x402');
+  if (deletedX402 && deletedX402 > 0) console.log(`  (cleaned ${deletedX402} old x402 transfers)`);
+
   // Create x402 transfer records (micropayments)
   console.log('\n5b. Creating x402 transfer records...');
 
   const x402TransferDefs: Array<{ endpoint_path: string; base_price: number; count: number; from: string; to: string }> = [
-    // Scenario 3 — Inference API consumer → provider
-    { endpoint_path: '/v1/inference', base_price: 0.003, count: 6, from: 'techstart', to: 'acme' },
-    { endpoint_path: '/v1/embeddings', base_price: 0.0005, count: 5, from: 'techstart', to: 'acme' },
-    { endpoint_path: '/v1/images/generate', base_price: 0.02, count: 4, from: 'techstart', to: 'acme' },
-    // Scenario 8 — Content access
-    { endpoint_path: '/content/articles/:id', base_price: 0.15, count: 5, from: 'techstart', to: 'acme' },
-    { endpoint_path: '/content/articles/:id/summary', base_price: 0.005, count: 4, from: 'techstart', to: 'acme' },
+    // Scenario 3 — Inference API consumers → provider (multiple payers)
+    { endpoint_path: '/v1/inference', base_price: 0.003, count: 2, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/v1/inference', base_price: 0.003, count: 2, from: 'david', to: 'acme' },
+    { endpoint_path: '/v1/inference', base_price: 0.003, count: 1, from: 'merchant', to: 'acme' },
+    { endpoint_path: '/v1/inference', base_price: 0.003, count: 1, from: 'rideplatform', to: 'acme' },
+    { endpoint_path: '/v1/embeddings', base_price: 0.0005, count: 2, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/v1/embeddings', base_price: 0.0005, count: 1, from: 'david', to: 'acme' },
+    { endpoint_path: '/v1/embeddings', base_price: 0.0005, count: 1, from: 'maria', to: 'acme' },
+    { endpoint_path: '/v1/embeddings', base_price: 0.0005, count: 1, from: 'merchant', to: 'acme' },
+    { endpoint_path: '/v1/images/generate', base_price: 0.02, count: 1, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/v1/images/generate', base_price: 0.02, count: 1, from: 'david', to: 'acme' },
+    { endpoint_path: '/v1/images/generate', base_price: 0.02, count: 1, from: 'maria', to: 'acme' },
+    { endpoint_path: '/v1/images/generate', base_price: 0.02, count: 1, from: 'rideplatform', to: 'acme' },
+    // Scenario 8 — Content access (multiple payers)
+    { endpoint_path: '/content/articles/:id', base_price: 0.15, count: 2, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/content/articles/:id', base_price: 0.15, count: 1, from: 'david', to: 'acme' },
+    { endpoint_path: '/content/articles/:id', base_price: 0.15, count: 1, from: 'maria', to: 'acme' },
+    { endpoint_path: '/content/articles/:id', base_price: 0.15, count: 1, from: 'merchant', to: 'acme' },
+    { endpoint_path: '/content/articles/:id/summary', base_price: 0.005, count: 1, from: 'techstart', to: 'acme' },
+    { endpoint_path: '/content/articles/:id/summary', base_price: 0.005, count: 1, from: 'david', to: 'acme' },
+    { endpoint_path: '/content/articles/:id/summary', base_price: 0.005, count: 1, from: 'maria', to: 'acme' },
+    { endpoint_path: '/content/articles/:id/summary', base_price: 0.005, count: 1, from: 'rideplatform', to: 'acme' },
   ];
 
   let x402TransferCount = 0;
@@ -589,10 +647,10 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
     if (!endpointId) continue;
 
     for (let i = 0; i < def.count; i++) {
-      const variation = 0.8 + Math.random() * 0.4; // 80-120% of base price
-      const amount = parseFloat((def.base_price * variation * (50 + Math.floor(Math.random() * 200))).toFixed(6));
       const callCount = 50 + Math.floor(Math.random() * 200);
-      const day = Math.floor(Math.random() * 30) + 1;
+      const variation = 0.8 + Math.random() * 0.4; // 80-120% of base price
+      const amount = parseFloat((def.base_price * variation * callCount).toFixed(6));
+      const day = 1 + (x402TransferCount % 25); // spread evenly across last 25 days
       const fromId = ids[def.from];
       const toId = ids[def.to];
       const fromName = accounts.find(a => a.key === def.from)?.name || def.from;
@@ -630,32 +688,32 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
 
   // Scenario 9 — Data Pipeline Agent x402 micropayments (fixed amounts to match daily/monthly usage)
   console.log('\n5c. Creating Data Pipeline Agent x402 transfers...');
-  const dataPipelineTransfers = [
-    // Today — $28 total ($16.80 Snowflake + $11.20 Bedrock)
+  const dataPipelineTransfers: Array<{ path: string; amount: number; calls: number; day: number; from?: string }> = [
+    // Today — $28 total ($16.80 Snowflake + $11.20 Bedrock) — multiple payers
     { path: '/v1/compute', amount: 5.60, calls: 160, day: 0 },
-    { path: '/v1/compute', amount: 5.80, calls: 166, day: 0 },
-    { path: '/v1/compute', amount: 5.40, calls: 154, day: 0 },
+    { path: '/v1/compute', amount: 5.80, calls: 166, day: 0, from: 'david' },
+    { path: '/v1/compute', amount: 5.40, calls: 154, day: 0, from: 'merchant' },
     { path: '/v1/data/embeddings', amount: 3.80, calls: 152, day: 0 },
-    { path: '/v1/data/embeddings', amount: 3.90, calls: 156, day: 0 },
-    { path: '/v1/data/embeddings', amount: 3.50, calls: 140, day: 0 },
+    { path: '/v1/data/embeddings', amount: 3.90, calls: 156, day: 0, from: 'david' },
+    { path: '/v1/data/embeddings', amount: 3.50, calls: 140, day: 0, from: 'rideplatform' },
     // Yesterday — ~$9.20
     { path: '/v1/compute', amount: 5.20, calls: 149, day: 1 },
-    { path: '/v1/data/embeddings', amount: 4.00, calls: 160, day: 1 },
+    { path: '/v1/data/embeddings', amount: 4.00, calls: 160, day: 1, from: 'maria' },
     // Day 2-7 — spread to reach ~$275 monthly
-    { path: '/v1/compute', amount: 5.50, calls: 157, day: 2 },
+    { path: '/v1/compute', amount: 5.50, calls: 157, day: 2, from: 'david' },
     { path: '/v1/data/embeddings', amount: 3.70, calls: 148, day: 2 },
-    { path: '/v1/compute', amount: 5.30, calls: 151, day: 3 },
-    { path: '/v1/data/embeddings', amount: 3.60, calls: 144, day: 3 },
+    { path: '/v1/compute', amount: 5.30, calls: 151, day: 3, from: 'merchant' },
+    { path: '/v1/data/embeddings', amount: 3.60, calls: 144, day: 3, from: 'david' },
     { path: '/v1/compute', amount: 5.70, calls: 163, day: 5 },
-    { path: '/v1/data/embeddings', amount: 3.80, calls: 152, day: 5 },
-    { path: '/v1/compute', amount: 5.40, calls: 154, day: 7 },
+    { path: '/v1/data/embeddings', amount: 3.80, calls: 152, day: 5, from: 'rideplatform' },
+    { path: '/v1/compute', amount: 5.40, calls: 154, day: 7, from: 'maria' },
     { path: '/v1/data/embeddings', amount: 3.50, calls: 140, day: 7 },
     // Older days — larger batches representing weekly settlement
     { path: '/v1/compute', amount: 38.00, calls: 1086, day: 14 },
-    { path: '/v1/data/embeddings', amount: 25.00, calls: 1000, day: 14 },
-    { path: '/v1/compute', amount: 40.00, calls: 1143, day: 21 },
+    { path: '/v1/data/embeddings', amount: 25.00, calls: 1000, day: 14, from: 'david' },
+    { path: '/v1/compute', amount: 40.00, calls: 1143, day: 21, from: 'merchant' },
     { path: '/v1/data/embeddings', amount: 27.00, calls: 1080, day: 21 },
-    { path: '/v1/compute', amount: 42.00, calls: 1200, day: 28 },
+    { path: '/v1/compute', amount: 42.00, calls: 1200, day: 28, from: 'rideplatform' },
     { path: '/v1/data/embeddings', amount: 28.00, calls: 1120, day: 28 },
   ];
 
@@ -664,9 +722,10 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
     const endpointId = x402EndpointIds[t.path];
     if (!endpointId) continue;
 
-    const fromId = ids.techstart;
+    const fromKey = t.from || 'techstart';
+    const fromId = ids[fromKey];
     const toId = ids.acme;
-    const fromName = accounts.find(a => a.key === 'techstart')?.name || 'TechStart Inc';
+    const fromName = accounts.find(a => a.key === fromKey)?.name || fromKey;
     const toName = accounts.find(a => a.key === 'acme')?.name || 'Acme Corp';
 
     const { data: xferRow, error: xferErr } = await supabase.from('transfers').insert({
@@ -719,7 +778,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
       status: 'completed', payment_method: 'card',
       transfer_id: transferIds[0] || null,
       checkout_data: { scenario: 'birthday_gift', policy_check: 'passed', auto_approved: true, payment_handler: 'stripe', card_network: 'mastercard' },
-      created_at: daysAgo(2),
+      created_at: hoursAgo(2),
       items: [
         { item_id: 'tissot_prx_001', name: 'Tissot PRX', description: 'Swiss watch, 40mm, blue dial', quantity: 1, unit_price: 375, total_price: 375, image_url: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200' },
       ],
@@ -777,7 +836,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
       customer_id: 'cust_maria', customer_email: 'maria@demo-consumer.com',
       account_id: ids.maria, merchant_id: 'merch_global_retail', merchant_name: 'Global Retail Co',
       subtotal: 349, tax_amount: 30.54, shipping_amount: 0, total_amount: 379.54,
-      status: 'pending',
+      currency: 'USD', status: 'pending',
       checkout_data: { scenario: 'shopping', awaiting_confirmation: true, first_time_merchant: true },
       created_at: hoursAgo(2),
       items: [
@@ -806,7 +865,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
       shipping_amount: checkoutData.shipping_amount || 0,
       discount_amount: checkoutData.discount_amount || 0,
       total_amount: checkoutData.total_amount,
-      currency: (checkoutData as any).currency || 'USDC',
+      currency: (checkoutData as any).currency || 'USD',
       status: checkoutData.status,
       payment_method: checkoutData.payment_method || null,
       transfer_id: checkoutData.transfer_id || null,
@@ -833,7 +892,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
           quantity: item.quantity,
           unit_price: item.unit_price,
           total_price: item.total_price,
-          currency: (checkoutData as any).currency || 'USDC',
+          currency: (checkoutData as any).currency || 'USD',
         });
       }
     }
@@ -1174,18 +1233,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
   console.log('\n8. Creating UCP checkout sessions & orders...');
 
   const ucpSessions = [
-    // Scenario 1 — Shopping completed
-    {
-      status: 'completed', currency: 'USD',
-      line_items: [{ id: 'item_tissot', name: 'Tissot PRX', description: 'Swiss watch', quantity: 1, unit_price: 37500, total_price: 37500, image_url: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200' }],
-      totals: [{ type: 'subtotal', amount: 37500, label: 'Subtotal' }, { type: 'tax', amount: 3281, label: 'Tax (8.75%)' }, { type: 'total', amount: 40781, label: 'Total' }],
-      buyer: { email: 'maria@demo-consumer.com', name: 'Maria Rodriguez', phone: '+1-555-0201' },
-      shipping_address: { line1: '456 Oak Ave', city: 'Dallas', state: 'TX', postal_code: '75201', country: 'US' },
-      metadata: { scenario: 'birthday_gift', agent: 'AI Shopping Agent' },
-      payment_config: { handlers: ['stripe'] }, payment_handler: 'stripe', payment_type: 'card', card_network: 'mastercard',
-      created_at: daysAgo(2),
-      order_status: 'shipped',
-    },
+    // Scenario 1 — Shopping: ACP-only (no UCP duplicates)
     // Scenario 2 — Travel per-vendor sessions (6 separate UCP checkouts, group: grp_bcn_trip)
     // 1. American Airlines (USD)
     {
@@ -1252,25 +1300,6 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
       payment_config: { handlers: ['google_pay'] }, payment_handler: 'google_pay', payment_type: 'digital_wallet',
       created_at: daysAgo(8),
       order_status: 'confirmed',
-    },
-    // Active session — pending
-    {
-      status: 'requires_escalation', currency: 'USD',
-      line_items: [{ id: 'item_headphones', name: 'Sony WH-1000XM5', description: 'Wireless noise-cancelling', quantity: 1, unit_price: 34900, total_price: 34900 }],
-      totals: [{ type: 'subtotal', amount: 34900, label: 'Subtotal' }, { type: 'tax', amount: 3054, label: 'Tax' }, { type: 'total', amount: 37954, label: 'Total' }],
-      buyer: { email: 'maria@demo-consumer.com', name: 'Maria Rodriguez' },
-      messages: [{ type: 'warning', code: 'FIRST_MERCHANT', severity: 'recoverable', content: 'First purchase from this merchant — confirmation required' }],
-      metadata: { scenario: 'shopping', requires_confirmation: true },
-      created_at: hoursAgo(2),
-    },
-    // Incomplete session
-    {
-      status: 'incomplete', currency: 'USD',
-      line_items: [{ id: 'item_laptop', name: 'MacBook Air M4', quantity: 1, unit_price: 129900, total_price: 129900 }],
-      totals: [{ type: 'subtotal', amount: 129900, label: 'Subtotal' }, { type: 'total', amount: 129900, label: 'Total' }],
-      messages: [{ type: 'error', code: 'BUDGET_EXCEEDED', severity: 'recoverable', content: 'Amount exceeds daily spending limit ($500)' }],
-      metadata: { scenario: 'shopping', budget_check: 'failed' },
-      created_at: hoursAgo(6),
     },
   ];
 
@@ -1348,16 +1377,6 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
   console.log('\n8b. Creating UCP settlements...');
 
   const ucpSettlements = [
-    // Completed Pix — shopping scenario (2 days ago)
-    {
-      status: 'completed', corridor: 'pix',
-      source_amount: 375, source_currency: 'USD',
-      destination_amount: 2231.25, destination_currency: 'BRL',
-      fx_rate: 5.95, fees: 3.75,
-      recipient: { type: 'pix', pix_key: '12345678901', pix_key_type: 'cpf', name: 'Loja Online Brasil' },
-      token: `ucp_tok_${tp}_shop_pix`,
-      created_at: daysAgo(2), completed_at: daysAgo(2),
-    },
     // Completed SPEI — travel scenario (8 days ago)
     {
       status: 'completed', corridor: 'spei',
@@ -1608,10 +1627,10 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
     // Scenario 1 — First merchant confirmation (approved)
     {
       wallet_id: ids.maria_wallet, agent_id: ids.shopping_agent,
-      protocol: 'acp', amount: 375, currency: 'USD',
+      protocol: 'acp', amount: 407.81, currency: 'USD',
       recipient: { name: 'Global Retail Co', type: 'merchant', merchant_id: 'merch_global_retail' },
       payment_context: { scenario: 'birthday_gift', reason: 'first_time_merchant', item: 'Tissot PRX watch' },
-      status: 'approved', decided_at: daysAgo(2), decision_reason: 'Consumer confirmed via push notification',
+      status: 'approved', decided_at: hoursAgo(2), decision_reason: 'Consumer confirmed via push notification',
       requested_by_type: 'agent', requested_by_id: ids.shopping_agent, requested_by_name: 'AI Shopping Agent',
     },
     // Scenario 5 — Bill split approval (approved)
@@ -1626,7 +1645,7 @@ async function seedDemoScenarios(tenantId: string, scenarioFilter: number[] = []
     // Pending approval — headphones (first-time merchant)
     {
       wallet_id: ids.maria_wallet, agent_id: ids.shopping_agent,
-      protocol: 'acp', amount: 379.54, currency: 'USDC',
+      protocol: 'acp', amount: 379.54, currency: 'USD',
       recipient: { name: 'AudioTech Store', type: 'merchant', merchant_id: 'merch_audiotech' },
       payment_context: { scenario: 'shopping', reason: 'first_time_merchant', item: 'Sony WH-1000XM5' },
       status: 'pending',
@@ -1844,7 +1863,7 @@ async function main() {
   Streams:           3
 
   Scenarios covered:
-    1. Shopping Agent (ACP + UCP)
+    1. Shopping Agent (ACP only)
     2. Travel Itinerary (ACP + UCP)
     3. API Monetization (x402)
     4. Corporate Travel (AP2 + ACP)
