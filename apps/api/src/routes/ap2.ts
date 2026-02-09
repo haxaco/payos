@@ -352,7 +352,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     throw new ValidationError('Invalid JSON body');
   }
 
-  const { amount, currency, description } = body;
+  const { amount, currency, description, order_ids } = body;
   if (!amount || Number(amount) <= 0) {
     throw new ValidationError('amount must be a positive number');
   }
@@ -396,6 +396,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
       currency: currency || mandate.currency,
       status: 'completed',
       completed_at: new Date().toISOString(),
+      order_ids: Array.isArray(order_ids) && order_ids.length > 0 ? order_ids : null,
     });
 
   if (execError) {
@@ -416,6 +417,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
       used_amount: newUsed,
       remaining_amount: newRemaining,
       description,
+      order_ids: order_ids || [],
     },
   }, 201);
 });

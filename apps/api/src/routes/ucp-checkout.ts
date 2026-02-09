@@ -103,6 +103,7 @@ const CreateCheckoutSchema = z.object({
   links: z.array(LinkSchema).optional(),
   metadata: z.record(z.unknown()).optional(),
   expires_in_hours: z.number().int().min(1).max(168).optional(), // 1 hour to 1 week
+  agent_id: z.string().optional(),
 });
 
 const UpdateCheckoutSchema = z.object({
@@ -152,6 +153,9 @@ router.post('/', async (c) => {
 
     return c.json(checkout, 201);
   } catch (error: any) {
+    if (error.message?.startsWith('Agent not found')) {
+      return c.json({ error: error.message }, 400);
+    }
     console.error('[UCP Checkout] Create error:', error);
     return c.json({ error: error.message || 'Failed to create checkout' }, 500);
   }
@@ -165,12 +169,13 @@ router.get('/', async (c) => {
   const ctx = c.get('ctx');
 
   const status = c.req.query('status') as CheckoutStatus | undefined;
+  const agent_id = c.req.query('agent_id') || undefined;
   const limit = parseInt(c.req.query('limit') || '20', 10);
   const offset = parseInt(c.req.query('offset') || '0', 10);
 
   try {
     const supabase = createClient();
-    const result = await listCheckouts(ctx.tenantId, { status, limit, offset }, supabase);
+    const result = await listCheckouts(ctx.tenantId, { status, agent_id, limit, offset }, supabase);
 
     return c.json({
       data: result.data,

@@ -893,6 +893,7 @@ export interface ExecuteMandatePaymentInput {
   currency: string;
   description?: string;
   authorizationProof?: string;
+  orderIds?: string[];
 }
 
 export interface MandatesListParams extends PaginationParams {

@@ -51,6 +51,7 @@ interface StoredOrder {
   events: UCPFulfillmentEvent[];
   adjustments: UCPAdjustment[];
   permalink_url: string | null;
+  agent_id: string | null;
   metadata: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -123,6 +124,7 @@ function toOrder(stored: StoredOrder): UCPOrder {
     events: stored.events,
     adjustments: stored.adjustments,
     permalink_url: stored.permalink_url,
+    agent_id: stored.agent_id,
     metadata: stored.metadata,
     created_at: stored.created_at.toISOString(),
     updated_at: stored.updated_at.toISOString(),
@@ -168,6 +170,9 @@ export async function createOrderFromCheckout(
   const baseUrl = process.env.PAYOS_API_URL || 'https://api.payos.com';
   const permalinkUrl = `${baseUrl}/orders/${id}`;
 
+  // Copy agent_id from checkout (first-class field > metadata fallback)
+  const orderAgentId = checkout.agent_id || (checkout.metadata?.agent_id as string) || null;
+
   const stored: StoredOrder = {
     id,
     tenant_id: tenantId,
@@ -184,6 +189,7 @@ export async function createOrderFromCheckout(
     events: [],
     adjustments: [],
     permalink_url: permalinkUrl,
+    agent_id: orderAgentId,
     metadata: checkout.metadata || {},
     created_at: now,
     updated_at: now,
@@ -207,6 +213,7 @@ export async function createOrderFromCheckout(
       events: [],
       adjustments: [],
       permalink_url: permalinkUrl,
+      agent_id: orderAgentId,
       metadata: checkout.metadata || {},
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
@@ -288,6 +295,7 @@ function dbRowToOrder(row: any): UCPOrder {
     events: row.events || [],
     adjustments: row.adjustments || [],
     permalink_url: row.permalink_url,
+    agent_id: row.agent_id || null,
     metadata: row.metadata || {},
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -393,12 +401,13 @@ export async function listOrders(
   tenantId: string,
   options: {
     status?: OrderStatus;
+    agent_id?: string;
     limit?: number;
     offset?: number;
   } = {},
   supabase?: SupabaseClient
 ): Promise<{ data: UCPOrder[]; total: number }> {
-  const { status, limit = 20, offset = 0 } = options;
+  const { status, agent_id, limit = 20, offset = 0 } = options;
 
   // If supabase client provided, query database
   if (supabase) {
@@ -411,6 +420,10 @@ export async function listOrders(
 
     if (status) {
       query = query.eq('status', status);
+    }
+
+    if (agent_id) {
+      query = query.eq('agent_id', agent_id);
     }
 
     const { data, error, count } = await query;

@@ -90,12 +90,13 @@ router.get('/', async (c) => {
   const ctx = c.get('ctx');
 
   const status = c.req.query('status') as OrderStatus | undefined;
+  const agent_id = c.req.query('agent_id') || undefined;
   const limit = parseInt(c.req.query('limit') || '20', 10);
   const offset = parseInt(c.req.query('offset') || '0', 10);
 
   try {
     const supabase = createClient();
-    const result = await listOrders(ctx.tenantId, { status, limit, offset }, supabase);
+    const result = await listOrders(ctx.tenantId, { status, agent_id, limit, offset }, supabase);
 
     return c.json({
       data: result.data,

@@ -15,6 +15,7 @@
 
 import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { LimitService } from '../limits.js';
 import type {
   UCPCheckoutSession,
   UCPLineItem,
@@ -72,6 +73,7 @@ interface StoredCheckout {
   cancel_url: string | null;
   links: UCPLink[];
   metadata: Record<string, unknown>;
+  agent_id: string | null;
   order_id: string | null;
   expires_at: Date;
   created_at: Date;
@@ -160,6 +162,7 @@ function toCheckoutSession(stored: StoredCheckout): UCPCheckoutSession {
     cancel_url: stored.cancel_url,
     links: stored.links,
     metadata: stored.metadata,
+    agent_id: stored.agent_id,
     order_id: stored.order_id,
     expires_at: stored.expires_at.toISOString(),
     created_at: stored.created_at.toISOString(),
@@ -273,6 +276,23 @@ export async function createCheckout(
     metadata.checkout_type = request.checkout_type;
   }
 
+  // Resolve agent_id: explicit param > metadata fallback
+  const agentId = request.agent_id || (metadata.agent_id as string) || null;
+
+  // Validate agent_id exists in agents table
+  if (agentId && supabase) {
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('id', agentId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (agentError || !agent) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+  }
+
   // Create stored checkout
   const stored: StoredCheckout = {
     id,
@@ -292,6 +312,7 @@ export async function createCheckout(
     cancel_url: request.cancel_url || null,
     links: request.links || [],
     metadata,
+    agent_id: agentId,
     order_id: null,
     expires_at: new Date(now.getTime() + expiresInHours * 60 * 60 * 1000),
     created_at: now,
@@ -321,6 +342,7 @@ export async function createCheckout(
       cancel_url: stored.cancel_url,
       links: stored.links,
       metadata: stored.metadata,
+      agent_id: stored.agent_id,
       order_id: null,
       expires_at: stored.expires_at.toISOString(),
       created_at: now.toISOString(),
@@ -679,15 +701,22 @@ export async function completeCheckout(
 
       console.log(`[UCP Checkout] Checkout ${checkoutId} completed, order ${order.id} created (persisted)`);
 
-      // Increment agent attribution counters if agent_id is in metadata
-      const agentId = existing.metadata?.agent_id as string | undefined;
+      // Increment agent attribution counters if agent_id is set
+      const agentId = existing.agent_id || (existing.metadata?.agent_id as string | undefined);
       if (agentId && supabase) {
+        // UCP totals are in cents (minor units); agent limits/usage are in dollars
+        const totalDollars = totalAmount / 100;
         try {
           await supabase.rpc('increment_agent_counters', {
             p_agent_id: agentId,
-            p_volume: totalAmount,
+            p_volume: totalDollars,
           });
-          console.log(`[UCP Checkout] Incremented agent ${agentId} counters: +${totalAmount} volume, +1 txn`);
+          console.log(`[UCP Checkout] Incremented agent ${agentId} counters: +$${totalDollars} volume, +1 txn`);
+
+          // Record daily/monthly usage for limit tracking
+          const limitService = new LimitService(supabase);
+          await limitService.recordUsage(agentId, totalDollars);
+          console.log(`[UCP Checkout] Recorded agent ${agentId} daily usage: +$${totalDollars}`);
         } catch (agentErr: any) {
           // Non-fatal: log but don't fail the checkout
           console.error(`[UCP Checkout] Failed to increment agent counters for ${agentId}:`, agentErr.message);
@@ -850,12 +879,13 @@ export async function listCheckouts(
   tenantId: string,
   options: {
     status?: CheckoutStatus;
+    agent_id?: string;
     limit?: number;
     offset?: number;
   } = {},
   supabase?: SupabaseClient
 ): Promise<{ data: UCPCheckoutSession[]; total: number }> {
-  const { status, limit = 20, offset = 0 } = options;
+  const { status, agent_id, limit = 20, offset = 0 } = options;
 
   // If supabase client provided, query database
   if (supabase) {
@@ -868,6 +898,10 @@ export async function listCheckouts(
 
     if (status) {
       query = query.eq('status', status);
+    }
+
+    if (agent_id) {
+      query = query.eq('agent_id', agent_id);
     }
 
     const { data, error, count } = await query;
@@ -925,6 +959,7 @@ function dbRowToCheckoutSession(row: any): UCPCheckoutSession {
     cancel_url: row.cancel_url,
     links: row.links || [],
     metadata: row.metadata || {},
+    agent_id: row.agent_id || null,
     order_id: row.order_id,
     expires_at: row.expires_at,
     created_at: row.created_at,

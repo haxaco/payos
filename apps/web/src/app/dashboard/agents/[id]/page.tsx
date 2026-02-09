@@ -543,19 +543,6 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
 function RecentTransfers({ agentId }: { agentId: string }) {
   const api = useApiClient();
 
-  // Fetch agent name for UCP checkout filtering
-  const { data: agentData } = useTanstackQuery({
-    queryKey: ['agent', agentId],
-    queryFn: async () => {
-      if (!api) return null;
-      const res = await api.agents.get(agentId);
-      const raw = res as any;
-      return raw.data?.data || raw.data || raw;
-    },
-    enabled: !!api,
-  });
-  const agentName = (agentData as any)?.name;
-
   // Fetch transfers initiated by this agent
   const { data: transfersData, isLoading: transfersLoading } = useTanstackQuery({
     queryKey: ['transfers', 'agent', agentId],
@@ -580,17 +567,16 @@ function RecentTransfers({ agentId }: { agentId: string }) {
     enabled: !!api,
   });
 
-  // Fetch UCP checkouts filtered by agent name
+  // Fetch UCP checkouts filtered by agent_id (server-side)
   const { data: ucpData, isLoading: ucpLoading } = useTanstackQuery({
-    queryKey: ['ucp-checkouts', 'agent', agentName],
+    queryKey: ['ucp-checkouts', 'agent', agentId],
     queryFn: async () => {
-      if (!api || !agentName) return [];
-      const result = await api.ucp.checkouts.list({ limit: 100 });
+      if (!api) return [];
+      const result = await api.ucp.checkouts.list({ agent_id: agentId, limit: 100 });
       const raw = result as any;
-      const all = Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
-      return all.filter((s: any) => s.metadata?.agent === agentName);
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
     },
-    enabled: !!api && !!agentName,
+    enabled: !!api,
   });
 
   const isLoading = transfersLoading || acpLoading || ucpLoading;
@@ -1061,18 +1047,12 @@ function CheckoutsTab({ agentId }: { agentId: string }) {
         const acpData = Array.isArray(acpRaw?.data) ? acpRaw.data : (Array.isArray(acpRaw?.data?.data) ? acpRaw.data.data : []);
         const acpTagged = acpData.map((c: any) => ({ ...c, _protocol: 'acp' as const }));
 
-        // Fetch UCP checkout sessions (no agent filter on server, filter client-side)
+        // Fetch UCP checkout sessions (server-side agent_id filter)
         let ucpTagged: any[] = [];
         try {
-          const ucpResult = await api.ucp.checkouts.list({ limit: 100 });
+          const ucpResult = await api.ucp.checkouts.list({ agent_id: agentId, limit: 100 });
           const ucpRaw = ucpResult as any;
-          const ucpAll = Array.isArray(ucpRaw?.data) ? ucpRaw.data : (Array.isArray(ucpRaw?.data?.data) ? ucpRaw.data.data : []);
-          // Filter by agent name in metadata
-          const agentRes = await api.agents.get(agentId).catch(() => null);
-          const agentName = (agentRes as any)?.name || (agentRes as any)?.data?.name;
-          const ucpFiltered = agentName
-            ? ucpAll.filter((s: any) => s.metadata?.agent === agentName)
-            : [];
+          const ucpFiltered = Array.isArray(ucpRaw?.data) ? ucpRaw.data : (Array.isArray(ucpRaw?.data?.data) ? ucpRaw.data.data : []);
           ucpTagged = ucpFiltered.map((s: any) => ({
             id: s.id,
             checkout_id: s.id?.slice(0, 12),

@@ -955,6 +955,7 @@ export class SlyClient {
         currency: input.currency,
         description: input.description,
         authorization_proof: input.authorizationProof,
+        order_ids: input.orderIds,
       }).then(r => r.data),
 
     /**
@@ -1289,11 +1290,12 @@ export class SlyClient {
       /**
        * List PayOS hosted checkout sessions
        */
-      list: (params?: { status?: string; limit?: number; offset?: number }) => {
+      list: (params?: { status?: string; agent_id?: string; limit?: number; offset?: number }) => {
         const query = new URLSearchParams();
         if (params?.limit) query.set('limit', String(params.limit));
         if (params?.offset) query.set('offset', String(params.offset));
         if (params?.status) query.set('status', params.status);
+        if (params?.agent_id) query.set('agent_id', params.agent_id);
         return this.get<PaginatedResponse<any>>(`/ucp/checkouts${query.toString() ? `?${query.toString()}` : ''}`);
       },
 
@@ -1347,11 +1349,12 @@ export class SlyClient {
       /**
        * List orders
        */
-      list: (params?: { status?: string; limit?: number; offset?: number }) => {
+      list: (params?: { status?: string; agent_id?: string; limit?: number; offset?: number }) => {
         const query = new URLSearchParams();
         if (params?.limit) query.set('limit', String(params.limit));
         if (params?.offset) query.set('offset', String(params.offset));
         if (params?.status) query.set('status', params.status);
+        if (params?.agent_id) query.set('agent_id', params.agent_id);
         return this.get<PaginatedResponse<any>>(`/ucp/orders${query.toString() ? `?${query.toString()}` : ''}`);
       },
 

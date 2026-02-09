@@ -63,6 +63,7 @@ export interface ExecuteMandateRequest {
   authorization_proof?: string;
   description?: string;
   idempotency_key?: string;
+  order_ids?: string[];
 }
 
 export interface ExecuteMandateResponse {

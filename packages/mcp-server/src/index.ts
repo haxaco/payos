@@ -233,6 +233,10 @@ const tools: Tool[] = [
           type: 'object',
           description: 'Custom metadata (optional)',
         },
+        agent_id: {
+          type: 'string',
+          description: 'Agent ID to attribute this checkout to (optional)',
+        },
       },
       required: ['currency', 'line_items'],
     },
@@ -253,7 +257,7 @@ const tools: Tool[] = [
   },
   {
     name: 'ucp_list_checkouts',
-    description: 'List UCP checkout sessions with optional filtering by status.',
+    description: 'List UCP checkout sessions with optional filtering by status or agent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -261,6 +265,10 @@ const tools: Tool[] = [
           type: 'string',
           enum: ['incomplete', 'requires_escalation', 'ready_for_complete', 'complete_in_progress', 'completed', 'canceled'],
           description: 'Filter by checkout status (optional)',
+        },
+        agent_id: {
+          type: 'string',
+          description: 'Filter by agent ID (optional)',
         },
         page: { type: 'number', description: 'Page number (optional)' },
         limit: { type: 'number', description: 'Results per page (optional)' },
@@ -430,6 +438,7 @@ const tools: Tool[] = [
                 enum: ['physical', 'digital', 'service'],
               },
               metadata: { type: 'object' },
+              agent_id: { type: 'string', description: 'Agent ID to attribute this checkout to' },
             },
             required: ['currency', 'line_items'],
           },
@@ -442,7 +451,7 @@ const tools: Tool[] = [
   // UCP Order Management
   {
     name: 'ucp_list_orders',
-    description: 'List UCP orders with optional filtering by status.',
+    description: 'List UCP orders with optional filtering by status or agent.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -450,6 +459,10 @@ const tools: Tool[] = [
           type: 'string',
           enum: ['confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'],
           description: 'Filter by order status (optional)',
+        },
+        agent_id: {
+          type: 'string',
+          description: 'Filter by agent ID (optional)',
         },
         page: { type: 'number', description: 'Page number (optional)' },
         limit: { type: 'number', description: 'Results per page (optional)' },
@@ -714,6 +727,11 @@ const tools: Tool[] = [
         description: {
           type: 'string',
           description: 'Description of this payment (optional)',
+        },
+        order_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of UCP order IDs funded by this execution (optional)',
         },
       },
       required: ['mandateId', 'amount'],
@@ -1310,7 +1328,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'ucp_create_checkout': {
         const {
           currency, line_items, buyer, shipping_address, payment_config,
-          payment_instruments, checkout_type, metadata,
+          payment_instruments, checkout_type, metadata, agent_id,
         } = args as {
           currency: string;
           line_items: Array<{ id?: string; name: string; quantity: number; unit_price: number; total_price: number; description?: string; image_url?: string; product_url?: string }>;
@@ -1320,10 +1338,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           payment_instruments?: Array<{ id: string; handler: string; type: string; last4?: string; brand?: string }>;
           checkout_type?: 'physical' | 'digital' | 'service';
           metadata?: Record<string, any>;
+          agent_id?: string;
         };
         const body: Record<string, any> = { currency, line_items, buyer, shipping_address, payment_config, metadata };
         if (payment_instruments) body.payment_instruments = payment_instruments;
         if (checkout_type) body.checkout_type = checkout_type;
+        if (agent_id) body.agent_id = agent_id;
         const result = await sly.request('/v1/ucp/checkouts', {
           method: 'POST',
           body: JSON.stringify(body),
@@ -1354,6 +1374,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'ucp_list_checkouts': {
         const params = new URLSearchParams();
         if (args && (args as any).status) params.set('status', (args as any).status);
+        if (args && (args as any).agent_id) params.set('agent_id', (args as any).agent_id);
         if (args && (args as any).page) params.set('page', String((args as any).page));
         if (args && (args as any).limit) params.set('limit', String((args as any).limit));
         const query = params.toString();
@@ -1455,6 +1476,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             payment_instruments?: Array<{ id: string; handler: string; type: string }>;
             checkout_type?: 'physical' | 'digital' | 'service';
             metadata?: Record<string, any>;
+            agent_id?: string;
           }>;
         };
 
@@ -1473,6 +1495,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
             if (spec.payment_instruments) body.payment_instruments = spec.payment_instruments;
             if (spec.checkout_type) body.checkout_type = spec.checkout_type;
+            if (spec.agent_id) body.agent_id = spec.agent_id;
 
             // Create the checkout (use direct fetch to get full response control)
             const createRes = await fetch(`${SLY_API_URL}/v1/ucp/checkouts`, {
@@ -1553,6 +1576,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'ucp_list_orders': {
         const params = new URLSearchParams();
         if (args && (args as any).status) params.set('status', (args as any).status);
+        if (args && (args as any).agent_id) params.set('agent_id', (args as any).agent_id);
         if (args && (args as any).page) params.set('page', String((args as any).page));
         if (args && (args as any).limit) params.set('limit', String((args as any).limit));
         const query = params.toString();
@@ -1778,16 +1802,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'ap2_execute_mandate': {
-        const { mandateId, amount, currency, description } = args as {
+        const { mandateId, amount, currency, description, order_ids } = args as {
           mandateId: string;
           amount: number;
           currency?: string;
           description?: string;
+          order_ids?: string[];
         };
         const result = await sly.ap2.executeMandate(mandateId, {
           amount,
           currency,
           description,
+          order_ids,
         });
         return {
           content: [

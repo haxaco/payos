@@ -321,6 +321,7 @@ export interface UCPCheckoutSession {
   cancel_url?: string | null;
   links: UCPLink[];
   metadata: Record<string, unknown>;
+  agent_id?: string | null;
   order_id?: string | null;
   expires_at: string;
   created_at: string;
@@ -433,6 +434,7 @@ export interface CreateCheckoutRequest {
   links?: UCPLink[];
   metadata?: Record<string, unknown>;
   expires_in_hours?: number;
+  agent_id?: string;
 }
 
 /**
@@ -492,6 +494,7 @@ export interface UCPOrder {
   events: UCPFulfillmentEvent[];
   adjustments: UCPAdjustment[];
   permalink_url?: string | null;
+  agent_id?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
