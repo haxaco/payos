@@ -1483,10 +1483,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               },
               body: JSON.stringify(body),
             });
-            const created = await createRes.json() as any;
+            const createJson = await createRes.json() as any;
+            // Unwrap { success, data } envelope from response wrapper middleware
+            const created = createJson?.data || createJson;
 
             if (!createRes.ok) {
-              results.push({ checkout_id: 'failed', status: 'error', error: `Create failed: ${created?.error || createRes.statusText}` });
+              results.push({ checkout_id: 'failed', status: 'error', error: `Create failed: ${createJson?.error?.message || createJson?.error || createRes.statusText}` });
               continue;
             }
 
@@ -1506,7 +1508,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 'Content-Type': 'application/json',
               },
             });
-            const completed = await completeRes.json() as any;
+            const completeJson = await completeRes.json() as any;
+            // Unwrap { success, data } envelope
+            const completed = completeJson?.data || completeJson;
 
             if (completeRes.ok) {
               results.push({
@@ -1519,7 +1523,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               results.push({
                 checkout_id: checkoutId,
                 status: created?.status || 'created',
-                error: `Complete failed (${completeRes.status}): ${completed?.error || 'unknown error'}`,
+                error: `Complete failed (${completeRes.status}): ${completeJson?.error?.message || completeJson?.error || 'unknown error'}`,
               });
             }
           } catch (err: any) {
