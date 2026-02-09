@@ -26,6 +26,7 @@ import {
   updateCheckout,
   completeCheckout,
   cancelCheckout,
+  deleteCheckout,
   listCheckouts,
   addPaymentInstrument,
   selectPaymentInstrument,
@@ -290,6 +291,94 @@ router.post('/:id/cancel', async (c) => {
     }
     console.error('[UCP Checkout] Cancel error:', error);
     return c.json({ error: error.message || 'Failed to cancel checkout' }, 500);
+  }
+});
+
+/**
+ * PATCH /v1/ucp/checkouts/:id/edit
+ * Edit checkout session fields (sandbox/development only — for demo date editing etc.)
+ */
+router.patch('/:id/edit', async (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.json({ error: 'Edit is not available in production' }, 403);
+  }
+
+  const ctx = c.get('ctx');
+  const checkoutId = c.req.param('id');
+
+  let body: Record<string, any>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  try {
+    const supabase = createClient();
+
+    // Allowlist of editable fields
+    const allowed: Record<string, boolean> = {
+      created_at: true,
+      updated_at: true,
+      status: true,
+      currency: true,
+      metadata: true,
+      line_items: true,
+      totals: true,
+    };
+
+    const updates: Record<string, any> = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (allowed[key]) updates[key] = value;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return c.json({ error: 'No valid fields to update' }, 400);
+    }
+
+    const { data, error } = await supabase
+      .from('ucp_checkout_sessions')
+      .update(updates)
+      .eq('id', checkoutId)
+      .eq('tenant_id', ctx.tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      return c.json({ error: 'Checkout not found', details: error?.message }, 404);
+    }
+
+    return c.json({ data });
+  } catch (error: any) {
+    console.error('[UCP Checkout] Edit error:', error);
+    return c.json({ error: error.message || 'Failed to edit checkout' }, 500);
+  }
+});
+
+/**
+ * DELETE /v1/ucp/checkouts/:id
+ * Delete a checkout session (sandbox/development only)
+ */
+router.delete('/:id', async (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.json({ error: 'Delete is not available in production' }, 403);
+  }
+
+  const ctx = c.get('ctx');
+  const checkoutId = c.req.param('id');
+
+  try {
+    const supabase = createClient();
+    const success = await deleteCheckout(ctx.tenantId, checkoutId, supabase);
+
+    if (!success) {
+      return c.json({ error: 'Failed to delete checkout' }, 500);
+    }
+
+    return c.json({ success: true });
+  } catch (error: any) {
+    console.error('[UCP Checkout] Delete error:', error);
+    return c.json({ error: error.message || 'Failed to delete checkout' }, 500);
   }
 });
 

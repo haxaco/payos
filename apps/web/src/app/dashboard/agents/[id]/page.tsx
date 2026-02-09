@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/api-client';
 import Link from 'next/link';
+import { LobsterClaw } from '@/components/icons/lobster-claw';
 import {
   ArrowLeft,
   Bot,
@@ -23,6 +24,7 @@ import {
   AlertTriangle,
   FileText,
   ShoppingCart,
+  Trash2,
 } from 'lucide-react';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import type { Agent, Stream, AgentLimits } from '@sly/api-client';
@@ -37,12 +39,28 @@ import {
 } from '@sly/ui';
 import { AgentActivityFeed } from '@/components/agents/agent-activity-feed';
 import { AgentQuickActions } from '@/components/agents/agent-quick-actions';
+import { ConfigureAgentDialog } from '@/components/agents/configure-agent-dialog';
 import { KyaTierBadge } from '@/components/agents/kya-tier-badge';
 import { getAgentActivity } from '@/lib/mock-data/agent-activity';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 
 type TabType = 'overview' | 'streams' | 'mandates' | 'checkouts' | 'permissions' | 'kya' | 'activity';
+
+function getAgentIcon(agentName: string) {
+  if (agentName.includes('Inference API Consumer')) {
+    return {
+      Icon: LobsterClaw,
+      bgColor: 'bg-orange-100 dark:bg-orange-950',
+      textColor: 'text-orange-600 dark:text-orange-400',
+    };
+  }
+  return {
+    Icon: Bot,
+    bgColor: 'bg-blue-100 dark:bg-blue-950',
+    textColor: 'text-blue-600 dark:text-blue-400',
+  };
+}
 
 export default function AgentDetailPage() {
   const params = useParams();
@@ -57,6 +75,7 @@ export default function AgentDetailPage() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [actionLoading, setActionLoading] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [configureOpen, setConfigureOpen] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -141,6 +160,21 @@ export default function AgentDetailPage() {
       setNewToken(result.credentials.token);
     } catch (error) {
       console.error('Failed to rotate token:', error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!api || !agent) return;
+    if (!confirm('Are you sure you want to delete this agent? This cannot be undone.')) return;
+
+    setActionLoading(true);
+    try {
+      await api.agents.delete(agentId);
+      router.push('/dashboard/agents');
+    } catch (error) {
+      alert(`Failed to delete agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setActionLoading(false);
     }
@@ -235,9 +269,14 @@ export default function AgentDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-950 rounded-2xl flex items-center justify-center">
-            <Bot className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-          </div>
+          {(() => {
+            const { Icon, bgColor, textColor } = getAgentIcon(agent.name);
+            return (
+              <div className={`w-16 h-16 ${bgColor} rounded-2xl flex items-center justify-center`}>
+                <Icon className={`h-8 w-8 ${textColor}`} />
+              </div>
+            );
+          })()}
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{agent.name}</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -251,6 +290,24 @@ export default function AgentDetailPage() {
           {/* Quick Actions */}
           <AgentQuickActions
             agent={{ id: agent.id, name: agent.name, status: agent.status }}
+            onConfigure={() => setConfigureOpen(true)}
+          />
+          <ConfigureAgentDialog
+            agent={agent}
+            limits={limits}
+            open={configureOpen}
+            onOpenChange={setConfigureOpen}
+            onSuccess={async () => {
+              if (!api) return;
+              const [agentData, limitsData] = await Promise.all([
+                api.agents.get(agentId),
+                api.agents.getLimits(agentId),
+              ]);
+              const raw = agentData as any;
+              setAgent(raw.data?.data || raw.data || raw);
+              const rawL = limitsData as any;
+              setLimits(rawL.data?.data || rawL.data || rawL);
+            }}
           />
 
           <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${agent.status === 'active'
@@ -320,6 +377,15 @@ export default function AgentDetailPage() {
               >
                 <RefreshCw className="h-4 w-4" />
                 Rotate Token
+              </button>
+              <hr className="my-1 border-gray-200 dark:border-gray-800" />
+              <button
+                onClick={handleDelete}
+                disabled={actionLoading}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2 text-red-600"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Agent
               </button>
             </div>
           </div>
@@ -473,7 +539,7 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
   );
 }
 
-// Recent Transfers for Overview tab — merges transfers + UCP checkouts
+// Recent activity for Overview tab — merges transfers + ACP checkouts + UCP checkouts
 function RecentTransfers({ agentId }: { agentId: string }) {
   const api = useApiClient();
 
@@ -502,6 +568,18 @@ function RecentTransfers({ agentId }: { agentId: string }) {
     enabled: !!api,
   });
 
+  // Fetch ACP checkouts for this agent
+  const { data: acpData, isLoading: acpLoading } = useTanstackQuery({
+    queryKey: ['acp-checkouts', 'agent', agentId],
+    queryFn: async () => {
+      if (!api) return [];
+      const result = await api.acp.list({ agent_id: agentId, limit: 20 });
+      const raw = result as any;
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+    },
+    enabled: !!api,
+  });
+
   // Fetch UCP checkouts filtered by agent name
   const { data: ucpData, isLoading: ucpLoading } = useTanstackQuery({
     queryKey: ['ucp-checkouts', 'agent', agentName],
@@ -515,20 +593,37 @@ function RecentTransfers({ agentId }: { agentId: string }) {
     enabled: !!api && !!agentName,
   });
 
-  const isLoading = transfersLoading || ucpLoading;
+  const isLoading = transfersLoading || acpLoading || ucpLoading;
 
-  // Normalize and merge both sources
-  const transfers = (transfersData || []).map((tx: any) => ({
-    id: tx.id,
-    type: 'transfer' as const,
-    description: tx.description || `${tx.type} transfer`,
-    amount: tx.amount ?? 0,
-    currency: tx.currency ?? 'USDC',
-    status: tx.status,
-    date: tx.createdAt || tx.created_at,
+  // Collect transfer IDs linked to ACP checkouts so we don't show duplicates
+  const acpTransferIds = new Set(
+    (acpData || []).map((c: any) => c.transfer_id || c.transferId).filter(Boolean)
+  );
+
+  // Normalize and merge all sources
+  const transfers = (transfersData || [])
+    .filter((tx: any) => !acpTransferIds.has(tx.id))
+    .map((tx: any) => ({
+      id: tx.id,
+      type: 'transfer' as const,
+      description: tx.description || `${tx.type} transfer`,
+      amount: tx.amount ?? 0,
+      currency: tx.currency ?? 'USDC',
+      status: tx.status,
+      date: tx.createdAt || tx.created_at,
+    }));
+
+  const acpCheckouts = (acpData || []).map((c: any) => ({
+    id: c.id,
+    type: 'acp_checkout' as const,
+    description: c.merchant_name || c.checkout_id || 'ACP Checkout',
+    amount: parseFloat(c.total_amount || c.totalAmount || 0),
+    currency: c.currency || 'USD',
+    status: c.status,
+    date: c.created_at || c.createdAt,
   }));
 
-  const checkouts = (ucpData || []).map((s: any) => ({
+  const ucpCheckouts = (ucpData || []).map((s: any) => ({
     id: s.id,
     type: 'ucp_checkout' as const,
     description: s.metadata?.merchant_name || s.line_items?.[0]?.name || 'UCP Checkout',
@@ -538,7 +633,7 @@ function RecentTransfers({ agentId }: { agentId: string }) {
     date: s.created_at || s.createdAt,
   }));
 
-  const merged = [...transfers, ...checkouts]
+  const merged = [...transfers, ...acpCheckouts, ...ucpCheckouts]
     .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
     .slice(0, 10);
 
@@ -561,32 +656,41 @@ function RecentTransfers({ agentId }: { agentId: string }) {
   };
 
   return (
-    <div className="max-h-[320px] overflow-y-auto space-y-3 pr-1">
-      {merged.map((tx) => (
-        <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            {tx.type === 'ucp_checkout' && (
-              <ShoppingCart className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
-            )}
-            <div className="min-w-0">
-              <div className="text-sm text-gray-900 dark:text-white truncate">
-                {tx.description}
+    <div className="max-h-[320px] overflow-y-auto overflow-x-hidden space-y-3 pr-1">
+      {merged.map((tx) => {
+        const href = tx.type === 'acp_checkout'
+          ? `/dashboard/agentic-payments/acp/checkouts/${tx.id}`
+          : tx.type === 'ucp_checkout'
+            ? `/dashboard/agentic-payments/ucp/checkouts/${tx.id}`
+            : `/dashboard/transfers/${tx.id}`;
+        return (
+          <Link key={`${tx.type}-${tx.id}`} href={href} className="block py-2 border-b border-gray-100 dark:border-gray-800 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-md px-2 -mx-2 transition-colors cursor-pointer">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {(tx.type === 'ucp_checkout' || tx.type === 'acp_checkout') && (
+                  <ShoppingCart className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                )}
+                <div className="min-w-0">
+                  <div className="text-sm text-gray-900 dark:text-white truncate">
+                    {tx.description}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5">
+                    {tx.date ? format(new Date(tx.date), 'MMM d, h:mm a') : ''}
+                  </div>
+                </div>
               </div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {tx.date ? format(new Date(tx.date), 'MMM d, h:mm a') : ''}
+              <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {formatCurrency(tx.amount, tx.currency)}
+                </span>
+                <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getStatusColor(tx.status)}`}>
+                  {tx.status}
+                </span>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-            <span className="text-sm font-medium text-gray-900 dark:text-white">
-              {formatCurrency(tx.amount, tx.currency)}
-            </span>
-            <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getStatusColor(tx.status)}`}>
-              {tx.status}
-            </span>
-          </div>
-        </div>
-      ))}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -860,6 +964,18 @@ function MandatesTab({ agentId }: { agentId: string }) {
     }
   };
 
+  const getPriorityDisplay = (metadata: any) => {
+    const tier = metadata?.priority_tier;
+    if (!tier) return null;
+    const map: Record<string, { label: string; color: string }> = {
+      P0_essential: { label: 'P0 Essential', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
+      P1_important: { label: 'P1 Important', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100' },
+      P2_discretionary: { label: 'P2 Discretionary', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100' },
+      P3_deferrable: { label: 'P3 Deferrable', color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' },
+    };
+    return map[tier] || { label: tier, color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100' };
+  };
+
   return (
     <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
       <Table>
@@ -867,6 +983,7 @@ function MandatesTab({ agentId }: { agentId: string }) {
           <TableRow>
             <TableHead>Mandate ID</TableHead>
             <TableHead>Type</TableHead>
+            <TableHead>Priority</TableHead>
             <TableHead>Authorized</TableHead>
             <TableHead>Used</TableHead>
             <TableHead>Status</TableHead>
@@ -875,7 +992,9 @@ function MandatesTab({ agentId }: { agentId: string }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {mandates.map((m: any) => (
+          {mandates.map((m: any) => {
+            const priority = getPriorityDisplay(m.metadata);
+            return (
             <TableRow key={m.id}>
               <TableCell className="font-mono text-xs">
                 {m.mandateId || m.mandate_id || m.id?.slice(0, 12)}
@@ -884,6 +1003,15 @@ function MandatesTab({ agentId }: { agentId: string }) {
                 <Badge variant="outline" className="capitalize">
                   {m.type || m.mandate_type || 'payment'}
                 </Badge>
+              </TableCell>
+              <TableCell>
+                {priority ? (
+                  <Badge variant="outline" className={`border-transparent ${priority.color}`}>
+                    {priority.label}
+                  </Badge>
+                ) : (
+                  <span className="text-gray-400">—</span>
+                )}
               </TableCell>
               <TableCell>
                 {formatCurrency(m.amount?.authorized ?? m.authorized_amount ?? 0, m.amount?.currency ?? m.currency ?? 'USD')}
@@ -908,7 +1036,8 @@ function MandatesTab({ agentId }: { agentId: string }) {
                 </Link>
               </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -920,6 +1049,7 @@ function CheckoutsTab({ agentId }: { agentId: string }) {
   const api = useApiClient();
   const [checkouts, setCheckouts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchCheckouts() {
@@ -973,6 +1103,26 @@ function CheckoutsTab({ agentId }: { agentId: string }) {
     }
     fetchCheckouts();
   }, [api, agentId]);
+
+  const handleDelete = async (checkout: any) => {
+    if (!api) return;
+    if (!confirm(`Delete checkout "${checkout.checkout_id || checkout.id?.slice(0, 12)}"? This cannot be undone.`)) return;
+
+    const key = `${checkout._protocol}-${checkout.id}`;
+    setDeleting(key);
+    try {
+      if (checkout._protocol === 'ucp') {
+        await api.ucp.checkouts.delete(checkout.id);
+      } else {
+        await api.acp.delete(checkout.id);
+      }
+      setCheckouts((prev) => prev.filter((c) => `${c._protocol}-${c.id}` !== key));
+    } catch (error) {
+      console.error('Failed to delete checkout:', error);
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -1055,12 +1205,22 @@ function CheckoutsTab({ agentId }: { agentId: string }) {
                 {c.created_at ? format(new Date(c.created_at), 'MMM d, yyyy') : '—'}
               </TableCell>
               <TableCell className="text-right">
-                <Link
-                  href={getDetailHref(c)}
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  View
-                </Link>
+                <div className="flex items-center justify-end gap-2">
+                  <Link
+                    href={getDetailHref(c)}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    View
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(c)}
+                    disabled={deleting === `${c._protocol}-${c.id}`}
+                    className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-950 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+                    title="Delete checkout"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

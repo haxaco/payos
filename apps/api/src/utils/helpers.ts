@@ -152,6 +152,7 @@ export function mapTransferFromDb(row: any): Transfer {
       id: row.initiated_by_id,
       name: row.initiated_by_name || '',
     },
+    description: row.description || undefined,
     amount: parseFloat(row.amount),
     currency: row.currency || 'USDC',
     destinationAmount: row.destination_amount ? parseFloat(row.destination_amount) : undefined,

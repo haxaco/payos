@@ -14,24 +14,22 @@ interface AllProtocolsOverviewProps {
 export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
     const api = useApiClient();
 
-    // Fetch x402 stats from endpoint aggregates
-    const { data: x402Data } = useQuery({
-        queryKey: ['x402', 'overview', period],
+    // Fetch x402 stats from analytics summary (period-filtered)
+    const { data: x402Summary } = useQuery({
+        queryKey: ['x402', 'analytics-summary', period],
         queryFn: async () => {
             if (!api) return null;
-            const endpoints = await api.x402Endpoints.list();
-            const data = (endpoints as any)?.data || [];
-            const volume = data.reduce((sum: number, e: any) => sum + parseFloat(e.totalRevenue || '0'), 0);
-            const transactions = data.reduce((sum: number, e: any) => sum + (e.totalCalls || 0), 0);
-            return {
-                volume,
-                transactions,
-                successRate: transactions > 0 ? 99.5 : 0,
-                trend: 0,
-            };
+            return api.x402Analytics.getSummary({ period });
         },
         enabled: !!api,
     });
+
+    const x402Data = {
+        volume: x402Summary?.totalRevenue || 0,
+        transactions: x402Summary?.transactionCount || 0,
+        successRate: (x402Summary?.transactionCount || 0) > 0 ? 100.0 : 0,
+        trend: 0,
+    };
 
     // Fetch AP2 stats from analytics endpoint (same as AP2 tab)
     const { data: ap2Analytics } = useQuery({
@@ -43,12 +41,18 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
         enabled: !!api,
     });
 
-    const ap2Data = {
-        volume: ap2Analytics?.summary?.totalRevenue || 0,
-        transactions: ap2Analytics?.summary?.transactionCount || 0,
-        successRate: ap2Analytics?.summary?.transactionCount > 0 ? 98.2 : 0,
-        trend: 0,
-    };
+    const ap2Data = (() => {
+        const txCount = ap2Analytics?.summary?.transactionCount || 0;
+        const pbs = ap2Analytics?.paymentsByStatus;
+        const completed = pbs?.completed || 0;
+        const total = completed + (pbs?.pending || 0) + (pbs?.failed || 0);
+        return {
+            volume: ap2Analytics?.summary?.totalRevenue || 0,
+            transactions: txCount,
+            successRate: total > 0 ? (completed / total) * 100 : 0,
+            trend: 0,
+        };
+    })();
 
     // Fetch ACP stats from analytics endpoint (same as ACP tab)
     const { data: acpAnalytics } = useQuery({
@@ -60,12 +64,28 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
         enabled: !!api,
     });
 
-    const acpData = {
-        volume: acpAnalytics?.summary?.totalRevenue || 0,
-        transactions: acpAnalytics?.summary?.transactionCount || 0,
-        successRate: (acpAnalytics?.summary?.transactionCount || 0) > 0 ? 97.8 : 0,
-        trend: 0,
-    };
+    // Fetch ACP checkouts for volume (totalRevenue only counts completed transfers)
+    const { data: acpCheckouts } = useQuery({
+        queryKey: ['acp', 'checkouts', period],
+        queryFn: async () => {
+            if (!api) return null;
+            return api.acp.list({ limit: 100 });
+        },
+        enabled: !!api,
+    });
+
+    const acpData = (() => {
+        const cbs = acpAnalytics?.checkoutsByStatus;
+        const completed = cbs?.completed || 0;
+        const total = completed + (cbs?.pending || 0) + (cbs?.cancelled || 0) + (cbs?.failed || 0);
+        const volume = acpCheckouts?.data?.reduce((sum: number, c: any) => sum + (c.total_amount || 0), 0) || 0;
+        return {
+            volume,
+            transactions: total,
+            successRate: total > 0 ? (completed / total) * 100 : 0,
+            trend: 0,
+        };
+    })();
 
     // Fetch UCP stats from analytics endpoint
     const { data: ucpAnalytics } = useQuery({
@@ -86,11 +106,19 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
         trend: 0,
     };
 
-    // Calculate totals
+    // Calculate totals with weighted average success rate
+    const allProtocols = [x402Data, ap2Data, acpData, ucpData];
+    const totalVolume = allProtocols.reduce((sum, p) => sum + (p?.volume || 0), 0);
+    const totalTransactions = allProtocols.reduce((sum, p) => sum + (p?.transactions || 0), 0);
+    const weightedSuccessSum = allProtocols.reduce((sum, p) => {
+        const tx = p?.transactions || 0;
+        const rate = p?.successRate || 0;
+        return sum + rate * tx;
+    }, 0);
     const totals = {
-        volume: (x402Data?.volume || 0) + (ap2Data?.volume || 0) + (acpData?.volume || 0) + (ucpData?.volume || 0),
-        transactions: (x402Data?.transactions || 0) + (ap2Data?.transactions || 0) + (acpData?.transactions || 0) + (ucpData?.transactions || 0),
-        successRate: 98.5, // weighted average would be better
+        volume: totalVolume,
+        transactions: totalTransactions,
+        successRate: totalTransactions > 0 ? weightedSuccessSum / totalTransactions : 0,
     };
 
     const protocols = [
@@ -177,7 +205,7 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-muted-foreground">Success Rate</p>
-                                <p className="text-2xl font-bold">{totals.successRate}%</p>
+                                <p className="text-2xl font-bold">{totals.successRate.toFixed(1)}%</p>
                                 <p className="text-xs text-muted-foreground mt-1">Weighted average</p>
                             </div>
                             <div className="h-12 w-12 rounded-full bg-green-500/10 flex items-center justify-center">
@@ -269,7 +297,7 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
                                                 {formatCurrency(avgSize, 'USD')}
                                             </td>
                                             <td className="py-4 text-right">
-                                                <span className="text-green-500">{protocol.data?.successRate || 0}%</span>
+                                                <span className="text-green-500">{(protocol.data?.successRate || 0).toFixed(1)}%</span>
                                             </td>
                                             <td className="py-4 text-right">
                                                 <TrendIndicator value={protocol.data?.trend || 0} />

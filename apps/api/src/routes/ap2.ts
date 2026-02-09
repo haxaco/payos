@@ -43,54 +43,67 @@ ap2.get('/agent-card', async (c) => {
 
 /**
  * POST /v1/ap2/mandates
- * Create a new payment mandate
+ * Create a new payment mandate (writes to database)
  */
 ap2.post('/mandates', async (c) => {
   const ctx = c.get('ctx');
-  
+  const supabase = createClient();
+
   let body;
   try {
     body = await c.req.json();
   } catch {
     throw new ValidationError('Invalid JSON body');
   }
-  
-  const { 
-    payer_id, 
-    payer_name,
-    payee_id, 
-    payee_name, 
-    payee_account,
-    type,
-    max_amount,
-    currency,
-    frequency,
-    max_occurrences,
-    valid_from,
-    valid_until,
-  } = body;
-  
-  if (!payer_id || !payee_id || !payee_name) {
-    throw new ValidationError('payer_id, payee_id, and payee_name are required');
+
+  // Accept both AP2 protocol fields and dashboard-friendly fields
+  const account_id = body.account_id || body.payer_id;
+  const agent_id = body.agent_id || body.payee_id;
+  const mandate_type = body.mandate_type || body.type;
+  const authorized_amount = body.authorized_amount ?? body.max_amount;
+  const currency = body.currency || 'USDC';
+  const mandate_id = body.mandate_id || body.mandateId || `mandate_${randomUUID().slice(0, 12)}`;
+
+  if (!account_id || !agent_id) {
+    throw new ValidationError('account_id and agent_id are required');
   }
-  
-  const mandateService = getAP2MandateService();
-  
-  const mandate = await mandateService.createMandate({
-    payer_id,
-    payer_name,
-    payee_id,
-    payee_name,
-    payee_account,
-    type,
-    max_amount,
-    currency,
-    frequency,
-    max_occurrences,
-    valid_from,
-    valid_until,
-  });
-  
+  if (!authorized_amount || Number(authorized_amount) <= 0) {
+    throw new ValidationError('authorized_amount must be a positive number');
+  }
+  if (!mandate_type || !['intent', 'cart', 'payment'].includes(mandate_type)) {
+    throw new ValidationError('mandate_type must be one of: intent, cart, payment');
+  }
+
+  // Look up agent name
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('name')
+    .eq('id', agent_id)
+    .single();
+
+  const { data: mandate, error } = await supabase
+    .from('ap2_mandates')
+    .insert({
+      tenant_id: ctx.tenantId,
+      account_id,
+      mandate_id,
+      mandate_type,
+      agent_id,
+      agent_name: body.agent_name || agent?.name || 'Unknown Agent',
+      authorized_amount: Number(authorized_amount),
+      currency,
+      status: 'active',
+      expires_at: body.expires_at || body.expiresAt || body.valid_until || null,
+      mandate_data: body.mandate_data || {},
+      metadata: body.metadata || {},
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    throw new ValidationError(`Failed to create mandate: ${error.message}`);
+  }
+
   return c.json({ data: mandate }, 201);
 });
 
@@ -129,6 +142,70 @@ ap2.get('/mandates/:id', async (c) => {
     .order('execution_index', { ascending: true });
 
   return c.json({ data: { ...mandate, executions: executions || [] } });
+});
+
+/**
+ * PATCH /v1/ap2/mandates/:id
+ * Update a mandate (authorized_amount, expires_at, status, metadata)
+ */
+ap2.patch('/mandates/:id', async (c) => {
+  const id = c.req.param('id');
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+
+  // Build update object from allowed fields
+  const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+  if (body.authorized_amount !== undefined) updates.authorized_amount = Number(body.authorized_amount);
+  if (body.status !== undefined) updates.status = body.status;
+  if (body.expires_at !== undefined) updates.expires_at = body.expires_at;
+  if (body.metadata !== undefined) updates.metadata = body.metadata;
+  if (body.mandate_data !== undefined) updates.mandate_data = body.mandate_data;
+
+  const { data: mandate, error } = await supabase
+    .from('ap2_mandates')
+    .update(updates)
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .select('*')
+    .single();
+
+  if (error || !mandate) {
+    return c.json({ error: error?.message || 'Mandate not found' }, 404);
+  }
+
+  return c.json({ data: mandate });
+});
+
+/**
+ * PATCH /v1/ap2/mandates/:id/cancel
+ * Cancel a mandate
+ */
+ap2.patch('/mandates/:id/cancel', async (c) => {
+  const id = c.req.param('id');
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const { data: mandate, error } = await supabase
+    .from('ap2_mandates')
+    .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('status', 'active')
+    .select('*')
+    .single();
+
+  if (error || !mandate) {
+    return c.json({ error: error?.message || 'Mandate not found or not active' }, 404);
+  }
+
+  return c.json({ data: mandate });
 });
 
 /**
@@ -249,6 +326,89 @@ ap2.get('/mandates', async (c) => {
       totalPages: Math.ceil(total / limit),
     },
   });
+});
+
+/**
+ * POST /v1/ap2/mandates/:id/execute
+ * Execute a payment against a mandate (updates used_amount, creates execution record)
+ */
+ap2.post('/mandates/:id/execute', async (c) => {
+  const id = c.req.param('id');
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+
+  const { amount, currency, description } = body;
+  if (!amount || Number(amount) <= 0) {
+    throw new ValidationError('amount must be a positive number');
+  }
+
+  // Look up mandate from database
+  const { data: mandate, error: findError } = await supabase
+    .from('ap2_mandates')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (findError || !mandate) {
+    return c.json({ error: 'Mandate not found' }, 404);
+  }
+
+  if (mandate.status !== 'active') {
+    return c.json({ error: `Mandate is ${mandate.status}, not active` }, 400);
+  }
+
+  const execAmount = Number(amount);
+  const currentUsed = Number(mandate.used_amount || 0);
+  const remaining = Number(mandate.authorized_amount) - currentUsed;
+
+  if (execAmount > remaining) {
+    return c.json({ error: 'Amount exceeds remaining mandate budget' }, 400);
+  }
+
+  const newExecIndex = (mandate.execution_count || 0) + 1;
+
+  // Insert execution record — a DB trigger (update_ap2_mandate_usage) automatically
+  // updates the mandate's used_amount, execution_count, and remaining_amount
+  const { error: execError } = await supabase
+    .from('ap2_mandate_executions')
+    .insert({
+      tenant_id: ctx.tenantId,
+      mandate_id: id,
+      execution_index: newExecIndex,
+      amount: execAmount,
+      currency: currency || mandate.currency,
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+
+  if (execError) {
+    console.error('[AP2] Mandate execution insert error:', execError);
+    return c.json({ error: 'Failed to execute mandate payment' }, 500);
+  }
+
+  const newUsed = currentUsed + execAmount;
+  const newRemaining = Number(mandate.authorized_amount) - newUsed;
+
+  return c.json({
+    data: {
+      mandate_id: id,
+      execution_index: newExecIndex,
+      amount: execAmount,
+      currency: currency || mandate.currency,
+      status: 'completed',
+      used_amount: newUsed,
+      remaining_amount: newRemaining,
+      description,
+    },
+  }, 201);
 });
 
 // =============================================================================

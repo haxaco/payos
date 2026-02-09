@@ -64,6 +64,9 @@ const updateAgentSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(1000).optional().nullable(),
   permissions: permissionsSchema,
+  dailyLimit: z.number().positive().optional(),
+  monthlyLimit: z.number().positive().optional(),
+  perTransactionLimit: z.number().positive().optional(),
 });
 
 // Default permissions for new agents
@@ -442,7 +445,19 @@ agents.patch('/:id', async (c) => {
       ...parsed.data.permissions,
     };
   }
-  
+  if (parsed.data.dailyLimit !== undefined) {
+    updates.limit_daily = parsed.data.dailyLimit;
+    updates.effective_limit_daily = parsed.data.dailyLimit;
+  }
+  if (parsed.data.monthlyLimit !== undefined) {
+    updates.limit_monthly = parsed.data.monthlyLimit;
+    updates.effective_limit_monthly = parsed.data.monthlyLimit;
+  }
+  if (parsed.data.perTransactionLimit !== undefined) {
+    updates.limit_per_transaction = parsed.data.perTransactionLimit;
+    updates.effective_limit_per_tx = parsed.data.perTransactionLimit;
+  }
+
   if (Object.keys(updates).length === 0) {
     const agent = mapAgentFromDb(existing);
     return c.json({ data: agent });

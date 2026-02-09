@@ -8,6 +8,7 @@ import type {
   Agent,
   AgentLimits,
   CreateAgentInput,
+  UpdateAgentInput,
   CreateAgentResponse,
   AgentsListParams,
   Stream,
@@ -308,7 +309,7 @@ export class SlyClient {
     /**
      * Update an agent
      */
-    update: (id: string, input: Partial<Omit<CreateAgentInput, 'parentAccountId'>>) =>
+    update: (id: string, input: UpdateAgentInput) =>
       this.patch<{ data: Agent }>(`/agents/${id}`, input).then(r => r.data),
 
     /**
@@ -934,6 +935,7 @@ export class SlyClient {
     update: (id: string, input: UpdateMandateInput) =>
       this.patch<{ data: any }>(`/ap2/mandates/${id}`, {
         status: input.status,
+        authorized_amount: input.authorizedAmount,
         expires_at: input.expiresAt,
         metadata: input.metadata,
       }).then(r => transformMandate(r.data)),
@@ -1048,6 +1050,18 @@ export class SlyClient {
      */
     cancel: (id: string) =>
       this.patch<{ data: any }>(`/acp/checkouts/${id}/cancel`, {}).then(r => transformCheckout(r.data)),
+
+    /**
+     * Edit checkout fields (sandbox only)
+     */
+    edit: (id: string, data: Record<string, any>) =>
+      this.patch<{ data: any }>(`/acp/checkouts/${id}`, data).then(r => r.data),
+
+    /**
+     * Delete checkout (sandbox only)
+     */
+    delete: (id: string) =>
+      this.delete<{ success: boolean }>(`/acp/checkouts/${id}`),
 
     /**
      * Get ACP analytics
@@ -1312,6 +1326,18 @@ export class SlyClient {
        */
       cancel: (id: string) =>
         this.post<{ data: any }>(`/ucp/checkouts/${id}/cancel`).then(r => r.data),
+
+      /**
+       * Edit checkout fields (sandbox only)
+       */
+      edit: (id: string, data: Record<string, any>) =>
+        this.patch<{ data: any }>(`/ucp/checkouts/${id}/edit`, data).then(r => r.data),
+
+      /**
+       * Delete a hosted checkout (sandbox only)
+       */
+      delete: (id: string) =>
+        this.delete<{ success: boolean }>(`/ucp/checkouts/${id}`),
     },
 
     // ============================================

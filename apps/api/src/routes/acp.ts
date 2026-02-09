@@ -13,13 +13,14 @@ import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getStripeClient, isStripeConfigured } from '../services/stripe/index.js';
-import { 
+import {
   createSpendingPolicyService,
-  type PolicyContext 
+  type PolicyContext
 } from '../services/spending-policy.js';
-import { 
-  createApprovalWorkflowService 
+import {
+  createApprovalWorkflowService
 } from '../services/approval-workflow.js';
+import { createLimitService } from '../services/limits.js';
 
 const app = new Hono();
 
@@ -276,6 +277,7 @@ app.get('/checkouts', async (c) => {
         total_amount: parseFloat(co.total_amount),
         currency: co.currency,
         status: co.status,
+        transfer_id: co.transfer_id || null,
         item_count: itemCounts[co.id] || 0,
         created_at: co.created_at,
         completed_at: co.completed_at,
@@ -663,6 +665,12 @@ app.post('/checkouts/:id/complete', async (c) => {
       await spendingPolicyService.recordSpending(walletId, parseFloat(checkout.total_amount));
     }
 
+    // Record agent daily usage when payment completed
+    if (paymentStatus === 'completed' && checkout.agent_id) {
+      const limitService = createLimitService(supabase);
+      await limitService.recordUsage(checkout.agent_id, parseFloat(checkout.total_amount));
+    }
+
     return c.json({
       data: {
         checkout_id: updatedCheckout.id,
@@ -714,6 +722,140 @@ app.patch('/checkouts/:id/cancel', async (c) => {
     });
   } catch (error) {
     console.error('[ACP] Cancel checkout error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * PATCH /v1/acp/checkouts/:id
+ * Update checkout fields (sandbox/development only — for demo date editing etc.)
+ */
+app.patch('/checkouts/:id', async (c) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return c.json({ error: 'Edit is not available in production' }, 403);
+    }
+
+    const ctx = c.get('ctx');
+    const { id } = c.req.param();
+    const body = await c.req.json();
+    const supabase = createClient();
+
+    // Allowlist of editable fields
+    const allowed: Record<string, boolean> = {
+      created_at: true,
+      completed_at: true,
+      cancelled_at: true,
+      expires_at: true,
+      status: true,
+      merchant_name: true,
+      total_amount: true,
+      subtotal: true,
+      tax_amount: true,
+      shipping_amount: true,
+      discount_amount: true,
+      payment_method: true,
+      checkout_data: true,
+    };
+
+    const updates: Record<string, any> = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (allowed[key]) updates[key] = value;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return c.json({ error: 'No valid fields to update' }, 400);
+    }
+
+    const { data: checkout, error } = await supabase
+      .from('acp_checkouts')
+      .update(updates)
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
+      .select('*')
+      .single();
+
+    if (error || !checkout) {
+      return c.json({ error: 'Checkout not found', details: error?.message }, 404);
+    }
+
+    // If created_at was updated and there's a linked transfer, update it too
+    if (updates.created_at && checkout.transfer_id) {
+      await supabase.from('transfers').update({ created_at: updates.created_at }).eq('id', checkout.transfer_id);
+    }
+
+    // Record agent usage when status changes to completed
+    if (updates.status === 'completed' && checkout.agent_id && checkout.total_amount) {
+      const limitService = createLimitService(supabase);
+      await limitService.recordUsage(checkout.agent_id, parseFloat(checkout.total_amount));
+    }
+
+    return c.json({ data: checkout });
+  } catch (error) {
+    console.error('[ACP] Update checkout error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * DELETE /v1/acp/checkouts/:id
+ * Delete a checkout (sandbox/development only)
+ */
+app.delete('/checkouts/:id', async (c) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return c.json({ error: 'Delete is not available in production' }, 403);
+    }
+
+    const ctx = c.get('ctx');
+    const { id } = c.req.param();
+    const supabase = createClient();
+
+    // Verify checkout exists and belongs to tenant
+    const { data: checkout, error: fetchErr } = await supabase
+      .from('acp_checkouts')
+      .select('id, transfer_id')
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (fetchErr || !checkout) {
+      return c.json({ error: 'Checkout not found' }, 404);
+    }
+
+    const transferId = checkout.transfer_id;
+
+    // 1. Null out transfer_id FK so the transfer can be deleted later
+    if (transferId) {
+      await supabase.from('acp_checkouts').update({ transfer_id: null }).eq('id', id);
+    }
+
+    // 2. Delete checkout items (also cascades via ON DELETE CASCADE, but be explicit)
+    await supabase.from('acp_checkout_items').delete().eq('checkout_id', id);
+
+    // 3. Delete the checkout
+    const { error: deleteErr } = await supabase
+      .from('acp_checkouts')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId);
+
+    if (deleteErr) {
+      console.error('[ACP] Delete checkout error:', deleteErr);
+      return c.json({ error: 'Failed to delete checkout', details: deleteErr.message }, 500);
+    }
+
+    // 4. Clean up orphaned transfer (best-effort)
+    if (transferId) {
+      // Delete ledger entries and refunds first (they FK → transfers)
+      await supabase.from('ledger_entries').delete().eq('reference_id', transferId).eq('tenant_id', ctx.tenantId);
+      await supabase.from('refunds').delete().eq('transfer_id', transferId).eq('tenant_id', ctx.tenantId);
+      await supabase.from('transfers').delete().eq('id', transferId).eq('tenant_id', ctx.tenantId);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('[ACP] Delete checkout error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

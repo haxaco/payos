@@ -6,12 +6,16 @@ interface AgentQuickActionsProps {
     name: string;
     status: string;
   };
+  onConfigure?: () => void;
 }
 
-export function AgentQuickActions({ agent }: AgentQuickActionsProps) {
+export function AgentQuickActions({ agent, onConfigure }: AgentQuickActionsProps) {
   return (
     <div className="flex items-center gap-2">
-      <button className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+      <button
+        onClick={onConfigure}
+        className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+      >
         <Settings className="h-4 w-4" />
         Configure
       </button>

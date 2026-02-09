@@ -736,6 +736,46 @@ export async function selectPaymentInstrument(
 // =============================================================================
 
 /**
+ * Delete a checkout (sandbox/development only)
+ * Removes from both in-memory store and database.
+ */
+export async function deleteCheckout(
+  tenantId: string,
+  checkoutId: string,
+  supabase?: SupabaseClient
+): Promise<boolean> {
+  // Remove from in-memory store
+  const stored = checkoutStore.get(checkoutId);
+  if (stored && stored.tenant_id === tenantId) {
+    checkoutStore.delete(checkoutId);
+  }
+
+  // Remove from database if supabase provided
+  if (supabase) {
+    // 1. Break circular FK: session.order_id → ucp_orders
+    await supabase.from('ucp_checkout_sessions').update({ order_id: null }).eq('id', checkoutId).eq('tenant_id', tenantId);
+
+    // 2. Delete associated orders (ucp_orders.checkout_id → session)
+    await supabase.from('ucp_orders').delete().eq('checkout_id', checkoutId).eq('tenant_id', tenantId);
+
+    // 3. Delete the session
+    const { error } = await supabase
+      .from('ucp_checkout_sessions')
+      .delete()
+      .eq('id', checkoutId)
+      .eq('tenant_id', tenantId);
+
+    if (error) {
+      console.error('[UCP Checkout] Delete error:', error);
+      return false;
+    }
+  }
+
+  console.log(`[UCP Checkout] Deleted checkout ${checkoutId}`);
+  return true;
+}
+
+/**
  * Clear checkout store (for testing)
  */
 export function clearCheckoutStore(): void {

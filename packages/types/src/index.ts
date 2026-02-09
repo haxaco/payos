@@ -182,6 +182,7 @@ export interface Transfer {
   streamId?: string;
 
   fees: number;
+  description?: string;
 
   idempotencyKey?: string;
 

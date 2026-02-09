@@ -130,7 +130,7 @@ export default function X402EndpointsPage() {
                 <div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
                   <p className="text-2xl font-bold mt-1">
-                    ${endpoints.reduce((sum: number, e: any) => sum + parseFloat(e.totalRevenue || '0'), 0).toFixed(2)}
+                    ${endpoints.reduce((sum: number, e: any) => sum + parseFloat(e.totalRevenue || '0'), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <DollarSign className="h-8 w-8 text-blue-500" />
@@ -274,7 +274,7 @@ export default function X402EndpointsPage() {
                       </td>
                       <td className="p-3 text-right">
                         <span className="font-medium text-green-600 dark:text-green-400">
-                          ${parseFloat(endpoint.totalRevenue || '0').toFixed(2)}
+                          ${parseFloat(endpoint.totalRevenue || '0').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
                       <td className="p-3">

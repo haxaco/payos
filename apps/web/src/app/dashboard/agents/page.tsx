@@ -10,6 +10,22 @@ import { AgentsEmptyState } from '@/components/ui/empty-state';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
+import { LobsterClaw } from '@/components/icons/lobster-claw';
+
+function getAgentIcon(agentName: string) {
+  if (agentName.includes('Inference API Consumer')) {
+    return {
+      Icon: LobsterClaw,
+      bgColor: 'bg-orange-100 dark:bg-orange-950',
+      textColor: 'text-orange-600 dark:text-orange-400',
+    };
+  }
+  return {
+    Icon: Bot,
+    bgColor: 'bg-blue-100 dark:bg-blue-950',
+    textColor: 'text-blue-600 dark:text-blue-400',
+  };
+}
 
 export default function AgentsPage() {
   const api = useApiClient();
@@ -162,9 +178,14 @@ export default function AgentsPage() {
               className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer"
             >
               <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-950 rounded-xl flex items-center justify-center">
-                  <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                </div>
+                {(() => {
+                  const { Icon, bgColor, textColor } = getAgentIcon(agent.name);
+                  return (
+                    <div className={`w-12 h-12 ${bgColor} rounded-xl flex items-center justify-center`}>
+                      <Icon className={`h-6 w-6 ${textColor}`} />
+                    </div>
+                  );
+                })()}
                 <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${agent.status === 'active'
                   ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
                   : agent.status === 'paused'

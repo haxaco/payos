@@ -40,6 +40,9 @@ export function EditMandateDialog({
         : '';
 
     const [expiresAt, setExpiresAt] = useState(initialDate);
+    const [authorizedAmount, setAuthorizedAmount] = useState(
+        mandate.authorizedAmount?.toString() || ''
+    );
 
     const updateMutation = useMutation({
         mutationFn: async () => {
@@ -51,6 +54,10 @@ export function EditMandateDialog({
 
             if (expiresAt) {
                 updateData.expiresAt = new Date(expiresAt).toISOString();
+            }
+
+            if (authorizedAmount && Number(authorizedAmount) > 0) {
+                updateData.authorizedAmount = Number(authorizedAmount);
             }
 
             return api.ap2.update(mandate.id, updateData);
@@ -77,6 +84,26 @@ export function EditMandateDialog({
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="authorized-amount" className="text-right">
+                            Limit ({mandate.currency || 'USDC'})
+                        </Label>
+                        <div className="col-span-3">
+                            <Input
+                                id="authorized-amount"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={authorizedAmount}
+                                onChange={(e) => setAuthorizedAmount(e.target.value)}
+                                placeholder="e.g. 500.00"
+                                className="w-full"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Maximum amount the agent can spend
+                            </p>
+                        </div>
+                    </div>
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="expires-at" className="text-right">
                             Expires At

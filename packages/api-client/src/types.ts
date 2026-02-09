@@ -152,6 +152,15 @@ export interface CreateAgentInput {
   permissions?: Partial<AgentPermissions>;
 }
 
+export interface UpdateAgentInput {
+  name?: string;
+  description?: string | null;
+  permissions?: Partial<AgentPermissions>;
+  dailyLimit?: number;
+  monthlyLimit?: number;
+  perTransactionLimit?: number;
+}
+
 export interface CreateAgentResponse {
   data: Agent;
   credentials: AgentCredentials;
@@ -874,6 +883,7 @@ export interface CreateMandateInput {
 
 export interface UpdateMandateInput {
   status?: MandateStatus;
+  authorizedAmount?: number;
   expiresAt?: string;
   metadata?: Record<string, unknown>;
 }

@@ -70,7 +70,7 @@ export class LimitService {
    */
   private async getDailyUsage(agentId: string): Promise<number> {
     const today = new Date().toISOString().split('T')[0];
-    
+
     const { data } = await this.supabase
       .from('agent_usage')
       .select('daily_amount')
@@ -87,7 +87,7 @@ export class LimitService {
   private async getMonthlyUsage(agentId: string): Promise<number> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    
+
     const { data } = await this.supabase
       .from('agent_usage')
       .select('daily_amount')
@@ -245,17 +245,59 @@ export class LimitService {
   }
 
   /**
-   * Record usage for an agent (after successful transaction)
+   * Record usage for an agent (after successful transaction).
+   * Direct upsert into agent_usage table (unique on agent_id + date).
    */
   async recordUsage(agentId: string, amount: number): Promise<void> {
-    const { error } = await this.supabase.rpc('record_agent_usage', {
-      p_agent_id: agentId,
-      p_amount: amount,
-    });
+    const today = new Date().toISOString().split('T')[0];
 
-    if (error) {
-      console.error('Failed to record agent usage:', error);
-      // Don't throw - this is not critical
+    // Look up tenant_id from the agent record
+    const { data: agent, error: agentError } = await this.supabase
+      .from('agents')
+      .select('tenant_id')
+      .eq('id', agentId)
+      .single();
+
+    if (agentError || !agent) {
+      console.error('Failed to find agent for usage recording:', agentError);
+      return;
+    }
+
+    // Check if a row already exists for today
+    const { data: existing } = await this.supabase
+      .from('agent_usage')
+      .select('id, daily_amount, transaction_count')
+      .eq('agent_id', agentId)
+      .eq('date', today)
+      .single();
+
+    if (existing) {
+      const { error } = await this.supabase
+        .from('agent_usage')
+        .update({
+          daily_amount: (parseFloat(existing.daily_amount) || 0) + amount,
+          transaction_count: (existing.transaction_count || 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+
+      if (error) {
+        console.error('Failed to update agent usage:', error);
+      }
+    } else {
+      const { error } = await this.supabase
+        .from('agent_usage')
+        .insert({
+          agent_id: agentId,
+          tenant_id: agent.tenant_id,
+          date: today,
+          daily_amount: amount,
+          transaction_count: 1,
+        });
+
+      if (error) {
+        console.error('Failed to insert agent usage:', error);
+      }
     }
   }
 

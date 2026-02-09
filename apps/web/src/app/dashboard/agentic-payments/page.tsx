@@ -1,10 +1,52 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
+import { useApiClient } from '@/lib/api-client';
 import { Bot, Zap, ShoppingCart, TrendingUp, DollarSign, Activity, Globe } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@sly/ui';
+import { formatCurrency } from '@/lib/utils';
 
 export default function AgenticPaymentsOverviewPage() {
+    const api = useApiClient();
+
+    const { data: ucpAnalytics } = useQuery({
+        queryKey: ['ucp', 'analytics'],
+        queryFn: () => api!.ucp.getAnalytics({}),
+        enabled: !!api,
+    });
+
+    const { data: acpAnalytics } = useQuery({
+        queryKey: ['acp', 'analytics'],
+        queryFn: () => api!.acp.getAnalytics({}),
+        enabled: !!api,
+    });
+
+    const { data: acpCheckouts } = useQuery({
+        queryKey: ['acp', 'checkouts-volume'],
+        queryFn: () => api!.acp.list({ limit: 100 }),
+        enabled: !!api,
+    });
+
+    const { data: ap2Analytics } = useQuery({
+        queryKey: ['ap2', 'analytics'],
+        queryFn: () => api!.ap2.getAnalytics({}),
+        enabled: !!api,
+    });
+
+    const { data: x402Data } = useQuery({
+        queryKey: ['x402', 'overview-stats'],
+        queryFn: async () => {
+            const [summary, endpoints] = await Promise.all([
+                api!.x402Analytics.getSummary({}),
+                api!.x402Endpoints.list(),
+            ]);
+            const endpointCount = (endpoints as any)?.data?.length || 0;
+            return { endpointCount, totalRevenue: summary?.totalRevenue || 0 };
+        },
+        enabled: !!api,
+    });
+
     const protocols = [
         {
             id: 'ucp',
@@ -14,7 +56,10 @@ export default function AgenticPaymentsOverviewPage() {
             color: 'text-green-600 dark:text-green-400',
             bgColor: 'bg-green-100 dark:bg-green-950',
             href: '/dashboard/agentic-payments/ucp/hosted-checkouts',
-            stats: { checkouts: 0, volume: '$0' }
+            stats: {
+                settlements: ucpAnalytics?.summary?.totalSettlements ?? 0,
+                volume: formatCurrency(ucpAnalytics?.summary?.totalVolume ?? 0, 'USD'),
+            }
         },
         {
             id: 'acp',
@@ -24,7 +69,13 @@ export default function AgenticPaymentsOverviewPage() {
             color: 'text-purple-600 dark:text-purple-400',
             bgColor: 'bg-purple-100 dark:bg-purple-950',
             href: '/dashboard/agentic-payments/acp/checkouts',
-            stats: { checkouts: 2, volume: '$1,245' }
+            stats: {
+                checkouts: (acpAnalytics?.summary?.completedCheckouts ?? 0) + (acpAnalytics?.summary?.pendingCheckouts ?? 0),
+                volume: formatCurrency(
+                    acpCheckouts?.data?.reduce((sum: number, c: any) => sum + (c.total_amount || 0), 0) ?? 0,
+                    'USD'
+                ),
+            }
         },
         {
             id: 'ap2',
@@ -34,7 +85,10 @@ export default function AgenticPaymentsOverviewPage() {
             color: 'text-blue-600 dark:text-blue-400',
             bgColor: 'bg-blue-100 dark:bg-blue-950',
             href: '/dashboard/agentic-payments/ap2/mandates',
-            stats: { mandates: 3, active: 2 }
+            stats: {
+                mandates: ap2Analytics?.summary?.totalMandates ?? 0,
+                active: ap2Analytics?.summary?.activeMandates ?? 0,
+            }
         },
         {
             id: 'x402',
@@ -44,7 +98,10 @@ export default function AgenticPaymentsOverviewPage() {
             color: 'text-yellow-600 dark:text-yellow-400',
             bgColor: 'bg-yellow-100 dark:bg-yellow-950',
             href: '/dashboard/agentic-payments/x402/endpoints',
-            stats: { endpoints: 3, revenue: '$21.82' }
+            stats: {
+                endpoints: x402Data?.endpointCount ?? 0,
+                revenue: formatCurrency(x402Data?.totalRevenue ?? 0, 'USD'),
+            }
         },
     ];
 
