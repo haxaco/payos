@@ -743,14 +743,35 @@ app.post('/pay', async (c) => {
     // ============================================
     // Get the provider's wallet to credit the net amount
 
-    const { data: providerWallet, error: providerWalletError } = await supabase
+    // Prefer non-agent-managed wallets first, then fall back to any active wallet.
+    // Use .limit(1) instead of .single() because the account may have multiple wallets.
+    const { data: providerWallets, error: providerWalletError } = await supabase
       .from('wallets')
       .select('id')
       .eq('owner_account_id', endpoint.account_id)
       .eq('tenant_id', ctx.tenantId)
       .eq('currency', auth.currency)
       .eq('status', 'active')
-      .single();
+      .is('managed_by_agent_id', null)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    let providerWallet = providerWallets?.[0] ?? null;
+
+    // Fallback: if no plain wallet found, pick any active wallet for this account/currency
+    if (!providerWallet) {
+      const { data: fallbackWallets } = await supabase
+        .from('wallets')
+        .select('id')
+        .eq('owner_account_id', endpoint.account_id)
+        .eq('tenant_id', ctx.tenantId)
+        .eq('currency', auth.currency)
+        .eq('status', 'active')
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      providerWallet = fallbackWallets?.[0] ?? null;
+    }
 
     if (providerWalletError || !providerWallet) {
       return c.json({

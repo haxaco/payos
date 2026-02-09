@@ -1,12 +1,12 @@
 {
   "name": "@sly/mcp-server",
   "version": "0.1.0",
-  "description": "Model Context Protocol (MCP) server for PayOS - enables Claude Desktop integration",
+  "description": "Model Context Protocol (MCP) server for Sly - enables Claude Desktop integration",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "payos-mcp-server": "./dist/index.js"
+    "sly-mcp-server": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --shims",
@@ -30,7 +30,7 @@
     "mcp",
     "model-context-protocol",
     "claude",
-    "payos",
+    "sly",
     "payments",
     "ai"
   ]

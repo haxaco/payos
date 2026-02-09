@@ -1,10 +1,10 @@
 # @sly/mcp-server
 
-Model Context Protocol (MCP) server for PayOS, enabling Claude Desktop integration.
+Model Context Protocol (MCP) server for Sly, enabling Claude Desktop integration.
 
 ## What is MCP?
 
-[Model Context Protocol](https://modelcontextprotocol.io/) is Anthropic's open protocol for connecting AI assistants like Claude to external tools and data sources. This server exposes PayOS payment operations as MCP tools that Claude can use.
+[Model Context Protocol](https://modelcontextprotocol.io/) is Anthropic's open protocol for connecting AI assistants like Claude to external tools and data sources. This server exposes Sly payment operations as MCP tools that Claude can use.
 
 ## Installation
 
@@ -24,18 +24,18 @@ pnpm link --global
 
 Add to your Claude Desktop configuration file:
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
-    "payos": {
+    "sly": {
       "command": "npx",
       "args": ["@sly/mcp-server"],
       "env": {
-        "PAYOS_API_KEY": "payos_sandbox_...",
-        "PAYOS_ENVIRONMENT": "sandbox"
+        "SLY_API_KEY": "pk_test_...",
+        "SLY_ENVIRONMENT": "sandbox"
       }
     }
   }
@@ -44,23 +44,19 @@ Add to your Claude Desktop configuration file:
 
 ### Environment Variables
 
-- `PAYOS_API_KEY` (required): Your PayOS API key
-- `PAYOS_ENVIRONMENT` (optional): Environment to use
+- `SLY_API_KEY` (required): Your Sly API key
+- `SLY_ENVIRONMENT` (optional): Environment to use
   - `sandbox` (default): Local development, no real transactions
   - `testnet`: Testnet with real blockchain transactions
   - `production`: Production environment
 
-### Get an API Key
-
-1. Go to [https://payos.ai/dashboard/api-keys](https://payos.ai/dashboard/api-keys)
-2. Create a new API key
-3. Copy and paste into your Claude Desktop config
-
 ## Available Tools
 
-Once configured, Claude Desktop will have access to:
+Once configured, Claude Desktop will have access to 22 tools across 5 categories:
 
-### `get_settlement_quote`
+### Settlement Tools
+
+#### `get_settlement_quote`
 Get a settlement quote for cross-border payment.
 
 **Parameters:**
@@ -69,19 +65,7 @@ Get a settlement quote for cross-border payment.
 - `amount`: Amount to convert
 - `rail` (optional): Settlement rail (pix, spei, wire, usdc)
 
-**Example conversation:**
-```
-User: How much would it cost to send $100 to Brazil via Pix?
-
-Claude: [Uses get_settlement_quote tool]
-       To send $100 to Brazil via Pix:
-       - You'll receive: 500.25 BRL
-       - Exchange rate: 5.0025 BRL/USD
-       - Fee: $0.50
-       - Estimated settlement: 10 seconds
-```
-
-### `create_settlement`
+#### `create_settlement`
 Execute a settlement using a quote.
 
 **Parameters:**
@@ -89,31 +73,127 @@ Execute a settlement using a quote.
 - `destinationAccountId`: Destination account ID
 - `metadata` (optional): Additional metadata
 
-**Example conversation:**
-```
-User: Execute that settlement to account acct_brazil_123
-
-Claude: [Uses create_settlement tool]
-       Settlement created successfully!
-       - ID: set_abc123
-       - Status: processing
-       - Expected completion: ~10 seconds
-```
-
-### `get_settlement_status`
+#### `get_settlement_status`
 Check the status of a settlement.
 
 **Parameters:**
 - `settlementId`: Settlement ID
 
-**Example conversation:**
-```
-User: Check the status of settlement set_abc123
+### UCP (Universal Commerce Protocol) Tools
 
-Claude: [Uses get_settlement_status tool]
-       Settlement set_abc123 is completed!
-       - Completed at: 2025-01-03T16:45:23Z
-       - Final amount: 500.25 BRL
+#### `ucp_discover`
+Discover a merchant's UCP capabilities.
+
+#### `ucp_get_quote`
+Get an FX quote for settlement to Brazil (Pix) or Mexico (SPEI).
+
+#### `ucp_acquire_token`
+Acquire a settlement token that locks in an FX rate for 15 minutes.
+
+#### `ucp_settle`
+Complete a settlement using a previously acquired token.
+
+#### `ucp_get_settlement`
+Check the status of a UCP settlement.
+
+#### `ucp_list_corridors`
+List available settlement corridors.
+
+### Agent Management Tools
+
+#### `list_accounts`
+List accounts for the current tenant. Use to find a business account for agent creation.
+
+#### `create_agent`
+Register a new AI agent under a business account.
+
+**Parameters:**
+- `accountId`: UUID of the parent business account
+- `name`: Name for the agent
+- `description` (optional): What the agent does
+
+#### `verify_agent`
+Verify an agent at a KYA tier (1-3). Higher tiers unlock higher spending limits.
+
+#### `get_agent`
+Get agent details including KYA tier, status, and permissions.
+
+#### `get_agent_limits`
+Get spending limits and current usage for an agent.
+
+### AP2 (Agent-to-Agent Protocol) Mandate Tools
+
+#### `ap2_create_mandate`
+Create a spending mandate that authorizes an agent to spend up to a budget.
+
+**Parameters:**
+- `mandate_id`: Unique mandate identifier
+- `agent_id`: Agent UUID
+- `account_id`: Funding account UUID
+- `authorized_amount`: Maximum spend amount
+- `currency` (optional): Currency (default: USD)
+- `mandate_type` (optional): intent | cart | payment
+
+#### `ap2_get_mandate`
+Get mandate details including execution history and remaining budget.
+
+#### `ap2_execute_mandate`
+Execute a payment against a mandate. Deducts from the budget and creates a transfer.
+
+#### `ap2_list_mandates`
+List mandates with optional filtering by status, agent, or account.
+
+### ACP (Agentic Commerce Protocol) Checkout Tools
+
+#### `acp_create_checkout`
+Create a checkout session with items for an agent to purchase.
+
+**Parameters:**
+- `checkout_id`: Unique checkout identifier
+- `agent_id`: Agent UUID
+- `merchant_id`: Merchant identifier
+- `items`: Array of items (name, quantity, unit_price, total_price)
+- `tax_amount`, `shipping_amount` (optional): Additional charges
+
+#### `acp_get_checkout`
+Get checkout details including items, totals, and status.
+
+#### `acp_complete_checkout`
+Complete and pay for a checkout.
+
+#### `acp_list_checkouts`
+List checkouts with optional filtering.
+
+## Shopping Demo Flow
+
+With all tools available, Claude can run the full shopping demo:
+
+```
+User: List my accounts and find a business account
+
+Claude: [Uses list_accounts] Found "TechCorp Trading" (acct_xxx)
+
+User: Create a Shopping Agent under that account
+
+Claude: [Uses create_agent] Created "Shopping Agent" (agent_xxx)
+
+User: Verify the agent at KYA Tier 1
+
+Claude: [Uses verify_agent] Agent verified at Tier 1
+
+User: Create a $500 spending mandate for the agent
+
+Claude: [Uses ap2_create_mandate] Mandate created with $500 budget
+
+User: Create a checkout with sneakers ($199) and a backpack ($89)
+
+Claude: [Uses acp_create_checkout] Checkout created, total: $288
+
+User: Complete the checkout and record the payment
+
+Claude: [Uses acp_complete_checkout, ap2_execute_mandate]
+       Checkout completed! $288 deducted from mandate.
+       Remaining budget: $212
 ```
 
 ## Development
@@ -126,7 +206,7 @@ pnpm install
 pnpm build
 
 # Run locally
-PAYOS_API_KEY=payos_sandbox_xxx pnpm start
+SLY_API_KEY=pk_test_xxx pnpm start
 
 # Run tests
 pnpm test
@@ -144,7 +224,7 @@ The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is a tool
 npm install -g @modelcontextprotocol/inspector
 
 # Run server in inspector
-PAYOS_API_KEY=payos_sandbox_xxx mcp-inspector npx @sly/mcp-server
+SLY_API_KEY=pk_test_xxx mcp-inspector npx @sly/mcp-server
 ```
 
 ## Architecture
@@ -160,34 +240,11 @@ PAYOS_API_KEY=payos_sandbox_xxx mcp-inspector npx @sly/mcp-server
 └────────┬────────┘
          │ HTTP
 ┌────────┴────────┐
-│  PayOS API      │
-│  (api.payos.ai) │
+│  Sly API        │
+│  (api.sly.dev)  │
 └─────────────────┘
-```
-
-## YC Demo
-
-This MCP server is the centerpiece of the YC demo:
-
-1. **Live in Claude Desktop**: No custom UI needed
-2. **Natural language**: "Send $100 to Brazil via Pix"
-3. **Real-time**: Instant quotes and settlement
-4. **Cross-border**: USD → BRL via Pix in 10 seconds
-
-Demo script:
-```
-User: I need to pay a contractor in Brazil $500
-
-Claude: [Gets quote, shows rate and fees, confirms]
-
-User: Yes, proceed
-
-Claude: [Creates settlement, shows status]
-       Payment sent! Your contractor will receive 2,501.25 BRL
-       via Pix in approximately 10 seconds.
 ```
 
 ## License
 
 MIT
-
