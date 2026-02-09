@@ -16,6 +16,7 @@
 import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { LimitService } from '../limits.js';
+import { getCircleFXService } from '../circle/fx.js';
 import type {
   UCPCheckoutSession,
   UCPLineItem,
@@ -704,19 +705,30 @@ export async function completeCheckout(
       // Increment agent attribution counters if agent_id is set
       const agentId = existing.agent_id || (existing.metadata?.agent_id as string | undefined);
       if (agentId && supabase) {
-        // UCP totals are in cents (minor units); agent limits/usage are in dollars
-        const totalDollars = totalAmount / 100;
+        // Convert from minor units to major units, then to USD if non-USD currency
+        const majorUnits = totalAmount / 100;
+        const currency = existing.currency?.toUpperCase() || 'USD';
+        let usdAmount = majorUnits;
+        if (currency !== 'USD' && currency !== 'USDC') {
+          try {
+            const fxService = getCircleFXService();
+            usdAmount = fxService.toUSD(majorUnits, currency);
+            console.log(`[UCP Checkout] FX conversion: ${majorUnits} ${currency} → $${usdAmount} USD`);
+          } catch (fxErr: any) {
+            console.error(`[UCP Checkout] FX conversion failed for ${currency}, using raw amount:`, fxErr.message);
+          }
+        }
         try {
           await supabase.rpc('increment_agent_counters', {
             p_agent_id: agentId,
-            p_volume: totalDollars,
+            p_volume: usdAmount,
           });
-          console.log(`[UCP Checkout] Incremented agent ${agentId} counters: +$${totalDollars} volume, +1 txn`);
+          console.log(`[UCP Checkout] Incremented agent ${agentId} counters: +$${usdAmount} volume, +1 txn`);
 
           // Record daily/monthly usage for limit tracking
           const limitService = new LimitService(supabase);
-          await limitService.recordUsage(agentId, totalDollars);
-          console.log(`[UCP Checkout] Recorded agent ${agentId} daily usage: +$${totalDollars}`);
+          await limitService.recordUsage(agentId, usdAmount);
+          console.log(`[UCP Checkout] Recorded agent ${agentId} daily usage: +$${usdAmount}`);
         } catch (agentErr: any) {
           // Non-fatal: log but don't fail the checkout
           console.error(`[UCP Checkout] Failed to increment agent counters for ${agentId}:`, agentErr.message);

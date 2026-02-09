@@ -826,6 +826,98 @@ agents.get('/:id/limits', async (c) => {
 });
 
 // ============================================
+// GET /v1/agents/:id/transactions - Agent transaction history
+// ============================================
+agents.get('/:id/transactions', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const supabase = createClient();
+
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid agent ID format');
+  }
+
+  // Verify agent exists and belongs to tenant
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, name')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (!agent) {
+    throw new NotFoundError('Agent', id);
+  }
+
+  const limit = parseInt(c.req.query('limit') || '20', 10);
+  const offset = parseInt(c.req.query('offset') || '0', 10);
+  const dateFrom = c.req.query('from') || undefined;
+  const dateTo = c.req.query('to') || undefined;
+
+  // Fetch UCP checkouts attributed to this agent
+  let ucpQuery = supabase
+    .from('ucp_checkout_sessions')
+    .select('id, status, currency, totals, created_at, order_id, metadata', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .eq('agent_id', id)
+    .order('created_at', { ascending: false });
+
+  if (dateFrom) ucpQuery = ucpQuery.gte('created_at', dateFrom);
+  if (dateTo) ucpQuery = ucpQuery.lte('created_at', dateTo);
+
+  const { data: ucpCheckouts, count: ucpTotal } = await ucpQuery.range(offset, offset + limit - 1);
+
+  // Fetch ACP checkouts attributed to this agent
+  let acpQuery = supabase
+    .from('acp_checkouts')
+    .select('id, status, currency, total_amount, created_at, metadata', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .eq('agent_id', id)
+    .order('created_at', { ascending: false });
+
+  if (dateFrom) acpQuery = acpQuery.gte('created_at', dateFrom);
+  if (dateTo) acpQuery = acpQuery.lte('created_at', dateTo);
+
+  const { data: acpCheckouts, count: acpTotal } = await acpQuery.range(offset, offset + limit - 1);
+
+  // Normalize into unified transaction format
+  const transactions = [
+    ...(ucpCheckouts || []).map((c: any) => {
+      const totalLine = (c.totals || []).find((t: any) => t.type === 'total');
+      return {
+        id: c.id,
+        type: 'ucp_checkout' as const,
+        status: c.status,
+        currency: c.currency,
+        amount: totalLine?.amount || 0,
+        order_id: c.order_id,
+        created_at: c.created_at,
+        description: c.metadata?.description || c.metadata?.vendor || null,
+      };
+    }),
+    ...(acpCheckouts || []).map((c: any) => ({
+      id: c.id,
+      type: 'acp_checkout' as const,
+      status: c.status,
+      currency: c.currency,
+      amount: parseFloat(c.total_amount) || 0,
+      order_id: null,
+      created_at: c.created_at,
+      description: c.metadata?.description || null,
+    })),
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  return c.json({
+    data: transactions,
+    pagination: {
+      limit,
+      offset,
+      total: (ucpTotal || 0) + (acpTotal || 0),
+    },
+  });
+});
+
+// ============================================
 // POST /v1/agents/:id/verify - Mock KYA verification
 // ============================================
 agents.post('/:id/verify', async (c) => {

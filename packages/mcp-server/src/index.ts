@@ -645,6 +645,36 @@ const tools: Tool[] = [
       required: ['agentId'],
     },
   },
+  {
+    name: 'get_agent_transactions',
+    description: 'Get transaction history for an agent. Returns all UCP and ACP checkouts attributed to the agent, with pagination and optional date filters.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: {
+          type: 'string',
+          description: 'UUID of the agent',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max results per page (default 20)',
+        },
+        offset: {
+          type: 'number',
+          description: 'Offset for pagination (default 0)',
+        },
+        from: {
+          type: 'string',
+          description: 'Filter from date (ISO 8601, optional)',
+        },
+        to: {
+          type: 'string',
+          description: 'Filter to date (ISO 8601, optional)',
+        },
+      },
+      required: ['agentId'],
+    },
+  },
 
   // ==========================================================================
   // AP2 (Agent-to-Agent Protocol) Mandate Tools
@@ -1734,6 +1764,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get_agent_limits': {
         const { agentId } = args as { agentId: string };
         const result = await sly.request(`/v1/agents/${agentId}/limits`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_agent_transactions': {
+        const { agentId, limit: txLimit, offset: txOffset, from, to } = args as {
+          agentId: string;
+          limit?: number;
+          offset?: number;
+          from?: string;
+          to?: string;
+        };
+        const params = new URLSearchParams();
+        if (txLimit) params.set('limit', String(txLimit));
+        if (txOffset) params.set('offset', String(txOffset));
+        if (from) params.set('from', from);
+        if (to) params.set('to', to);
+        const query = params.toString();
+        const result = await sly.request(`/v1/agents/${agentId}/transactions${query ? `?${query}` : ''}`);
         return {
           content: [
             {

@@ -54,6 +54,8 @@ const BASE_RATES: Record<string, Record<string, number>> = {
   USD: {
     BRL: 5.85,    // 1 USD = 5.85 BRL
     MXN: 17.35,   // 1 USD = 17.35 MXN
+    ARS: 1050,    // 1 USD = 1050 ARS (blue rate, Jan 2026)
+    COP: 4200,    // 1 USD = 4200 COP
     EUR: 0.92,    // 1 USD = 0.92 EUR
     GBP: 0.79,    // 1 USD = 0.79 GBP
   },
@@ -65,6 +67,12 @@ const BASE_RATES: Record<string, Record<string, number>> = {
     USD: 0.0577,  // 1 MXN = 0.0577 USD
     BRL: 0.337,   // 1 MXN = 0.337 BRL
   },
+  ARS: {
+    USD: 0.000952, // 1 ARS = 0.000952 USD
+  },
+  COP: {
+    USD: 0.000238, // 1 COP = 0.000238 USD
+  },
 };
 
 /**
@@ -73,8 +81,12 @@ const BASE_RATES: Record<string, Record<string, number>> = {
 const CORRIDOR_FEES: Record<string, number> = {
   'USD-BRL': 0.5,   // 0.5% for USD to BRL (Pix)
   'USD-MXN': 0.5,   // 0.5% for USD to MXN (SPEI)
+  'USD-ARS': 1.0,   // 1.0% for USD to ARS (CBU)
+  'USD-COP': 1.0,   // 1.0% for USD to COP (PSE)
   'BRL-USD': 0.75,  // 0.75% for BRL to USD
   'MXN-USD': 0.75,  // 0.75% for MXN to USD
+  'ARS-USD': 1.0,   // 1.0% for ARS to USD
+  'COP-USD': 1.0,   // 1.0% for COP to USD
   'BRL-MXN': 1.0,   // 1.0% for cross-LATAM (via USD)
   'MXN-BRL': 1.0,   // 1.0% for cross-LATAM (via USD)
   'DEFAULT': 0.5,   // Default fee
@@ -227,6 +239,17 @@ export class CircleFXService {
       fee: parseFloat(fee.toFixed(2)),
       result: parseFloat(result.toFixed(2)),
     };
+  }
+
+  /**
+   * Convert an amount to USD using the current rate (no fees applied).
+   * Returns the amount unchanged if already USD/USDC.
+   */
+  toUSD(amount: number, currency: string): number {
+    const src = currency.toUpperCase();
+    if (src === 'USD' || src === 'USDC') return amount;
+    const rate = this.getRate(src, 'USD');
+    return parseFloat((amount * rate).toFixed(2));
   }
 
   /**
