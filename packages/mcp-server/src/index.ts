@@ -21,7 +21,7 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { Sly } from '@sly/sdk';
+import { Sly, getEnvironmentConfig } from '@sly/sdk';
 
 // Get configuration from environment
 const SLY_API_KEY = process.env.SLY_API_KEY;
@@ -37,6 +37,9 @@ const sly = new Sly({
   apiKey: SLY_API_KEY,
   environment: SLY_ENVIRONMENT,
 });
+
+// Derive API URL for direct fetch calls (batch operations)
+const SLY_API_URL = process.env.SLY_API_URL || getEnvironmentConfig(SLY_ENVIRONMENT).apiUrl;
 
 // Create MCP server
 const server = new Server(
@@ -1458,6 +1461,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const results: Array<{ checkout_id: string; order_id?: string; status: string; error?: string }> = [];
 
         for (const spec of checkouts) {
+          let checkoutId = '';
           try {
             // Create checkout with all fields
             const body: Record<string, any> = {
@@ -1470,56 +1474,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             if (spec.payment_instruments) body.payment_instruments = spec.payment_instruments;
             if (spec.checkout_type) body.checkout_type = spec.checkout_type;
 
-            const created = await sly.request('/v1/ucp/checkouts', {
+            // Create the checkout (use direct fetch to get full response control)
+            const createRes = await fetch(`${SLY_API_URL}/v1/ucp/checkouts`, {
               method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SLY_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
               body: JSON.stringify(body),
-            }) as any;
+            });
+            const created = await createRes.json() as any;
 
-            const checkoutId = created?.id;
-            if (!checkoutId) {
-              results.push({ checkout_id: 'unknown', status: 'error', error: `Create returned no id: ${JSON.stringify(created)}` });
+            if (!createRes.ok) {
+              results.push({ checkout_id: 'failed', status: 'error', error: `Create failed: ${created?.error || createRes.statusText}` });
               continue;
             }
 
-            // Determine status — use create response, or fetch from API if missing
-            let status = created.status;
-            if (!status) {
-              try {
-                const fetched = await sly.request(`/v1/ucp/checkouts/${checkoutId}`) as any;
-                status = fetched?.status;
-              } catch { /* ignore fetch error */ }
+            checkoutId = created?.id;
+            if (!checkoutId) {
+              results.push({ checkout_id: 'unknown', status: 'error', error: `Create returned no id` });
+              continue;
             }
 
-            // If ready_for_complete, auto-complete
-            if (status === 'ready_for_complete') {
-              try {
-                const completed = await sly.request(`/v1/ucp/checkouts/${checkoutId}/complete`, {
-                  method: 'POST',
-                }) as any;
-                results.push({
-                  checkout_id: completed?.id || checkoutId,
-                  order_id: completed?.order_id,
-                  status: completed?.status || 'completed',
-                });
-              } catch (completeErr: any) {
-                results.push({
-                  checkout_id: checkoutId,
-                  status: status,
-                  error: `Complete failed: ${completeErr.message}`,
-                });
-              }
+            // Always attempt to complete — the complete endpoint validates
+            // readiness internally. This avoids relying on the status field
+            // from the create response which can be undefined.
+            const completeRes = await fetch(`${SLY_API_URL}/v1/ucp/checkouts/${checkoutId}/complete`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SLY_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            const completed = await completeRes.json() as any;
+
+            if (completeRes.ok) {
+              results.push({
+                checkout_id: completed?.id || checkoutId,
+                order_id: completed?.order_id,
+                status: completed?.status || 'completed',
+              });
             } else {
+              // Complete failed — report the checkout as created but not completed
               results.push({
                 checkout_id: checkoutId,
-                status: status || 'unknown',
-                error: `Not ready for complete (status: ${status})`,
+                status: created?.status || 'created',
+                error: `Complete failed (${completeRes.status}): ${completed?.error || 'unknown error'}`,
               });
             }
-          } catch (createErr: any) {
+          } catch (err: any) {
             results.push({
-              checkout_id: 'failed',
+              checkout_id: checkoutId || 'failed',
               status: 'error',
-              error: `Create failed: ${createErr.message}`,
+              error: err.message,
             });
           }
         }
