@@ -1475,29 +1475,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               body: JSON.stringify(body),
             }) as any;
 
-            // If ready_for_complete, auto-complete
-            if (created.status === 'ready_for_complete') {
+            const checkoutId = created?.id;
+            if (!checkoutId) {
+              results.push({ checkout_id: 'unknown', status: 'error', error: `Create returned no id: ${JSON.stringify(created)}` });
+              continue;
+            }
+
+            // Determine status — use create response, or fetch from API if missing
+            let status = created.status;
+            if (!status) {
               try {
-                const completed = await sly.request(`/v1/ucp/checkouts/${created.id}/complete`, {
+                const fetched = await sly.request(`/v1/ucp/checkouts/${checkoutId}`) as any;
+                status = fetched?.status;
+              } catch { /* ignore fetch error */ }
+            }
+
+            // If ready_for_complete, auto-complete
+            if (status === 'ready_for_complete') {
+              try {
+                const completed = await sly.request(`/v1/ucp/checkouts/${checkoutId}/complete`, {
                   method: 'POST',
                 }) as any;
                 results.push({
-                  checkout_id: completed.id,
-                  order_id: completed.order_id,
-                  status: completed.status,
+                  checkout_id: completed?.id || checkoutId,
+                  order_id: completed?.order_id,
+                  status: completed?.status || 'completed',
                 });
               } catch (completeErr: any) {
                 results.push({
-                  checkout_id: created.id,
-                  status: created.status,
+                  checkout_id: checkoutId,
+                  status: status,
                   error: `Complete failed: ${completeErr.message}`,
                 });
               }
             } else {
               results.push({
-                checkout_id: created.id,
-                status: created.status,
-                error: `Not ready for complete (status: ${created.status})`,
+                checkout_id: checkoutId,
+                status: status || 'unknown',
+                error: `Not ready for complete (status: ${status})`,
               });
             }
           } catch (createErr: any) {

@@ -616,12 +616,14 @@ export async function completeCheckout(
       throw new Error('Checkout not found');
     }
 
-    if (!canComplete(existing.status)) {
+    // Recompute status from actual state (in case stored status is stale/null)
+    const actualStatus = existing.status || computeStatus(existing as any, { requireShipping: requiresShipping(existing.metadata || {}) });
+    if (!canComplete(actualStatus)) {
       const missing = getMissingRequirements(existing as any, { requireShipping: requiresShipping(existing.metadata || {}) });
       if (missing.length > 0) {
         throw new Error(`Cannot complete checkout: missing ${missing.join(', ')}`);
       }
-      throw new Error(`Cannot complete checkout in ${existing.status} status`);
+      throw new Error(`Cannot complete checkout in ${actualStatus} status`);
     }
 
     if (hasBlockingErrors(existing.messages)) {
@@ -676,6 +678,22 @@ export async function completeCheckout(
       }
 
       console.log(`[UCP Checkout] Checkout ${checkoutId} completed, order ${order.id} created (persisted)`);
+
+      // Increment agent attribution counters if agent_id is in metadata
+      const agentId = existing.metadata?.agent_id as string | undefined;
+      if (agentId && supabase) {
+        try {
+          await supabase.rpc('increment_agent_counters', {
+            p_agent_id: agentId,
+            p_volume: totalAmount,
+          });
+          console.log(`[UCP Checkout] Incremented agent ${agentId} counters: +${totalAmount} volume, +1 txn`);
+        } catch (agentErr: any) {
+          // Non-fatal: log but don't fail the checkout
+          console.error(`[UCP Checkout] Failed to increment agent counters for ${agentId}:`, agentErr.message);
+        }
+      }
+
       return dbRowToCheckoutSession(data);
     } catch (err: any) {
       // Revert to ready_for_complete on any failure

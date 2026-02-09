@@ -22,6 +22,9 @@ import {
 
 const ap2 = new Hono();
 
+// Helper: detect UUID format to avoid Postgres cast errors on the UUID `id` column
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // =============================================================================
 // Discovery
 // =============================================================================
@@ -116,12 +119,13 @@ ap2.get('/mandates/:id', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
 
-  // Query database for mandate by UUID id or user-defined mandate_id
+  // Query by UUID id or user-defined mandate_id (avoid UUID cast error)
+  const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
   const { data: mandate, error } = await supabase
     .from('ap2_mandates')
     .select('*')
     .eq('tenant_id', ctx.tenantId)
-    .or(`id.eq.${id},mandate_id.eq.${id}`)
+    .eq(col, id)
     .single();
 
   if (error || !mandate) {
@@ -168,22 +172,12 @@ ap2.patch('/mandates/:id', async (c) => {
   if (body.metadata !== undefined) updates.metadata = body.metadata;
   if (body.mandate_data !== undefined) updates.mandate_data = body.mandate_data;
 
-  // First find the mandate by UUID id or user-defined mandate_id
-  const { data: existing } = await supabase
-    .from('ap2_mandates')
-    .select('id')
-    .eq('tenant_id', ctx.tenantId)
-    .or(`id.eq.${id},mandate_id.eq.${id}`)
-    .single();
-
-  if (!existing) {
-    return c.json({ error: 'Mandate not found' }, 404);
-  }
-
+  // Look up by UUID id or user-defined mandate_id (avoid UUID cast error)
+  const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
   const { data: mandate, error } = await supabase
     .from('ap2_mandates')
     .update(updates)
-    .eq('id', existing.id)
+    .eq(col, id)
     .eq('tenant_id', ctx.tenantId)
     .select('*')
     .single();
@@ -204,22 +198,12 @@ ap2.patch('/mandates/:id/cancel', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
 
-  // First find the mandate by UUID id or user-defined mandate_id
-  const { data: existing } = await supabase
-    .from('ap2_mandates')
-    .select('id')
-    .eq('tenant_id', ctx.tenantId)
-    .or(`id.eq.${id},mandate_id.eq.${id}`)
-    .single();
-
-  if (!existing) {
-    return c.json({ error: 'Mandate not found' }, 404);
-  }
-
+  // Look up by UUID id or user-defined mandate_id (avoid UUID cast error)
+  const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
   const { data: mandate, error } = await supabase
     .from('ap2_mandates')
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq('id', existing.id)
+    .eq(col, id)
     .eq('tenant_id', ctx.tenantId)
     .eq('status', 'active')
     .select('*')
@@ -373,12 +357,13 @@ ap2.post('/mandates/:id/execute', async (c) => {
     throw new ValidationError('amount must be a positive number');
   }
 
-  // Look up mandate by UUID id or user-defined mandate_id
+  // Look up by UUID id or user-defined mandate_id (avoid UUID cast error)
+  const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
   const { data: mandate, error: findError } = await supabase
     .from('ap2_mandates')
     .select('*')
     .eq('tenant_id', ctx.tenantId)
-    .or(`id.eq.${id},mandate_id.eq.${id}`)
+    .eq(col, id)
     .single();
 
   if (findError || !mandate) {
