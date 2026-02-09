@@ -426,6 +426,8 @@ export interface CreateCheckoutRequest {
   shipping_address?: UCPAddress;
   billing_address?: UCPAddress;
   payment_config?: Partial<UCPPaymentConfig>;
+  payment_instruments?: UCPPaymentInstrument[];
+  checkout_type?: 'physical' | 'digital' | 'service';
   continue_url?: string;
   cancel_url?: string;
   links?: UCPLink[];

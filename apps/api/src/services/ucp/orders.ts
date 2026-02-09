@@ -159,7 +159,7 @@ export async function createOrderFromCheckout(
   tenantId: string,
   checkout: UCPCheckoutSession,
   payment: UCPOrderPayment,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder> {
   const id = generateOrderId();
   const now = new Date();
@@ -189,6 +189,39 @@ export async function createOrderFromCheckout(
     updated_at: now,
   };
 
+  // Persist to database if supabase provided
+  if (supabase) {
+    const { error } = await supabase.from('ucp_orders').insert({
+      id,
+      tenant_id: tenantId,
+      checkout_id: checkout.id,
+      status: 'confirmed',
+      currency: checkout.currency,
+      line_items: checkout.line_items,
+      totals: checkout.totals,
+      buyer: checkout.buyer || null,
+      shipping_address: checkout.shipping_address || null,
+      billing_address: checkout.billing_address || null,
+      payment,
+      expectations: [],
+      events: [],
+      adjustments: [],
+      permalink_url: permalinkUrl,
+      metadata: checkout.metadata || {},
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
+
+    if (error) {
+      console.error('[UCP Order] DB insert error:', error);
+      throw new Error(`Failed to create order: ${error.message}`);
+    }
+
+    console.log(`[UCP Order] Created order ${id} from checkout ${checkout.id} (persisted)`);
+    return toOrder(stored);
+  }
+
+  // Fallback: store in-memory (only when no supabase client provided)
   orderStore.set(id, stored);
 
   console.log(`[UCP Order] Created order ${id} from checkout ${checkout.id}`);
@@ -267,8 +300,23 @@ function dbRowToOrder(row: any): UCPOrder {
 export async function getOrderByCheckoutId(
   tenantId: string,
   checkoutId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder | null> {
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .select('*')
+      .eq('checkout_id', checkoutId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return dbRowToOrder(data);
+  }
+
   const stored = Array.from(orderStore.values()).find(
     (o) => o.checkout_id === checkoutId && o.tenant_id === tenantId
   );
@@ -287,8 +335,34 @@ export async function updateOrderStatus(
   tenantId: string,
   orderId: string,
   newStatus: OrderStatus,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder> {
+  if (supabase) {
+    const order = await getOrder(tenantId, orderId, supabase);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (!isValidOrderTransition(order.status as OrderStatus, newStatus)) {
+      throw new Error(`Invalid status transition from ${order.status} to ${newStatus}`);
+    }
+
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to update order status');
+    }
+
+    console.log(`[UCP Order] Order ${orderId} status updated to ${newStatus}`);
+    return dbRowToOrder(data);
+  }
+
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -384,8 +458,36 @@ export async function addExpectation(
   tenantId: string,
   orderId: string,
   expectation: Omit<UCPExpectation, 'id'>,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder> {
+  const newExpectation: UCPExpectation = {
+    id: generateExpectationId(),
+    ...expectation,
+  };
+
+  if (supabase) {
+    const order = await getOrder(tenantId, orderId, supabase);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    const updatedExpectations = [...(order.expectations || []), newExpectation];
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .update({ expectations: updatedExpectations, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to add expectation');
+    }
+
+    console.log(`[UCP Order] Added expectation ${newExpectation.id} to order ${orderId}`);
+    return dbRowToOrder(data);
+  }
+
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -395,11 +497,6 @@ export async function addExpectation(
   if (stored.tenant_id !== tenantId) {
     throw new Error('Order not found');
   }
-
-  const newExpectation: UCPExpectation = {
-    id: generateExpectationId(),
-    ...expectation,
-  };
 
   stored.expectations.push(newExpectation);
   stored.updated_at = new Date();
@@ -418,8 +515,37 @@ export async function updateExpectation(
   orderId: string,
   expectationId: string,
   updates: Partial<Omit<UCPExpectation, 'id'>>,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder> {
+  if (supabase) {
+    const order = await getOrder(tenantId, orderId, supabase);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    const expectationIndex = (order.expectations || []).findIndex((e) => e.id === expectationId);
+    if (expectationIndex === -1) {
+      throw new Error('Expectation not found');
+    }
+
+    const updatedExpectations = [...order.expectations];
+    updatedExpectations[expectationIndex] = { ...updatedExpectations[expectationIndex], ...updates };
+
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .update({ expectations: updatedExpectations, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to update expectation');
+    }
+
+    return dbRowToOrder(data);
+  }
+
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -452,8 +578,46 @@ export async function addFulfillmentEvent(
   tenantId: string,
   orderId: string,
   event: Omit<UCPFulfillmentEvent, 'id' | 'timestamp'>,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder> {
+  const newEvent: UCPFulfillmentEvent = {
+    id: generateEventId(),
+    timestamp: new Date().toISOString(),
+    ...event,
+  };
+
+  if (supabase) {
+    const order = await getOrder(tenantId, orderId, supabase);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    const updatedEvents = [...(order.events || []), newEvent];
+
+    // Auto-update order status based on event type
+    let newStatus = order.status;
+    if (event.type === 'shipped' && order.status === 'processing') {
+      newStatus = 'shipped';
+    } else if (event.type === 'delivered' && order.status === 'shipped') {
+      newStatus = 'delivered';
+    }
+
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .update({ events: updatedEvents, status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to add fulfillment event');
+    }
+
+    console.log(`[UCP Order] Added event ${newEvent.id} (${event.type}) to order ${orderId}`);
+    return dbRowToOrder(data);
+  }
+
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -463,12 +627,6 @@ export async function addFulfillmentEvent(
   if (stored.tenant_id !== tenantId) {
     throw new Error('Order not found');
   }
-
-  const newEvent: UCPFulfillmentEvent = {
-    id: generateEventId(),
-    timestamp: new Date().toISOString(),
-    ...event,
-  };
 
   // Events are append-only
   stored.events.push(newEvent);
@@ -494,8 +652,16 @@ export async function addFulfillmentEvent(
 export async function getFulfillmentEvents(
   tenantId: string,
   orderId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPFulfillmentEvent[]> {
+  if (supabase) {
+    const order = await getOrder(tenantId, orderId, supabase);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+    return order.events || [];
+  }
+
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -520,8 +686,57 @@ export async function addAdjustment(
   tenantId: string,
   orderId: string,
   adjustment: Omit<UCPAdjustment, 'id' | 'created_at'>,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder> {
+  const newAdjustment: UCPAdjustment = {
+    id: generateAdjustmentId(),
+    created_at: new Date().toISOString(),
+    ...adjustment,
+  };
+
+  if (supabase) {
+    const order = await getOrder(tenantId, orderId, supabase);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // Validate adjustment amount
+    const totalAmount = (order.totals || []).find((t) => t.type === 'total')?.amount || 0;
+    const existingRefunds = (order.adjustments || [])
+      .filter((a) => a.type === 'refund')
+      .reduce((sum, a) => sum + a.amount, 0);
+
+    if (adjustment.type === 'refund' && adjustment.amount + existingRefunds > totalAmount) {
+      throw new Error('Refund amount exceeds order total');
+    }
+
+    const updatedAdjustments = [...(order.adjustments || []), newAdjustment];
+
+    // Auto-update order status for full refund
+    let newStatus = order.status;
+    if (adjustment.type === 'refund') {
+      const totalRefunded = existingRefunds + adjustment.amount;
+      if (totalRefunded >= totalAmount) {
+        newStatus = 'refunded';
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .update({ adjustments: updatedAdjustments, status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to add adjustment');
+    }
+
+    console.log(`[UCP Order] Added adjustment ${newAdjustment.id} (${adjustment.type}) to order ${orderId}`);
+    return dbRowToOrder(data);
+  }
+
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -541,12 +756,6 @@ export async function addAdjustment(
   if (adjustment.type === 'refund' && adjustment.amount + existingRefunds > totalAmount) {
     throw new Error('Refund amount exceeds order total');
   }
-
-  const newAdjustment: UCPAdjustment = {
-    id: generateAdjustmentId(),
-    created_at: new Date().toISOString(),
-    ...adjustment,
-  };
 
   stored.adjustments.push(newAdjustment);
   stored.updated_at = new Date();
@@ -595,8 +804,43 @@ export async function cancelOrder(
   tenantId: string,
   orderId: string,
   reason?: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPOrder> {
+  const cancelEvent: UCPFulfillmentEvent = {
+    id: generateEventId(),
+    type: 'cancelled',
+    timestamp: new Date().toISOString(),
+    description: reason || 'Order cancelled',
+  };
+
+  if (supabase) {
+    const order = await getOrder(tenantId, orderId, supabase);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (!['confirmed', 'processing', 'shipped'].includes(order.status)) {
+      throw new Error(`Cannot cancel order in ${order.status} status`);
+    }
+
+    const updatedEvents = [...(order.events || []), cancelEvent];
+
+    const { data, error } = await supabase
+      .from('ucp_orders')
+      .update({ status: 'cancelled', events: updatedEvents, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to cancel order');
+    }
+
+    console.log(`[UCP Order] Order ${orderId} cancelled`);
+    return dbRowToOrder(data);
+  }
+
   const stored = orderStore.get(orderId);
 
   if (!stored) {
@@ -613,14 +857,6 @@ export async function cancelOrder(
 
   stored.status = 'cancelled';
   stored.updated_at = new Date();
-
-  // Add cancellation event
-  const cancelEvent: UCPFulfillmentEvent = {
-    id: generateEventId(),
-    type: 'cancelled',
-    timestamp: new Date().toISOString(),
-    description: reason || 'Order cancelled',
-  };
   stored.events.push(cancelEvent);
 
   orderStore.set(orderId, stored);

@@ -48,9 +48,10 @@ import {
   getMessageSummary,
   type UCPMessage,
 } from './messages.js';
+import { createOrderFromCheckout } from './orders.js';
 
 // =============================================================================
-// In-Memory Store (for PoC - replace with Supabase in production)
+// In-Memory Store (fallback when Supabase not available)
 // =============================================================================
 
 interface StoredCheckout {
@@ -211,6 +212,17 @@ function validateLineItems(lineItems: UCPLineItem[]): UCPMessage[] {
   return messages;
 }
 
+/**
+ * Determine whether shipping is required based on checkout_type metadata
+ */
+function requiresShipping(metadata: Record<string, unknown>): boolean {
+  const checkoutType = metadata.checkout_type as string | undefined;
+  if (checkoutType === 'digital' || checkoutType === 'service') {
+    return false;
+  }
+  return true; // default: physical goods require shipping
+}
+
 // =============================================================================
 // Checkout Operations
 // =============================================================================
@@ -221,7 +233,7 @@ function validateLineItems(lineItems: UCPLineItem[]): UCPMessage[] {
 export async function createCheckout(
   tenantId: string,
   request: CreateCheckoutRequest,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPCheckoutSession> {
   const id = generateCheckoutId();
   const now = new Date();
@@ -248,6 +260,19 @@ export async function createCheckout(
     messages = [...messages, ...itemErrors];
   }
 
+  // Handle payment_instruments provided at creation time
+  const paymentInstruments: UCPPaymentInstrument[] = (request.payment_instruments || []).map(pi => ({
+    ...pi,
+    created_at: pi.created_at || now.toISOString(),
+  }));
+  const selectedInstrumentId = paymentInstruments.length > 0 ? paymentInstruments[0].id : null;
+
+  // Build metadata (include checkout_type if provided)
+  const metadata: Record<string, unknown> = { ...request.metadata };
+  if (request.checkout_type) {
+    metadata.checkout_type = request.checkout_type;
+  }
+
   // Create stored checkout
   const stored: StoredCheckout = {
     id,
@@ -260,23 +285,60 @@ export async function createCheckout(
     shipping_address: request.shipping_address || null,
     billing_address: request.billing_address || null,
     payment_config: paymentConfig,
-    payment_instruments: [],
-    selected_instrument_id: null,
+    payment_instruments: paymentInstruments,
+    selected_instrument_id: selectedInstrumentId,
     messages,
     continue_url: request.continue_url || null,
     cancel_url: request.cancel_url || null,
     links: request.links || [],
-    metadata: request.metadata || {},
+    metadata,
     order_id: null,
     expires_at: new Date(now.getTime() + expiresInHours * 60 * 60 * 1000),
     created_at: now,
     updated_at: now,
   };
 
-  // Compute initial status
-  stored.status = computeStatus(stored);
+  // Compute initial status (thread shipping requirement)
+  stored.status = computeStatus(stored, { requireShipping: requiresShipping(stored.metadata) });
 
-  // Store checkout
+  // Persist to database if supabase provided
+  if (supabase) {
+    const { data, error } = await supabase.from('ucp_checkout_sessions').insert({
+      id,
+      tenant_id: tenantId,
+      status: stored.status,
+      currency: stored.currency,
+      line_items: stored.line_items,
+      totals: stored.totals,
+      buyer: stored.buyer,
+      shipping_address: stored.shipping_address,
+      billing_address: stored.billing_address,
+      payment_config: stored.payment_config,
+      payment_instruments: stored.payment_instruments,
+      selected_instrument_id: stored.selected_instrument_id,
+      messages: stored.messages,
+      continue_url: stored.continue_url,
+      cancel_url: stored.cancel_url,
+      links: stored.links,
+      metadata: stored.metadata,
+      order_id: null,
+      expires_at: stored.expires_at.toISOString(),
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    }).select('*').single();
+
+    if (error) {
+      console.error('[UCP Checkout] DB insert error:', error);
+      throw new Error(`Failed to create checkout: ${error.message}`);
+    }
+
+    if (data) {
+      console.log(`[UCP Checkout] Created checkout ${id} for tenant ${tenantId}, status=${stored.status} (persisted)`);
+      return dbRowToCheckoutSession(data);
+    }
+  }
+
+  // Fallback: store in-memory (only when no supabase client provided)
   checkoutStore.set(id, stored);
 
   console.log(`[UCP Checkout] Created checkout ${id} for tenant ${tenantId}, status=${stored.status}`);
@@ -340,8 +402,116 @@ export async function updateCheckout(
   tenantId: string,
   checkoutId: string,
   request: UpdateCheckoutRequest,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPCheckoutSession> {
+  // Try Supabase path first
+  if (supabase) {
+    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    if (!existing) {
+      throw new Error('Checkout not found');
+    }
+
+    if (!canModify(existing.status)) {
+      throw new Error(`Cannot modify checkout in ${existing.status} status`);
+    }
+
+    if (new Date(existing.expires_at) < new Date()) {
+      throw new Error('Checkout has expired');
+    }
+
+    // Build the update payload from existing + request
+    const updates: Record<string, any> = {};
+
+    let lineItems = existing.line_items;
+    let currentMessages = existing.messages || [];
+
+    if (request.line_items !== undefined) {
+      lineItems = request.line_items;
+      updates.line_items = request.line_items;
+      updates.totals = calculateTotals(request.line_items);
+
+      currentMessages = currentMessages.filter(m => m.code !== 'ITEM_UNAVAILABLE' && m.code !== 'QUANTITY_EXCEEDED');
+      const itemErrors = validateLineItems(request.line_items);
+      currentMessages = [...currentMessages, ...itemErrors];
+    }
+
+    if (request.buyer !== undefined) {
+      updates.buyer = request.buyer;
+      if (request.buyer?.email) {
+        currentMessages = currentMessages.filter(m => m.code !== 'MISSING_EMAIL' && m.code !== 'INVALID_EMAIL');
+      }
+    }
+
+    if (request.shipping_address !== undefined) {
+      updates.shipping_address = request.shipping_address;
+      if (request.shipping_address) {
+        currentMessages = currentMessages.filter(m => m.code !== 'MISSING_SHIPPING_ADDRESS' && m.code !== 'INVALID_SHIPPING_ADDRESS');
+      }
+    }
+
+    if (request.billing_address !== undefined) {
+      updates.billing_address = request.billing_address;
+      if (request.billing_address) {
+        currentMessages = currentMessages.filter(m => m.code !== 'MISSING_BILLING_ADDRESS');
+      }
+    }
+
+    if (request.payment_instruments !== undefined) {
+      updates.payment_instruments = request.payment_instruments;
+      if (request.payment_instruments.length > 0) {
+        currentMessages = currentMessages.filter(m => m.code !== 'MISSING_PAYMENT_METHOD');
+      }
+    }
+
+    if (request.selected_instrument_id !== undefined) {
+      updates.selected_instrument_id = request.selected_instrument_id;
+    }
+
+    if (request.continue_url !== undefined) {
+      updates.continue_url = request.continue_url;
+    }
+
+    if (request.cancel_url !== undefined) {
+      updates.cancel_url = request.cancel_url;
+    }
+
+    if (request.metadata !== undefined) {
+      updates.metadata = { ...(existing.metadata || {}), ...request.metadata };
+    }
+
+    updates.messages = currentMessages;
+
+    // Recompute status with merged state
+    const merged = {
+      status: existing.status,
+      line_items: updates.line_items || existing.line_items,
+      buyer: updates.buyer !== undefined ? updates.buyer : existing.buyer,
+      shipping_address: updates.shipping_address !== undefined ? updates.shipping_address : existing.shipping_address,
+      billing_address: updates.billing_address !== undefined ? updates.billing_address : existing.billing_address,
+      selected_instrument_id: updates.selected_instrument_id !== undefined ? updates.selected_instrument_id : existing.selected_instrument_id,
+      payment_instruments: updates.payment_instruments || existing.payment_instruments,
+      messages: currentMessages,
+    };
+    const mergedMetadata = updates.metadata || existing.metadata || {};
+    updates.status = computeStatus(merged as any, { requireShipping: requiresShipping(mergedMetadata) });
+
+    const { data, error } = await supabase
+      .from('ucp_checkout_sessions')
+      .update(updates)
+      .eq('id', checkoutId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to update checkout');
+    }
+
+    console.log(`[UCP Checkout] Updated checkout ${checkoutId}, status=${data.status} (persisted)`);
+    return dbRowToCheckoutSession(data);
+  }
+
+  // Fallback: in-memory path
   const stored = checkoutStore.get(checkoutId);
 
   if (!stored) {
@@ -421,7 +591,7 @@ export async function updateCheckout(
   }
 
   // Recompute status
-  stored.status = computeStatus(stored);
+  stored.status = computeStatus(stored, { requireShipping: requiresShipping(stored.metadata) });
   stored.updated_at = new Date();
 
   checkoutStore.set(checkoutId, stored);
@@ -437,8 +607,88 @@ export async function updateCheckout(
 export async function completeCheckout(
   tenantId: string,
   checkoutId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPCheckoutSession> {
+  // Try Supabase path first
+  if (supabase) {
+    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    if (!existing) {
+      throw new Error('Checkout not found');
+    }
+
+    if (!canComplete(existing.status)) {
+      const missing = getMissingRequirements(existing as any, { requireShipping: requiresShipping(existing.metadata || {}) });
+      if (missing.length > 0) {
+        throw new Error(`Cannot complete checkout: missing ${missing.join(', ')}`);
+      }
+      throw new Error(`Cannot complete checkout in ${existing.status} status`);
+    }
+
+    if (hasBlockingErrors(existing.messages)) {
+      const summary = getMessageSummary(existing.messages);
+      throw new Error(`Cannot complete checkout: ${summary.blocking} blocking error(s)`);
+    }
+
+    const transition = validateTransition(existing.status, 'complete_in_progress');
+    if (!transition.allowed) {
+      throw new Error(transition.reason || 'Invalid status transition');
+    }
+
+    // Transition to complete_in_progress
+    await supabase
+      .from('ucp_checkout_sessions')
+      .update({ status: 'complete_in_progress' })
+      .eq('id', checkoutId)
+      .eq('tenant_id', tenantId);
+
+    console.log(`[UCP Checkout] Starting completion for checkout ${checkoutId}`);
+
+    try {
+      // Create order in ucp_orders table
+      const totalLine = (existing.totals || []).find(t => t.type === 'total');
+      const totalAmount = totalLine?.amount || 0;
+
+      const order = await createOrderFromCheckout(tenantId, existing, {
+        handler_id: existing.payment_config?.handlers?.[0] || 'payos',
+        instrument_id: existing.selected_instrument_id || undefined,
+        status: 'completed',
+        amount: totalAmount,
+        currency: existing.currency,
+      }, supabase);
+
+      // Mark checkout as completed with order_id
+      const { data, error } = await supabase
+        .from('ucp_checkout_sessions')
+        .update({ status: 'completed', order_id: order.id })
+        .eq('id', checkoutId)
+        .eq('tenant_id', tenantId)
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        // Revert to ready_for_complete on failure
+        await supabase
+          .from('ucp_checkout_sessions')
+          .update({ status: 'ready_for_complete' })
+          .eq('id', checkoutId)
+          .eq('tenant_id', tenantId);
+        throw new Error('Failed to complete checkout');
+      }
+
+      console.log(`[UCP Checkout] Checkout ${checkoutId} completed, order ${order.id} created (persisted)`);
+      return dbRowToCheckoutSession(data);
+    } catch (err: any) {
+      // Revert to ready_for_complete on any failure
+      await supabase
+        .from('ucp_checkout_sessions')
+        .update({ status: 'ready_for_complete' })
+        .eq('id', checkoutId)
+        .eq('tenant_id', tenantId);
+      throw err;
+    }
+  }
+
+  // Fallback: in-memory path
   const stored = checkoutStore.get(checkoutId);
 
   if (!stored) {
@@ -451,7 +701,7 @@ export async function completeCheckout(
 
   if (!canComplete(stored.status)) {
     // Check what's missing
-    const missing = getMissingRequirements(stored);
+    const missing = getMissingRequirements(stored, { requireShipping: requiresShipping(stored.metadata) });
     if (missing.length > 0) {
       throw new Error(`Cannot complete checkout: missing ${missing.join(', ')}`);
     }
@@ -495,11 +745,6 @@ export async function completeCheckout(
 
     console.log(`[UCP Checkout] Checkout ${checkoutId} completed, order ${orderId} created`);
 
-    // In production, we would:
-    // 1. Process payment via selected handler
-    // 2. Create order in ucp_orders table
-    // 3. Send webhook to merchant
-
     checkoutStore.set(checkoutId, stored);
 
     return toCheckoutSession(stored);
@@ -523,8 +768,36 @@ export async function completeCheckout(
 export async function cancelCheckout(
   tenantId: string,
   checkoutId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPCheckoutSession> {
+  // Try Supabase path first
+  if (supabase) {
+    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    if (!existing) {
+      throw new Error('Checkout not found');
+    }
+
+    if (!canCancel(existing.status)) {
+      throw new Error(`Cannot cancel checkout in ${existing.status} status`);
+    }
+
+    const { data, error } = await supabase
+      .from('ucp_checkout_sessions')
+      .update({ status: 'canceled' })
+      .eq('id', checkoutId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to cancel checkout');
+    }
+
+    console.log(`[UCP Checkout] Checkout ${checkoutId} canceled (persisted)`);
+    return dbRowToCheckoutSession(data);
+  }
+
+  // Fallback: in-memory path
   const stored = checkoutStore.get(checkoutId);
 
   if (!stored) {
@@ -652,8 +925,63 @@ export async function addPaymentInstrument(
   tenantId: string,
   checkoutId: string,
   instrument: Omit<UCPPaymentInstrument, 'created_at'>,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPCheckoutSession> {
+  // Try Supabase path first
+  if (supabase) {
+    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    if (!existing) {
+      throw new Error('Checkout not found');
+    }
+
+    if (!canModify(existing.status)) {
+      throw new Error(`Cannot modify checkout in ${existing.status} status`);
+    }
+
+    const fullInstrument: UCPPaymentInstrument = {
+      ...instrument,
+      created_at: new Date().toISOString(),
+    };
+
+    const updatedInstruments = [...(existing.payment_instruments || []), fullInstrument];
+    const selectedId = updatedInstruments.length === 1 ? instrument.id : existing.selected_instrument_id;
+    const updatedMessages = (existing.messages || []).filter(m => m.code !== 'MISSING_PAYMENT_METHOD');
+
+    // Recompute status
+    const merged = {
+      status: existing.status,
+      line_items: existing.line_items,
+      buyer: existing.buyer,
+      shipping_address: existing.shipping_address,
+      billing_address: existing.billing_address,
+      selected_instrument_id: selectedId,
+      payment_instruments: updatedInstruments,
+      messages: updatedMessages,
+    };
+    const newStatus = computeStatus(merged as any, { requireShipping: requiresShipping(existing.metadata || {}) });
+
+    const { data, error } = await supabase
+      .from('ucp_checkout_sessions')
+      .update({
+        payment_instruments: updatedInstruments,
+        selected_instrument_id: selectedId,
+        messages: updatedMessages,
+        status: newStatus,
+      })
+      .eq('id', checkoutId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to add payment instrument');
+    }
+
+    console.log(`[UCP Checkout] Added payment instrument ${instrument.id} to checkout ${checkoutId} (persisted)`);
+    return dbRowToCheckoutSession(data);
+  }
+
+  // Fallback: in-memory path
   const stored = checkoutStore.get(checkoutId);
 
   if (!stored) {
@@ -684,7 +1012,7 @@ export async function addPaymentInstrument(
   stored.messages = removeMessagesByCode(stored.messages, 'MISSING_PAYMENT_METHOD');
 
   // Recompute status
-  stored.status = computeStatus(stored);
+  stored.status = computeStatus(stored, { requireShipping: requiresShipping(stored.metadata) });
   stored.updated_at = new Date();
 
   checkoutStore.set(checkoutId, stored);
@@ -701,8 +1029,56 @@ export async function selectPaymentInstrument(
   tenantId: string,
   checkoutId: string,
   instrumentId: string,
-  _supabase?: SupabaseClient
+  supabase?: SupabaseClient
 ): Promise<UCPCheckoutSession> {
+  // Try Supabase path first
+  if (supabase) {
+    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    if (!existing) {
+      throw new Error('Checkout not found');
+    }
+
+    if (!canModify(existing.status)) {
+      throw new Error(`Cannot modify checkout in ${existing.status} status`);
+    }
+
+    const instrument = (existing.payment_instruments || []).find(i => i.id === instrumentId);
+    if (!instrument) {
+      throw new Error('Payment instrument not found');
+    }
+
+    // Recompute status
+    const merged = {
+      status: existing.status,
+      line_items: existing.line_items,
+      buyer: existing.buyer,
+      shipping_address: existing.shipping_address,
+      billing_address: existing.billing_address,
+      selected_instrument_id: instrumentId,
+      payment_instruments: existing.payment_instruments,
+      messages: existing.messages,
+    };
+    const newStatus = computeStatus(merged as any, { requireShipping: requiresShipping(existing.metadata || {}) });
+
+    const { data, error } = await supabase
+      .from('ucp_checkout_sessions')
+      .update({
+        selected_instrument_id: instrumentId,
+        status: newStatus,
+      })
+      .eq('id', checkoutId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error('Failed to select payment instrument');
+    }
+
+    return dbRowToCheckoutSession(data);
+  }
+
+  // Fallback: in-memory path
   const stored = checkoutStore.get(checkoutId);
 
   if (!stored) {
@@ -723,7 +1099,7 @@ export async function selectPaymentInstrument(
   }
 
   stored.selected_instrument_id = instrumentId;
-  stored.status = computeStatus(stored);
+  stored.status = computeStatus(stored, { requireShipping: requiresShipping(stored.metadata) });
   stored.updated_at = new Date();
 
   checkoutStore.set(checkoutId, stored);

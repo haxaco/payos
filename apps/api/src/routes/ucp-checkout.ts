@@ -79,6 +79,16 @@ const LinkSchema = z.object({
   title: z.string().optional(),
 });
 
+const PaymentInstrumentSchema = z.object({
+  id: z.string().min(1),
+  handler: z.string().min(1),
+  type: z.string().min(1),
+  last4: z.string().optional(),
+  brand: z.string().optional(),
+  created_at: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
 const CreateCheckoutSchema = z.object({
   currency: z.string().length(3),
   line_items: z.array(LineItemSchema).optional(),
@@ -86,6 +96,8 @@ const CreateCheckoutSchema = z.object({
   shipping_address: AddressSchema.optional(),
   billing_address: AddressSchema.optional(),
   payment_config: PaymentConfigSchema.optional(),
+  payment_instruments: z.array(PaymentInstrumentSchema).optional(),
+  checkout_type: z.enum(['physical', 'digital', 'service']).optional(),
   continue_url: z.string().url().optional(),
   cancel_url: z.string().url().optional(),
   links: z.array(LinkSchema).optional(),
@@ -109,15 +121,6 @@ const UpdateCheckoutSchema = z.object({
   selected_instrument_id: z.string().nullable().optional(),
   continue_url: z.string().url().optional(),
   cancel_url: z.string().url().optional(),
-  metadata: z.record(z.unknown()).optional(),
-});
-
-const PaymentInstrumentSchema = z.object({
-  id: z.string().min(1),
-  handler: z.string().min(1),
-  type: z.string().min(1),
-  last4: z.string().optional(),
-  brand: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
