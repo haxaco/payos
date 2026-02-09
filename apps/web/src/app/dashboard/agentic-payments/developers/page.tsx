@@ -23,7 +23,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 
 export default function DevelopersPage() {
-    const [activeTab, setActiveTab] = useState('x402-provider');
+    const [activeTab, setActiveTab] = useState('agent-register');
 
     // Mock API Key state
     const [apiKeys, setApiKeys] = useState([
@@ -147,7 +147,53 @@ function CheckoutPage() {
       onSuccess={(tx) => console.log('Order complete:', tx.id)}
     />
   );
-}`
+}`,
+        'ucp-checkout':
+            `import { SlyClient } from '@sly/sdk';
+
+const sly = new SlyClient({ apiKey: process.env.SLY_SECRET_KEY });
+
+// Create a UCP checkout session
+const session = await sly.ucp.createCheckout({
+  lineItems: [
+    { name: 'Pro Plan', amount: 49.99, currency: 'USDC', quantity: 1 },
+    { name: 'Setup Fee', amount: 9.99, currency: 'USDC', quantity: 1 }
+  ],
+  customerEmail: 'buyer@example.com',
+  successUrl: 'https://yourapp.com/success',
+  cancelUrl: 'https://yourapp.com/cancel',
+  metadata: { orderId: 'order_abc123' }
+});
+
+// Redirect customer to hosted checkout
+console.log('Checkout URL:', session.url);
+// => https://checkout.sly.dev/session/cs_live_...`,
+        'agent-register':
+            `import { SlyClient } from '@sly/sdk';
+
+const sly = new SlyClient({ apiKey: process.env.SLY_SECRET_KEY });
+
+// Register an AI agent under a business account
+const agent = await sly.agents.create({
+  accountId: 'acc_business_123',
+  name: 'Payout Bot',
+  description: 'Handles automated monthly payouts',
+  permissions: {
+    transactions: { initiate: true, approve: false, view: true },
+    streams: { initiate: true, modify: true, pause: true, terminate: true, view: true },
+    accounts: { view: true, create: false },
+    treasury: { view: false, rebalance: false }
+  }
+});
+
+// ⚠️ Save this token — it will never be shown again!
+console.log('Agent Token:', agent.credentials.token);
+// => "agent_a1b2c3d4e5f6..."
+
+// Use the token in your agent's code
+const agentClient = new SlyClient({
+  agentToken: agent.credentials.token
+});`
     };
 
     return (
@@ -156,7 +202,7 @@ function CheckoutPage() {
             <div className="space-y-4">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Developer Resources</h1>
                 <p className="text-lg text-gray-500 dark:text-gray-400 max-w-3xl">
-                    Build the next generation of AI-native commerce apps. Integrate <span className="text-blue-600 font-medium">x402</span> for micropayments, <span className="text-green-600 font-medium">AP2</span> for autonomous agents, and <span className="text-orange-600 font-medium">ACP</span> for smart checkout flows.
+                    Build the next generation of AI-native commerce apps. Integrate <span className="text-blue-600 font-medium">x402</span> for micropayments, <span className="text-green-600 font-medium">AP2</span> for autonomous agents, <span className="text-orange-600 font-medium">ACP</span> for smart checkout flows, and <span className="text-purple-600 font-medium">UCP</span> for universal checkouts.
                 </p>
                 <div className="flex gap-4 pt-2">
                     <Button variant="outline" className="gap-2">
@@ -172,7 +218,7 @@ function CheckoutPage() {
             </div>
 
             {/* Quick Start Protocols */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="p-6 hover:shadow-lg transition-shadow border-t-4 border-t-blue-500">
                     <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center mb-4">
                         <Zap className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -235,6 +281,29 @@ function CheckoutPage() {
                         Start with ACP <ExternalLink className="w-4 h-4" />
                     </Button>
                 </Card>
+
+                <Card className="p-6 hover:shadow-lg transition-shadow border-t-4 border-t-purple-500">
+                    <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center mb-4">
+                        <Globe className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">UCP Protocol</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 min-h-[40px]">
+                        Universal Checkout Protocol for hosted checkout sessions and order management.
+                    </p>
+                    <div className="space-y-3">
+                        <div className="text-xs font-semibold text-gray-400 uppercase">Use Cases</div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            <Badge variant="secondary">Hosted Checkout</Badge>
+                            <Badge variant="secondary">Order Management</Badge>
+                            <Badge variant="secondary">Identity</Badge>
+                        </div>
+                    </div>
+                    <Link href="/dashboard/agentic-payments/ucp/integration">
+                        <Button className="w-full mt-6 gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+                            Start with UCP <ExternalLink className="w-4 h-4" />
+                        </Button>
+                    </Link>
+                </Card>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
@@ -253,10 +322,12 @@ function CheckoutPage() {
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                             <div className="flex items-center justify-between bg-gray-900 px-4 py-2 border-b border-gray-800">
                                 <TabsList className="bg-transparent gap-2">
+                                    <TabsTrigger value="agent-register" className="data-[state=active]:bg-gray-800 data-[state=active]:text-cyan-400 text-gray-400">Agent Setup</TabsTrigger>
                                     <TabsTrigger value="x402-provider" className="data-[state=active]:bg-gray-800 data-[state=active]:text-blue-400 text-gray-400">x402 Provider</TabsTrigger>
                                     <TabsTrigger value="x402-consumer" className="data-[state=active]:bg-gray-800 data-[state=active]:text-blue-400 text-gray-400">x402 Consumer</TabsTrigger>
                                     <TabsTrigger value="ap2-agent" className="data-[state=active]:bg-gray-800 data-[state=active]:text-green-400 text-gray-400">AP2 Agent</TabsTrigger>
                                     <TabsTrigger value="acp-checkout" className="data-[state=active]:bg-gray-800 data-[state=active]:text-orange-400 text-gray-400">ACP Checkout</TabsTrigger>
+                                    <TabsTrigger value="ucp-checkout" className="data-[state=active]:bg-gray-800 data-[state=active]:text-purple-400 text-gray-400">UCP Checkout</TabsTrigger>
                                 </TabsList>
                                 <div className="flex gap-2">
                                     <div className="w-3 h-3 rounded-full bg-red-500/20"></div>
@@ -266,6 +337,9 @@ function CheckoutPage() {
                             </div>
 
                             <div className="p-0">
+                                <TabsContent value="agent-register" className="m-0">
+                                    <CodeBlock code={codeExamples['agent-register']} className="rounded-none border-0" />
+                                </TabsContent>
                                 <TabsContent value="x402-provider" className="m-0">
                                     <CodeBlock code={codeExamples['x402-provider']} className="rounded-none border-0" />
                                 </TabsContent>
@@ -277,6 +351,9 @@ function CheckoutPage() {
                                 </TabsContent>
                                 <TabsContent value="acp-checkout" className="m-0">
                                     <CodeBlock code={codeExamples['acp-checkout']} className="rounded-none border-0" />
+                                </TabsContent>
+                                <TabsContent value="ucp-checkout" className="m-0">
+                                    <CodeBlock code={codeExamples['ucp-checkout']} className="rounded-none border-0" />
                                 </TabsContent>
                             </div>
                         </Tabs>
