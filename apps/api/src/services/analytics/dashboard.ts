@@ -4,6 +4,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { getCircleFXService } from '../circle/fx.js';
 
 /** Extract the total amount from UCP's JSONB totals array */
 function extractUcpTotal(totals: unknown): number {
@@ -90,10 +91,12 @@ export async function getProtocolDistribution(
       break;
   }
 
+  const fxService = getCircleFXService();
+
   // Query x402 payments (stored as transfers with type = 'x402')
   const { data: x402Data } = await supabase
     .from('transfers')
-    .select('amount')
+    .select('amount, currency')
     .eq('tenant_id', tenantId)
     .eq('type', 'x402')
     .gte('created_at', startTime.toISOString());
@@ -101,14 +104,14 @@ export async function getProtocolDistribution(
   // Query AP2 mandate executions
   const { data: ap2Data } = await supabase
     .from('ap2_mandate_executions')
-    .select('amount')
+    .select('amount, currency')
     .eq('tenant_id', tenantId)
     .gte('created_at', startTime.toISOString());
 
   // Query ACP checkouts (completed)
   const { data: acpData } = await supabase
     .from('acp_checkouts')
-    .select('total_amount')
+    .select('total_amount, currency')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
     .gte('created_at', startTime.toISOString());
@@ -116,22 +119,38 @@ export async function getProtocolDistribution(
   // Query UCP checkouts (completed) — total is inside JSONB `totals` array
   const { data: ucpData } = await supabase
     .from('ucp_checkout_sessions')
-    .select('totals')
+    .select('totals, currency')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
     .gte('created_at', startTime.toISOString());
 
-  // Calculate volumes and counts
-  const x402Volume = x402Data?.reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;
+  // Calculate FX-normalized volumes and counts
+  const x402Volume = x402Data?.reduce((sum, p) => {
+    const amt = Number(p.amount || 0);
+    const ccy = (p.currency || 'USDC').toUpperCase();
+    return sum + fxService.toUSD(amt, ccy);
+  }, 0) || 0;
   const x402Count = x402Data?.length || 0;
 
-  const ap2Volume = ap2Data?.reduce((sum, e) => sum + Number(e.amount || 0), 0) || 0;
+  const ap2Volume = ap2Data?.reduce((sum, e) => {
+    const amt = Number(e.amount || 0);
+    const ccy = (e.currency || 'USDC').toUpperCase();
+    return sum + fxService.toUSD(amt, ccy);
+  }, 0) || 0;
   const ap2Count = ap2Data?.length || 0;
 
-  const acpVolume = acpData?.reduce((sum, c) => sum + Number(c.total_amount || 0), 0) || 0;
+  const acpVolume = acpData?.reduce((sum, c) => {
+    const amt = Number(c.total_amount || 0);
+    const ccy = (c.currency || 'USD').toUpperCase();
+    return sum + fxService.toUSD(amt, ccy);
+  }, 0) || 0;
   const acpCount = acpData?.length || 0;
 
-  const ucpVolume = ucpData?.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0) || 0;
+  const ucpVolume = ucpData?.reduce((sum, c) => {
+    const amt = extractUcpTotal(c.totals);
+    const ccy = (c.currency || 'USD').toUpperCase();
+    return sum + fxService.toUSD(amt, ccy);
+  }, 0) || 0;
   const ucpCount = ucpData?.length || 0;
 
   const totalVolume = x402Volume + ap2Volume + acpVolume + ucpVolume;
@@ -208,28 +227,30 @@ export async function getProtocolActivity(
       break;
   }
 
+  const fxService = getCircleFXService();
+
   // Query all protocol data
   const [x402Result, ap2Result, acpResult, ucpResult] = await Promise.all([
     supabase
       .from('transfers')
-      .select('amount, created_at')
+      .select('amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('ap2_mandate_executions')
-      .select('amount, created_at')
+      .select('amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('acp_checkouts')
-      .select('total_amount, created_at')
+      .select('total_amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('ucp_checkout_sessions')
-      .select('totals, created_at')
+      .select('totals, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', startTime.toISOString()),
@@ -255,10 +276,10 @@ export async function getProtocolActivity(
     if (metric === 'volume') {
       activity.push({
         timestamp: bucketStart.toISOString(),
-        x402: x402InBucket.reduce((sum, p) => sum + Number(p.amount || 0), 0),
-        ap2: ap2InBucket.reduce((sum, e) => sum + Number(e.amount || 0), 0),
-        acp: acpInBucket.reduce((sum, c) => sum + Number(c.total_amount || 0), 0),
-        ucp: ucpInBucket.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0),
+        x402: x402InBucket.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0),
+        ap2: ap2InBucket.reduce((sum, e) => sum + fxService.toUSD(Number(e.amount || 0), (e.currency || 'USDC').toUpperCase()), 0),
+        acp: acpInBucket.reduce((sum, c) => sum + fxService.toUSD(Number(c.total_amount || 0), (c.currency || 'USD').toUpperCase()), 0),
+        ucp: ucpInBucket.reduce((sum, c) => sum + fxService.toUSD(extractUcpTotal(c.totals), (c.currency || 'USD').toUpperCase()), 0),
       });
     } else {
       activity.push({
@@ -300,6 +321,8 @@ export async function getProtocolStats(
 
   const stats: ProtocolStats[] = [];
 
+  const fxService = getCircleFXService();
+
   // x402 Stats
   const [x402Endpoints, x402Today, x402Yesterday] = await Promise.all([
     supabase
@@ -309,21 +332,21 @@ export async function getProtocolStats(
       .eq('status', 'active'),
     supabase
       .from('transfers')
-      .select('amount')
+      .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('transfers')
-      .select('amount')
+      .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
-  const x402TodayVolume = x402Today.data?.reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;
-  const x402YesterdayVolume = x402Yesterday.data?.reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;
+  const x402TodayVolume = x402Today.data?.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0) || 0;
+  const x402YesterdayVolume = x402Yesterday.data?.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0) || 0;
   const x402Trend = x402YesterdayVolume > 0
     ? Math.round(((x402TodayVolume - x402YesterdayVolume) / x402YesterdayVolume) * 100)
     : 0;
@@ -350,25 +373,25 @@ export async function getProtocolStats(
   const [ap2Mandates, ap2Today, ap2Yesterday] = await Promise.all([
     supabase
       .from('ap2_mandates')
-      .select('id, authorized_amount')
+      .select('id, authorized_amount, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'active'),
     supabase
       .from('ap2_mandate_executions')
-      .select('amount')
+      .select('amount, currency')
       .eq('tenant_id', tenantId)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('ap2_mandate_executions')
-      .select('amount')
+      .select('amount, currency')
       .eq('tenant_id', tenantId)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
-  const authorizedAmount = ap2Mandates.data?.reduce((sum, m) => sum + Number(m.authorized_amount || 0), 0) || 0;
-  const ap2TodayVolume = ap2Today.data?.reduce((sum, e) => sum + Number(e.amount || 0), 0) || 0;
-  const ap2YesterdayVolume = ap2Yesterday.data?.reduce((sum, e) => sum + Number(e.amount || 0), 0) || 0;
+  const authorizedAmount = ap2Mandates.data?.reduce((sum, m) => sum + fxService.toUSD(Number(m.authorized_amount || 0), (m.currency || 'USDC').toUpperCase()), 0) || 0;
+  const ap2TodayVolume = ap2Today.data?.reduce((sum, e) => sum + fxService.toUSD(Number(e.amount || 0), (e.currency || 'USDC').toUpperCase()), 0) || 0;
+  const ap2YesterdayVolume = ap2Yesterday.data?.reduce((sum, e) => sum + fxService.toUSD(Number(e.amount || 0), (e.currency || 'USDC').toUpperCase()), 0) || 0;
   const ap2Trend = ap2YesterdayVolume > 0
     ? Math.round(((ap2TodayVolume - ap2YesterdayVolume) / ap2YesterdayVolume) * 100)
     : 0;
@@ -395,21 +418,21 @@ export async function getProtocolStats(
   const [acpToday, acpYesterday] = await Promise.all([
     supabase
       .from('acp_checkouts')
-      .select('total_amount')
+      .select('total_amount, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('acp_checkouts')
-      .select('total_amount')
+      .select('total_amount, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
-  const acpTodayVolume = acpToday.data?.reduce((sum, c) => sum + Number(c.total_amount || 0), 0) || 0;
-  const acpYesterdayVolume = acpYesterday.data?.reduce((sum, c) => sum + Number(c.total_amount || 0), 0) || 0;
+  const acpTodayVolume = acpToday.data?.reduce((sum, c) => sum + fxService.toUSD(Number(c.total_amount || 0), (c.currency || 'USD').toUpperCase()), 0) || 0;
+  const acpYesterdayVolume = acpYesterday.data?.reduce((sum, c) => sum + fxService.toUSD(Number(c.total_amount || 0), (c.currency || 'USD').toUpperCase()), 0) || 0;
   const acpTrend = acpYesterdayVolume > 0
     ? Math.round(((acpTodayVolume - acpYesterdayVolume) / acpYesterdayVolume) * 100)
     : 0;
@@ -436,21 +459,21 @@ export async function getProtocolStats(
   const [ucpToday, ucpYesterday] = await Promise.all([
     supabase
       .from('ucp_checkout_sessions')
-      .select('totals')
+      .select('totals, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('ucp_checkout_sessions')
-      .select('totals')
+      .select('totals, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
 
-  const ucpTodayVolume = ucpToday.data?.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0) || 0;
-  const ucpYesterdayVolume = ucpYesterday.data?.reduce((sum, c) => sum + extractUcpTotal(c.totals), 0) || 0;
+  const ucpTodayVolume = ucpToday.data?.reduce((sum, c) => sum + fxService.toUSD(extractUcpTotal(c.totals), (c.currency || 'USD').toUpperCase()), 0) || 0;
+  const ucpYesterdayVolume = ucpYesterday.data?.reduce((sum, c) => sum + fxService.toUSD(extractUcpTotal(c.totals), (c.currency || 'USD').toUpperCase()), 0) || 0;
   const ucpTrend = ucpYesterdayVolume > 0
     ? Math.round(((ucpTodayVolume - ucpYesterdayVolume) / ucpYesterdayVolume) * 100)
     : 0;

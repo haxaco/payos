@@ -10,9 +10,9 @@ import { formatCurrency } from '@/lib/utils';
 export default function AgenticPaymentsOverviewPage() {
     const api = useApiClient();
 
-    const { data: ucpAnalytics } = useQuery({
-        queryKey: ['ucp', 'analytics'],
-        queryFn: () => api!.ucp.getAnalytics({}),
+    const { data: ucpStats } = useQuery({
+        queryKey: ['ucp', 'checkouts-stats'],
+        queryFn: () => api!.ucp.checkouts.stats(),
         enabled: !!api,
     });
 
@@ -57,8 +57,8 @@ export default function AgenticPaymentsOverviewPage() {
             bgColor: 'bg-green-100 dark:bg-green-950',
             href: '/dashboard/agentic-payments/ucp/hosted-checkouts',
             stats: {
-                settlements: ucpAnalytics?.summary?.totalSettlements ?? 0,
-                volume: formatCurrency(ucpAnalytics?.summary?.totalVolume ?? 0, 'USD'),
+                checkouts: ucpStats?.total_checkouts ?? 0,
+                volume: formatCurrency(ucpStats?.total_volume_usd ?? 0, 'USD'),
             }
         },
         {

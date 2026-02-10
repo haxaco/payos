@@ -1300,6 +1300,12 @@ export class SlyClient {
       },
 
       /**
+       * Get aggregate checkout stats with FX-normalized USD volume
+       */
+      stats: () =>
+        this.get<{ data: { total_checkouts: number; completed_checkouts: number; total_volume_usd: number } }>('/ucp/checkouts/stats').then(r => r.data),
+
+      /**
        * Get a hosted checkout by ID
        */
       get: (id: string) =>

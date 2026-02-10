@@ -35,6 +35,7 @@ import {
   type CheckoutStatus,
 } from '../services/ucp/index.js';
 import { createClient } from '../db/client.js';
+import { getCircleFXService } from '../services/circle/fx.js';
 
 // =============================================================================
 // Validation Schemas
@@ -190,6 +191,143 @@ router.get('/', async (c) => {
     console.error('[UCP Checkout] List error:', error);
     return c.json({ error: error.message || 'Failed to list checkouts' }, 500);
   }
+});
+
+/**
+ * GET /v1/ucp/checkouts/stats
+ * Get aggregate checkout stats with FX-normalized USD volume
+ */
+router.get('/stats', async (c) => {
+  const ctx = c.get('ctx');
+
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('ucp_checkout_sessions')
+      .select('currency, totals, status')
+      .eq('tenant_id', ctx.tenantId);
+
+    if (error) {
+      return c.json({ error: 'Failed to fetch checkout stats' }, 500);
+    }
+
+    const fxService = getCircleFXService();
+    let totalVolumeUsd = 0;
+    let totalCheckouts = data?.length || 0;
+    let completedCheckouts = 0;
+
+    for (const row of data || []) {
+      const totalEntry = (row.totals as any[])?.find((t: any) => t.type === 'total');
+      if (!totalEntry) continue;
+
+      const majorUnits = totalEntry.amount / 100;
+      const currency = (row.currency || 'USD').toUpperCase();
+      totalVolumeUsd += fxService.toUSD(majorUnits, currency);
+
+      if (row.status === 'completed') completedCheckouts++;
+    }
+
+    return c.json({
+      total_checkouts: totalCheckouts,
+      completed_checkouts: completedCheckouts,
+      total_volume_usd: parseFloat(totalVolumeUsd.toFixed(2)),
+    });
+  } catch (error: any) {
+    console.error('[UCP Checkout] Stats error:', error);
+    return c.json({ error: 'Failed to get stats' }, 500);
+  }
+});
+
+const MAX_BATCH_SIZE = 100;
+
+const BatchCompleteSchema = z.union([
+  z.object({
+    checkout_ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE),
+    default_payment_instrument: PaymentInstrumentSchema,
+  }),
+  z.object({
+    checkouts: z.array(z.object({
+      checkout_id: z.string().uuid(),
+      payment_instrument: PaymentInstrumentSchema,
+    })).min(1).max(MAX_BATCH_SIZE),
+  }),
+]);
+
+/**
+ * POST /v1/ucp/checkouts/batch-complete
+ * Batch-complete multiple pending checkouts — add payment instrument + complete in one call.
+ * Supports two request shapes:
+ *   1. { checkout_ids, default_payment_instrument } — same instrument for all
+ *   2. { checkouts: [{ checkout_id, payment_instrument }] } — per-checkout instrument
+ * Max batch size: 100
+ */
+router.post('/batch-complete', async (c) => {
+  const ctx = c.get('ctx');
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = BatchCompleteSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'Validation failed',
+      details: parsed.error.errors.map(e => ({ path: e.path.join('.'), message: e.message })),
+    }, 400);
+  }
+
+  // Normalise into array of { checkout_id, payment_instrument }
+  type Item = { checkout_id: string; payment_instrument: { id: string; handler: string; type: string } };
+  let items: Item[];
+
+  const validated = parsed.data;
+  if ('checkouts' in validated) {
+    items = validated.checkouts;
+  } else {
+    items = validated.checkout_ids.map((id) => ({
+      checkout_id: id,
+      payment_instrument: validated.default_payment_instrument,
+    }));
+  }
+
+  const supabase = createClient();
+  const results: Array<{ checkout_id: string; order_id?: string; status: string; error?: string }> = [];
+
+  for (const item of items) {
+    try {
+      // Add payment instrument
+      await addPaymentInstrument(ctx.tenantId, item.checkout_id, {
+        id: item.payment_instrument.id,
+        handler: item.payment_instrument.handler,
+        type: item.payment_instrument.type,
+      }, supabase);
+
+      // Complete checkout
+      const completed = await completeCheckout(ctx.tenantId, item.checkout_id, supabase);
+      results.push({
+        checkout_id: completed.id,
+        order_id: completed.order_id || undefined,
+        status: completed.status,
+      });
+    } catch (err: any) {
+      console.error(`[UCP Batch] Failed to complete ${item.checkout_id}:`, err);
+      results.push({
+        checkout_id: item.checkout_id,
+        status: 'failed',
+        error: 'Failed to complete checkout',
+      });
+    }
+  }
+
+  return c.json({
+    total: items.length,
+    completed: results.filter(r => r.status === 'completed').length,
+    failed: results.filter(r => r.status === 'failed' || r.error).length,
+    results,
+  });
 });
 
 /**

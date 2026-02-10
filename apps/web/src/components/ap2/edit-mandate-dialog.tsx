@@ -41,7 +41,7 @@ export function EditMandateDialog({
 
     const [expiresAt, setExpiresAt] = useState(initialDate);
     const [authorizedAmount, setAuthorizedAmount] = useState(
-        mandate.authorizedAmount?.toString() || ''
+        mandate.amount?.authorized?.toString() || ''
     );
 
     const updateMutation = useMutation({
@@ -86,7 +86,7 @@ export function EditMandateDialog({
                 <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="authorized-amount" className="text-right">
-                            Limit ({mandate.currency || 'USDC'})
+                            Limit ({mandate.amount?.currency || 'USDC'})
                         </Label>
                         <div className="col-span-3">
                             <Input

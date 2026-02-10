@@ -95,6 +95,7 @@ const addExternalWalletSchema = z.object({
 );
 
 const updateWalletSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
   spendingPolicy: spendingPolicySchema,
   status: z.enum(['active', 'frozen', 'depleted']).optional()
 });
@@ -841,6 +842,7 @@ app.patch('/:id', async (c) => {
     const { data: updated, error: updateError } = await supabase
       .from('wallets')
       .update({
+        ...(validated.name !== undefined && { name: validated.name }),
         ...(validated.spendingPolicy !== undefined && { spending_policy: validated.spendingPolicy }),
         ...(validated.status && { status: validated.status }),
         updated_at: new Date().toISOString()

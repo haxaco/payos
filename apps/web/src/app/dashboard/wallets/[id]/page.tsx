@@ -19,7 +19,10 @@ import {
     Calendar,
     DollarSign,
     AlertTriangle,
-    RefreshCw
+    RefreshCw,
+    Pencil,
+    Check,
+    X as XIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -72,6 +75,8 @@ export default function WalletDetailPage() {
     const { authToken } = useApiConfig();
     const queryClient = useQueryClient();
     const [timeRange, setTimeRange] = useState('30d');
+    const [editingName, setEditingName] = useState(false);
+    const [nameValue, setNameValue] = useState('');
 
     // Fetch wallet details
     const { data: walletResponse, isLoading, error } = useQuery({
@@ -89,6 +94,23 @@ export default function WalletDetailPage() {
     const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance(id, authToken);
     const onChain = balanceData?.data?.onChain;
     const syncStatus = balanceData?.data?.syncStatus || 'stale';
+
+    // Rename mutation
+    const renameMutation = useMutation({
+        mutationFn: async (newName: string) => {
+            if (!api) throw new Error('API client not initialized');
+            return api.wallets.update(id, { name: newName });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['wallet', id] });
+            queryClient.invalidateQueries({ queryKey: ['wallets'] });
+            setEditingName(false);
+            toast.success('Wallet renamed');
+        },
+        onError: (err: any) => {
+            toast.error(err.message || 'Failed to rename wallet');
+        },
+    });
 
     // Sync state
     const [syncing, setSyncing] = useState(false);
@@ -208,7 +230,43 @@ export default function WalletDetailPage() {
                             <Wallet className="w-8 h-8 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{wallet.name || 'Untitled Wallet'}</h1>
+                            {editingName ? (
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        autoFocus
+                                        value={nameValue}
+                                        onChange={(e) => setNameValue(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && nameValue.trim()) renameMutation.mutate(nameValue.trim());
+                                            if (e.key === 'Escape') setEditingName(false);
+                                        }}
+                                        className="text-3xl font-bold text-gray-900 dark:text-white bg-transparent border-b-2 border-blue-500 outline-none px-0 py-0 w-auto min-w-[200px]"
+                                    />
+                                    <button
+                                        onClick={() => nameValue.trim() && renameMutation.mutate(nameValue.trim())}
+                                        disabled={renameMutation.isPending || !nameValue.trim()}
+                                        className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg disabled:opacity-50"
+                                    >
+                                        <Check className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                        onClick={() => setEditingName(false)}
+                                        className="p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+                                    >
+                                        <XIcon className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 group">
+                                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{wallet.name || 'Untitled Wallet'}</h1>
+                                    <button
+                                        onClick={() => { setNameValue(wallet.name || ''); setEditingName(true); }}
+                                        className="p-1.5 text-gray-400 opacity-0 group-hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-opacity"
+                                    >
+                                        <Pencil className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )}
                             <div className="flex items-center gap-3 mt-1">
                                 <StatusBadge status={wallet.status} />
                                 <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">

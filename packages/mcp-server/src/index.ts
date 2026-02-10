@@ -448,6 +448,32 @@ const tools: Tool[] = [
     },
   },
 
+  {
+    name: 'ucp_batch_complete',
+    description: 'Batch-complete multiple pending UCP checkouts. Adds a payment instrument to each checkout and completes it in one call. Use after ucp_batch_checkout when checkouts were created without payment instruments.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        checkout_ids: {
+          type: 'array',
+          description: 'Array of checkout UUIDs to complete',
+          items: { type: 'string' },
+        },
+        default_payment_instrument: {
+          type: 'object',
+          description: 'Payment instrument applied to all checkouts',
+          properties: {
+            id: { type: 'string' },
+            handler: { type: 'string' },
+            type: { type: 'string' },
+          },
+          required: ['id', 'handler', 'type'],
+        },
+      },
+      required: ['checkout_ids', 'default_payment_instrument'],
+    },
+  },
+
   // UCP Order Management
   {
     name: 'ucp_list_orders',
@@ -676,9 +702,38 @@ const tools: Tool[] = [
     },
   },
 
+  {
+    name: 'delete_agent',
+    description: 'Delete an agent. Removes the agent record. Cannot be undone.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: {
+          type: 'string',
+          description: 'UUID of the agent to delete',
+        },
+      },
+      required: ['agentId'],
+    },
+  },
+
   // ==========================================================================
   // AP2 (Agent-to-Agent Protocol) Mandate Tools
   // ==========================================================================
+  {
+    name: 'ap2_cancel_mandate',
+    description: 'Cancel an active mandate. Sets status to cancelled so no further executions can be made.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mandateId: {
+          type: 'string',
+          description: 'UUID or external mandate_id of the mandate to cancel',
+        },
+      },
+      required: ['mandateId'],
+    },
+  },
   {
     name: 'ap2_create_mandate',
     description: 'Create a spending mandate that authorizes an agent to spend up to a budget. The mandate tracks spending and enforces limits.',
@@ -1603,6 +1658,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'ucp_batch_complete': {
+        const { checkout_ids, default_payment_instrument } = args as {
+          checkout_ids: string[];
+          default_payment_instrument: { id: string; handler: string; type: string };
+        };
+
+        const batchRes = await fetch(`${SLY_API_URL}/v1/ucp/checkouts/batch-complete`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${SLY_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ checkout_ids, default_payment_instrument }),
+        });
+        const batchJson = await batchRes.json() as any;
+        const batchData = batchJson?.data || batchJson;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(batchData, null, 2),
+            },
+          ],
+        };
+      }
+
       case 'ucp_list_orders': {
         const params = new URLSearchParams();
         if (args && (args as any).status) params.set('status', (args as any).status);
@@ -1799,9 +1881,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case 'delete_agent': {
+        const { agentId } = args as { agentId: string };
+        const result = await sly.request(`/v1/agents/${agentId}`, {
+          method: 'DELETE',
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
       // ======================================================================
       // AP2 Mandate Tools
       // ======================================================================
+
+      case 'ap2_cancel_mandate': {
+        const { mandateId } = args as { mandateId: string };
+        const result = await sly.request(`/v1/ap2/mandates/${mandateId}/cancel`, {
+          method: 'PATCH',
+          body: JSON.stringify({}),
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
 
       case 'ap2_create_mandate': {
         const {

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useAccount, useSignMessage } from 'wagmi';
 
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import {
   Wallet as WalletIcon, Plus, Search, Filter, TrendingUp, ArrowUp, ArrowDown,
-  MoreVertical, X, Bot, AlertTriangle, Shield, Clock, CheckCircle, RefreshCw
+  MoreVertical, X, Bot, AlertTriangle, Shield, Clock, CheckCircle, RefreshCw, Trash2
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -65,14 +65,19 @@ const useWalletBalance = (walletId: string | undefined, authToken: string | null
 interface WalletBalanceCardProps {
   wallet: Wallet;
   authToken: string | null;
+  onDelete?: (id: string) => void;
+  isDeleting?: boolean;
 }
 
-function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
+function WalletBalanceCard({ wallet, authToken, onDelete, isDeleting }: WalletBalanceCardProps) {
   const { data: balanceData, isLoading: balanceLoading } = useWalletBalance(wallet.id, authToken);
   const onChain = balanceData?.data?.onChain;
   const syncStatus = balanceData?.data?.syncStatus || 'stale';
   const queryClient = useQueryClient();
   const [showSyncTooltip, setShowSyncTooltip] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Check if internal wallet
   const isInternalWallet = !wallet.walletAddress || wallet.walletAddress.startsWith('internal://');
@@ -256,9 +261,49 @@ function WalletBalanceCard({ wallet, authToken }: WalletBalanceCardProps) {
             </button>
           )}
 
-          <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-            <MoreVertical className="h-4 w-4 text-gray-400" />
-          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            >
+              <MoreVertical className="h-4 w-4 text-gray-400" />
+            </button>
+            {showMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => { setShowMenu(false); setConfirmDelete(false); }} />
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[160px]">
+                  {confirmDelete ? (
+                    <div className="px-3 py-2">
+                      <p className="text-xs text-red-600 dark:text-red-400 mb-2">Delete this wallet?</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setConfirmDelete(false); setShowMenu(false); }}
+                          className="flex-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => { onDelete?.(wallet.id); setShowMenu(false); setConfirmDelete(false); }}
+                          disabled={isDeleting}
+                          className="flex-1 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {isDeleting ? '...' : 'Delete'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(true)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete wallet
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -448,6 +493,24 @@ export default function WalletsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAgentWalletsOnly, setShowAgentWalletsOnly] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'frozen' | 'depleted'>('all');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: async (walletId: string) => {
+      if (!api) throw new Error('API client not initialized');
+      setDeletingId(walletId);
+      return api.wallets.delete(walletId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+      toast.success('Wallet deleted');
+      setDeletingId(null);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to delete wallet');
+      setDeletingId(null);
+    },
+  });
 
   // Form state
   const [createMode, setCreateMode] = useState<'select' | 'create' | 'external'>('select');
@@ -883,7 +946,13 @@ export default function WalletsPage() {
           </div>
         ) : (
           filteredWallets.map((wallet: any) => (
-            <WalletBalanceCard key={wallet.id} wallet={wallet} authToken={authToken} />
+            <WalletBalanceCard
+              key={wallet.id}
+              wallet={wallet}
+              authToken={authToken}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              isDeleting={deletingId === wallet.id}
+            />
           ))
         )}
 

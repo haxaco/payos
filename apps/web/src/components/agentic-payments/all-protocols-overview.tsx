@@ -87,21 +87,21 @@ export function AllProtocolsOverview({ period }: AllProtocolsOverviewProps) {
         };
     })();
 
-    // Fetch UCP stats from analytics endpoint
-    const { data: ucpAnalytics } = useQuery({
-        queryKey: ['ucp', 'analytics', period],
+    // Fetch UCP stats from checkout stats endpoint (FX-normalized USD volume)
+    const { data: ucpStats } = useQuery({
+        queryKey: ['ucp', 'checkouts-stats'],
         queryFn: async () => {
             if (!api) return null;
-            return api.ucp.getAnalytics({ period });
+            return api.ucp.checkouts.stats();
         },
         enabled: !!api,
     });
 
     const ucpData = {
-        volume: ucpAnalytics?.summary?.totalVolume || 0,
-        transactions: ucpAnalytics?.summary?.totalSettlements || 0,
-        successRate: ucpAnalytics?.summary?.totalSettlements
-            ? ((ucpAnalytics.summary.completedSettlements || 0) / ucpAnalytics.summary.totalSettlements) * 100
+        volume: ucpStats?.total_volume_usd || 0,
+        transactions: ucpStats?.total_checkouts || 0,
+        successRate: ucpStats?.total_checkouts
+            ? ((ucpStats.completed_checkouts || 0) / ucpStats.total_checkouts) * 100
             : 0,
         trend: 0,
     };

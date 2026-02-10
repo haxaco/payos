@@ -36,8 +36,18 @@ const periodLabels: Record<Period, string> = {
 export function UcpAnalytics({ period }: { period: Period }) {
     const api = useApiClient();
 
-    // Fetch analytics
-    const { data: analytics, isLoading } = useQuery({
+    // Fetch checkout stats (FX-normalized USD volume)
+    const { data: checkoutStats, isLoading: statsLoading } = useQuery({
+        queryKey: ['ucp', 'checkouts-stats'],
+        queryFn: async () => {
+            if (!api) return null;
+            return api.ucp.checkouts.stats();
+        },
+        enabled: !!api,
+    });
+
+    // Fetch settlement analytics for corridor breakdown
+    const { data: analytics, isLoading: analyticsLoading } = useQuery({
         queryKey: ['ucp', 'analytics', period],
         queryFn: async () => {
             if (!api) return null;
@@ -46,6 +56,7 @@ export function UcpAnalytics({ period }: { period: Period }) {
         enabled: !!api,
     });
 
+    const isLoading = statsLoading || analyticsLoading;
     const summary = analytics?.summary;
     const byStatus = analytics?.byStatus;
     const byCorridor = analytics?.byCorridor;
@@ -76,14 +87,14 @@ export function UcpAnalytics({ period }: { period: Period }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard
                     title="Total Volume"
-                    value={`$${summary?.totalVolume?.toFixed(2) || '0.00'}`}
-                    description="Checkout payments processed"
+                    value={`$${checkoutStats?.total_volume_usd?.toFixed(2) || '0.00'}`}
+                    description="FX-normalized USD volume"
                     icon={<DollarSign className="h-5 w-5" />}
                 />
                 <StatCard
                     title="Total Checkouts"
-                    value={summary?.totalSettlements?.toString() || '0'}
-                    description={periodLabels[period]}
+                    value={checkoutStats?.total_checkouts?.toString() || '0'}
+                    description={`${checkoutStats?.completed_checkouts || 0} completed`}
                     icon={<ArrowLeftRight className="h-5 w-5" />}
                 />
                 <StatCard
