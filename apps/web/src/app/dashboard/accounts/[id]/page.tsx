@@ -21,14 +21,14 @@ import {
   XCircle,
   Pause,
 } from 'lucide-react';
-import type { Account, Agent, Stream, LedgerEntry, Transfer } from '@sly/api-client';
+import type { Account, Agent, Stream, LedgerEntry, Transfer, Wallet as WalletData } from '@sly/api-client';
 import { useLocale } from '@/lib/locale';
 import { formatCurrency } from '@sly/ui';
 
 import { ScreeningTab } from '@/components/dashboard/account-360/screening-tab';
 import { toast } from 'sonner';
 
-type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'screening';
+type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'wallets' | 'screening';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -65,6 +65,20 @@ export default function AccountDetailPage() {
     enabled: !!api && activeTab === 'streams', // Lazy load only when streams tab active
   });
 
+  // Wallets count: Load immediately for tab badge
+  const { data: walletsCountData } = useQuery({
+    queryKey: ['account', accountId, 'wallets', 'count'],
+    queryFn: () => api!.wallets.list({ owner_account_id: accountId, limit: 1 } as any),
+    enabled: !!api, // Always load for count
+  });
+
+  // Wallets tab: Full data when tab is active
+  const { data: walletsData } = useQuery({
+    queryKey: ['account', accountId, 'wallets'],
+    queryFn: () => api!.wallets.list({ owner_account_id: accountId, limit: 50 } as any),
+    enabled: !!api && activeTab === 'wallets',
+  });
+
   // Transaction counts: Load immediately for tab badges
   const { data: transactionsCountData } = useQuery({
     queryKey: ['account', accountId, 'transactions', 'count'],
@@ -94,6 +108,7 @@ export default function AccountDetailPage() {
 
   const agents = (agentsData as any)?.data?.data || agentsData?.data || [];
   const streams = (streamsData as any)?.data?.data || streamsData?.data || [];
+  const wallets = (walletsData as any)?.data?.data || walletsData?.data || [];
   const transactions = (transactionsData as any)?.data?.data || transactionsData?.data || [];
   const transfers = (transfersData as any)?.data?.data || transfersData?.data || [];
   const loading = accountLoading;
@@ -179,12 +194,14 @@ export default function AccountDetailPage() {
   }
 
   const transactionsCount = (transactionsCountData?.pagination?.total || 0) + (transfersCountData?.pagination?.total || 0);
+  const walletsCount = (walletsCountData as any)?.pagination?.total || wallets.length;
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Wallet },
     { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactionsCount },
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
     { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agents.length },
+    { id: 'wallets' as TabType, label: 'Wallets', icon: Wallet, count: walletsCount },
     { id: 'screening' as TabType, label: 'Screening', icon: Shield },
   ];
 
@@ -380,6 +397,9 @@ export default function AccountDetailPage() {
       )}
       {activeTab === 'agents' && (
         <AgentsTab agents={agents} />
+      )}
+      {activeTab === 'wallets' && (
+        <WalletsTab wallets={wallets} />
       )}
       {activeTab === 'screening' && (
         <ScreeningTab />
@@ -690,6 +710,64 @@ function AgentsTab({ agents }: { agents: Agent[] }) {
             {agent.description || 'No description'}
           </p>
           <div className="text-sm text-gray-500">KYA Tier {agent.kyaTier}</div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+// Wallets Tab Component
+function WalletsTab({ wallets }: { wallets: WalletData[] }) {
+  const { formatCurrency } = useLocale();
+
+  if (wallets.length === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
+        <Wallet className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No wallets</h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          This account has no linked wallets.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {wallets.map((wallet) => (
+        <Link
+          key={wallet.id}
+          href={`/dashboard/wallets/${wallet.id}`}
+          className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950 rounded-xl flex items-center justify-center">
+              <Wallet className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+              wallet.status === 'active'
+                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                : wallet.status === 'frozen'
+                  ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
+                  : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+            }`}>
+              {wallet.status}
+            </span>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+            {wallet.name || 'Unnamed Wallet'}
+          </h3>
+          <div className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+            {formatCurrency(wallet.balance, wallet.currency || 'USDC')}
+          </div>
+          <div className="space-y-1 text-sm text-gray-500 dark:text-gray-400">
+            {wallet.network && (
+              <div>Network: <span className="text-gray-700 dark:text-gray-300">{wallet.network}</span></div>
+            )}
+            {wallet.purpose && (
+              <div>Purpose: <span className="text-gray-700 dark:text-gray-300">{wallet.purpose}</span></div>
+            )}
+          </div>
         </Link>
       ))}
     </div>

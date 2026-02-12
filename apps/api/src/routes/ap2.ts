@@ -407,6 +407,112 @@ ap2.post('/mandates/:id/execute', async (c) => {
   const newUsed = currentUsed + execAmount;
   const newRemaining = Number(mandate.authorized_amount) - newUsed;
 
+  // ============================================
+  // Wallet deduction (settle funds from agent wallet)
+  // ============================================
+  let walletDeduction: { walletId: string; previousBalance: number; newBalance: number; transferId?: string } | null = null;
+
+  // Find wallet managed by this agent or owned by the mandate's account
+  const { data: wallet } = await supabase
+    .from('wallets')
+    .select('id, balance, currency, owner_account_id, status')
+    .eq('tenant_id', ctx.tenantId)
+    .or(`managed_by_agent_id.eq.${mandate.agent_id},owner_account_id.eq.${mandate.account_id}`)
+    .eq('status', 'active')
+    .order('managed_by_agent_id', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .single();
+
+  if (wallet) {
+    const currentBalance = Number(wallet.balance);
+    if (currentBalance >= execAmount) {
+      const updatedBalance = currentBalance - execAmount;
+      const updatedStatus = updatedBalance === 0 ? 'depleted' : 'active';
+
+      const { error: walletUpdateError } = await supabase
+        .from('wallets')
+        .update({
+          balance: updatedBalance,
+          status: updatedStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', wallet.id)
+        .eq('tenant_id', ctx.tenantId);
+
+      if (walletUpdateError) {
+        console.error('[AP2] Wallet deduction error:', walletUpdateError);
+      } else {
+        // Create transfer record for audit trail
+        const { data: transfer } = await supabase
+          .from('transfers')
+          .insert({
+            tenant_id: ctx.tenantId,
+            from_account_id: wallet.owner_account_id,
+            amount: execAmount,
+            currency: currency || mandate.currency,
+            type: 'internal',
+            status: 'completed',
+            description: description || `Mandate execution #${newExecIndex}`,
+            protocol_metadata: {
+              protocol: 'ap2',
+              wallet_id: wallet.id,
+              operation: 'mandate_execution',
+              mandate_id: mandate.id,
+              execution_index: newExecIndex,
+            },
+          })
+          .select('id')
+          .single();
+
+        walletDeduction = {
+          walletId: wallet.id,
+          previousBalance: currentBalance,
+          newBalance: updatedBalance,
+          transferId: transfer?.id,
+        };
+
+        // Update account balance to reflect wallet deduction
+        const { data: account } = await supabase
+          .from('accounts')
+          .select('balance_total, balance_available')
+          .eq('id', wallet.owner_account_id)
+          .eq('tenant_id', ctx.tenantId)
+          .single();
+
+        if (account) {
+          const newTotal = Math.max(0, Number(account.balance_total) - execAmount);
+          const newAvailable = Math.max(0, Number(account.balance_available) - execAmount);
+          await supabase
+            .from('accounts')
+            .update({
+              balance_total: newTotal,
+              balance_available: newAvailable,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', wallet.owner_account_id)
+            .eq('tenant_id', ctx.tenantId);
+
+          // Create ledger entry for audit trail
+          await supabase
+            .from('ledger_entries')
+            .insert({
+              tenant_id: ctx.tenantId,
+              account_id: wallet.owner_account_id,
+              type: 'debit',
+              amount: execAmount,
+              currency: currency || mandate.currency,
+              balance_after: newTotal,
+              reference_type: 'mandate_execution',
+              reference_id: transfer?.id || mandate.id,
+              description: description || `Mandate execution #${newExecIndex}`,
+            });
+        }
+      }
+    } else {
+      console.warn(`[AP2] Wallet ${wallet.id} has insufficient balance (${currentBalance}) for execution amount (${execAmount})`);
+    }
+  }
+
   return c.json({
     data: {
       mandate_id: id,
@@ -418,6 +524,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
       remaining_amount: newRemaining,
       description,
       order_ids: order_ids || [],
+      wallet_deduction: walletDeduction,
     },
   }, 201);
 });
