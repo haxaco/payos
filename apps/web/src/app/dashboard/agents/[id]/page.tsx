@@ -41,7 +41,7 @@ import { AgentActivityFeed } from '@/components/agents/agent-activity-feed';
 import { AgentQuickActions } from '@/components/agents/agent-quick-actions';
 import { ConfigureAgentDialog } from '@/components/agents/configure-agent-dialog';
 import { KyaTierBadge } from '@/components/agents/kya-tier-badge';
-import { getAgentActivity } from '@/lib/mock-data/agent-activity';
+import type { AgentAction } from '@/lib/mock-data/agent-activity';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 
@@ -1341,27 +1341,127 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
   );
 }
 
-// Activity Tab - NOW WITH REAL AI ACTIVITY FEED
+// Activity Tab - Real data from transfers, checkouts, and mandate executions
 function ActivityTab({ agentId }: { agentId: string }) {
-  const activities = getAgentActivity(agentId);
+  const api = useApiClient();
+
+  // Fetch transfers initiated by this agent
+  const { data: transfersData, isLoading: transfersLoading } = useTanstackQuery({
+    queryKey: ['activity-transfers', agentId],
+    queryFn: async () => {
+      if (!api) return [];
+      const result = await api.transfers.list({ initiated_by_id: agentId, limit: 50 } as any);
+      const raw = result as any;
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+    },
+    enabled: !!api,
+  });
+
+  // Fetch ACP checkouts
+  const { data: acpData, isLoading: acpLoading } = useTanstackQuery({
+    queryKey: ['activity-acp', agentId],
+    queryFn: async () => {
+      if (!api) return [];
+      const result = await api.acp.list({ agent_id: agentId, limit: 50 });
+      const raw = result as any;
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+    },
+    enabled: !!api,
+  });
+
+  // Fetch UCP checkouts
+  const { data: ucpData, isLoading: ucpLoading } = useTanstackQuery({
+    queryKey: ['activity-ucp', agentId],
+    queryFn: async () => {
+      if (!api) return [];
+      const result = await api.ucp.checkouts.list({ agent_id: agentId, limit: 50 });
+      const raw = result as any;
+      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+    },
+    enabled: !!api,
+  });
+
+  const isLoading = transfersLoading || acpLoading || ucpLoading;
+
+  // Map real data to AgentAction format
+  const activities: AgentAction[] = [];
+
+  // Map transfers
+  (transfersData || []).forEach((tx: any) => {
+    const isMandateExec = tx.protocol_metadata?.operation === 'mandate_execution' || tx.protocolMetadata?.operation === 'mandate_execution';
+    activities.push({
+      id: tx.id,
+      timestamp: tx.createdAt || tx.created_at,
+      type: 'transfer',
+      status: tx.status === 'completed' ? 'success' : tx.status === 'failed' ? 'failed' : 'pending',
+      description: tx.description || `${tx.type} transfer`,
+      details: {
+        amount: parseFloat(tx.amount) || 0,
+        currency: tx.currency || 'USDC',
+        recipient: tx.to?.accountName || tx.to_account_name || undefined,
+        reference: tx.id?.slice(0, 12),
+      },
+      reasoning: isMandateExec
+        ? `Executed under mandate ${(tx.protocol_metadata?.mandate_id || tx.protocolMetadata?.mandate_id || '').slice(0, 12)}. Funds deducted from wallet.`
+        : undefined,
+    });
+  });
+
+  // Map ACP checkouts
+  (acpData || []).forEach((c: any) => {
+    activities.push({
+      id: c.id,
+      timestamp: c.created_at || c.createdAt,
+      type: 'transfer',
+      status: c.status === 'completed' ? 'success' : c.status === 'cancelled' ? 'failed' : 'pending',
+      description: c.merchant_name || c.checkout_id || 'ACP Checkout',
+      details: {
+        amount: parseFloat(c.total_amount || c.totalAmount || 0),
+        currency: c.currency || 'USD',
+        reference: c.checkout_id || c.id?.slice(0, 12),
+      },
+    });
+  });
+
+  // Map UCP checkouts
+  (ucpData || []).forEach((s: any) => {
+    activities.push({
+      id: s.id,
+      timestamp: s.created_at || s.createdAt,
+      type: 'transfer',
+      status: s.status === 'completed' ? 'success' : s.status === 'canceled' ? 'failed' : 'pending',
+      description: s.metadata?.merchant_name || s.line_items?.[0]?.name || 'UCP Checkout',
+      details: {
+        amount: (s.totals?.find((t: any) => t.type === 'total')?.amount ?? 0) / 100,
+        currency: s.currency || 'USD',
+        reference: s.id?.slice(0, 12),
+      },
+    });
+  });
+
+  // Sort by most recent
+  activities.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
 
   return (
     <div className="space-y-6">
       {/* Activity Header */}
       <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-2xl p-6 border border-purple-200 dark:border-purple-900">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">🤖</span>
+          <Bot className="h-6 w-6 text-purple-600 dark:text-purple-400" />
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Agent Activity Log</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              View all actions performed by this agent, including AI reasoning and decision explanations.
+              All actions performed by this agent — transfers, checkouts, and mandate executions.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Activity Feed */}
-      <AgentActivityFeed activities={activities} showFilters={true} />
+      {isLoading ? (
+        <div className="h-40 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse" />
+      ) : (
+        <AgentActivityFeed activities={activities} showFilters={true} />
+      )}
     </div>
   );
 }

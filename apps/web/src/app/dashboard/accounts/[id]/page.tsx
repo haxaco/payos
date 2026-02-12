@@ -55,7 +55,7 @@ export default function AccountDetailPage() {
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
     queryKey: ['account', accountId, 'agents'],
     queryFn: () => api!.accounts.getAgents(accountId, { limit: 50 }),
-    enabled: !!api && activeTab === 'agents', // Lazy load only when agents tab active
+    enabled: !!api,
   });
 
   // Streams tab: Only load when tab is active
@@ -193,14 +193,16 @@ export default function AccountDetailPage() {
     );
   }
 
-  const transactionsCount = (transactionsCountData?.pagination?.total || 0) + (transfersCountData?.pagination?.total || 0);
+  // Ledger entries are the canonical transaction count (transfers that have ledger entries are deduplicated)
+  const transactionsCount = (transactionsCountData as any)?.pagination?.total || transactions.length;
+  const agentsCount = agents.length;
   const walletsCount = (walletsCountData as any)?.pagination?.total || wallets.length;
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Wallet },
     { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactionsCount },
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
-    { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agents.length },
+    { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agentsCount },
     { id: 'wallets' as TabType, label: 'Wallets', icon: Wallet, count: walletsCount },
     { id: 'screening' as TabType, label: 'Screening', icon: Shield },
   ];
@@ -497,10 +499,16 @@ function TransactionsTab({
   const { formatCurrency: formatCurrencyLocale, formatDate: formatDateLocale } = useLocale();
   const router = useRouter();
 
+  // Deduplicate: if a ledger entry references a transfer, don't show the transfer separately
+  const ledgerReferenceIds = new Set(
+    transactions.filter(tx => tx.referenceType === 'transfer').map(tx => tx.referenceId)
+  );
+  const deduplicatedTransfers = transfers.filter(tf => !ledgerReferenceIds.has(tf.id));
+
   // Combine and sort by date (most recent first)
   const allTransactions = [
     ...transactions.map(tx => ({ ...tx, _type: 'ledger' as const })),
-    ...transfers.map(tf => ({ ...tf, _type: 'transfer' as const })),
+    ...deduplicatedTransfers.map(tf => ({ ...tf, _type: 'transfer' as const })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   if (allTransactions.length === 0) {
@@ -531,14 +539,32 @@ function TransactionsTab({
           {allTransactions.map((item) => {
             if (item._type === 'ledger') {
               const tx = item as LedgerEntry & { _type: 'ledger' };
+
+              // Determine display label from referenceType
+              const refLabel = tx.referenceType === 'mandate_execution' ? 'Mandate'
+                : tx.referenceType === 'wallet_deposit' ? 'Deposit'
+                : tx.referenceType || tx.type;
+
+              // Clickable if it has a referenceId
+              const isClickable = !!tx.referenceId;
+              const ledgerClickUrl = tx.referenceType === 'mandate_execution'
+                ? `/dashboard/agentic-payments/ap2/mandates/${tx.referenceId}`
+                : `/dashboard/transfers/${tx.referenceId}`;
+
               return (
-                <tr key={`ledger-${tx.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                <tr
+                  key={`ledger-${tx.id}`}
+                  onClick={isClickable ? () => router.push(ledgerClickUrl) : undefined}
+                  className={`hover:bg-gray-50 dark:hover:bg-gray-900${isClickable ? ' cursor-pointer transition-colors' : ''}`}
+                >
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${tx.type === 'credit'
                       ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                      : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
+                      : tx.referenceType === 'mandate_execution'
+                        ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400'
+                        : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'
                       }`}>
-                      {tx.type}
+                      {refLabel}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-gray-900 dark:text-white text-sm">
@@ -565,7 +591,7 @@ function TransactionsTab({
               return (
                 <tr
                   key={`transfer-${tf.id}`}
-                  onClick={() => router.push(`/dashboard/transfers`)}
+                  onClick={() => router.push(`/dashboard/transfers/${tf.id}`)}
                   className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors"
                 >
                   <td className="px-6 py-4">

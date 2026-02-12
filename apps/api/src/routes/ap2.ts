@@ -429,6 +429,12 @@ ap2.post('/mandates/:id/execute', async (c) => {
       const updatedBalance = currentBalance - execAmount;
       const updatedStatus = updatedBalance === 0 ? 'depleted' : 'active';
 
+      // Look up account name and agent name for the transfer record
+      const [{ data: fromAccount }, { data: agentRecord }] = await Promise.all([
+        supabase.from('accounts').select('name').eq('id', wallet.owner_account_id).eq('tenant_id', ctx.tenantId).single(),
+        supabase.from('agents').select('name').eq('id', mandate.agent_id).eq('tenant_id', ctx.tenantId).single(),
+      ]);
+
       const { error: walletUpdateError } = await supabase
         .from('wallets')
         .update({
@@ -448,10 +454,15 @@ ap2.post('/mandates/:id/execute', async (c) => {
           .insert({
             tenant_id: ctx.tenantId,
             from_account_id: wallet.owner_account_id,
+            from_account_name: fromAccount?.name || '',
             amount: execAmount,
             currency: currency || mandate.currency,
             type: 'internal',
             status: 'completed',
+            completed_at: new Date().toISOString(),
+            initiated_by_type: 'agent',
+            initiated_by_id: mandate.agent_id,
+            initiated_by_name: agentRecord?.name || '',
             description: description || `Mandate execution #${newExecIndex}`,
             protocol_metadata: {
               protocol: 'ap2',
@@ -502,7 +513,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
               amount: execAmount,
               currency: currency || mandate.currency,
               balance_after: newTotal,
-              reference_type: 'mandate_execution',
+              reference_type: transfer ? 'transfer' : 'mandate_execution',
               reference_id: transfer?.id || mandate.id,
               description: description || `Mandate execution #${newExecIndex}`,
             });
