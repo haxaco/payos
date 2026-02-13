@@ -240,14 +240,105 @@ router.get('/stats', async (c) => {
 
 const MAX_BATCH_SIZE = 100;
 
+const BatchCreateSchema = z.object({
+  checkouts: z.array(CreateCheckoutSchema).min(1).max(MAX_BATCH_SIZE),
+  auto_complete: z.boolean().optional().default(false),
+  default_payment_instrument: PaymentInstrumentSchema.optional(),
+});
+
+/**
+ * POST /v1/ucp/checkouts/batch
+ * Batch-create multiple checkout sessions in one call.
+ * Optionally auto-complete checkouts that reach ready_for_complete.
+ * Max batch size: 100
+ */
+router.post('/batch', async (c) => {
+  const ctx = c.get('ctx');
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = BatchCreateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      error: 'Validation failed',
+      details: parsed.error.errors.map(e => ({ path: e.path.join('.'), message: e.message })),
+    }, 400);
+  }
+
+  const { checkouts, auto_complete, default_payment_instrument } = parsed.data;
+  const supabase = createClient();
+  const results: Array<{ checkout_id: string; order_id?: string; status: string; error?: string }> = [];
+
+  for (const spec of checkouts) {
+    try {
+      // Merge default_payment_instrument if checkout has no payment_instruments
+      const checkoutSpec: CreateCheckoutRequest = {
+        ...spec,
+        payment_instruments: spec.payment_instruments?.length
+          ? spec.payment_instruments
+          : default_payment_instrument
+            ? [default_payment_instrument]
+            : undefined,
+      } as CreateCheckoutRequest;
+
+      const checkout = await createCheckout(ctx.tenantId, checkoutSpec, supabase);
+
+      // Auto-complete if requested and checkout is ready
+      if (auto_complete && checkout.status === 'ready_for_complete') {
+        try {
+          const completed = await completeCheckout(ctx.tenantId, checkout.id, supabase);
+          results.push({
+            checkout_id: completed.id,
+            order_id: completed.order_id || undefined,
+            status: completed.status,
+          });
+        } catch (completeErr: any) {
+          // Created but failed to complete
+          results.push({
+            checkout_id: checkout.id,
+            status: checkout.status,
+            error: `Auto-complete failed: ${completeErr.message}`,
+          });
+        }
+      } else {
+        results.push({
+          checkout_id: checkout.id,
+          order_id: checkout.order_id || undefined,
+          status: checkout.status,
+        });
+      }
+    } catch (err: any) {
+      console.error('[UCP Batch Create] Item error:', err);
+      results.push({
+        checkout_id: 'failed',
+        status: 'error',
+        error: err.message || 'Failed to create checkout',
+      });
+    }
+  }
+
+  return c.json({
+    total: checkouts.length,
+    created: results.filter(r => r.status !== 'error').length,
+    completed: results.filter(r => r.status === 'completed').length,
+    failed: results.filter(r => r.status === 'error' || r.error).length,
+    results,
+  });
+});
+
 const BatchCompleteSchema = z.union([
   z.object({
-    checkout_ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE),
+    checkout_ids: z.array(z.string().min(1)).min(1).max(MAX_BATCH_SIZE),
     default_payment_instrument: PaymentInstrumentSchema,
   }),
   z.object({
     checkouts: z.array(z.object({
-      checkout_id: z.string().uuid(),
+      checkout_id: z.string().min(1),
       payment_instrument: PaymentInstrumentSchema,
     })).min(1).max(MAX_BATCH_SIZE),
   }),

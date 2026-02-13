@@ -96,7 +96,7 @@ quotes.post('/', async (c) => {
   const { fromCurrency, toCurrency, amount, corridor } = parsed.data;
   
   // Validate currencies
-  const supportedCurrencies = ['USD', 'USDC', 'MXN', 'BRL', 'ARS', 'COP'];
+  const supportedCurrencies = ['USD', 'USDC', 'MXN', 'BRL', 'ARS', 'COP', 'PKR'];
   if (!supportedCurrencies.includes(fromCurrency)) {
     throw new ValidationError(`Unsupported currency: ${fromCurrency}`);
   }

@@ -773,6 +773,14 @@ const tools: Tool[] = [
           type: 'string',
           description: 'ISO 8601 expiration timestamp (optional)',
         },
+        metadata: {
+          type: 'object',
+          description: 'Optional metadata. Use "priority" key (number 1-3) to set mandate priority: 1=High, 2=Medium, 3=Low. Example: {"priority": 1}',
+        },
+        mandate_data: {
+          type: 'object',
+          description: 'Optional mandate data (e.g., destination info, constraints)',
+        },
       },
       required: ['mandate_id', 'agent_id', 'account_id', 'authorized_amount'],
     },
@@ -847,6 +855,45 @@ const tools: Tool[] = [
         },
       },
       required: [],
+    },
+  },
+
+  {
+    name: 'ap2_update_mandate',
+    description: 'Update a mandate. Can change authorized_amount, expires_at, status, metadata, mandate_data, or description.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mandateId: {
+          type: 'string',
+          description: 'UUID or external mandate_id of the mandate to update',
+        },
+        authorized_amount: {
+          type: 'number',
+          description: 'New authorized amount (optional)',
+        },
+        status: {
+          type: 'string',
+          description: 'New status (optional)',
+        },
+        expires_at: {
+          type: 'string',
+          description: 'New expiration timestamp ISO 8601 (optional)',
+        },
+        metadata: {
+          type: 'object',
+          description: 'Updated metadata object. Use "priority" key (number 1-3) to set priority: 1=High, 2=Medium, 3=Low (optional)',
+        },
+        mandate_data: {
+          type: 'object',
+          description: 'Updated mandate_data object (optional)',
+        },
+        description: {
+          type: 'string',
+          description: 'Updated description (optional)',
+        },
+      },
+      required: ['mandateId'],
     },
   },
 
@@ -986,6 +1033,50 @@ const tools: Tool[] = [
         },
       },
       required: [],
+    },
+  },
+
+  {
+    name: 'acp_batch_checkout',
+    description: 'Batch-create multiple ACP checkout sessions in one call. Each checkout spec should include all required fields (checkout_id, agent_id, account_id, merchant_id, items). Returns an array of results.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        checkouts: {
+          type: 'array',
+          description: 'Array of ACP checkout specifications to create',
+          items: {
+            type: 'object',
+            properties: {
+              checkout_id: { type: 'string', description: 'Unique identifier for the checkout' },
+              agent_id: { type: 'string', description: 'UUID of the agent making the purchase' },
+              account_id: { type: 'string', description: 'UUID of the account funding the checkout' },
+              merchant_id: { type: 'string', description: 'Identifier for the merchant' },
+              merchant_name: { type: 'string', description: 'Merchant display name (optional)' },
+              items: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    description: { type: 'string' },
+                    quantity: { type: 'number' },
+                    unit_price: { type: 'number' },
+                    total_price: { type: 'number' },
+                  },
+                  required: ['name', 'quantity', 'unit_price', 'total_price'],
+                },
+              },
+              tax_amount: { type: 'number', description: 'Tax amount (optional)' },
+              shipping_amount: { type: 'number', description: 'Shipping amount (optional)' },
+              currency: { type: 'string', description: 'Currency (default: USDC)' },
+              metadata: { type: 'object', description: 'Custom metadata (optional)' },
+            },
+            required: ['checkout_id', 'agent_id', 'account_id', 'merchant_id', 'items'],
+          },
+        },
+      },
+      required: ['checkouts'],
     },
   },
 
@@ -1565,94 +1656,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }>;
         };
 
-        const results: Array<{ checkout_id: string; order_id?: string; status: string; error?: string }> = [];
-
-        for (const spec of checkouts) {
-          let checkoutId = '';
-          try {
-            // Create checkout with all fields
-            const body: Record<string, any> = {
-              currency: spec.currency,
-              line_items: spec.line_items,
-              buyer: spec.buyer,
-              shipping_address: spec.shipping_address,
-              metadata: spec.metadata,
-            };
-            if (spec.payment_instruments) body.payment_instruments = spec.payment_instruments;
-            if (spec.checkout_type) body.checkout_type = spec.checkout_type;
-            if (spec.agent_id) body.agent_id = spec.agent_id;
-
-            // Create the checkout (use direct fetch to get full response control)
-            const createRes = await fetch(`${SLY_API_URL}/v1/ucp/checkouts`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${SLY_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(body),
-            });
-            const createJson = await createRes.json() as any;
-            // Unwrap { success, data } envelope from response wrapper middleware
-            const created = createJson?.data || createJson;
-
-            if (!createRes.ok) {
-              results.push({ checkout_id: 'failed', status: 'error', error: `Create failed: ${createJson?.error?.message || createJson?.error || createRes.statusText}` });
-              continue;
-            }
-
-            checkoutId = created?.id;
-            if (!checkoutId) {
-              results.push({ checkout_id: 'unknown', status: 'error', error: `Create returned no id` });
-              continue;
-            }
-
-            // Always attempt to complete — the complete endpoint validates
-            // readiness internally. This avoids relying on the status field
-            // from the create response which can be undefined.
-            const completeRes = await fetch(`${SLY_API_URL}/v1/ucp/checkouts/${checkoutId}/complete`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${SLY_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-            });
-            const completeJson = await completeRes.json() as any;
-            // Unwrap { success, data } envelope
-            const completed = completeJson?.data || completeJson;
-
-            if (completeRes.ok) {
-              results.push({
-                checkout_id: completed?.id || checkoutId,
-                order_id: completed?.order_id,
-                status: completed?.status || 'completed',
-              });
-            } else {
-              // Complete failed — report the checkout as created but not completed
-              results.push({
-                checkout_id: checkoutId,
-                status: created?.status || 'created',
-                error: `Complete failed (${completeRes.status}): ${completeJson?.error?.message || completeJson?.error || 'unknown error'}`,
-              });
-            }
-          } catch (err: any) {
-            results.push({
-              checkout_id: checkoutId || 'failed',
-              status: 'error',
-              error: err.message,
-            });
-          }
-        }
+        // Single API call to batch create + auto-complete
+        const batchRes = await fetch(`${SLY_API_URL}/v1/ucp/checkouts/batch`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${SLY_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            checkouts,
+            auto_complete: true,
+          }),
+        });
+        const batchJson = await batchRes.json() as any;
+        const batchData = batchJson?.data || batchJson;
 
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                total: checkouts.length,
-                completed: results.filter(r => r.status === 'completed').length,
-                failed: results.filter(r => r.error).length,
-                results,
-              }, null, 2),
+              text: JSON.stringify(batchData, null, 2),
             },
           ],
         };
@@ -1926,6 +1949,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           mandate_type,
           description,
           expires_at,
+          metadata,
+          mandate_data,
         } = args as {
           mandate_id: string;
           agent_id: string;
@@ -1935,6 +1960,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           mandate_type?: string;
           description?: string;
           expires_at?: string;
+          metadata?: object;
+          mandate_data?: object;
         };
         const result = await sly.ap2.createMandate({
           mandate_id,
@@ -1943,7 +1970,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           authorized_amount,
           currency,
           mandate_type: (mandate_type as 'intent' | 'cart' | 'payment') || 'payment',
-          mandate_data: description ? { description } : undefined,
+          mandate_data: mandate_data || (description ? { description } : undefined),
+          metadata,
           expires_at,
         });
         return {
@@ -2005,6 +2033,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           agent_id,
           account_id,
           limit,
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'ap2_update_mandate': {
+        const { mandateId, ...updateFields } = args as {
+          mandateId: string;
+          authorized_amount?: number;
+          status?: string;
+          expires_at?: string;
+          metadata?: object;
+          mandate_data?: object;
+          description?: string;
+        };
+        const result = await sly.request(`/v1/ap2/mandates/${mandateId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updateFields),
         });
         return {
           content: [
@@ -2121,6 +2173,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'acp_batch_checkout': {
+        const { checkouts } = args as {
+          checkouts: Array<{
+            checkout_id: string;
+            agent_id: string;
+            account_id: string;
+            merchant_id: string;
+            merchant_name?: string;
+            items: Array<{ name: string; description?: string; quantity: number; unit_price: number; total_price: number }>;
+            tax_amount?: number;
+            shipping_amount?: number;
+            currency?: string;
+            metadata?: Record<string, any>;
+          }>;
+        };
+
+        const batchRes = await fetch(`${SLY_API_URL}/v1/acp/checkouts/batch`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${SLY_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ checkouts }),
+        });
+        const batchJson = await batchRes.json() as any;
+        const batchData = batchJson?.data || batchJson;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(batchData, null, 2),
             },
           ],
         };

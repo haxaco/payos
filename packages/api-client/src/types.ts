@@ -865,6 +865,7 @@ export interface Mandate {
   status: MandateStatus;
   expiresAt?: string;
   metadata?: Record<string, unknown>;
+  mandateData?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
   executions?: MandateExecution[];

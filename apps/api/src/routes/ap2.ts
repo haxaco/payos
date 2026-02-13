@@ -16,9 +16,10 @@ import {
   createSpendingPolicyService,
   type PolicyContext 
 } from '../services/spending-policy.js';
-import { 
-  createApprovalWorkflowService 
+import {
+  createApprovalWorkflowService
 } from '../services/approval-workflow.js';
+import { getLiveFXService } from '../services/fx/live-rates.js';
 
 const ap2 = new Hono();
 
@@ -352,7 +353,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     throw new ValidationError('Invalid JSON body');
   }
 
-  const { amount, currency, description, order_ids } = body;
+  const { amount, currency, description, order_ids, destination_currency, to_account_id } = body;
   if (!amount || Number(amount) <= 0) {
     throw new ValidationError('amount must be a positive number');
   }
@@ -408,6 +409,55 @@ ap2.post('/mandates/:id/execute', async (c) => {
   const newRemaining = Number(mandate.authorized_amount) - newUsed;
 
   // ============================================
+  // Cross-border detection & FX resolution
+  // ============================================
+  const destCurrency = destination_currency || mandate.mandate_data?.destination_currency;
+  const destAccountId = to_account_id || mandate.mandate_data?.destination_account_id;
+  const isCrossBorder = !!destCurrency && !['USD', 'USDC'].includes(destCurrency.toUpperCase());
+
+  let crossBorderInfo: {
+    to_account_id?: string;
+    to_account_name?: string;
+    destination_amount: number;
+    destination_currency: string;
+    fx_rate: number;
+    fee_amount: number;
+    corridor_id: string;
+  } | null = null;
+
+  if (isCrossBorder) {
+    // Look up destination account
+    let destAccountName = 'Unknown Recipient';
+    if (destAccountId) {
+      const { data: destAccount } = await supabase
+        .from('accounts')
+        .select('name')
+        .eq('id', destAccountId)
+        .eq('tenant_id', ctx.tenantId)
+        .single();
+      if (destAccount) destAccountName = destAccount.name;
+    }
+
+    // Get live FX rate
+    const liveFX = getLiveFXService();
+    const fxRate = await liveFX.getRate('USD', destCurrency);
+    const feePercent = 0.7; // 0.7% remittance corridor fee
+    const feeAmount = parseFloat((execAmount * feePercent / 100).toFixed(2));
+    const netAmount = execAmount - feeAmount;
+    const destinationAmount = parseFloat((netAmount * fxRate).toFixed(2));
+
+    crossBorderInfo = {
+      to_account_id: destAccountId,
+      to_account_name: destAccountName,
+      destination_amount: destinationAmount,
+      destination_currency: destCurrency,
+      fx_rate: parseFloat(fxRate.toFixed(4)),
+      fee_amount: feeAmount,
+      corridor_id: `USDC_${destCurrency}`,
+    };
+  }
+
+  // ============================================
   // Wallet deduction (settle funds from agent wallet)
   // ============================================
   let walletDeduction: { walletId: string; previousBalance: number; newBalance: number; transferId?: string } | null = null;
@@ -448,30 +498,56 @@ ap2.post('/mandates/:id/execute', async (c) => {
       if (walletUpdateError) {
         console.error('[AP2] Wallet deduction error:', walletUpdateError);
       } else {
-        // Create transfer record for audit trail
+        // Build transfer record — cross-border or internal
+        const now = new Date().toISOString();
+        const transferInsert: Record<string, any> = {
+          tenant_id: ctx.tenantId,
+          from_account_id: wallet.owner_account_id,
+          from_account_name: fromAccount?.name || '',
+          amount: execAmount,
+          currency: currency || mandate.currency,
+          type: isCrossBorder ? 'cross_border' : 'internal',
+          status: 'completed',
+          completed_at: now,
+          initiated_by_type: 'agent',
+          initiated_by_id: mandate.agent_id,
+          initiated_by_name: agentRecord?.name || '',
+          description: description || `Mandate execution #${newExecIndex}`,
+          protocol_metadata: {
+            protocol: 'ap2',
+            wallet_id: wallet.id,
+            operation: 'mandate_execution',
+            mandate_id: mandate.id,
+            execution_index: newExecIndex,
+          },
+        };
+
+        // Attach cross-border fields
+        if (crossBorderInfo) {
+          transferInsert.to_account_id = crossBorderInfo.to_account_id;
+          transferInsert.to_account_name = crossBorderInfo.to_account_name;
+          transferInsert.destination_amount = crossBorderInfo.destination_amount;
+          transferInsert.destination_currency = crossBorderInfo.destination_currency;
+          transferInsert.fx_rate = crossBorderInfo.fx_rate;
+          transferInsert.corridor_id = crossBorderInfo.corridor_id;
+          transferInsert.fee_amount = crossBorderInfo.fee_amount;
+          transferInsert.settled_at = now;
+          transferInsert.settlement_metadata = {
+            corridor: crossBorderInfo.corridor_id,
+            rail: 'raast',
+            fx_rate: crossBorderInfo.fx_rate,
+            fx_source: 'live_exchangerate_api',
+            destination_amount: crossBorderInfo.destination_amount,
+            destination_currency: crossBorderInfo.destination_currency,
+            fee_percent: 0.7,
+            fee_amount: crossBorderInfo.fee_amount,
+            settled_at: now,
+          };
+        }
+
         const { data: transfer } = await supabase
           .from('transfers')
-          .insert({
-            tenant_id: ctx.tenantId,
-            from_account_id: wallet.owner_account_id,
-            from_account_name: fromAccount?.name || '',
-            amount: execAmount,
-            currency: currency || mandate.currency,
-            type: 'internal',
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-            initiated_by_type: 'agent',
-            initiated_by_id: mandate.agent_id,
-            initiated_by_name: agentRecord?.name || '',
-            description: description || `Mandate execution #${newExecIndex}`,
-            protocol_metadata: {
-              protocol: 'ap2',
-              wallet_id: wallet.id,
-              operation: 'mandate_execution',
-              mandate_id: mandate.id,
-              execution_index: newExecIndex,
-            },
-          })
+          .insert(transferInsert)
           .select('id')
           .single();
 
@@ -482,7 +558,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
           transferId: transfer?.id,
         };
 
-        // Update account balance to reflect wallet deduction
+        // Update sender account balance
         const { data: account } = await supabase
           .from('accounts')
           .select('balance_total, balance_available')
@@ -503,7 +579,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
             .eq('id', wallet.owner_account_id)
             .eq('tenant_id', ctx.tenantId);
 
-          // Create ledger entry for audit trail
+          // Debit ledger entry for sender
           await supabase
             .from('ledger_entries')
             .insert({
@@ -518,26 +594,77 @@ ap2.post('/mandates/:id/execute', async (c) => {
               description: description || `Mandate execution #${newExecIndex}`,
             });
         }
+
+        // Credit destination account (cross-border)
+        if (crossBorderInfo?.to_account_id && transfer?.id) {
+          const { data: destAcct } = await supabase
+            .from('accounts')
+            .select('balance_total, balance_available, currency')
+            .eq('id', crossBorderInfo.to_account_id)
+            .eq('tenant_id', ctx.tenantId)
+            .single();
+
+          if (destAcct) {
+            const newDestTotal = Number(destAcct.balance_total) + crossBorderInfo.destination_amount;
+            const newDestAvailable = Number(destAcct.balance_available) + crossBorderInfo.destination_amount;
+            await supabase
+              .from('accounts')
+              .update({
+                balance_total: newDestTotal,
+                balance_available: newDestAvailable,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', crossBorderInfo.to_account_id)
+              .eq('tenant_id', ctx.tenantId);
+
+            // Credit ledger entry for recipient
+            await supabase
+              .from('ledger_entries')
+              .insert({
+                tenant_id: ctx.tenantId,
+                account_id: crossBorderInfo.to_account_id,
+                type: 'credit',
+                amount: crossBorderInfo.destination_amount,
+                currency: crossBorderInfo.destination_currency,
+                balance_after: newDestTotal,
+                reference_type: 'transfer',
+                reference_id: transfer.id,
+                description: `Inbound remittance from ${fromAccount?.name || 'sender'}`,
+              });
+          }
+        }
       }
     } else {
       console.warn(`[AP2] Wallet ${wallet.id} has insufficient balance (${currentBalance}) for execution amount (${execAmount})`);
     }
   }
 
-  return c.json({
-    data: {
-      mandate_id: id,
-      execution_index: newExecIndex,
-      amount: execAmount,
-      currency: currency || mandate.currency,
-      status: 'completed',
-      used_amount: newUsed,
-      remaining_amount: newRemaining,
-      description,
-      order_ids: order_ids || [],
-      wallet_deduction: walletDeduction,
-    },
-  }, 201);
+  // Build response
+  const responseData: Record<string, any> = {
+    mandate_id: id,
+    execution_index: newExecIndex,
+    amount: execAmount,
+    currency: currency || mandate.currency,
+    status: 'completed',
+    used_amount: newUsed,
+    remaining_amount: newRemaining,
+    description,
+    order_ids: order_ids || [],
+    wallet_deduction: walletDeduction,
+  };
+
+  // Enrich with cross-border details
+  if (crossBorderInfo) {
+    responseData.destination_amount = crossBorderInfo.destination_amount;
+    responseData.destination_currency = crossBorderInfo.destination_currency;
+    responseData.fx_rate = crossBorderInfo.fx_rate;
+    responseData.corridor = crossBorderInfo.corridor_id;
+    responseData.fee_amount = crossBorderInfo.fee_amount;
+    responseData.to_account_id = crossBorderInfo.to_account_id;
+    responseData.to_account_name = crossBorderInfo.to_account_name;
+  }
+
+  return c.json({ data: responseData }, 201);
 });
 
 // =============================================================================

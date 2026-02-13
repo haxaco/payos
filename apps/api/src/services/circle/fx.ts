@@ -56,6 +56,7 @@ const BASE_RATES: Record<string, Record<string, number>> = {
     MXN: 17.35,   // 1 USD = 17.35 MXN
     ARS: 1050,    // 1 USD = 1050 ARS (blue rate, Jan 2026)
     COP: 4200,    // 1 USD = 4200 COP
+    PKR: 278.50,  // 1 USD = 278.50 PKR (offline fallback)
     EUR: 0.92,    // 1 USD = 0.92 EUR
     GBP: 0.79,    // 1 USD = 0.79 GBP
   },
@@ -73,6 +74,9 @@ const BASE_RATES: Record<string, Record<string, number>> = {
   COP: {
     USD: 0.000238, // 1 COP = 0.000238 USD
   },
+  PKR: {
+    USD: 0.00359,  // 1 PKR = 0.00359 USD (offline fallback)
+  },
 };
 
 /**
@@ -87,6 +91,8 @@ const CORRIDOR_FEES: Record<string, number> = {
   'MXN-USD': 0.75,  // 0.75% for MXN to USD
   'ARS-USD': 1.0,   // 1.0% for ARS to USD
   'COP-USD': 1.0,   // 1.0% for COP to USD
+  'USD-PKR': 0.7,   // 0.7% for USD to PKR (remittance)
+  'PKR-USD': 1.0,   // 1.0% for PKR to USD
   'BRL-MXN': 1.0,   // 1.0% for cross-LATAM (via USD)
   'MXN-BRL': 1.0,   // 1.0% for cross-LATAM (via USD)
   'DEFAULT': 0.5,   // Default fee

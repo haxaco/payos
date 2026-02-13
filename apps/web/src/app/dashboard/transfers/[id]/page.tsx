@@ -259,14 +259,17 @@ export default function TransferDetailPage() {
                     {(safeTransfer.amount || 0).toFixed(8)} {safeTransfer.currency}
                   </dd>
                 </div>
-                {safeTransfer.fees?.amount && safeTransfer.fees.amount > 0 && (
-                  <div className="flex justify-between">
-                    <dt className="text-gray-500 dark:text-gray-400">Fees</dt>
-                    <dd className="font-mono text-gray-900 dark:text-white">
-                      {safeTransfer.fees.amount.toFixed(8)} {safeTransfer.fees.currency || safeTransfer.currency}
-                    </dd>
-                  </div>
-                )}
+                {(() => {
+                  const fee = typeof safeTransfer.fees === 'number' ? safeTransfer.fees : safeTransfer.fees?.amount;
+                  return fee && fee > 0 ? (
+                    <div className="flex justify-between">
+                      <dt className="text-gray-500 dark:text-gray-400">Fees</dt>
+                      <dd className="font-mono text-gray-900 dark:text-white">
+                        {fee.toFixed(2)} {safeTransfer.currency}
+                      </dd>
+                    </div>
+                  ) : null;
+                })()}
                 <div className="flex justify-between">
                   <dt className="text-gray-500 dark:text-gray-400">Created</dt>
                   <dd className="text-gray-900 dark:text-white">
@@ -515,13 +518,13 @@ export default function TransferDetailPage() {
                 <div>
                   <dt className="text-gray-500 dark:text-gray-400 text-sm">Total Fees</dt>
                   <dd className="mt-1 text-2xl font-bold text-red-600 dark:text-red-400">
-                    -${safeTransfer.x402Metadata.fee_calculation?.feeAmount?.toFixed(4) || (safeTransfer.fees?.amount || 0).toFixed(4)}
+                    -${safeTransfer.x402Metadata.fee_calculation?.feeAmount?.toFixed(4) || (typeof safeTransfer.fees === 'number' ? safeTransfer.fees : safeTransfer.fees?.amount || 0).toFixed(4)}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-gray-500 dark:text-gray-400 text-sm">Net Settled</dt>
                   <dd className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                    ${safeTransfer.x402Metadata.fee_calculation?.netAmount?.toFixed(4) || (safeTransfer.amount - (safeTransfer.fees?.amount || 0)).toFixed(4)}
+                    ${safeTransfer.x402Metadata.fee_calculation?.netAmount?.toFixed(4) || (safeTransfer.amount - (typeof safeTransfer.fees === 'number' ? safeTransfer.fees : safeTransfer.fees?.amount || 0)).toFixed(4)}
                   </dd>
                 </div>
               </dl>

@@ -17,7 +17,7 @@ import { getCircleFXService, type FXQuote } from '../circle/fx.js';
 // Types
 // =============================================================================
 
-export type SupportedCurrency = 'USD' | 'USDC' | 'BRL' | 'MXN' | 'ARS' | 'COP';
+export type SupportedCurrency = 'USD' | 'USDC' | 'BRL' | 'MXN' | 'ARS' | 'COP' | 'PKR';
 
 export interface ConversionRoute {
   source: SupportedCurrency;
@@ -88,6 +88,10 @@ export const SUPPORTED_CORRIDORS: Array<{
   // Future: Additional LATAM currencies
   { source: 'USD', destination: 'ARS', direct: true, settlement_rail: 'cbu', estimated_time: '1-2 days' },
   { source: 'USD', destination: 'COP', direct: true, settlement_rail: 'pse', estimated_time: '1-2 days' },
+
+  // Pakistan remittance corridors
+  { source: 'USD', destination: 'PKR', direct: true, settlement_rail: 'raast', estimated_time: '5-15 minutes' },
+  { source: 'USDC', destination: 'PKR', direct: true, settlement_rail: 'raast', estimated_time: '5-15 minutes' },
 ];
 
 // =============================================================================

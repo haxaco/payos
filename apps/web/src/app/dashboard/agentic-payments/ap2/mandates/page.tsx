@@ -206,6 +206,7 @@ export default function MandatesPage() {
                                     <TableHead>Authorized</TableHead>
                                     <TableHead>Used</TableHead>
                                     <TableHead>Remaining</TableHead>
+                                    <TableHead>Priority</TableHead>
                                     <TableHead>Status</TableHead>
                                     <TableHead className="text-right">Created</TableHead>
                                     <TableHead className="w-[80px]"></TableHead>
@@ -214,13 +215,13 @@ export default function MandatesPage() {
                             <TableBody>
                                 {isLoading ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="h-24 text-center">
+                                        <TableCell colSpan={10} className="h-24 text-center">
                                             Loading mandates...
                                         </TableCell>
                                     </TableRow>
                                 ) : mandates?.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="h-24 text-center">
+                                        <TableCell colSpan={10} className="h-24 text-center">
                                             No mandates found.
                                         </TableCell>
                                     </TableRow>
@@ -237,6 +238,23 @@ export default function MandatesPage() {
                                             <TableCell>{formatCurrency(mandate.amount.authorized, mandate.amount.currency)}</TableCell>
                                             <TableCell>{formatCurrency(mandate.amount.used, mandate.amount.currency)}</TableCell>
                                             <TableCell>{formatCurrency(mandate.amount.remaining, mandate.amount.currency)}</TableCell>
+                                            <TableCell>
+                                                {(() => {
+                                                    const meta = (mandate as any).metadata;
+                                                    const p = meta?.priority;
+                                                    if (p == null) return <span className="text-muted-foreground">—</span>;
+                                                    const colors: Record<number, string> = {
+                                                        1: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100',
+                                                        2: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100',
+                                                        3: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100',
+                                                    };
+                                                    return (
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${colors[p] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'}`}>
+                                                            P{p}
+                                                        </span>
+                                                    );
+                                                })()}
+                                            </TableCell>
                                             <TableCell>
                                                 <MandateStatusBadge status={mandate.status} />
                                             </TableCell>

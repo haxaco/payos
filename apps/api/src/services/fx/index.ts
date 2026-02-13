@@ -15,5 +15,7 @@ export {
   type BestRateResult,
 } from './multi-currency.js';
 
-
-
+export {
+  LiveFXService,
+  getLiveFXService,
+} from './live-rates.js';

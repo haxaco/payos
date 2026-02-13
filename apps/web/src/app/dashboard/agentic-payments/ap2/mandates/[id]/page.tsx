@@ -234,12 +234,12 @@ export default function MandateDetailPage() {
                                                 </div>
                                             </>
                                         )}
-                                        {meta?.priority_tier && (
+                                        {meta?.priority != null && (
                                             <>
                                                 <Separator />
                                                 <div>
                                                     <div className="text-sm text-muted-foreground mb-1">Priority</div>
-                                                    <PriorityBadge tier={meta.priority_tier} />
+                                                    <PriorityBadge priority={meta.priority} />
                                                 </div>
                                             </>
                                         )}
@@ -347,17 +347,16 @@ export default function MandateDetailPage() {
     );
 }
 
-const priorityConfig: Record<string, { label: string; className: string }> = {
-    P0_essential: { label: 'P0 Essential', className: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-100 dark:border-red-800' },
-    P1_important: { label: 'P1 Important', className: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900 dark:text-orange-100 dark:border-orange-800' },
-    P2_discretionary: { label: 'P2 Discretionary', className: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-100 dark:border-yellow-800' },
-    P3_deferrable: { label: 'P3 Deferrable', className: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700' },
+const priorityConfig: Record<number, { label: string; className: string }> = {
+    1: { label: 'Priority 1 — High', className: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-100 dark:border-red-800' },
+    2: { label: 'Priority 2 — Medium', className: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900 dark:text-orange-100 dark:border-orange-800' },
+    3: { label: 'Priority 3 — Low', className: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-100 dark:border-yellow-800' },
 };
 
-function PriorityBadge({ tier }: { tier: string }) {
-    const config = priorityConfig[tier];
-    if (!config) return <Badge variant="outline" className="capitalize">{tier}</Badge>;
-    return <Badge variant="outline" className={config.className}>{config.label}</Badge>;
+function PriorityBadge({ priority }: { priority: number }) {
+    const config = priorityConfig[priority];
+    if (config) return <Badge variant="outline" className={config.className}>{config.label}</Badge>;
+    return <Badge variant="outline">Priority {priority}</Badge>;
 }
 
 function MandateChainCard({ mandate }: { mandate: any }) {

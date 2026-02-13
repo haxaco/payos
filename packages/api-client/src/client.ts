@@ -1473,6 +1473,7 @@ function transformMandate(data: any): Mandate {
     status: data.status,
     expiresAt: data.expires_at,
     metadata: data.metadata,
+    mandateData: data.mandate_data,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     executions: data.executions?.map((e: any) => ({

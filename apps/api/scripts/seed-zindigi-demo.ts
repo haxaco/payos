@@ -59,6 +59,11 @@ const AHMED_WALLET_NAME = "Ahmed's Remittance Wallet";
 const AHMED_WALLET_BALANCE = 5000;
 const AHMED_MANDATE_AMOUNT = 400;
 
+// Constants — Demo 2b: Fatima Khan (recipient in Karachi)
+const FATIMA_ACCOUNT_NAME = 'Fatima Khan (Karachi)';
+const FATIMA_ACCOUNT_EMAIL = 'fatima.khan@example.pk';
+const FATIMA_ACCOUNT_CURRENCY = 'PKR';
+
 // ============================================
 // Reset Logic
 // ============================================
@@ -129,7 +134,14 @@ async function resetDemo() {
     .eq('tenant_id', tenantId)
     .eq('email', AHMED_ACCOUNT_EMAIL);
 
-  console.log('  Account balances reset');
+  // Reset Fatima's balance to 0
+  await supabase
+    .from('accounts')
+    .update({ balance_total: 0, balance_available: 0 })
+    .eq('tenant_id', tenantId)
+    .eq('email', FATIMA_ACCOUNT_EMAIL);
+
+  console.log('  Account balances reset (incl. Fatima → 0 PKR)');
 
   // Delete ledger entries for this tenant (created by seed and mandate executions)
   await supabase
@@ -138,6 +150,14 @@ async function resetDemo() {
     .eq('tenant_id', tenantId);
 
   console.log('  Ledger entries cleared');
+
+  // Reset agent_usage (daily spending trackers)
+  await supabase
+    .from('agent_usage')
+    .delete()
+    .eq('tenant_id', tenantId);
+
+  console.log('  Agent usage stats cleared');
 
   // Reset Demo 1 mandate: used_amount=0, status=active (remaining_amount is a generated column)
   const { error: mandateErr } = await supabase
@@ -211,13 +231,13 @@ async function resetDemo() {
   if (checkoutErr) console.warn('  Checkout cleanup error:', checkoutErr.message);
   else console.log('  UCP checkout sessions cleared');
 
-  // Delete transfer records created by mandate executions
-  if (agent) {
+  // Delete transfer records created by mandate executions (internal + cross_border)
+  {
     const { error: transferErr } = await supabase
       .from('transfers')
       .delete()
       .eq('tenant_id', tenantId)
-      .eq('type', 'internal')
+      .in('type', ['internal', 'cross_border'])
       .contains('protocol_metadata', { protocol: 'ap2' } as any);
 
     if (transferErr) console.warn('  Transfer cleanup error:', transferErr.message);
@@ -610,20 +630,71 @@ async function seedDemo() {
     else console.log(`  Ledger entry created: +${AHMED_WALLET_BALANCE} ${MANDATE_CURRENCY} deposit`);
   }
 
+  // --- 8c. Fatima Khan (Karachi) — recipient account ---
+  let fatimaAccountId: string;
+  const { data: existingFatima } = await supabase
+    .from('accounts')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('email', FATIMA_ACCOUNT_EMAIL)
+    .single();
+
+  if (existingFatima) {
+    fatimaAccountId = existingFatima.id;
+    console.log(`  Account "${FATIMA_ACCOUNT_NAME}" already exists (${fatimaAccountId})`);
+  } else {
+    const { data: fatimaAccount, error } = await supabase
+      .from('accounts')
+      .insert({
+        tenant_id: tenantId,
+        type: 'person',
+        name: FATIMA_ACCOUNT_NAME,
+        email: FATIMA_ACCOUNT_EMAIL,
+        verification_tier: 1,
+        verification_status: 'verified',
+        verification_type: 'kyc',
+        balance_total: 0,
+        balance_available: 0,
+        currency: FATIMA_ACCOUNT_CURRENCY,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(`Fatima account creation failed: ${error.message}`);
+    fatimaAccountId = fatimaAccount.id;
+    console.log(`  Account created: ${FATIMA_ACCOUNT_NAME} (${fatimaAccountId}) — ${FATIMA_ACCOUNT_CURRENCY}`);
+  }
+
   // --- 9. Ahmed's AP2 Mandate ---
   let ahmedMandateId: string;
   const { data: existingAhmedMandate } = await supabase
     .from('ap2_mandates')
     .select('id')
     .eq('tenant_id', tenantId)
-    .eq('agent_id', ahmedAgentId)
-    .eq('mandate_type', 'payment')
-    .eq('status', 'active')
+    .like('mandate_id', 'mandate_family_remittance%')
     .maybeSingle();
 
   if (existingAhmedMandate) {
     ahmedMandateId = existingAhmedMandate.id;
-    console.log(`  Mandate already exists (${ahmedMandateId})`);
+    // Reset mandate to active with full budget and destination info
+    await supabase
+      .from('ap2_mandates')
+      .update({
+        status: 'active',
+        used_amount: 0,
+        execution_count: 0,
+        authorized_amount: AHMED_MANDATE_AMOUNT,
+        mandate_data: {
+          purpose: 'Monthly family support — mother in Karachi',
+          max_single_payment: 400,
+          destination_account_id: fatimaAccountId,
+          destination_currency: 'PKR',
+          corridor: 'USDC_PKR',
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ahmedMandateId);
+    console.log(`  Mandate already exists (${ahmedMandateId}) — reset to active with destination info`);
   } else {
     const { data: ahmedMandate, error } = await supabase
       .from('ap2_mandates')
@@ -640,6 +711,9 @@ async function seedDemo() {
         mandate_data: {
           purpose: 'Monthly family support — mother in Karachi',
           max_single_payment: 400,
+          destination_account_id: fatimaAccountId,
+          destination_currency: 'PKR',
+          corridor: 'USDC_PKR',
         },
         metadata: {
           demo: true,
@@ -672,6 +746,7 @@ async function seedDemo() {
   console.log(`  Ahmed Agent ID:    ${ahmedAgentId}`);
   console.log(`  Ahmed Wallet ID:   ${ahmedWalletId}`);
   console.log(`  Ahmed Mandate ID:  ${ahmedMandateId}`);
+  console.log(`  Fatima Account ID: ${fatimaAccountId} (PKR recipient)`);
   console.log('');
   console.log('====================================');
   console.log('  Set SLY_API_KEY to the test key above');

@@ -951,15 +951,14 @@ function MandatesTab({ agentId }: { agentId: string }) {
   };
 
   const getPriorityDisplay = (metadata: any) => {
-    const tier = metadata?.priority_tier;
-    if (!tier) return null;
-    const map: Record<string, { label: string; color: string }> = {
-      P0_essential: { label: 'P0 Essential', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
-      P1_important: { label: 'P1 Important', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100' },
-      P2_discretionary: { label: 'P2 Discretionary', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100' },
-      P3_deferrable: { label: 'P3 Deferrable', color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' },
+    const p = metadata?.priority;
+    if (p == null) return null;
+    const map: Record<number, { label: string; color: string }> = {
+      1: { label: 'P1 High', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
+      2: { label: 'P2 Medium', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100' },
+      3: { label: 'P3 Low', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100' },
     };
-    return map[tier] || { label: tier, color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100' };
+    return map[p] || { label: `P${p}`, color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100' };
   };
 
   return (

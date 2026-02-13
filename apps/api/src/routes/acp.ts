@@ -215,6 +215,167 @@ app.post('/checkouts', async (c) => {
   }
 });
 
+const MAX_BATCH_SIZE = 100;
+
+const batchCreateCheckoutSchema = z.object({
+  checkouts: z.array(createCheckoutSchema).min(1).max(MAX_BATCH_SIZE),
+});
+
+/**
+ * POST /v1/acp/checkouts/batch
+ * Batch-create multiple ACP checkout sessions in one call.
+ * Max batch size: 100
+ */
+app.post('/checkouts/batch', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const body = await c.req.json();
+    const validated = batchCreateCheckoutSchema.parse(body);
+
+    const supabase = createClient();
+    const results: Array<{ checkout_id?: string; id?: string; status: string; error?: string }> = [];
+
+    // Batch-verify all unique account_ids upfront
+    const uniqueAccountIds = [...new Set(validated.checkouts.map(co => co.account_id))];
+    const { data: validAccounts } = await supabase
+      .from('accounts')
+      .select('id')
+      .eq('tenant_id', ctx.tenantId)
+      .in('id', uniqueAccountIds);
+    const validAccountSet = new Set((validAccounts || []).map(a => a.id));
+
+    for (const spec of validated.checkouts) {
+      try {
+        // Verify account
+        if (!validAccountSet.has(spec.account_id)) {
+          results.push({
+            checkout_id: spec.checkout_id,
+            status: 'error',
+            error: `Account not found: ${spec.account_id}`,
+          });
+          continue;
+        }
+
+        // Check for duplicate checkout_id
+        const { data: existing } = await supabase
+          .from('acp_checkouts')
+          .select('id')
+          .eq('tenant_id', ctx.tenantId)
+          .eq('checkout_id', spec.checkout_id)
+          .single();
+
+        if (existing) {
+          results.push({
+            checkout_id: spec.checkout_id,
+            status: 'error',
+            error: 'Checkout ID already exists',
+          });
+          continue;
+        }
+
+        // Calculate totals
+        const subtotal = spec.items.reduce((sum, item) => sum + item.total_price, 0);
+        const total_amount = subtotal + (spec.tax_amount ?? 0) + (spec.shipping_amount ?? 0) - (spec.discount_amount ?? 0);
+
+        // Create checkout
+        const { data: checkout, error: checkoutError } = await supabase
+          .from('acp_checkouts')
+          .insert({
+            tenant_id: ctx.tenantId,
+            checkout_id: spec.checkout_id,
+            session_id: spec.session_id,
+            agent_id: spec.agent_id,
+            agent_name: spec.agent_name,
+            customer_id: spec.customer_id,
+            customer_email: spec.customer_email,
+            account_id: spec.account_id,
+            merchant_id: spec.merchant_id,
+            merchant_name: spec.merchant_name,
+            merchant_url: spec.merchant_url,
+            subtotal,
+            tax_amount: spec.tax_amount ?? 0,
+            shipping_amount: spec.shipping_amount ?? 0,
+            discount_amount: spec.discount_amount ?? 0,
+            total_amount,
+            currency: spec.currency,
+            shared_payment_token: spec.shared_payment_token,
+            payment_method: spec.payment_method,
+            checkout_data: spec.checkout_data,
+            shipping_address: spec.shipping_address,
+            metadata: spec.metadata,
+            expires_at: spec.expires_at,
+          })
+          .select()
+          .single();
+
+        if (checkoutError || !checkout) {
+          results.push({
+            checkout_id: spec.checkout_id,
+            status: 'error',
+            error: checkoutError?.message || 'Failed to create checkout',
+          });
+          continue;
+        }
+
+        // Create checkout items
+        const itemsToInsert = spec.items.map(item => ({
+          tenant_id: ctx.tenantId,
+          checkout_id: checkout.id,
+          item_id: item.item_id,
+          name: item.name,
+          description: item.description,
+          image_url: item.image_url,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total_price: item.total_price,
+          currency: item.currency,
+          item_data: item.item_data,
+        }));
+
+        const { error: itemsError } = await supabase
+          .from('acp_checkout_items')
+          .insert(itemsToInsert);
+
+        if (itemsError) {
+          results.push({
+            checkout_id: spec.checkout_id,
+            id: checkout.id,
+            status: 'error',
+            error: 'Created checkout but failed to create items',
+          });
+          continue;
+        }
+
+        results.push({
+          checkout_id: spec.checkout_id,
+          id: checkout.id,
+          status: checkout.status,
+        });
+      } catch (err: any) {
+        console.error('[ACP Batch] Item error:', err);
+        results.push({
+          checkout_id: spec.checkout_id,
+          status: 'error',
+          error: err.message || 'Failed to create checkout',
+        });
+      }
+    }
+
+    return c.json({
+      total: validated.checkouts.length,
+      created: results.filter(r => r.status !== 'error').length,
+      failed: results.filter(r => r.status === 'error').length,
+      results,
+    }, 201);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation failed', details: error.errors }, 400);
+    }
+    console.error('[ACP] Batch create error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 /**
  * GET /v1/acp/checkouts
  * List ACP checkouts with optional filters
