@@ -76,6 +76,7 @@ import onboardingRouter from './routes/onboarding.js';
 import analyticsRouter from './routes/analytics.js';
 import cardsRouter from './routes/cards/index.js';
 import cardsVaultRouter from './routes/cards/vault.js';
+import workflowsRouter from './routes/workflows.js';
 
 const app = new Hono();
 
@@ -287,6 +288,7 @@ v1.route('/onboarding', onboardingRouter); // Onboarding (Epic 51)
 v1.route('/analytics', analyticsRouter); // Dashboard analytics (Epic 52)
 v1.route('/cards', cardsRouter); // Card networks (Epic 53)
 v1.route('/cards/vault', cardsVaultRouter); // Card vaulting (Epic 54)
+v1.route('/workflows', workflowsRouter); // Workflow engine (Epic 29)
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods
 // Account-specific payment methods handled via accounts router

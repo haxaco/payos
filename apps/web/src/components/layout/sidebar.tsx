@@ -38,6 +38,7 @@ import {
   Package,
   Plug,
   Rocket,
+  GitBranch,
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useState } from 'react';
@@ -152,6 +153,7 @@ export function Sidebar() {
     { href: '/dashboard/schedules', label: 'Schedules', icon: Calendar },
     { href: '/dashboard/refunds', label: 'Refunds', icon: RotateCcw },
     { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
+    { href: '/dashboard/workflows', label: 'Workflows', icon: GitBranch },
     { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: complianceCount || undefined },
     { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark },
     { href: '/dashboard/reports', label: 'Reports', icon: FileText },
