@@ -22,9 +22,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { generateApiKey, hashApiKey, getKeyPrefix } from '../../src/utils/auth.js';
 
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const skipIntegration = !process.env.INTEGRATION;
+
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 // Service role client (bypasses RLS for setup)
 let serviceClient: SupabaseClient;
@@ -142,7 +144,7 @@ afterAll(async () => {
   if (tenant2Id) await serviceClient.from('tenants').delete().eq('id', tenant2Id);
 });
 
-describe('RLS Isolation - Accounts', () => {
+describe.skipIf(skipIntegration)('RLS Isolation - Accounts', () => {
   let account1Id: string;
   let account2Id: string;
 
@@ -236,7 +238,7 @@ describe('RLS Isolation - Accounts', () => {
   });
 });
 
-describe('RLS Isolation - Payment Methods', () => {
+describe.skipIf(skipIntegration)('RLS Isolation - Payment Methods', () => {
   let pm1Id: string;
   let pm2Id: string;
   let account1Id: string;
@@ -322,7 +324,7 @@ describe('RLS Isolation - Payment Methods', () => {
   });
 });
 
-describe('RLS Isolation - Disputes', () => {
+describe.skipIf(skipIntegration)('RLS Isolation - Disputes', () => {
   let transfer1Id: string;
   let transfer2Id: string;
   let account1Id: string;
@@ -434,7 +436,7 @@ describe('RLS Isolation - Disputes', () => {
   });
 });
 
-describe('RLS Isolation - Tenant Settings', () => {
+describe.skipIf(skipIntegration)('RLS Isolation - Tenant Settings', () => {
   it('should create settings for each tenant', async () => {
     await serviceClient.from('tenant_settings').insert([
       { tenant_id: tenant1Id, retry_enabled: true },
@@ -467,7 +469,7 @@ describe('RLS Isolation - Tenant Settings', () => {
   });
 });
 
-describe('RLS Isolation - Lookup Tables', () => {
+describe.skipIf(skipIntegration)('RLS Isolation - Lookup Tables', () => {
   it('authenticated users can read KYA tier limits', async () => {
     const { data, error } = await tenant1Client
       .from('kya_tier_limits')
@@ -511,7 +513,7 @@ describe('RLS Isolation - Lookup Tables', () => {
   });
 });
 
-describe('RLS Isolation - Summary', () => {
+describe.skipIf(skipIntegration)('RLS Isolation - Summary', () => {
   it('should verify all critical tables have RLS enabled', async () => {
     // Note: This test verifies RLS is working by checking that tenant isolation works
     // We've already tested this above - if cross-tenant access is blocked, RLS is working

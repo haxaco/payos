@@ -43,8 +43,8 @@ const paymentStore = new Map<string, StoredPayment>();
 // =============================================================================
 
 export const payosHandler: PaymentHandler = {
-  id: 'payos',
-  name: 'com.payos.payment',
+  id: 'payos_latam',
+  name: 'com.payos.latam_settlement',
   version: '2026-01-11',
   supportedTypes: ['pix', 'spei', 'settlement'],
   supportedCurrencies: ['USD', 'USDC', 'BRL', 'MXN'],

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { LogOut, Settings, User, Search, ChevronDown, Check, Play, Square } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -25,10 +26,12 @@ export function Header({ user }: HeaderProps) {
   const [environment, setEnvironment] = useState<Environment>('sandbox');
   const globalSearch = useGlobalSearch();
   const demoMode = useDemoMode();
+  const queryClient = useQueryClient();
 
   const handleSignOut = async () => {
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
+    queryClient.clear();
     router.push('/auth/login');
     router.refresh();
   };

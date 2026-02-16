@@ -62,12 +62,36 @@ function createMockQueryBuilder(tableName: string) {
     };
 
     const builder: any = {
-      select: () => builder,
+      select: (columns?: string, opts?: { count?: string; head?: boolean }) => {
+        if (opts?.head) {
+          // Return a count-query builder that supports chaining .eq() then resolving
+          const countBuilder: any = {
+            eq: (column: string, value: any) => {
+              filters.push({ column, op: 'eq', value });
+              return countBuilder;
+            },
+            neq: (column: string, value: any) => {
+              filters.push({ column, op: 'neq', value });
+              return countBuilder;
+            },
+            in: (column: string, values: any[]) => {
+              filters.push({ column, op: 'in', value: values });
+              return countBuilder;
+            },
+            then: async (resolve: any) => {
+              const filtered = applyFilters(Array.from(store.values()));
+              resolve({ count: filtered.length, error: null });
+            },
+          };
+          return countBuilder;
+        }
+        return builder;
+      },
       insert: (data: any | any[]) => {
         const items = Array.isArray(data) ? data : [data];
         const inserted: any[] = [];
         for (const item of items) {
-          const id = item.id || `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const id = item.id || `link_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           const record = { ...item, id, created_at: new Date().toISOString() };
           store.set(id, record);
           inserted.push(record);

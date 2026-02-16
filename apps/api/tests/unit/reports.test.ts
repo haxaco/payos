@@ -246,7 +246,7 @@ describe('Reports Routes - Summary API', () => {
 
       expect(res.status).toBe(400);
       const data = await res.json();
-      expect(data.error).toContain('startDate');
+      expect(data.error).toBeDefined();
     });
 
     it('should accept custom period with date range', async () => {

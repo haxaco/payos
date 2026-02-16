@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { PayOSClient, createPayOSClient, PayOSError } from '@sly/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
@@ -29,6 +30,7 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
   const [apiKey, setApiKeyState] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const queryClient = useQueryClient();
 
   // Load API key from localStorage AND get JWT from Supabase session
   useEffect(() => {
@@ -42,14 +44,18 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
       // Get JWT token from Supabase session (for dashboard access)
       const supabase = createSupabaseBrowserClient();
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (session?.access_token) {
         setAuthToken(session.access_token);
       }
 
       // Listen for auth changes
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setAuthToken(session?.access_token || null);
+        // Clear all cached queries on sign-out to prevent cross-tenant data leakage
+        if (event === 'SIGNED_OUT') {
+          queryClient.clear();
+        }
       });
 
       setIsInitialized(true);
@@ -60,7 +66,7 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
     }
 
     initialize();
-  }, []);
+  }, [queryClient]);
 
   // Save API key to localStorage when it changes
   const setApiKey = (key: string | null) => {

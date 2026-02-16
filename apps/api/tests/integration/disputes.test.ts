@@ -8,6 +8,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 
+const skipIntegration = !process.env.INTEGRATION;
+
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 const API_KEY = process.env.TEST_API_KEY || 'pk_test_demo_fintech_key_12345';
 
@@ -84,7 +86,7 @@ async function createTestTransfer(amount: number = 500): Promise<{ transferId: s
   };
 }
 
-describe('Disputes API Integration', () => {
+describe.skipIf(skipIntegration)('Disputes API Integration', () => {
   let testTransfer: { transferId: string; fromAccountId: string; toAccountId: string } | null;
 
   beforeAll(async () => {

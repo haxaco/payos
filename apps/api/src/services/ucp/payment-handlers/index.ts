@@ -1,12 +1,15 @@
 /**
  * UCP Payment Handlers Registry
  *
- * Central registry for pluggable payment handlers.
- * Handlers can be registered and looked up by ID.
+ * Hybrid registry: DB-driven handlers + code plugins.
+ * - DB rows with integration_mode='demo' or 'webhook' get a generic DatabaseHandler
+ * - DB rows with integration_mode='custom' delegate to a registered code handler
+ * - Code-only handlers can still be registered directly (backwards compat)
  *
  * @see Phase 2: Payment Handlers Architecture
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   PaymentHandler,
   HandlerRegistration,
@@ -19,9 +22,11 @@ import type {
   PaymentStatus,
 } from './types.js';
 import { payosHandler, clearPayosStores } from './payos.js';
+import { createDatabaseHandler, type PaymentHandlerRow } from './database-handler.js';
 
 // Re-export types
 export * from './types.js';
+export type { PaymentHandlerRow } from './database-handler.js';
 
 // =============================================================================
 // Handler Registry
@@ -29,8 +34,14 @@ export * from './types.js';
 
 const handlers = new Map<string, PaymentHandler>();
 
+/** Code-only plugins registered for 'custom' mode delegation */
+const customPlugins = new Map<string, PaymentHandler>();
+
+/** Cached DB handler rows for profile generation */
+let dbHandlerRows: PaymentHandlerRow[] = [];
+
 /**
- * Register a payment handler
+ * Register a payment handler (code handler)
  */
 export function registerHandler(handler: PaymentHandler): void {
   if (handlers.has(handler.id)) {
@@ -38,6 +49,14 @@ export function registerHandler(handler: PaymentHandler): void {
   }
   handlers.set(handler.id, handler);
   console.log(`[Payment Handlers] Registered handler: ${handler.id} (${handler.name})`);
+}
+
+/**
+ * Register a custom code plugin (for 'custom' integration_mode handlers)
+ */
+export function registerCustomPlugin(handlerId: string, handler: PaymentHandler): void {
+  customPlugins.set(handlerId, handler);
+  console.log(`[Payment Handlers] Registered custom plugin for: ${handlerId}`);
 }
 
 /**
@@ -65,6 +84,13 @@ export function getHandlerRegistrations(): HandlerRegistration[] {
     supportedTypes: h.supportedTypes,
     supportedCurrencies: h.supportedCurrencies,
   }));
+}
+
+/**
+ * Get cached DB handler rows (for profile generation)
+ */
+export function getDBHandlerRows(): PaymentHandlerRow[] {
+  return dbHandlerRows;
 }
 
 /**
@@ -187,8 +213,59 @@ export function getDefaultHandler(options: {
   currency?: string;
 }): PaymentHandler | undefined {
   const matching = findHandlers(options);
-  // Return PayOS handler if available, otherwise first matching
-  return matching.find((h) => h.id === 'payos') || matching[0];
+  return matching.find((h) => h.id === 'payos_latam') || matching[0];
+}
+
+// =============================================================================
+// DB Loading
+// =============================================================================
+
+/**
+ * Load handlers from the payment_handlers DB table.
+ * Creates DatabaseHandler instances for each active row.
+ * 'custom' mode rows delegate to registered code plugins.
+ */
+export async function loadHandlersFromDB(supabase: SupabaseClient): Promise<void> {
+  const { data: rows, error } = await supabase
+    .from('payment_handlers')
+    .select('*')
+    .eq('status', 'active');
+
+  if (error) {
+    console.error('[Payment Handlers] Failed to load from DB:', error.message);
+    return;
+  }
+
+  if (!rows || rows.length === 0) {
+    console.log('[Payment Handlers] No active handlers in DB, using code-only handlers');
+    return;
+  }
+
+  // Cache rows for profile generation
+  dbHandlerRows = rows as PaymentHandlerRow[];
+
+  for (const row of rows as PaymentHandlerRow[]) {
+    const customPlugin = customPlugins.get(row.id);
+    const handler = createDatabaseHandler(row, supabase, customPlugin);
+    handlers.set(row.id, handler);
+    console.log(`[Payment Handlers] Loaded from DB: ${row.id} (${row.integration_mode})`);
+  }
+
+  console.log(`[Payment Handlers] Loaded ${rows.length} handler(s) from DB`);
+}
+
+/**
+ * Refresh handlers from DB (call without restart)
+ */
+export async function refreshHandlers(supabase: SupabaseClient): Promise<void> {
+  // Keep custom plugins, clear DB-loaded handlers
+  const pluginIds = new Set(customPlugins.keys());
+  for (const [id] of handlers) {
+    if (!pluginIds.has(id)) {
+      handlers.delete(id);
+    }
+  }
+  await loadHandlersFromDB(supabase);
 }
 
 // =============================================================================
@@ -196,15 +273,14 @@ export function getDefaultHandler(options: {
 // =============================================================================
 
 /**
- * Initialize built-in handlers
+ * Initialize built-in handlers (code-only, before DB is available)
  */
 export function initializeHandlers(): void {
-  // Register PayOS handler
-  registerHandler(payosHandler);
+  // Register PayOS as a custom plugin for 'custom' mode delegation
+  registerCustomPlugin('payos_latam', payosHandler);
 
-  // Future: Register other handlers
-  // registerHandler(stripeHandler);
-  // registerHandler(googlePayHandler);
+  // Also register it directly so it works before DB loads
+  registerHandler(payosHandler);
 
   console.log(`[Payment Handlers] Initialized ${handlers.size} handler(s)`);
 }
@@ -214,6 +290,8 @@ export function initializeHandlers(): void {
  */
 export function clearHandlers(): void {
   handlers.clear();
+  customPlugins.clear();
+  dbHandlerRows = [];
   clearPayosStores();
 }
 

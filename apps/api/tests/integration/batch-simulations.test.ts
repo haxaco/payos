@@ -8,15 +8,19 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
+const skipIntegration = !process.env.INTEGRATION;
+
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+if (!skipIntegration && (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY)) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+  : null as any;
 
 // Test accounts from setup.ts
 const TEST_TENANT_ID = 'aaaaaaaa-0000-0000-0000-000000000001'; // Demo Fintech
@@ -52,7 +56,7 @@ beforeAll(async () => {
   }
 });
 
-describe('POST /v1/simulate/batch', () => {
+describe.skipIf(skipIntegration)('POST /v1/simulate/batch', () => {
   it('should simulate a small batch of 3 transfers', async () => {
     const response = await fetch(`${API_URL}/v1/simulate/batch`, {
       method: 'POST',

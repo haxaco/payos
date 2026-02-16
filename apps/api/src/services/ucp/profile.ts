@@ -4,6 +4,9 @@
  * Generates the UCP profile published at /.well-known/ucp
  * Compliant with Google/Shopify Universal Commerce Protocol spec.
  *
+ * Payment handlers are now loaded dynamically from the payment_handlers DB table.
+ * Falls back to hardcoded PayOS handler when DB rows are not available.
+ *
  * @see Story 43.1: UCP Profile Endpoint
  * @see https://ucp.dev/specification/overview/
  */
@@ -17,6 +20,8 @@ import type {
   UCPSigningKey,
 } from './types.js';
 import { getSigningKey, getAllSigningKeys, initializeSigningKey } from './signing.js';
+import { getDBHandlerRows } from './payment-handlers/index.js';
+import type { PaymentHandlerRow } from './payment-handlers/index.js';
 
 // =============================================================================
 // Configuration
@@ -64,16 +69,22 @@ const UCP_CORE_CAPABILITIES: UCPCapability[] = [
  */
 const PAYOS_PAYMENT_CAPABILITIES: UCPCapability[] = [
   {
-    name: 'com.payos.payment.quote',
+    name: 'com.payos.settlement.quote',
     version: UCP_VERSION,
     spec: `${getDocsUrl()}/ucp/capabilities/quote`,
     description: 'Get FX quote for payment corridor',
   },
   {
-    name: 'com.payos.payment.settlement',
+    name: 'com.payos.settlement.transfer',
     version: UCP_VERSION,
     spec: `${getDocsUrl()}/ucp/capabilities/settlement`,
     description: 'Execute settlement via Pix, SPEI, or other rails',
+  },
+  {
+    name: 'com.payos.settlement.status',
+    version: UCP_VERSION,
+    spec: `${getDocsUrl()}/ucp/capabilities/status`,
+    description: 'Check settlement status',
   },
 ];
 
@@ -86,7 +97,7 @@ const getAllCapabilities = (): UCPCapability[] => [
 ];
 
 // =============================================================================
-// Corridor Definitions
+// Hardcoded Fallback Corridors (used when DB is not loaded)
 // =============================================================================
 
 const PAYOS_CORRIDORS: UCPCorridor[] = [
@@ -129,16 +140,44 @@ const PAYOS_CORRIDORS: UCPCorridor[] = [
 ];
 
 // =============================================================================
-// Payment Handler Definition
+// Dynamic Handler → UCPPaymentHandler conversion
 // =============================================================================
 
-const getPaymentHandler = (): UCPPaymentHandler => {
+function dbRowToUCPHandler(row: PaymentHandlerRow): UCPPaymentHandler {
+  const meta = row.profile_metadata || {};
+  const corridors = ((meta.corridors as UCPCorridor[]) || []);
+
+  return {
+    id: row.id,
+    name: row.name,
+    version: row.version,
+    spec: (meta.spec as string) || '',
+    config_schema: (meta.config_schema as string) || '',
+    instrument_schemas: (meta.instrument_schemas as string[]) || [],
+    supported_currencies: row.supported_currencies,
+    supported_corridors: corridors,
+  };
+}
+
+// =============================================================================
+// Payment Handler Definition (dynamic with fallback)
+// =============================================================================
+
+const getPaymentHandlers = (): UCPPaymentHandler[] => {
+  const dbRows = getDBHandlerRows();
+
+  // If we have DB rows, use them
+  if (dbRows.length > 0) {
+    return dbRows.map(dbRowToUCPHandler);
+  }
+
+  // Fallback: hardcoded PayOS handler
   const baseUrl = getBaseUrl();
   const docsUrl = getDocsUrl();
 
-  return {
-    id: 'payos',
-    name: 'com.payos.payment',
+  return [{
+    id: 'payos_latam',
+    name: 'com.payos.latam_settlement',
     version: UCP_VERSION,
     spec: `${docsUrl}/ucp/handlers/payment`,
     config_schema: `${baseUrl}/ucp/schemas/handler_config.json`,
@@ -148,7 +187,7 @@ const getPaymentHandler = (): UCPPaymentHandler => {
     ],
     supported_currencies: ['USD', 'USDC', 'BRL', 'MXN'],
     supported_corridors: PAYOS_CORRIDORS,
-  };
+  }];
 };
 
 // =============================================================================
@@ -160,9 +199,9 @@ const getServices = (): Record<string, UCPService> => {
   const docsUrl = getDocsUrl();
 
   return {
-    'com.payos.payment': {
+    'com.payos.settlement': {
       version: UCP_VERSION,
-      spec: `${docsUrl}/ucp/payment`,
+      spec: `${docsUrl}/ucp/settlement`,
       rest: {
         schema: `${baseUrl}/ucp/openapi.json`,
         endpoint: `${baseUrl}/v1/ucp`,
@@ -199,6 +238,8 @@ const getSigningKeys = (): UCPSigningKey[] => {
  * - Capability negotiation with platforms
  * - Webhook signature verification via signing_keys
  *
+ * Payment handlers are now loaded dynamically from the DB.
+ *
  * @see https://ucp.dev/specification/overview/#profile-structure
  */
 export function generateUCPProfile(): UCPProfile {
@@ -212,7 +253,7 @@ export function generateUCPProfile(): UCPProfile {
       capabilities,
     },
     payment: {
-      handlers: [getPaymentHandler()],
+      handlers: getPaymentHandlers(),
     },
     // Always include signing keys - they're generated if not configured
     signing_keys: signingKeys,
@@ -243,9 +284,20 @@ export function getPaymentCapabilities(): UCPCapability[] {
 }
 
 /**
- * Get supported corridors
+ * Get supported corridors (from DB or fallback)
  */
 export function getCorridors(): UCPCorridor[] {
+  const dbRows = getDBHandlerRows();
+  if (dbRows.length > 0) {
+    // Aggregate corridors from all DB handlers
+    const corridors: UCPCorridor[] = [];
+    for (const row of dbRows) {
+      const meta = row.profile_metadata || {};
+      const rowCorridors = (meta.corridors as UCPCorridor[]) || [];
+      corridors.push(...rowCorridors);
+    }
+    return corridors;
+  }
   return PAYOS_CORRIDORS;
 }
 
@@ -253,7 +305,7 @@ export function getCorridors(): UCPCorridor[] {
  * Get payment handler info
  */
 export function getPaymentHandlerInfo(): UCPPaymentHandler {
-  return getPaymentHandler();
+  return getPaymentHandlers()[0];
 }
 
 /**
@@ -264,7 +316,7 @@ export function isCorridorSupported(
   destinationCurrency: string,
   rail: string
 ): boolean {
-  return PAYOS_CORRIDORS.some(
+  return getCorridors().some(
     (c) =>
       c.source_currency === sourceCurrency &&
       c.destination_currency === destinationCurrency &&
@@ -276,7 +328,7 @@ export function isCorridorSupported(
  * Get corridor by ID
  */
 export function getCorridorById(corridorId: string): UCPCorridor | undefined {
-  return PAYOS_CORRIDORS.find((c) => c.id === corridorId);
+  return getCorridors().find((c) => c.id === corridorId);
 }
 
 /**

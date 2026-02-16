@@ -7,6 +7,8 @@ import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
 import { SettlementWindowProcessor } from './workers/settlement-window-processor.js';
 import { TreasuryWorker } from './workers/treasury-worker.js';
 import { environmentManager } from './config/environment.js';
+import { loadHandlersFromDB } from './services/ucp/payment-handlers/index.js';
+import { createClient } from './db/client.js';
 
 // Railway uses PORT, fallback to API_PORT for local dev
 const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
@@ -37,6 +39,12 @@ console.log(`
 
 // Log environment configuration (Story 40.28)
 environmentManager.logStartupInfo();
+
+// Load DB-driven payment handlers
+loadHandlersFromDB(createClient()).catch((err) => {
+  console.error('⚠️  Failed to load payment handlers from DB:', err.message);
+  console.log('   Falling back to code-only handlers (PayOS)');
+});
 
 // Start scheduled transfer worker (only if enabled)
 let worker: ReturnType<typeof getScheduledTransferWorker> | null = null;

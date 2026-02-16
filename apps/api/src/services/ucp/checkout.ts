@@ -51,6 +51,7 @@ import {
   type UCPMessage,
 } from './messages.js';
 import { createOrderFromCheckout } from './orders.js';
+import { processPayment as handlerProcessPayment, getHandler } from './payment-handlers/index.js';
 
 // =============================================================================
 // In-Memory Store (fallback when Supabase not available)
@@ -249,9 +250,15 @@ export async function createCheckout(
   // Calculate totals
   const totals = calculateTotals(lineItems);
 
-  // Default payment config
+  // Default payment config — infer handlers from instruments if not explicit
+  const inferredHandlers = (request.payment_instruments || [])
+    .map(pi => pi.handler)
+    .filter((h): h is string => !!h);
+  const defaultHandlers = inferredHandlers.length > 0
+    ? [...new Set(inferredHandlers)]
+    : ['payos'];
   const paymentConfig: UCPPaymentConfig = {
-    handlers: ['payos'],
+    handlers: defaultHandlers,
     ...request.payment_config,
   };
 
@@ -669,14 +676,59 @@ export async function completeCheckout(
     console.log(`[UCP Checkout] Starting completion for checkout ${checkoutId}`);
 
     try {
-      // Create order in ucp_orders table
+      // Get total amount
       const totalLine = (existing.totals || []).find(t => t.type === 'total');
       const totalAmount = totalLine?.amount || 0;
 
+      // Determine handler and instrument
+      // Prefer handler from selected instrument, fall back to payment_config
+      const instrumentId = existing.selected_instrument_id || undefined;
+      let handlerId = existing.payment_config?.handlers?.[0] || 'payos_latam';
+      if (instrumentId && existing.payment_instruments) {
+        const selectedInstrument = existing.payment_instruments.find(
+          (pi: any) => pi.id === instrumentId
+        );
+        if (selectedInstrument?.handler) {
+          handlerId = selectedInstrument.handler;
+        }
+      }
+
+      // Call payment handler to process payment
+      let paymentStatus: 'completed' | 'pending' | 'failed' = 'completed';
+      let settlementId: string | undefined;
+      let paymentId: string | undefined;
+
+      const handler = getHandler(handlerId);
+      if (handler && instrumentId) {
+        console.log(`[UCP Checkout] Processing payment via handler "${handlerId}" for ${totalAmount} ${existing.currency}`);
+        const paymentResult = await handlerProcessPayment(handlerId, {
+          instrumentId,
+          amount: totalAmount,
+          currency: existing.currency,
+          idempotencyKey: `checkout_${checkoutId}`,
+          metadata: { tenantId, checkoutId },
+        });
+
+        if (!paymentResult.success) {
+          const errMsg = paymentResult.error?.message || 'Payment processing failed';
+          console.error(`[UCP Checkout] Payment failed for ${checkoutId}: ${errMsg}`);
+          throw new Error(errMsg);
+        }
+
+        paymentStatus = paymentResult.payment?.status === 'succeeded' ? 'completed' : 'pending';
+        settlementId = paymentResult.payment?.settlementId;
+        paymentId = paymentResult.payment?.id;
+        console.log(`[UCP Checkout] Payment ${paymentId} ${paymentStatus} via ${handlerId}`);
+      } else {
+        console.log(`[UCP Checkout] No handler or instrument for checkout ${checkoutId}, auto-completing payment`);
+      }
+
+      // Create order in ucp_orders table
       const order = await createOrderFromCheckout(tenantId, existing, {
-        handler_id: existing.payment_config?.handlers?.[0] || 'payos',
-        instrument_id: existing.selected_instrument_id || undefined,
-        status: 'completed',
+        handler_id: handlerId,
+        instrument_id: instrumentId,
+        status: paymentStatus,
+        settlement_id: settlementId,
         amount: totalAmount,
         currency: existing.currency,
       }, supabase);
@@ -963,7 +1015,7 @@ function dbRowToCheckoutSession(row: any): UCPCheckoutSession {
     buyer: row.buyer,
     shipping_address: row.shipping_address,
     billing_address: row.billing_address,
-    payment_config: row.payment_config || { handlers: ['payos'] },
+    payment_config: row.payment_config || { handlers: [] },
     payment_instruments: row.payment_instruments || [],
     selected_instrument_id: row.selected_instrument_id,
     messages: row.messages || [],

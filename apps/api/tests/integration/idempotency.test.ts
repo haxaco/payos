@@ -7,6 +7,8 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { createHash } from 'crypto';
 
+const skipIntegration = !process.env.INTEGRATION;
+
 // Test helpers
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 const TEST_API_KEY = process.env.TEST_API_KEY || 'pk_test_demo123';
@@ -47,7 +49,7 @@ function generateIdempotencyKey(): string {
   return `test-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 }
 
-describe('Idempotency Infrastructure', () => {
+describe.skipIf(skipIntegration)('Idempotency Infrastructure', () => {
   describe('Basic Functionality', () => {
     test('should accept requests without idempotency key', async () => {
       const { response, data } = await apiRequest('GET', '/v1/accounts');
@@ -222,7 +224,7 @@ describe('Idempotency Infrastructure', () => {
   });
 });
 
-describe('Idempotency in Transfers', () => {
+describe.skipIf(skipIntegration)('Idempotency in Transfers', () => {
   let sourceAccountId: string;
   let destAccountId: string;
 

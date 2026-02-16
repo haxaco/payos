@@ -391,7 +391,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     .from('ap2_mandate_executions')
     .insert({
       tenant_id: ctx.tenantId,
-      mandate_id: id,
+      mandate_id: mandate.id,
       execution_index: newExecIndex,
       amount: execAmount,
       currency: currency || mandate.currency,

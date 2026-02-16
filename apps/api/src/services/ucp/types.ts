@@ -82,7 +82,7 @@ export interface UCPCorridor {
   source_currency: string;
   destination_currency: string;
   destination_country: string;
-  rail: 'pix' | 'spei' | 'wire' | 'usdc';
+  rail: string;
   estimated_settlement: string;
 }
 

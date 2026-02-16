@@ -1,0 +1,66 @@
+merchant_id,product_id,product_name,description,category,unit_price_cents,currency
+invu_merch_001,prod_kk_001,Original Glazed Dozen,12 classic Krispy Kreme glazed doughnuts,doughnuts,1299,USD
+invu_merch_001,prod_kk_002,Chocolate Iced Glazed,Single chocolate iced doughnut,doughnuts,179,USD
+invu_merch_001,prod_kk_003,Assorted Dozen,12 mixed variety doughnuts,doughnuts,1499,USD
+invu_merch_001,prod_kk_004,Iced Latte,Large iced coffee latte,beverages,450,USD
+invu_merch_001,prod_kk_005,Doughnut Holes (24 ct),Bag of 24 glazed doughnut holes,doughnuts,599,USD
+invu_merch_002,prod_cev_001,Ceviche Clásico,Fresh corvina ceviche with lime and cilantro,seafood,1450,USD
+invu_merch_002,prod_cev_002,Ceviche Mixto,Mixed seafood ceviche — shrimp octopus corvina,seafood,1750,USD
+invu_merch_002,prod_cev_003,Arroz con Mariscos,Seafood rice with prawns and calamari,mains,1650,USD
+invu_merch_002,prod_cev_004,Patacones con Pulpo,Fried plantains with grilled octopus,appetizers,1250,USD
+invu_merch_002,prod_cev_005,Limonada de Coco,Fresh coconut lemonade,beverages,550,USD
+invu_merch_002,prod_cev_006,Tres Leches,Three-milk cake slice,desserts,850,USD
+invu_merch_003,prod_cu_001,Geisha Pourover,Single-origin Geisha coffee — Boquete,coffee,950,USD
+invu_merch_003,prod_cu_002,Cappuccino,Double shot cappuccino with steamed milk,coffee,525,USD
+invu_merch_003,prod_cu_003,Cold Brew,16oz cold brew — house blend,coffee,575,USD
+invu_merch_003,prod_cu_004,Croissant de Almendra,Almond croissant,pastry,425,USD
+invu_merch_003,prod_cu_005,Empanada de Carne,Beef empanada — baked,pastry,375,USD
+invu_merch_004,prod_mai_001,Tasting Menu (7 courses),Chef's tasting menu — seasonal Panamanian ingredients,tasting,8500,USD
+invu_merch_004,prod_mai_002,Pulpo a la Parrilla,Grilled octopus with ají amarillo,starters,2200,USD
+invu_merch_004,prod_mai_003,Corvina en Coco,Coconut-braised corvina with plantain purée,mains,2800,USD
+invu_merch_004,prod_mai_004,Ropa Vieja,Shredded beef — Maito-style,mains,2400,USD
+invu_merch_004,prod_mai_005,Cacao & Maracuyá,Chocolate and passion fruit dessert,desserts,1600,USD
+invu_merch_004,prod_mai_006,Wine Pairing (7 courses),Sommelier wine pairing for tasting menu,beverages,4500,USD
+invu_merch_005,prod_trap_001,Sancocho Panameño,Traditional Panamanian chicken soup,soups,1050,USD
+invu_merch_005,prod_trap_002,Arroz con Pollo,Chicken rice — Panamanian style,mains,1150,USD
+invu_merch_005,prod_trap_003,Carimañola,Yuca fritter stuffed with ground beef,appetizers,350,USD
+invu_merch_005,prod_trap_004,Hojaldre,Panamanian fried bread,sides,250,USD
+invu_merch_005,prod_trap_005,Tamal de Olla,Panamanian tamale in broth,mains,1250,USD
+invu_merch_005,prod_trap_006,Chicheme,Traditional corn and milk drink,beverages,450,USD
+invu_merch_005,prod_trap_007,Jugo de Caña,Fresh sugarcane juice,beverages,350,USD
+invu_merch_006,prod_cj_001,Casco Old Fashioned,Rum-based old fashioned with Panamanian cacao,cocktails,1400,USD
+invu_merch_006,prod_cj_002,Jaguar Sour,Pisco sour with passion fruit and egg white,cocktails,1300,USD
+invu_merch_006,prod_cj_003,Mezcal Negroni,Mezcal negroni with local bitter orange,cocktails,1500,USD
+invu_merch_006,prod_cj_004,Tabla de Quesos,Artisan cheese board for 2,snacks,1800,USD
+invu_merch_006,prod_cj_005,Cerveza Artesanal,Local craft beer — rotating tap,beer,700,USD
+invu_merch_007,prod_west_001,Club Sandwich,Triple-decker club sandwich with fries,room_service,1950,USD
+invu_merch_007,prod_west_002,Caesar Salad,Classic caesar with grilled chicken,room_service,1650,USD
+invu_merch_007,prod_west_003,Margherita Pizza,Wood-fired margherita pizza,room_service,1800,USD
+invu_merch_007,prod_west_004,Wagyu Burger,8oz wagyu patty with truffle aioli,room_service,2850,USD
+invu_merch_007,prod_west_005,Tropical Smoothie,Mango papaya pineapple smoothie,room_service,850,USD
+invu_merch_007,prod_west_006,Minibar Refresh,Water soda and snack replenishment pack,minibar,1200,USD
+invu_merch_008,prod_org_001,Canasta Orgánica Semanal,Weekly organic vegetable basket,produce,2500,USD
+invu_merch_008,prod_org_002,Granola Artesanal,House-made granola 500g,breakfast,850,USD
+invu_merch_008,prod_org_003,Kombucha de Jengibre,Ginger kombucha 500ml,beverages,575,USD
+invu_merch_008,prod_org_004,Quinoa Orgánica 1kg,Organic quinoa — Peruvian,grains,1200,USD
+invu_merch_008,prod_org_005,Aceite de Coco Virgen,Virgin coconut oil 500ml,pantry,950,USD
+invu_merch_009,prod_scr_001,Casado Típico,Rice beans salad plantain and choice of protein,mains,850,USD
+invu_merch_009,prod_scr_002,Gallo Pinto,Traditional rice and beans — breakfast,breakfast,650,USD
+invu_merch_009,prod_scr_003,Chifrijo,Pork and bean dip with chips,appetizers,750,USD
+invu_merch_009,prod_scr_004,Olla de Carne,Costa Rican beef stew with root vegetables,soups,950,USD
+invu_merch_009,prod_scr_005,Agua de Sapo,Ginger and sugarcane lemonade,beverages,400,USD
+invu_merch_010,prod_lb_001,IPA Canalera,House IPA — citrus and tropical hops,beer,750,USD
+invu_merch_010,prod_lb_002,Stout Volcán,Chocolate coffee stout — Boquete beans,beer,800,USD
+invu_merch_010,prod_lb_003,Lager Pacífica,Light lager — sessionable,beer,650,USD
+invu_merch_010,prod_lb_004,Flight de 4,Four 5oz tasters — brewer's choice,beer,1100,USD
+invu_merch_010,prod_lb_005,Nachos Cargados,Loaded nachos with pulled pork,snacks,1350,USD
+invu_merch_010,prod_lb_006,Burger Barra,Smash burger with craft beer cheese sauce,mains,1450,USD
+invu_merch_011,prod_fsf_001,Acetaminofén 500mg x20,Acetaminophen 500mg — 20 tablets,pharmacy,350,USD
+invu_merch_011,prod_fsf_002,Protector Solar SPF50,Sunscreen SPF50 — 200ml,wellness,1450,USD
+invu_merch_011,prod_fsf_003,Vitamina C 1000mg x30,Vitamin C effervescent tablets — 30 ct,supplements,850,USD
+invu_merch_011,prod_fsf_004,Gel Antibacterial 500ml,Hand sanitizer gel 500ml,hygiene,575,USD
+invu_merch_012,prod_ht_001,Rooftop Cocktail,Signature cocktail at Tantalo rooftop,cocktails,1300,USD
+invu_merch_012,prod_ht_002,Brunch Plate,Weekend brunch — eggs chorizo plantain toast,brunch,1650,USD
+invu_merch_012,prod_ht_003,Ceviche Tantalo,Rooftop ceviche — corvina with mango,starters,1450,USD
+invu_merch_012,prod_ht_004,Burger Tantalo,Angus burger with caramelized onion,mains,1550,USD
+invu_merch_012,prod_ht_005,Espresso Martini,Vodka espresso with Café Unido beans,cocktails,1400,USD

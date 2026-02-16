@@ -5,10 +5,12 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 
+const skipIntegration = !process.env.INTEGRATION;
+
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 const API_KEY = process.env.TEST_API_KEY || 'pk_test_demo_fintech_key_12345';
 
-describe('Exports API', () => {
+describe.skipIf(skipIntegration)('Exports API', () => {
   const startDate = '2025-01-01';
   const endDate = '2025-12-31';
 

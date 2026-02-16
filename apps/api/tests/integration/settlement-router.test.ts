@@ -6,6 +6,8 @@
 
 import { describe, test, expect, beforeAll } from 'vitest';
 
+const skipIntegration = !process.env.INTEGRATION;
+
 // Test helpers
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 const TEST_API_KEY = process.env.TEST_API_KEY || 'pk_test_demo123';
@@ -43,7 +45,7 @@ async function apiRequest(
   return { response, data };
 }
 
-describe('Settlement Router', () => {
+describe.skipIf(skipIntegration)('Settlement Router', () => {
   describe('GET /v1/settlement/rails', () => {
     test('should return list of available settlement rails', async () => {
       const { response, data } = await apiRequest('GET', '/v1/settlement/rails');
@@ -272,7 +274,7 @@ describe('Settlement Router', () => {
   });
 });
 
-describe('Settlement Configuration', () => {
+describe.skipIf(skipIntegration)('Settlement Configuration', () => {
   describe('GET /v1/settlement/config', () => {
     test('should return settlement configuration', async () => {
       const { response, data } = await apiRequest('GET', '/v1/settlement/config');

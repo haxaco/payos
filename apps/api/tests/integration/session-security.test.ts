@@ -6,6 +6,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 
+const skipIntegration = !process.env.INTEGRATION;
+
 const API_URL = process.env.VITE_API_URL || 'http://localhost:4000';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -19,7 +21,7 @@ let testUserId: string;
 let testAccessToken: string;
 let testRefreshToken: string;
 
-describe('Session Security (Story 11.12)', () => {
+describe.skipIf(skipIntegration)('Session Security (Story 11.12)', () => {
   // Cleanup test user after all tests
   afterAll(async () => {
     if (testUserId && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
@@ -233,7 +235,7 @@ describe('Session Security (Story 11.12)', () => {
   });
 });
 
-describe('Frontend Token Refresh Flow', () => {
+describe.skipIf(skipIntegration)('Frontend Token Refresh Flow', () => {
   it('should simulate frontend auto-refresh behavior', async () => {
     // Signup
     const signupResponse = await fetch(`${API_URL}/v1/auth/signup`, {

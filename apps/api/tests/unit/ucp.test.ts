@@ -48,9 +48,9 @@ describe('UCP Profile Service', () => {
     it('should include payment service definition', () => {
       const profile = generateUCPProfile();
 
-      expect(profile.ucp.services['com.payos.payment']).toBeDefined();
-      expect(profile.ucp.services['com.payos.payment'].version).toBe('2026-01-11');
-      expect(profile.ucp.services['com.payos.payment'].rest).toBeDefined();
+      expect(profile.ucp.services['com.payos.settlement']).toBeDefined();
+      expect(profile.ucp.services['com.payos.settlement'].version).toBe('2026-01-11');
+      expect(profile.ucp.services['com.payos.settlement'].rest).toBeDefined();
     });
 
     it('should include payment handler', () => {
@@ -59,8 +59,8 @@ describe('UCP Profile Service', () => {
 
       expect(handlers.length).toBeGreaterThan(0);
       const handler = handlers[0];
-      expect(handler.id).toBe('payos');
-      expect(handler.name).toBe('com.payos.payment');
+      expect(handler.id).toBe('payos_latam');
+      expect(handler.name).toBe('com.payos.latam_settlement');
       expect(handler.supported_currencies).toContain('USD');
       expect(handler.supported_currencies).toContain('USDC');
     });
@@ -106,9 +106,10 @@ describe('UCP Profile Service', () => {
       // Core UCP capabilities
       expect(capabilities.some((c) => c.name === 'dev.ucp.shopping.checkout')).toBe(true);
       expect(capabilities.some((c) => c.name === 'dev.ucp.shopping.order')).toBe(true);
-      // PayOS-specific payment capabilities
-      expect(capabilities.some((c) => c.name === 'com.payos.payment.quote')).toBe(true);
-      expect(capabilities.some((c) => c.name === 'com.payos.payment.settlement')).toBe(true);
+      // PayOS-specific settlement capabilities
+      expect(capabilities.some((c) => c.name === 'com.payos.settlement.quote')).toBe(true);
+      expect(capabilities.some((c) => c.name === 'com.payos.settlement.transfer')).toBe(true);
+      expect(capabilities.some((c) => c.name === 'com.payos.settlement.status')).toBe(true);
     });
   });
 
@@ -211,7 +212,7 @@ describe('UCP Negotiation Service', () => {
       const platformCaps = [
         'dev.ucp.shopping.checkout',
         'dev.ucp.shopping.order',
-        'com.payos.payment.quote',
+        'com.payos.settlement.quote',
         'com.other.capability',
       ];
 
@@ -219,7 +220,7 @@ describe('UCP Negotiation Service', () => {
 
       expect(result).toContain('dev.ucp.shopping.checkout');
       expect(result).toContain('dev.ucp.shopping.order');
-      expect(result).toContain('com.payos.payment.quote');
+      expect(result).toContain('com.payos.settlement.quote');
       expect(result).not.toContain('com.other.capability');
     });
   });

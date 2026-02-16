@@ -10,6 +10,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 
+const skipIntegration = !process.env.INTEGRATION;
+
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 
 // Tenant 1: Demo Fintech (existing)
@@ -28,7 +30,7 @@ const expectSuccessOrRateLimit = (status: number) => {
   return status !== 429;
 };
 
-describe('Multi-Tenant Isolation', () => {
+describe.skipIf(skipIntegration)('Multi-Tenant Isolation', () => {
   beforeAll(async () => {
     // Wait for any previous rate limits to clear
     await new Promise(resolve => setTimeout(resolve, 2000));
