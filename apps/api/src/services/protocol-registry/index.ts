@@ -47,15 +47,39 @@ export async function checkPrerequisites(
   }
 
   // Check payment handler prerequisite
+  // A tenant satisfies this if they have EITHER:
+  // 1. A connected account (Stripe, PayPal, etc.) in connected_accounts table
+  // 2. A DB-driven payment handler (PayOS LATAM, Invu, etc.) in payment_handlers table
   if (prerequisites.paymentHandler) {
-    const { data: handlers, error } = await supabase
+    let hasHandler = false;
+
+    // Check connected_accounts (external provider credentials)
+    const { data: connectedAccounts } = await supabase
       .from('connected_accounts')
       .select('id')
       .eq('tenant_id', tenantId)
       .eq('status', 'active')
       .limit(1);
 
-    if (error || !handlers || handlers.length === 0) {
+    if (connectedAccounts && connectedAccounts.length > 0) {
+      hasHandler = true;
+    }
+
+    // Check payment_handlers (DB-driven handlers: global or tenant-specific)
+    if (!hasHandler) {
+      const { data: dbHandlers } = await supabase
+        .from('payment_handlers')
+        .select('id')
+        .eq('status', 'active')
+        .or(`tenant_id.is.null,tenant_id.eq.${tenantId}`)
+        .limit(1);
+
+      if (dbHandlers && dbHandlers.length > 0) {
+        hasHandler = true;
+      }
+    }
+
+    if (!hasHandler) {
       missing.push('payment_handler');
     }
   }
@@ -257,7 +281,7 @@ export async function disableProtocol(
 export function getPrerequisiteMessage(protocolId: ProtocolId, missing: string[]): string {
   const messages: Record<string, string> = {
     wallet: 'Create a USDC wallet to enable this protocol',
-    payment_handler: 'Connect a payment handler (Stripe, PayPal, or Circle) to enable this protocol',
+    payment_handler: 'Connect a payment handler to enable this protocol',
     kya_level_1: 'Register an agent with KYA tier 1 or higher',
     kya_level_2: 'Register an agent with KYA tier 2 or higher',
     kya_level_3: 'Register an agent with KYA tier 3 (enterprise)',

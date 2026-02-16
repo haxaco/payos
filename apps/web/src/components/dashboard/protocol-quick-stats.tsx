@@ -90,7 +90,7 @@ const PROTOCOL_UI: Record<
     bgColor: 'bg-purple-100 dark:bg-purple-950',
     borderColor: 'border-purple-300 dark:border-purple-800',
     link: '/dashboard/agentic-payments/acp/checkouts',
-    setupLink: '/dashboard/settings',
+    setupLink: '/dashboard/payment-handlers',
     setupLabel: 'Connect Handler',
   },
   ucp: {
@@ -99,7 +99,7 @@ const PROTOCOL_UI: Record<
     bgColor: 'bg-green-100 dark:bg-green-950',
     borderColor: 'border-green-300 dark:border-green-800',
     link: '/dashboard/agentic-payments/ucp/hosted-checkouts',
-    setupLink: '/dashboard/settings',
+    setupLink: '/dashboard/payment-handlers',
     setupLabel: 'Connect Handler',
   },
 };
