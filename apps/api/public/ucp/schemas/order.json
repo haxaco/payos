@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/order.json",
+  "title": "UCP Order",
+  "description": "Schema for UCP order lifecycle and management",
+  "type": "object",
+  "required": ["id", "status", "line_items", "totals"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Order UUID"
+    },
+    "checkout_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Originating checkout session ID"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"],
+      "description": "Current order status"
+    },
+    "currency": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 3
+    },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "quantity", "unit_price", "total_price"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "quantity": { "type": "integer", "minimum": 1 },
+          "unit_price": { "type": "integer", "minimum": 0 },
+          "total_price": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "totals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "amount", "label"],
+        "properties": {
+          "type": { "type": "string" },
+          "amount": { "type": "number" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "payment": {
+      "type": "object",
+      "properties": {
+        "handler_id": { "type": "string" },
+        "instrument_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "Fulfillment events",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "examples": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "confirmed",
+      "currency": "USD",
+      "line_items": [
+        {
+          "id": "item_001",
+          "name": "Premium Widget",
+          "quantity": 2,
+          "unit_price": 2999,
+          "total_price": 5998
+        }
+      ],
+      "totals": [
+        { "type": "subtotal", "amount": 5998, "label": "Subtotal" },
+        { "type": "total", "amount": 5998, "label": "Total" }
+      ]
+    }
+  ]
+}

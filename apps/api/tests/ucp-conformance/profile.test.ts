@@ -25,27 +25,27 @@ const UCP_SPEC_VERSION = '2026-01-11';
 
 describe('UCP Conformance: Profile Discovery', () => {
   describe('Profile Structure', () => {
-    it('MUST include ucp.version field', () => {
-      const profile = generateUCPProfile();
+    it('MUST include ucp.version field', async () => {
+      const profile = await generateUCPProfile();
       expect(profile.ucp.version).toBeDefined();
       expect(typeof profile.ucp.version).toBe('string');
       expect(profile.ucp.version).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
 
-    it('MUST include ucp.services object', () => {
-      const profile = generateUCPProfile();
+    it('MUST include ucp.services object', async () => {
+      const profile = await generateUCPProfile();
       expect(profile.ucp.services).toBeDefined();
       expect(typeof profile.ucp.services).toBe('object');
     });
 
-    it('MUST include ucp.capabilities array', () => {
-      const profile = generateUCPProfile();
+    it('MUST include ucp.capabilities array', async () => {
+      const profile = await generateUCPProfile();
       expect(profile.ucp.capabilities).toBeDefined();
       expect(Array.isArray(profile.ucp.capabilities)).toBe(true);
     });
 
-    it('SHOULD include payment.handlers array', () => {
-      const profile = generateUCPProfile();
+    it('SHOULD include payment.handlers array', async () => {
+      const profile = await generateUCPProfile();
       expect(profile.payment).toBeDefined();
       expect(profile.payment!.handlers).toBeDefined();
       expect(Array.isArray(profile.payment!.handlers)).toBe(true);
@@ -53,8 +53,8 @@ describe('UCP Conformance: Profile Discovery', () => {
   });
 
   describe('Service Definitions', () => {
-    it('service definition MUST include version', () => {
-      const profile = generateUCPProfile();
+    it('service definition MUST include version', async () => {
+      const profile = await generateUCPProfile();
       const services = Object.values(profile.ucp.services);
 
       services.forEach((service) => {
@@ -63,8 +63,8 @@ describe('UCP Conformance: Profile Discovery', () => {
       });
     });
 
-    it('service definition MUST include spec URL', () => {
-      const profile = generateUCPProfile();
+    it('service definition MUST include spec URL', async () => {
+      const profile = await generateUCPProfile();
       const services = Object.values(profile.ucp.services);
 
       services.forEach((service) => {
@@ -73,8 +73,8 @@ describe('UCP Conformance: Profile Discovery', () => {
       });
     });
 
-    it('REST binding MUST include schema and endpoint', () => {
-      const profile = generateUCPProfile();
+    it('REST binding MUST include schema and endpoint', async () => {
+      const profile = await generateUCPProfile();
       const services = Object.values(profile.ucp.services);
 
       services.forEach((service) => {
@@ -119,8 +119,8 @@ describe('UCP Conformance: Profile Discovery', () => {
   });
 
   describe('Payment Handler Definitions', () => {
-    it('handler MUST include id', () => {
-      const profile = generateUCPProfile();
+    it('handler MUST include id', async () => {
+      const profile = await generateUCPProfile();
       const handlers = profile.payment!.handlers;
 
       handlers.forEach((handler) => {
@@ -129,8 +129,8 @@ describe('UCP Conformance: Profile Discovery', () => {
       });
     });
 
-    it('handler MUST include name', () => {
-      const profile = generateUCPProfile();
+    it('handler MUST include name', async () => {
+      const profile = await generateUCPProfile();
       const handlers = profile.payment!.handlers;
 
       handlers.forEach((handler) => {
@@ -139,8 +139,8 @@ describe('UCP Conformance: Profile Discovery', () => {
       });
     });
 
-    it('handler name SHOULD follow reverse domain notation', () => {
-      const profile = generateUCPProfile();
+    it('handler name SHOULD follow reverse domain notation', async () => {
+      const profile = await generateUCPProfile();
       const handlers = profile.payment!.handlers;
 
       handlers.forEach((handler) => {
@@ -148,8 +148,8 @@ describe('UCP Conformance: Profile Discovery', () => {
       });
     });
 
-    it('handler MUST include version', () => {
-      const profile = generateUCPProfile();
+    it('handler MUST include version', async () => {
+      const profile = await generateUCPProfile();
       const handlers = profile.payment!.handlers;
 
       handlers.forEach((handler) => {
@@ -157,14 +157,39 @@ describe('UCP Conformance: Profile Discovery', () => {
       });
     });
 
-    it('handler MUST include supported_currencies', () => {
-      const profile = generateUCPProfile();
+    it('handler MUST include config with supported_currencies', async () => {
+      const profile = await generateUCPProfile();
       const handlers = profile.payment!.handlers;
 
       handlers.forEach((handler) => {
-        expect(handler.supported_currencies).toBeDefined();
-        expect(Array.isArray(handler.supported_currencies)).toBe(true);
-        expect(handler.supported_currencies.length).toBeGreaterThan(0);
+        expect(handler.config).toBeDefined();
+        const currencies = (handler.config as any).supported_currencies;
+        expect(currencies).toBeDefined();
+        expect(Array.isArray(currencies)).toBe(true);
+        expect(currencies.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('capability MUST include schema URL', () => {
+      const capabilities = getCapabilities();
+
+      capabilities.forEach((cap) => {
+        expect(cap.schema).toBeDefined();
+        expect(typeof cap.schema).toBe('string');
+        expect(cap.schema).toMatch(/^https?:\/\//);
+      });
+    });
+
+    it('extension capability MUST declare extends field', () => {
+      const capabilities = getCapabilities();
+      const extensionCaps = capabilities.filter((c) => c.extends);
+
+      expect(extensionCaps.length).toBeGreaterThan(0);
+      extensionCaps.forEach((cap) => {
+        expect(typeof cap.extends).toBe('string');
+        // The parent capability must exist
+        const parent = capabilities.find((c) => c.name === cap.extends);
+        expect(parent).toBeDefined();
       });
     });
   });
@@ -268,20 +293,20 @@ describe('UCP Conformance: Version Negotiation', () => {
 
 describe('UCP Conformance: PayOS LATAM Handler', () => {
   describe('Handler Registration', () => {
-    it('MUST register payos_latam handler', () => {
-      const profile = generateUCPProfile();
+    it('MUST register payos_latam handler', async () => {
+      const profile = await generateUCPProfile();
       const handler = profile.payment!.handlers.find((h) => h.id === 'payos_latam');
 
       expect(handler).toBeDefined();
       expect(handler!.name).toBe('com.payos.latam_settlement');
     });
 
-    it('MUST support USD and USDC currencies', () => {
-      const profile = generateUCPProfile();
+    it('MUST support USD and USDC currencies', async () => {
+      const profile = await generateUCPProfile();
       const handler = profile.payment!.handlers.find((h) => h.id === 'payos_latam');
 
-      expect(handler!.supported_currencies).toContain('USD');
-      expect(handler!.supported_currencies).toContain('USDC');
+      expect((handler!.config as any).supported_currencies).toContain('USD');
+      expect((handler!.config as any).supported_currencies).toContain('USDC');
     });
 
     it('MUST include Pix and SPEI corridors', () => {

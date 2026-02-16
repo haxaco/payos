@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/status.json",
+  "title": "PayOS Settlement Status",
+  "description": "Schema for settlement status responses",
+  "type": "object",
+  "required": ["id", "status", "corridor"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Settlement ID"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "processing", "completed", "failed", "deferred"],
+      "description": "Current settlement status"
+    },
+    "token": {
+      "type": "string",
+      "description": "Settlement token used"
+    },
+    "transfer_id": {
+      "type": "string",
+      "description": "Associated transfer ID"
+    },
+    "amount": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "number", "description": "Source amount" },
+        "source_currency": { "type": "string" },
+        "destination": { "type": "number", "description": "Destination amount" },
+        "destination_currency": { "type": "string" },
+        "fx_rate": { "type": "number" },
+        "fees": { "type": "number" }
+      }
+    },
+    "corridor": {
+      "type": "string",
+      "enum": ["pix", "spei", "auto"],
+      "description": "Settlement corridor"
+    },
+    "estimated_completion": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "examples": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "completed",
+      "corridor": "pix",
+      "amount": {
+        "source": 100,
+        "source_currency": "USD",
+        "destination": 520.50,
+        "destination_currency": "BRL",
+        "fx_rate": 5.25,
+        "fees": 0.50
+      }
+    }
+  ]
+}

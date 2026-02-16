@@ -723,6 +723,116 @@ export async function completeCheckout(
         console.log(`[UCP Checkout] No handler or instrument for checkout ${checkoutId}, auto-completing payment`);
       }
 
+      // Execute mandate if one is associated (deduct from budget)
+      const mandateId = existing.metadata?.mandate_id as string | undefined;
+      if (mandateId && supabase) {
+        try {
+          const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const col = UUID_RE.test(mandateId) ? 'id' : 'mandate_id';
+          const { data: mandate } = await supabase
+            .from('ap2_mandates')
+            .select('*')
+            .eq('tenant_id', tenantId)
+            .eq(col, mandateId)
+            .single();
+
+          if (mandate && mandate.status === 'active') {
+            const remaining = Number(mandate.authorized_amount) - Number(mandate.used_amount || 0);
+            // Convert totalAmount from cents to dollars for mandate comparison
+            const amountInDollars = totalAmount / 100;
+            if (remaining >= amountInDollars) {
+              const newExecIndex = (mandate.execution_count || 0) + 1;
+              const { error: execError } = await supabase
+                .from('ap2_mandate_executions')
+                .insert({
+                  tenant_id: tenantId,
+                  mandate_id: mandate.id,
+                  execution_index: newExecIndex,
+                  amount: amountInDollars,
+                  currency: existing.currency || mandate.currency,
+                  status: 'completed',
+                  completed_at: new Date().toISOString(),
+                  order_ids: [checkoutId],
+                });
+
+              if (!execError) {
+                console.log(`[UCP Checkout] Mandate ${mandateId} executed: -$${amountInDollars}, remaining: $${remaining - amountInDollars}`);
+              } else {
+                console.error(`[UCP Checkout] Failed to execute mandate ${mandateId}:`, execError.message);
+              }
+            } else {
+              console.warn(`[UCP Checkout] Mandate ${mandateId} insufficient budget: $${remaining} < $${amountInDollars}`);
+            }
+          }
+        } catch (mandateErr: any) {
+          // Non-fatal: log but don't fail the checkout
+          console.error(`[UCP Checkout] Mandate execution error for ${mandateId}:`, mandateErr.message);
+        }
+      }
+
+      // Deduct from wallet if one is associated
+      const walletId = existing.metadata?.wallet_id as string | undefined;
+      if (walletId && supabase) {
+        try {
+          const { data: wallet } = await supabase
+            .from('wallets')
+            .select('id, balance, currency, owner_account_id, status')
+            .eq('id', walletId)
+            .eq('tenant_id', tenantId)
+            .single();
+
+          if (wallet && wallet.status === 'active') {
+            const currentBalance = parseFloat(wallet.balance);
+            const amountInDollars = totalAmount / 100;
+            if (currentBalance >= amountInDollars) {
+              const newBalance = currentBalance - amountInDollars;
+              const newStatus = newBalance === 0 ? 'depleted' : 'active';
+
+              const { error: walletError } = await supabase
+                .from('wallets')
+                .update({
+                  balance: newBalance,
+                  status: newStatus,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', walletId)
+                .eq('tenant_id', tenantId);
+
+              if (!walletError) {
+                console.log(`[UCP Checkout] Wallet ${walletId} deducted: -$${amountInDollars}, new balance: $${newBalance}`);
+
+                // Create transfer record for audit trail
+                await supabase
+                  .from('transfers')
+                  .insert({
+                    tenant_id: tenantId,
+                    from_account_id: wallet.owner_account_id,
+                    to_account_id: wallet.owner_account_id,
+                    amount: amountInDollars,
+                    currency: wallet.currency || existing.currency,
+                    type: 'internal',
+                    status: 'completed',
+                    description: `UCP checkout ${checkoutId} payment`,
+                    protocol_metadata: {
+                      protocol: 'ucp',
+                      wallet_id: walletId,
+                      operation: 'checkout_payment',
+                      checkout_id: checkoutId,
+                    },
+                  });
+              } else {
+                console.error(`[UCP Checkout] Failed to deduct wallet ${walletId}:`, walletError.message);
+              }
+            } else {
+              console.warn(`[UCP Checkout] Wallet ${walletId} insufficient balance: $${currentBalance} < $${amountInDollars}`);
+            }
+          }
+        } catch (walletErr: any) {
+          // Non-fatal: log but don't fail the checkout
+          console.error(`[UCP Checkout] Wallet deduction error for ${walletId}:`, walletErr.message);
+        }
+      }
+
       // Create order in ucp_orders table
       const order = await createOrderFromCheckout(tenantId, existing, {
         handler_id: handlerId,

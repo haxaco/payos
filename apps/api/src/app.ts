@@ -68,6 +68,7 @@ import ucpCheckoutRouter from './routes/ucp-checkout.js';
 import ucpOrdersRouter from './routes/ucp-orders.js';
 import ucpWebhooksRouter from './routes/webhooks/ucp.js';
 import ucpIdentityRouter from './routes/ucp-identity.js';
+import ucpMerchantsRouter from './routes/ucp-merchants.js';
 import approvalsRouter from './routes/approvals.js';
 import protocolsRouter from './routes/protocols.js';
 import organizationProtocolsRouter from './routes/organization/protocols.js';
@@ -281,6 +282,7 @@ v1.route('/ucp', ucpRouter); // UCP settlement endpoints (Epic 43)
 v1.route('/ucp/checkouts', ucpCheckoutRouter); // UCP checkout capability (Phase 2)
 v1.route('/ucp/orders', ucpOrdersRouter); // UCP order capability (Phase 3)
 v1.route('/ucp/identity', ucpIdentityRouter); // UCP identity linking (Phase 4)
+v1.route('/ucp/merchants', ucpMerchantsRouter); // UCP merchant catalog (Invu demo)
 v1.route('/approvals', approvalsRouter); // Agent payment approvals (Story 18.R2)
 v1.route('/accounts', relationshipsRouter); // For /accounts/:accountId/relationships routes
 v1.route('/organization', organizationProtocolsRouter); // Protocol enablement (Epic 49)

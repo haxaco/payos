@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/fulfillment.json",
+  "title": "UCP Fulfillment Extension",
+  "description": "Schema for fulfillment events and tracking on UCP orders. Extends dev.ucp.shopping.checkout.",
+  "type": "object",
+  "required": ["type", "description"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["shipped", "in_transit", "out_for_delivery", "delivered", "returned"],
+      "description": "Fulfillment event type"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the event"
+    },
+    "tracking_number": {
+      "type": "string",
+      "description": "Shipping tracking number"
+    },
+    "carrier": {
+      "type": "string",
+      "description": "Shipping carrier (e.g., USPS, FedEx, DHL)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the event occurred (defaults to now)"
+    }
+  },
+  "examples": [
+    {
+      "type": "shipped",
+      "description": "Package shipped via FedEx",
+      "tracking_number": "794644790126",
+      "carrier": "FedEx"
+    },
+    {
+      "type": "delivered",
+      "description": "Package delivered to front door"
+    }
+  ]
+}

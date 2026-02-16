@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.payos.com/ucp/schemas/checkout.json",
+  "title": "UCP Checkout Session",
+  "description": "Schema for UCP checkout session creation and management",
+  "type": "object",
+  "required": ["currency", "line_items"],
+  "properties": {
+    "currency": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 3,
+      "description": "ISO 4217 pricing currency (e.g., USD, BRL, MXN)"
+    },
+    "line_items": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Items in the checkout",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "quantity", "unit_price", "total_price"],
+        "properties": {
+          "id": { "type": "string", "description": "Unique item identifier" },
+          "name": { "type": "string", "description": "Item name" },
+          "description": { "type": "string", "description": "Item description" },
+          "quantity": { "type": "integer", "minimum": 1, "description": "Quantity" },
+          "unit_price": { "type": "integer", "minimum": 0, "description": "Price per unit in cents" },
+          "total_price": { "type": "integer", "minimum": 0, "description": "Line total in cents (quantity * unit_price)" },
+          "image_url": { "type": "string", "format": "uri", "description": "Product image URL" },
+          "product_url": { "type": "string", "format": "uri", "description": "Product page URL" }
+        }
+      }
+    },
+    "buyer": {
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" }
+      }
+    },
+    "shipping_address": {
+      "$ref": "#/$defs/address"
+    },
+    "billing_address": {
+      "$ref": "#/$defs/address"
+    },
+    "payment_config": {
+      "type": "object",
+      "properties": {
+        "handlers": { "type": "array", "items": { "type": "string" } },
+        "default_handler": { "type": "string" },
+        "capture_method": { "type": "string", "enum": ["automatic", "manual"] }
+      }
+    },
+    "checkout_type": {
+      "type": "string",
+      "enum": ["physical", "digital", "service"],
+      "default": "physical",
+      "description": "Checkout type. 'digital' and 'service' skip shipping address requirement."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "address": {
+      "type": "object",
+      "required": ["line1", "city", "postal_code", "country"],
+      "properties": {
+        "line1": { "type": "string" },
+        "line2": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "postal_code": { "type": "string" },
+        "country": { "type": "string", "minLength": 2, "maxLength": 2 }
+      }
+    }
+  },
+  "examples": [
+    {
+      "currency": "USD",
+      "checkout_type": "digital",
+      "line_items": [
+        {
+          "id": "item_001",
+          "name": "Premium Widget",
+          "quantity": 2,
+          "unit_price": 2999,
+          "total_price": 5998
+        }
+      ],
+      "buyer": {
+        "name": "Jane Doe",
+        "email": "jane@example.com"
+      }
+    }
+  ]
+}

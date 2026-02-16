@@ -18,6 +18,30 @@ import { ValidationError, NotFoundError } from '../middleware/error.js';
 const context = new Hono();
 
 // ============================================
+// GET /v1/context/whoami
+// Returns current auth context + tenant info
+// ============================================
+context.get('/whoami', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('id, name, status')
+    .eq('id', ctx.tenantId)
+    .single();
+
+  return c.json({
+    tenant: { id: tenant?.id, name: tenant?.name, status: tenant?.status },
+    actor: {
+      type: ctx.actorType,
+      id: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      name: ctx.actorName || ctx.userName,
+    },
+  });
+});
+
+// ============================================
 // TYPES
 // ============================================
 

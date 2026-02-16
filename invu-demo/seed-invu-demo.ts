@@ -238,8 +238,30 @@ async function main() {
   const merchants = loadCSV('merchants.csv');
   log('>', `Found ${merchants.length} merchants`);
 
+  // Pre-load products so we can include catalogs in the merchant upsert
+  log('>', 'Loading products from CSV...');
+  const products = loadCSV('products.csv');
+  log('>', `Found ${products.length} products across ${merchants.length} merchants`);
+
+  const productsByMerchant: Record<string, typeof products> = {};
+  for (const p of products) {
+    if (!productsByMerchant[p.merchant_id]) {
+      productsByMerchant[p.merchant_id] = [];
+    }
+    productsByMerchant[p.merchant_id].push(p);
+  }
+
   for (const m of merchants) {
     const accountId = merchantUUID(m.merchant_id);
+    const catalog = (productsByMerchant[m.merchant_id] || []).map((p) => ({
+      id: p.product_id,
+      name: p.product_name,
+      description: p.description,
+      category: p.category,
+      unit_price_cents: parseInt(p.unit_price_cents, 10),
+      currency: p.currency,
+    }));
+
     const { error } = await supabase.from('accounts').upsert(
       {
         id: accountId,
@@ -254,6 +276,7 @@ async function main() {
           city: m.city,
           description: m.description,
           pos_provider: 'invu',
+          catalog,
         },
       },
       { onConflict: 'id' }
@@ -262,47 +285,7 @@ async function main() {
     if (error) {
       console.error(`    ${m.merchant_name}: ${error.message}`);
     } else {
-      log('  +', `${m.merchant_name} (${m.city}, ${m.country})`);
-    }
-  }
-
-  // -- 3. Products (store in metadata) ---------------------------------
-
-  log('>', 'Loading products from CSV...');
-  const products = loadCSV('products.csv');
-  log('>', `Found ${products.length} products across ${merchants.length} merchants`);
-
-  const productsByMerchant: Record<string, typeof products> = {};
-  for (const p of products) {
-    if (!productsByMerchant[p.merchant_id]) {
-      productsByMerchant[p.merchant_id] = [];
-    }
-    productsByMerchant[p.merchant_id].push(p);
-  }
-
-  for (const [merchantId, catalog] of Object.entries(productsByMerchant)) {
-    const accountId = merchantUUID(merchantId);
-    const { error } = await supabase
-      .from('accounts')
-      .update({
-        metadata: {
-          invu_merchant_id: merchantId,
-          catalog: catalog.map((p) => ({
-            id: p.product_id,
-            name: p.product_name,
-            description: p.description,
-            category: p.category,
-            unit_price_cents: parseInt(p.unit_price_cents, 10),
-            currency: p.currency,
-          })),
-        },
-      })
-      .eq('id', accountId);
-
-    if (error) {
-      console.error(`    Catalog for ${merchantId}: ${error.message}`);
-    } else {
-      log('  +', `${merchantId}: ${catalog.length} products loaded`);
+      log('  +', `${m.merchant_name} (${m.city}, ${m.country}) — ${catalog.length} products`);
     }
   }
 
@@ -324,6 +307,10 @@ async function main() {
       kya_tier: 1,
       kya_status: 'verified',
       kya_verified_at: new Date().toISOString(),
+      effective_limit_per_tx: 1000.0,
+      effective_limit_daily: 10000.0,
+      effective_limit_monthly: 50000.0,
+      effective_limits_capped: false,
       permissions: {
         transactions: { initiate: true, approve: false, view: true },
         streams: { initiate: false, modify: false, pause: false, terminate: false, view: true },
@@ -386,8 +373,17 @@ async function main() {
 
   log('>', 'Creating spending mandate...');
 
-  const { error: mandateError } = await supabase.from('ap2_mandates').upsert(
-    {
+  // Check if mandate already exists (upsert fails if executions exist due to FK)
+  const { data: existingMandate } = await supabase
+    .from('ap2_mandates')
+    .select('id, mandate_id, used_amount, execution_count')
+    .eq('mandate_id', MANDATE_ID)
+    .single();
+
+  if (existingMandate) {
+    log('=', `Mandate already exists (used: $${Number(existingMandate.used_amount).toFixed(2)}, ${existingMandate.execution_count} executions)`);
+  } else {
+    const { error: mandateError } = await supabase.from('ap2_mandates').insert({
       id: randomUUID(),
       tenant_id: TENANT_ID,
       mandate_id: MANDATE_ID,
@@ -405,14 +401,13 @@ async function main() {
       },
       metadata: { demo: true, partner: 'invu_pos' },
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    { onConflict: 'mandate_id' }
-  );
+    });
 
-  if (mandateError) {
-    console.error('  Failed to create mandate:', mandateError.message);
-  } else {
-    log('+', 'Mandate ready: $2,500 authorized');
+    if (mandateError) {
+      console.error('  Failed to create mandate:', mandateError.message);
+    } else {
+      log('+', 'Mandate ready: $2,500 authorized');
+    }
   }
 
   // -- 7. Sample UCP Checkouts ------------------------------------------

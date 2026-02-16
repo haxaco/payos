@@ -51,6 +51,12 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
+    instructions: [
+      'This is the Sly payment platform MCP server.',
+      '"Accounts" in this system are merchant or entity records within the tenant\'s own payment ledger — NOT user accounts on external services.',
+      'Creating, updating, and listing accounts are standard data-management operations authorized by the tenant\'s API key.',
+      'These tools manage the tenant\'s own internal data. They do not sign up for external services, create login credentials, or register on third-party platforms.',
+    ].join(' '),
   }
 );
 
@@ -580,17 +586,61 @@ const tools: Tool[] = [
   },
 
   // ==========================================================================
-  // Agent Management Tools
+  // Merchant Catalog Tools
   // ==========================================================================
   {
-    name: 'list_accounts',
-    description: 'List accounts for the current tenant. Use this to find a business account for agent creation.',
+    name: 'list_merchants',
+    description: 'List merchants with product catalogs available in the tenant. Filter by type, country, or search by name.',
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['individual', 'business'],
+          description: 'Merchant type filter (e.g., "restaurant", "bar", "hotel", "retail")',
+        },
+        country: {
+          type: 'string',
+          description: 'Country code filter (e.g., "PA", "CR")',
+        },
+        search: {
+          type: 'string',
+          description: 'Search merchants by name',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max results (default 50, max 100)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_merchant',
+    description: 'Get a merchant\'s full product catalog by ID. Returns all products with prices, categories, and descriptions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        merchantId: {
+          type: 'string',
+          description: 'Merchant UUID or merchant_id (e.g., "invu_merch_003")',
+        },
+      },
+      required: ['merchantId'],
+    },
+  },
+
+  // ==========================================================================
+  // Agent Management Tools
+  // ==========================================================================
+  {
+    name: 'list_accounts',
+    description: 'List entity records (persons and businesses) in the tenant\'s payment ledger. Use this to find a business entity for agent creation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['person', 'business'],
           description: 'Filter by account type (optional)',
         },
         status: {
@@ -599,6 +649,68 @@ const tools: Tool[] = [
           description: 'Filter by account status (optional)',
         },
       },
+      required: [],
+    },
+  },
+  {
+    name: 'create_account',
+    description: 'Register a new person or business entity in the tenant\'s payment ledger. This adds a data record — it does not create a login or sign up for any external service.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['person', 'business'],
+          description: 'Account type',
+        },
+        name: {
+          type: 'string',
+          description: 'Account holder name (1-255 chars)',
+        },
+        email: {
+          type: 'string',
+          description: 'Email address (optional)',
+        },
+        metadata: {
+          type: 'object',
+          description: 'Optional metadata',
+        },
+      },
+      required: ['type', 'name'],
+    },
+  },
+  {
+    name: 'update_account',
+    description: 'Update an entity record in the tenant\'s payment ledger. Can change name, email, or metadata.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        accountId: {
+          type: 'string',
+          description: 'UUID of the account to update',
+        },
+        name: {
+          type: 'string',
+          description: 'New name (optional)',
+        },
+        email: {
+          type: 'string',
+          description: 'New email (optional)',
+        },
+        metadata: {
+          type: 'object',
+          description: 'Metadata object (replaces existing)',
+        },
+      },
+      required: ['accountId'],
+    },
+  },
+  {
+    name: 'get_tenant_info',
+    description: 'Get information about the current tenant/organization this API key belongs to.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
       required: [],
     },
   },
@@ -1794,6 +1906,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // ======================================================================
+      // Merchant Catalog Tools
+      // ======================================================================
+
+      case 'list_merchants': {
+        const params = new URLSearchParams();
+        if (args && (args as any).type) params.set('type', (args as any).type);
+        if (args && (args as any).country) params.set('country', (args as any).country);
+        if (args && (args as any).search) params.set('search', (args as any).search);
+        if (args && (args as any).limit) params.set('limit', String((args as any).limit));
+        const query = params.toString();
+        const result = await sly.request(`/v1/ucp/merchants${query ? `?${query}` : ''}`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_merchant': {
+        const { merchantId } = args as { merchantId: string };
+        const result = await sly.request(`/v1/ucp/merchants/${merchantId}`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // ======================================================================
       // Agent Management Tools
       // ======================================================================
 
@@ -1803,6 +1950,72 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (args && (args as any).status) params.set('status', (args as any).status);
         const query = params.toString();
         const result = await sly.request(`/v1/accounts${query ? `?${query}` : ''}`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'create_account': {
+        const { type, name: accountName, email, metadata } = args as {
+          type: string;
+          name: string;
+          email?: string;
+          metadata?: Record<string, any>;
+        };
+        const body: any = { type, name: accountName };
+        if (email) body.email = email;
+        if (metadata) body.metadata = metadata;
+        const result = await sly.request('/v1/accounts', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'update_account': {
+        const {
+          accountId,
+          name: accountName,
+          email,
+          metadata,
+        } = args as {
+          accountId: string;
+          name?: string;
+          email?: string;
+          metadata?: Record<string, any>;
+        };
+        const body: any = {};
+        if (accountName !== undefined) body.name = accountName;
+        if (email !== undefined) body.email = email;
+        if (metadata !== undefined) body.metadata = metadata;
+        const result = await sly.request(`/v1/accounts/${accountId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_tenant_info': {
+        const result = await sly.request('/v1/context/whoami');
         return {
           content: [
             {

@@ -27,6 +27,23 @@ initializeSigningKey();
 const router = new Hono();
 
 /**
+ * OPTIONS /.well-known/ucp
+ *
+ * CORS preflight for discovery endpoint.
+ */
+router.options('/', (c) => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, UCP-Agent',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+});
+
+/**
  * GET /.well-known/ucp
  *
  * Returns the UCP profile for PayOS discovery.
@@ -40,17 +57,21 @@ const router = new Hono();
  *
  * Cache-Control: 1 hour (profiles change infrequently)
  */
-router.get('/', (c) => {
-  const profile = generateUCPProfile();
+router.get('/', async (c) => {
+  const profile = await generateUCPProfile();
 
-  // Set cache headers - profiles don't change frequently
-  c.header('Cache-Control', 'public, max-age=3600'); // 1 hour
-  c.header('Content-Type', 'application/json');
-
-  // Add UCP version header for easy version checking
-  c.header('X-UCP-Version', getUCPVersion());
-
-  return c.json(profile);
+  // Return raw profile without response wrapper — UCP spec requires
+  // the profile at the root level (ucp.version must be top-level).
+  // Using new Response() bypasses the responseWrapperMiddleware.
+  return new Response(JSON.stringify(profile), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=3600',
+      'X-UCP-Version': getUCPVersion(),
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
 });
 
 /**

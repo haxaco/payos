@@ -272,8 +272,8 @@ describe('UCP E2E: Checkout → Settlement Flow (Unit)', () => {
   });
 
   describe('UCP Profile Discovery', () => {
-    it('should generate valid UCP profile with settlement capabilities', () => {
-      const profile = generateUCPProfile();
+    it('should generate valid UCP profile with settlement capabilities', async () => {
+      const profile = await generateUCPProfile();
 
       // Verify UCP version
       expect(profile.ucp.version).toBe('2026-01-11');
@@ -287,15 +287,16 @@ describe('UCP E2E: Checkout → Settlement Flow (Unit)', () => {
       const handler = profile.payment!.handlers.find((h) => h.id === 'payos_latam');
       expect(handler).toBeDefined();
       expect(handler!.name).toBe('com.payos.latam_settlement');
-      expect(handler!.supported_currencies).toContain('USD');
-      expect(handler!.supported_currencies).toContain('USDC');
+      expect((handler!.config as any).supported_currencies).toContain('USD');
+      expect((handler!.config as any).supported_currencies).toContain('USDC');
 
       // Verify corridors
-      const pixCorridor = handler!.supported_corridors?.find((c: any) => c.rail === 'pix');
+      const corridors = (handler!.config as any).supported_corridors;
+      const pixCorridor = corridors?.find((c: any) => c.rail === 'pix');
       expect(pixCorridor).toBeDefined();
       expect(pixCorridor!.destination_currency).toBe('BRL');
 
-      const speiCorridor = handler!.supported_corridors?.find((c: any) => c.rail === 'spei');
+      const speiCorridor = corridors?.find((c: any) => c.rail === 'spei');
       expect(speiCorridor).toBeDefined();
       expect(speiCorridor!.destination_currency).toBe('MXN');
     });

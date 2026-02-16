@@ -34,8 +34,8 @@ import {
 
 describe('UCP Profile Service', () => {
   describe('generateUCPProfile', () => {
-    it('should generate a valid UCP profile', () => {
-      const profile = generateUCPProfile();
+    it('should generate a valid UCP profile', async () => {
+      const profile = await generateUCPProfile();
 
       expect(profile.ucp).toBeDefined();
       expect(profile.ucp.version).toBe('2026-01-11');
@@ -45,28 +45,28 @@ describe('UCP Profile Service', () => {
       expect(profile.payment!.handlers).toBeInstanceOf(Array);
     });
 
-    it('should include payment service definition', () => {
-      const profile = generateUCPProfile();
+    it('should include payment service definition', async () => {
+      const profile = await generateUCPProfile();
 
       expect(profile.ucp.services['com.payos.settlement']).toBeDefined();
       expect(profile.ucp.services['com.payos.settlement'].version).toBe('2026-01-11');
       expect(profile.ucp.services['com.payos.settlement'].rest).toBeDefined();
     });
 
-    it('should include payment handler', () => {
-      const profile = generateUCPProfile();
+    it('should include payment handler', async () => {
+      const profile = await generateUCPProfile();
       const handlers = profile.payment!.handlers;
 
       expect(handlers.length).toBeGreaterThan(0);
       const handler = handlers[0];
       expect(handler.id).toBe('payos_latam');
       expect(handler.name).toBe('com.payos.latam_settlement');
-      expect(handler.supported_currencies).toContain('USD');
-      expect(handler.supported_currencies).toContain('USDC');
+      expect((handler.config as any).supported_currencies).toContain('USD');
+      expect((handler.config as any).supported_currencies).toContain('USDC');
     });
 
-    it('should include signing_keys for webhook verification', () => {
-      const profile = generateUCPProfile();
+    it('should include signing_keys for webhook verification', async () => {
+      const profile = await generateUCPProfile();
 
       expect(profile.signing_keys).toBeDefined();
       expect(profile.signing_keys!.length).toBeGreaterThan(0);
@@ -81,8 +81,8 @@ describe('UCP Profile Service', () => {
       expect(key.y).toBeDefined();
     });
 
-    it('should include UCP core capabilities with spec URLs', () => {
-      const profile = generateUCPProfile();
+    it('should include UCP core capabilities with spec URLs', async () => {
+      const profile = await generateUCPProfile();
       const capabilities = profile.ucp.capabilities;
 
       // Check for dev.ucp.shopping.checkout capability

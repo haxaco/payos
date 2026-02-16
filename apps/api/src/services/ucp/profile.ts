@@ -22,6 +22,7 @@ import type {
 import { getSigningKey, getAllSigningKeys, initializeSigningKey } from './signing.js';
 import { getDBHandlerRows } from './payment-handlers/index.js';
 import type { PaymentHandlerRow } from './payment-handlers/index.js';
+import { createClient } from '../../db/client.js';
 
 // =============================================================================
 // Configuration
@@ -52,14 +53,20 @@ const UCP_CORE_CAPABILITIES: UCPCapability[] = [
     name: 'dev.ucp.shopping.checkout',
     version: UCP_VERSION,
     spec: 'https://ucp.dev/specification/checkout/',
-    description: 'Shopping checkout session management',
-    extensions: ['dev.ucp.shopping.fulfillment'],
+    schema: `${getBaseUrl()}/ucp/schemas/checkout.json`,
+  },
+  {
+    name: 'dev.ucp.shopping.fulfillment',
+    version: UCP_VERSION,
+    spec: 'https://ucp.dev/specification/fulfillment/',
+    schema: `${getBaseUrl()}/ucp/schemas/fulfillment.json`,
+    extends: 'dev.ucp.shopping.checkout',
   },
   {
     name: 'dev.ucp.shopping.order',
     version: UCP_VERSION,
     spec: 'https://ucp.dev/specification/order/',
-    description: 'Order lifecycle and fulfillment tracking',
+    schema: `${getBaseUrl()}/ucp/schemas/order.json`,
   },
 ];
 
@@ -72,19 +79,25 @@ const PAYOS_PAYMENT_CAPABILITIES: UCPCapability[] = [
     name: 'com.payos.settlement.quote',
     version: UCP_VERSION,
     spec: `${getDocsUrl()}/ucp/capabilities/quote`,
-    description: 'Get FX quote for payment corridor',
+    schema: `${getBaseUrl()}/ucp/schemas/quote.json`,
   },
   {
     name: 'com.payos.settlement.transfer',
     version: UCP_VERSION,
     spec: `${getDocsUrl()}/ucp/capabilities/settlement`,
-    description: 'Execute settlement via Pix, SPEI, or other rails',
+    schema: `${getBaseUrl()}/ucp/schemas/transfer.json`,
   },
   {
     name: 'com.payos.settlement.status',
     version: UCP_VERSION,
     spec: `${getDocsUrl()}/ucp/capabilities/status`,
-    description: 'Check settlement status',
+    schema: `${getBaseUrl()}/ucp/schemas/status.json`,
+  },
+  {
+    name: 'com.payos.merchant_catalog',
+    version: UCP_VERSION,
+    spec: `${getDocsUrl()}/ucp/capabilities/merchant-catalog`,
+    schema: `${getBaseUrl()}/ucp/schemas/merchant_catalog.json`,
   },
 ];
 
@@ -154,8 +167,10 @@ function dbRowToUCPHandler(row: PaymentHandlerRow): UCPPaymentHandler {
     spec: (meta.spec as string) || '',
     config_schema: (meta.config_schema as string) || '',
     instrument_schemas: (meta.instrument_schemas as string[]) || [],
-    supported_currencies: row.supported_currencies,
-    supported_corridors: corridors,
+    config: {
+      supported_currencies: row.supported_currencies,
+      supported_corridors: corridors,
+    },
   };
 }
 
@@ -185,8 +200,10 @@ const getPaymentHandlers = (): UCPPaymentHandler[] => {
       `${baseUrl}/ucp/schemas/pix_instrument.json`,
       `${baseUrl}/ucp/schemas/spei_instrument.json`,
     ],
-    supported_currencies: ['USD', 'USDC', 'BRL', 'MXN'],
-    supported_corridors: PAYOS_CORRIDORS,
+    config: {
+      supported_currencies: ['USD', 'USDC', 'BRL', 'MXN'],
+      supported_corridors: PAYOS_CORRIDORS,
+    },
   }];
 };
 
@@ -199,12 +216,36 @@ const getServices = (): Record<string, UCPService> => {
   const docsUrl = getDocsUrl();
 
   return {
+    'dev.ucp.shopping.checkout': {
+      version: UCP_VERSION,
+      spec: 'https://ucp.dev/specification/checkout/',
+      rest: {
+        schema: `${baseUrl}/ucp/openapi.json`,
+        endpoint: `${baseUrl}/v1/ucp/checkouts`,
+      },
+    },
+    'dev.ucp.shopping.order': {
+      version: UCP_VERSION,
+      spec: 'https://ucp.dev/specification/order/',
+      rest: {
+        schema: `${baseUrl}/ucp/openapi.json`,
+        endpoint: `${baseUrl}/v1/ucp/orders`,
+      },
+    },
     'com.payos.settlement': {
       version: UCP_VERSION,
       spec: `${docsUrl}/ucp/settlement`,
       rest: {
         schema: `${baseUrl}/ucp/openapi.json`,
         endpoint: `${baseUrl}/v1/ucp`,
+      },
+    },
+    'com.payos.merchant_catalog': {
+      version: UCP_VERSION,
+      spec: `${docsUrl}/ucp/merchant-catalog`,
+      rest: {
+        schema: `${baseUrl}/ucp/openapi.json`,
+        endpoint: `${baseUrl}/v1/ucp/merchants`,
       },
     },
   };
@@ -242,7 +283,7 @@ const getSigningKeys = (): UCPSigningKey[] => {
  *
  * @see https://ucp.dev/specification/overview/#profile-structure
  */
-export function generateUCPProfile(): UCPProfile {
+export async function generateUCPProfile(): Promise<UCPProfile> {
   const signingKeys = getSigningKeys();
   const capabilities = getAllCapabilities();
 
@@ -258,6 +299,39 @@ export function generateUCPProfile(): UCPProfile {
     // Always include signing keys - they're generated if not configured
     signing_keys: signingKeys,
   };
+
+  // Load merchant catalog for discovery (all tenants with pos_provider)
+  try {
+    const supabase = createClient();
+    const { data: merchants } = await supabase
+      .from('accounts')
+      .select('id, name, currency, metadata')
+      .not('metadata->pos_provider', 'is', null)
+      .order('name')
+      .limit(100);
+
+    if (merchants && merchants.length > 0) {
+      (profile as any).x_catalog = {
+        description: 'Merchant catalog preview (use com.payos.merchant_catalog service for full API)',
+        service: 'com.payos.merchant_catalog',
+        merchants: merchants.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          merchant_id: m.metadata?.invu_merchant_id,
+          type: m.metadata?.merchant_type,
+          country: m.metadata?.country,
+          city: m.metadata?.city,
+          currency: m.currency,
+          description: m.metadata?.description,
+          pos_provider: m.metadata?.pos_provider,
+          catalog: Array.isArray(m.metadata?.catalog) ? m.metadata.catalog : [],
+        })),
+      };
+    }
+  } catch (err: any) {
+    // Non-fatal: discovery still works without merchants
+    console.error('[UCP Profile] Failed to load merchants:', err.message);
+  }
 
   return profile;
 }

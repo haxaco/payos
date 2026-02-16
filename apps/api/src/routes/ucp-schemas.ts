@@ -101,6 +101,36 @@ router.get('/schemas/pix_instrument.json', (c) => serveSchema(c, 'schemas/pix_in
 router.get('/schemas/spei_instrument.json', (c) => serveSchema(c, 'schemas/spei_instrument.json'));
 
 /**
+ * GET /ucp/schemas/checkout.json
+ * Checkout session schema
+ */
+router.get('/schemas/checkout.json', (c) => serveSchema(c, 'schemas/checkout.json'));
+
+/**
+ * GET /ucp/schemas/fulfillment.json
+ * Fulfillment extension schema
+ */
+router.get('/schemas/fulfillment.json', (c) => serveSchema(c, 'schemas/fulfillment.json'));
+
+/**
+ * GET /ucp/schemas/order.json
+ * Order lifecycle schema
+ */
+router.get('/schemas/order.json', (c) => serveSchema(c, 'schemas/order.json'));
+
+/**
+ * GET /ucp/schemas/status.json
+ * Settlement status schema
+ */
+router.get('/schemas/status.json', (c) => serveSchema(c, 'schemas/status.json'));
+
+/**
+ * GET /ucp/schemas/merchant_catalog.json
+ * Merchant catalog schema
+ */
+router.get('/schemas/merchant_catalog.json', (c) => serveSchema(c, 'schemas/merchant_catalog.json'));
+
+/**
  * GET /ucp/schemas
  * List all available schemas
  */
@@ -110,6 +140,21 @@ router.get('/schemas', (c) => {
   return c.json({
     schemas: [
       {
+        name: 'checkout',
+        description: 'UCP checkout session schema',
+        url: `${baseUrl}/ucp/schemas/checkout.json`,
+      },
+      {
+        name: 'fulfillment',
+        description: 'UCP fulfillment extension schema',
+        url: `${baseUrl}/ucp/schemas/fulfillment.json`,
+      },
+      {
+        name: 'order',
+        description: 'UCP order lifecycle schema',
+        url: `${baseUrl}/ucp/schemas/order.json`,
+      },
+      {
         name: 'quote',
         description: 'Quote request schema',
         url: `${baseUrl}/ucp/schemas/quote.json`,
@@ -118,6 +163,16 @@ router.get('/schemas', (c) => {
         name: 'transfer',
         description: 'Transfer request schema',
         url: `${baseUrl}/ucp/schemas/transfer.json`,
+      },
+      {
+        name: 'status',
+        description: 'Settlement status schema',
+        url: `${baseUrl}/ucp/schemas/status.json`,
+      },
+      {
+        name: 'merchant_catalog',
+        description: 'Merchant catalog schema',
+        url: `${baseUrl}/ucp/schemas/merchant_catalog.json`,
       },
       {
         name: 'handler_config',

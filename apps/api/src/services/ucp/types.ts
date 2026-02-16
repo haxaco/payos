@@ -38,7 +38,7 @@ export interface UCPService {
   };
   mcp?: {
     endpoint: string;
-    tools: string[];
+    schema: string;
   };
 }
 
@@ -52,11 +52,11 @@ export interface UCPCapability {
   /** Version in YYYY-MM-DD format */
   version: string;
   /** URL to capability specification */
-  spec?: string;
-  /** Human-readable description */
-  description?: string;
-  /** Extensions this capability supports */
-  extensions?: string[];
+  spec: string;
+  /** JSON Schema URL for this capability's payload */
+  schema: string;
+  /** Parent capability this extends (for extension capabilities) */
+  extends?: string;
 }
 
 /**
@@ -69,8 +69,7 @@ export interface UCPPaymentHandler {
   spec: string;
   config_schema: string;
   instrument_schemas: string[];
-  supported_currencies: string[];
-  supported_corridors: UCPCorridor[];
+  config: Record<string, unknown>;
 }
 
 /**
