@@ -127,6 +127,16 @@ export class SlyClient {
     this.config = config;
   }
 
+  /** The base URL for the API (e.g. http://localhost:4000) */
+  get baseUrl(): string {
+    return this.config.baseUrl;
+  }
+
+  /** The API key or auth token used for requests */
+  get apiKey(): string {
+    return this.config.apiKey;
+  }
+
   // ============================================
   // Internal HTTP Methods
   // ============================================
