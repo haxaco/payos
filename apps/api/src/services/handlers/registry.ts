@@ -20,6 +20,8 @@ import type {
   PayOSNativeCredentials,
 } from './interface.js';
 import { createStripeHandler } from './stripe.js';
+import { createPayPalHandler } from './paypal.js';
+import { createCircleHandler } from './circle.js';
 
 export type HandlerType = 'stripe' | 'paypal' | 'circle' | 'payos_native' | 'visa_vic' | 'mastercard_agent_pay';
 
@@ -44,14 +46,10 @@ export function createHandlerFromAccount(
       return createStripeHandler(credentials as StripeCredentials);
 
     case 'paypal':
-      // TODO: Implement PayPal handler
-      console.warn('PayPal handler not yet implemented');
-      return null;
+      return createPayPalHandler(credentials as PayPalCredentials);
 
     case 'circle':
-      // TODO: Implement Circle handler
-      console.warn('Circle handler not yet implemented');
-      return null;
+      return createCircleHandler(credentials as CircleCredentials);
 
     case 'payos_native':
       // TODO: Implement PayOS native handler (Pix/SPEI)

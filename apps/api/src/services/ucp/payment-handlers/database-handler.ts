@@ -4,10 +4,11 @@
  * Generic handler that reads config from payment_handlers table
  * and writes instruments/payments to handler_payment_instruments / handler_payments.
  *
- * Supports three integration modes:
- * - demo:    Simulated success (for demos/testing)
- * - webhook: Forward requests to external URLs (future)
- * - custom:  Delegate to a registered TypeScript handler
+ * Supports four integration modes:
+ * - demo:              Simulated success (for demos/testing)
+ * - webhook:           Forward requests to external URLs (future)
+ * - custom:            Delegate to a registered TypeScript handler
+ * - connected_account: Bridge to tenant's connected provider via Epic 48 registry
  */
 
 import { createHash } from 'crypto';
@@ -22,6 +23,10 @@ import type {
   RefundPaymentResult,
   PaymentStatus,
 } from './types.js';
+import {
+  processPaymentViaConnectedAccount,
+  refundPaymentViaConnectedAccount,
+} from './connected-account-bridge.js';
 
 // =============================================================================
 // Types
@@ -38,7 +43,7 @@ export interface PaymentHandlerRow {
   supported_types: string[];
   supported_currencies: string[];
   id_prefix: string;
-  integration_mode: 'demo' | 'webhook' | 'custom';
+  integration_mode: 'demo' | 'webhook' | 'custom' | 'connected_account';
   webhook_config: Record<string, unknown>;
   profile_metadata: Record<string, unknown>;
   validation_config: Record<string, unknown>;
@@ -225,13 +230,13 @@ export function createDatabaseHandler(
       }
 
       const paymentId = generateId(row.id_prefix, 'pay');
-      const settlementId = generateId(row.id_prefix, 'stl');
       const tenantId = (metadata?.tenantId as string) || 'unknown';
       const checkoutId = (metadata?.checkoutId as string) || null;
       const now = new Date().toISOString();
 
       // Auto-persist instrument if it doesn't exist in DB yet
       // (instruments may come from checkout JSONB without going through acquireInstrument)
+      // This must run before any handler_payments insert to satisfy the FK constraint.
       if (instrumentId) {
         const { data: existingInstrument } = await supabase
           .from('handler_payment_instruments')
@@ -259,6 +264,66 @@ export function createDatabaseHandler(
           }
         }
       }
+
+      // --- Connected Account Bridge ---
+      // For handlers backed by tenant-connected providers (Stripe, PayPal, Circle),
+      // delegate to the Epic 48 handler registry which decrypts credentials and
+      // calls the real provider API.
+      if (row.integration_mode === 'connected_account') {
+        const bridgeResult = await processPaymentViaConnectedAccount(row, request, supabase);
+
+        // Record in handler_payments for audit trail
+        const { error: auditInsertError } = await supabase
+          .from('handler_payments')
+          .insert({
+            id: paymentId,
+            tenant_id: tenantId,
+            handler_id: row.id,
+            instrument_id: instrumentId,
+            checkout_id: checkoutId,
+            amount,
+            currency,
+            status: bridgeResult.success ? (bridgeResult.payment?.status || 'succeeded') : 'failed',
+            settlement_id: bridgeResult.payment?.settlementId || null,
+            external_id: bridgeResult.payment?.externalId || bridgeResult.payment?.id || null,
+            idempotency_key: idempotencyKey || null,
+            failure_reason: bridgeResult.error?.message || null,
+            metadata: {
+              ...metadata,
+              connected_handler_type: row.metadata?.connected_handler_type,
+              bridge_payment_id: bridgeResult.payment?.id,
+            },
+          });
+
+        if (auditInsertError) {
+          console.warn(`[DB Handler:${row.id}] Failed to record bridge payment: ${auditInsertError.message}`);
+        }
+
+        if (!bridgeResult.success) {
+          console.error(`[DB Handler:${row.id}] Connected account payment failed: ${bridgeResult.error?.message}`);
+          return bridgeResult;
+        }
+
+        console.log(`[DB Handler:${row.id}] Connected account payment ${bridgeResult.payment?.id} ${bridgeResult.payment?.status} via ${row.metadata?.connected_handler_type}`);
+
+        return {
+          success: true,
+          payment: {
+            id: paymentId,
+            handler: row.id,
+            instrumentId,
+            amount,
+            currency,
+            status: bridgeResult.payment?.status || 'succeeded',
+            settlementId: bridgeResult.payment?.settlementId,
+            externalId: bridgeResult.payment?.id,
+            createdAt: now,
+            updatedAt: now,
+          },
+        };
+      }
+
+      const settlementId = generateId(row.id_prefix, 'stl');
 
       // For demo mode: simulate instant success
       // For webhook mode: would forward to external URL (future)
@@ -354,6 +419,33 @@ export function createDatabaseHandler(
             retryable: false,
           },
         };
+      }
+
+      // --- Connected Account Refund Bridge ---
+      if (row.integration_mode === 'connected_account' && payment.external_id) {
+        const bridgeResult = await refundPaymentViaConnectedAccount(
+          row,
+          { paymentId, amount: refundAmount, reason },
+          payment.external_id,
+          payment.tenant_id,
+        );
+
+        if (bridgeResult.success) {
+          const newRefundedTotal = (payment.refunded_amount || 0) + refundAmount;
+          const newStatus = newRefundedTotal >= payment.amount ? 'refunded' : payment.status;
+
+          await supabase
+            .from('handler_payments')
+            .update({
+              status: newStatus,
+              refunded_amount: newRefundedTotal,
+            })
+            .eq('id', paymentId);
+
+          console.log(`[DB Handler:${row.id}] Connected account refund ${bridgeResult.refund?.id} for payment ${paymentId}`);
+        }
+
+        return bridgeResult;
       }
 
       const refundId = generateId(row.id_prefix, 'ref');

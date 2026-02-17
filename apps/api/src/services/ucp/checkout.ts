@@ -756,7 +756,7 @@ export async function completeCheckout(
         if (!paymentResult.success) {
           const errMsg = paymentResult.error?.message || 'Payment processing failed';
           console.error(`[UCP Checkout] Payment failed for ${checkoutId}: ${errMsg}`);
-          throw new Error(errMsg);
+          throw new Error(`Payment failed: ${errMsg}`);
         }
 
         paymentStatus = paymentResult.payment?.status === 'succeeded' ? 'completed' : 'pending';
