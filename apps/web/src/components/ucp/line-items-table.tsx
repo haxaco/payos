@@ -79,10 +79,10 @@ export function LineItemsTable({ items, currency = 'USD', showImage = true }: Li
                         </TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
                         <TableCell className="text-right">
-                            {formatCurrency(item.unit_price, item.currency || currency)}
+                            {formatCurrency((item.unit_price ?? 0) / 100, item.currency || currency)}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                            {formatCurrency(item.total_price, item.currency || currency)}
+                            {formatCurrency((item.total_price ?? 0) / 100, item.currency || currency)}
                         </TableCell>
                     </TableRow>
                 ))}

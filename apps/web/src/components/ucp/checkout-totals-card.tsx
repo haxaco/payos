@@ -55,26 +55,26 @@ export function CheckoutTotalsCard({ totals, currency, title = 'Order Summary' }
                 {subtotal && (
                     <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{subtotal.label || 'Subtotal'}</span>
-                        <span>{formatCurrency(subtotal.amount, currency)}</span>
+                        <span>{formatCurrency((subtotal.amount ?? 0) / 100, currency)}</span>
                     </div>
                 )}
                 {tax && tax.amount > 0 && (
                     <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{tax.label || 'Tax'}</span>
-                        <span>{formatCurrency(tax.amount, currency)}</span>
+                        <span>{formatCurrency((tax.amount ?? 0) / 100, currency)}</span>
                     </div>
                 )}
                 {shipping && shipping.amount > 0 && (
                     <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{shipping.label || 'Shipping'}</span>
-                        <span>{formatCurrency(shipping.amount, currency)}</span>
+                        <span>{formatCurrency((shipping.amount ?? 0) / 100, currency)}</span>
                     </div>
                 )}
                 {discount && discount.amount !== 0 && (
                     <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">{discount.label || 'Discount'}</span>
                         <span className="text-green-600">
-                            {discount.amount < 0 ? formatCurrency(discount.amount, currency) : `-${formatCurrency(discount.amount, currency)}`}
+                            {discount.amount < 0 ? formatCurrency((discount.amount ?? 0) / 100, currency) : `-${formatCurrency((discount.amount ?? 0) / 100, currency)}`}
                         </span>
                     </div>
                 )}
@@ -82,7 +82,7 @@ export function CheckoutTotalsCard({ totals, currency, title = 'Order Summary' }
                     <div className="border-t pt-3">
                         <div className="flex justify-between font-semibold">
                             <span>{total.label || 'Total'}</span>
-                            <span className="text-lg">{formatCurrency(total.amount, currency)}</span>
+                            <span className="text-lg">{formatCurrency((total.amount ?? 0) / 100, currency)}</span>
                         </div>
                     </div>
                 )}
