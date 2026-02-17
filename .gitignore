@@ -43,6 +43,9 @@ coverage/
 # Misc
 *.tsbuildinfo
 
+# Demo directories (not part of main codebase)
+invu-demo/
+
 # Documentation with credentials
 *_CREDENTIALS.md
 *_SECRETS.md
