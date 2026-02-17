@@ -1,43 +1,70 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Search, 
-  Users, 
-  Bot, 
-  ArrowLeftRight, 
+import {
+  Search,
+  Users,
+  Bot,
+  ArrowLeftRight,
   Activity,
   Clock,
   Command,
   X,
+  Loader2,
 } from 'lucide-react';
+import { useApiClient } from '@/lib/api-client';
 
-// Mock search results for demo
-const mockSearchData = {
-  accounts: [
-    { id: 'acc-1', name: 'TechCorp Inc', type: 'business', href: '/dashboard/accounts/acc-1' },
-    { id: 'acc-2', name: 'Maria Garcia', type: 'person', href: '/dashboard/accounts/acc-2' },
-    { id: 'acc-3', name: 'Carlos Martinez', type: 'person', href: '/dashboard/accounts/acc-3' },
-    { id: 'acc-4', name: 'GlobalPay Ltd', type: 'business', href: '/dashboard/accounts/acc-4' },
-  ],
-  agents: [
-    { id: 'agent-1', name: 'Payroll Autopilot', status: 'active', href: '/dashboard/agents/agent-1' },
-    { id: 'agent-2', name: 'Treasury Manager', status: 'active', href: '/dashboard/agents/agent-2' },
-    { id: 'agent-3', name: 'Subscription Bot', status: 'paused', href: '/dashboard/agents/agent-3' },
-  ],
-  transactions: [
-    { id: 'txn-1', description: 'Payment to Maria Garcia', amount: 2000, href: '/dashboard/transfers' },
-    { id: 'txn-2', description: 'Salary stream to Carlos', amount: 4500, href: '/dashboard/transfers' },
-    { id: 'txn-3', description: 'Treasury rebalance', amount: 10000, href: '/dashboard/transfers' },
-  ],
-  streams: [
-    { id: 'stream-1', name: 'Maria Garcia Salary', flowRate: 2000, href: '/dashboard/streams/stream-1' },
-    { id: 'stream-2', name: 'Carlos Monthly', flowRate: 3000, href: '/dashboard/streams/stream-2' },
-  ],
-};
+// ============================================
+// Types for API response
+// ============================================
 
-const recentSearches = ['TechCorp', 'Payroll', 'Maria'];
+interface SearchResultAccount {
+  id: string;
+  name: string;
+  type: string;
+  email: string | null;
+  verificationStatus: string;
+}
+
+interface SearchResultAgent {
+  id: string;
+  name: string;
+  status: string;
+  description: string | null;
+}
+
+interface SearchResultTransfer {
+  id: string;
+  description: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  type: string;
+}
+
+interface SearchResultStream {
+  id: string;
+  description: string | null;
+  senderAccountName: string | null;
+  receiverAccountName: string | null;
+  flowRate: number;
+  status: string;
+}
+
+interface SearchResponse {
+  accounts: SearchResultAccount[];
+  agents: SearchResultAgent[];
+  transfers: SearchResultTransfer[];
+  streams: SearchResultStream[];
+}
+
+// Flat item for keyboard navigation
+interface FlatResult {
+  id: string;
+  href: string;
+  category: 'accounts' | 'agents' | 'transfers' | 'streams';
+}
 
 interface GlobalSearchProps {
   isOpen: boolean;
@@ -46,39 +73,87 @@ interface GlobalSearchProps {
 
 export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
   const router = useRouter();
+  const client = useApiClient();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [results, setResults] = useState<SearchResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // Filter results based on query
-  const results = useMemo(() => {
-    if (!query.trim()) return null;
-    
-    const q = query.toLowerCase();
-    
-    return {
-      accounts: mockSearchData.accounts.filter(a => 
-        a.name.toLowerCase().includes(q) || a.type.toLowerCase().includes(q)
-      ),
-      agents: mockSearchData.agents.filter(a => 
-        a.name.toLowerCase().includes(q)
-      ),
-      transactions: mockSearchData.transactions.filter(t => 
-        t.description.toLowerCase().includes(q)
-      ),
-      streams: mockSearchData.streams.filter(s => 
-        s.name.toLowerCase().includes(q)
-      ),
+  // Debounced API search
+  useEffect(() => {
+    const trimmed = query.trim();
+
+    if (trimmed.length < 2 || !client) {
+      setResults(null);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+
+    const timer = setTimeout(async () => {
+      // Abort any in-flight request
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const url = new URL('/v1/search', client.baseUrl);
+        url.searchParams.set('q', trimmed);
+
+        const res = await fetch(url.toString(), {
+          headers: {
+            'Authorization': `Bearer ${client.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          setResults(null);
+          setIsLoading(false);
+          return;
+        }
+
+        const json = await res.json();
+        // API may wrap in { data: ... } via response wrapper middleware
+        const data: SearchResponse = json.data ?? json;
+
+        if (!controller.signal.aborted) {
+          setResults(data);
+          setIsLoading(false);
+        }
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setResults(null);
+        setIsLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, client]);
+
+  // Clean up on close
+  useEffect(() => {
+    if (!isOpen) {
+      setQuery('');
+      setResults(null);
+      setIsLoading(false);
+      abortRef.current?.abort();
+    }
+  }, [isOpen]);
 
   // Flatten results for keyboard navigation
-  const flatResults = useMemo(() => {
+  const flatResults = useMemo<FlatResult[]>(() => {
     if (!results) return [];
     return [
-      ...results.accounts.map(a => ({ ...a, category: 'accounts' })),
-      ...results.agents.map(a => ({ ...a, category: 'agents' })),
-      ...results.transactions.map(t => ({ ...t, category: 'transactions' })),
-      ...results.streams.map(s => ({ ...s, category: 'streams' })),
+      ...results.accounts.map((a) => ({ id: a.id, href: `/dashboard/accounts/${a.id}`, category: 'accounts' as const })),
+      ...results.agents.map((a) => ({ id: a.id, href: `/dashboard/agents/${a.id}`, category: 'agents' as const })),
+      ...results.transfers.map((t) => ({ id: t.id, href: '/dashboard/transfers', category: 'transfers' as const })),
+      ...results.streams.map((s) => ({ id: s.id, href: `/dashboard/streams/${s.id}`, category: 'streams' as const })),
     ];
   }, [results]);
 
@@ -119,29 +194,34 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, flatResults, selectedIndex, handleSelect, onClose]);
 
-  // Reset selection when query changes
+  // Reset selection when results change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, [results]);
 
   if (!isOpen) return null;
 
   const totalResults = flatResults.length;
+  const hasQuery = query.trim().length >= 2;
 
   return (
     <>
       {/* Backdrop */}
-      <div 
+      <div
         className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
         onClick={onClose}
       />
-      
+
       {/* Dialog */}
       <div className="fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-2xl z-50">
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
           {/* Search Input */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-            <Search className="w-5 h-5 text-gray-400" />
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+            ) : (
+              <Search className="w-5 h-5 text-gray-400" />
+            )}
             <input
               type="text"
               placeholder="Search accounts, agents, transactions..."
@@ -160,31 +240,18 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
 
           {/* Results */}
           <div className="max-h-[400px] overflow-y-auto">
-            {!query && (
-              <div className="p-4">
-                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                  Recent Searches
-                </div>
-                <div className="space-y-1">
-                  {recentSearches.map((term) => (
-                    <button
-                      key={term}
-                      onClick={() => setQuery(term)}
-                      className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                    >
-                      <Clock className="w-4 h-4 text-gray-400" />
-                      {term}
-                    </button>
-                  ))}
-                </div>
+            {!hasQuery && !isLoading && (
+              <div className="p-8 text-center">
+                <p className="text-gray-500 dark:text-gray-400">
+                  Type at least 2 characters to search
+                </p>
               </div>
             )}
 
-            {query && totalResults === 0 && (
+            {hasQuery && !isLoading && totalResults === 0 && (
               <div className="p-8 text-center">
-                <div className="text-4xl mb-2">🔍</div>
                 <p className="text-gray-500 dark:text-gray-400">
-                  No results found for "{query}"
+                  No results found for &ldquo;{query}&rdquo;
                 </p>
               </div>
             )}
@@ -199,7 +266,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                   return (
                     <button
                       key={account.id}
-                      onClick={() => handleSelect(account.href)}
+                      onClick={() => handleSelect(`/dashboard/accounts/${account.id}`)}
                       className={`w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors ${
                         selectedIndex === globalIndex
                           ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
@@ -225,7 +292,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                   return (
                     <button
                       key={agent.id}
-                      onClick={() => handleSelect(agent.href)}
+                      onClick={() => handleSelect(`/dashboard/agents/${agent.id}`)}
                       className={`w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors ${
                         selectedIndex === globalIndex
                           ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
@@ -235,10 +302,38 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                       <Bot className="w-4 h-4" />
                       <span className="flex-1">{agent.name}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        agent.status === 'active' 
+                        agent.status === 'active'
                           ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
                           : 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400'
                       }`}>{agent.status}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {results && results.transfers.length > 0 && (
+              <div className="p-2">
+                <div className="px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Transfers
+                </div>
+                {results.transfers.map((transfer, i) => {
+                  const globalIndex = (results?.accounts.length || 0) + (results?.agents.length || 0) + i;
+                  return (
+                    <button
+                      key={transfer.id}
+                      onClick={() => handleSelect('/dashboard/transfers')}
+                      className={`w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors ${
+                        selectedIndex === globalIndex
+                          ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      <ArrowLeftRight className="w-4 h-4" />
+                      <span className="flex-1 truncate">{transfer.description || `Transfer ${transfer.id.slice(0, 8)}...`}</span>
+                      <span className="text-xs text-gray-400">
+                        ${transfer.amount.toLocaleString()} {transfer.currency}
+                      </span>
                     </button>
                   );
                 })}
@@ -251,11 +346,14 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                   Streams
                 </div>
                 {results.streams.map((stream, i) => {
-                  const globalIndex = (results?.accounts.length || 0) + (results?.agents.length || 0) + (results?.transactions.length || 0) + i;
+                  const globalIndex = (results?.accounts.length || 0) + (results?.agents.length || 0) + (results?.transfers.length || 0) + i;
+                  const streamLabel = stream.description
+                    || [stream.senderAccountName, stream.receiverAccountName].filter(Boolean).join(' → ')
+                    || `Stream ${stream.id.slice(0, 8)}...`;
                   return (
                     <button
                       key={stream.id}
-                      onClick={() => handleSelect(stream.href)}
+                      onClick={() => handleSelect(`/dashboard/streams/${stream.id}`)}
                       className={`w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-colors ${
                         selectedIndex === globalIndex
                           ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
@@ -263,8 +361,8 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                       }`}
                     >
                       <Activity className="w-4 h-4" />
-                      <span className="flex-1">{stream.name}</span>
-                      <span className="text-xs text-gray-400">${stream.flowRate}/mo</span>
+                      <span className="flex-1 truncate">{streamLabel}</span>
+                      <span className="text-xs text-gray-400">${stream.flowRate.toLocaleString()}/mo</span>
                     </button>
                   );
                 })}
@@ -285,7 +383,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                 to select
               </span>
             </div>
-            <span>{totalResults} results</span>
+            <span>{isLoading ? 'Searching...' : `${totalResults} results`}</span>
           </div>
         </div>
       </div>
@@ -315,4 +413,3 @@ export function useGlobalSearch() {
     close: () => setIsOpen(false),
   };
 }
-

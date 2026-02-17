@@ -79,6 +79,7 @@ import cardsRouter from './routes/cards/index.js';
 import cardsVaultRouter from './routes/cards/vault.js';
 import workflowsRouter from './routes/workflows.js';
 import fundingRouter from './routes/funding.js';
+import searchRouter from './routes/search.js';
 
 const app = new Hono();
 
@@ -293,6 +294,7 @@ v1.route('/cards', cardsRouter); // Card networks (Epic 53)
 v1.route('/cards/vault', cardsVaultRouter); // Card vaulting (Epic 54)
 v1.route('/workflows', workflowsRouter); // Workflow engine (Epic 29)
 v1.route('/funding', fundingRouter); // On-ramp integrations (Epic 41)
+v1.route('/search', searchRouter); // Unified global search
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods
 // Account-specific payment methods handled via accounts router
