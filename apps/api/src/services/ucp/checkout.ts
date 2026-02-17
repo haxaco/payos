@@ -698,6 +698,32 @@ export async function completeCheckout(
       const totalLine = (existing.totals || []).find(t => t.type === 'total');
       const totalAmount = totalLine?.amount || 0;
 
+      // Pre-validate mandate budget BEFORE processing payment
+      const mandateId = existing.metadata?.mandate_id as string | undefined;
+      let resolvedMandate: any = null;
+      if (mandateId && supabase) {
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const col = UUID_RE.test(mandateId) ? 'id' : 'mandate_id';
+        const { data: mandate } = await supabase
+          .from('ap2_mandates')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .eq(col, mandateId)
+          .single();
+
+        if (mandate && mandate.status === 'active') {
+          const remaining = Number(mandate.authorized_amount) - Number(mandate.used_amount || 0);
+          const amountInDollars = totalAmount / 100;
+          if (remaining < amountInDollars) {
+            throw new Error(
+              `Mandate budget exceeded: $${remaining.toFixed(2)} remaining, $${amountInDollars.toFixed(2)} required. ` +
+              `Increase the mandate authorized_amount or create a new mandate.`
+            );
+          }
+          resolvedMandate = mandate;
+        }
+      }
+
       // Determine handler and instrument
       // Prefer handler from selected instrument, fall back to payment_config
       const instrumentId = existing.selected_instrument_id || undefined;
@@ -741,50 +767,28 @@ export async function completeCheckout(
         console.log(`[UCP Checkout] No handler or instrument for checkout ${checkoutId}, auto-completing payment`);
       }
 
-      // Execute mandate if one is associated (deduct from budget)
-      const mandateId = existing.metadata?.mandate_id as string | undefined;
-      if (mandateId && supabase) {
-        try {
-          const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          const col = UUID_RE.test(mandateId) ? 'id' : 'mandate_id';
-          const { data: mandate } = await supabase
-            .from('ap2_mandates')
-            .select('*')
-            .eq('tenant_id', tenantId)
-            .eq(col, mandateId)
-            .single();
+      // Record mandate execution (budget was already validated before payment)
+      if (resolvedMandate && supabase) {
+        const amountInDollars = totalAmount / 100;
+        const newExecIndex = (resolvedMandate.execution_count || 0) + 1;
+        const { error: execError } = await supabase
+          .from('ap2_mandate_executions')
+          .insert({
+            tenant_id: tenantId,
+            mandate_id: resolvedMandate.id,
+            execution_index: newExecIndex,
+            amount: amountInDollars,
+            currency: existing.currency || resolvedMandate.currency,
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            order_ids: [checkoutId],
+          });
 
-          if (mandate && mandate.status === 'active') {
-            const remaining = Number(mandate.authorized_amount) - Number(mandate.used_amount || 0);
-            // Convert totalAmount from cents to dollars for mandate comparison
-            const amountInDollars = totalAmount / 100;
-            if (remaining >= amountInDollars) {
-              const newExecIndex = (mandate.execution_count || 0) + 1;
-              const { error: execError } = await supabase
-                .from('ap2_mandate_executions')
-                .insert({
-                  tenant_id: tenantId,
-                  mandate_id: mandate.id,
-                  execution_index: newExecIndex,
-                  amount: amountInDollars,
-                  currency: existing.currency || mandate.currency,
-                  status: 'completed',
-                  completed_at: new Date().toISOString(),
-                  order_ids: [checkoutId],
-                });
-
-              if (!execError) {
-                console.log(`[UCP Checkout] Mandate ${mandateId} executed: -$${amountInDollars}, remaining: $${remaining - amountInDollars}`);
-              } else {
-                console.error(`[UCP Checkout] Failed to execute mandate ${mandateId}:`, execError.message);
-              }
-            } else {
-              console.warn(`[UCP Checkout] Mandate ${mandateId} insufficient budget: $${remaining} < $${amountInDollars}`);
-            }
-          }
-        } catch (mandateErr: any) {
-          // Non-fatal: log but don't fail the checkout
-          console.error(`[UCP Checkout] Mandate execution error for ${mandateId}:`, mandateErr.message);
+        if (execError) {
+          console.error(`[UCP Checkout] Failed to record mandate execution:`, execError.message);
+        } else {
+          const remaining = Number(resolvedMandate.authorized_amount) - Number(resolvedMandate.used_amount || 0) - amountInDollars;
+          console.log(`[UCP Checkout] Mandate ${mandateId} executed: -$${amountInDollars}, remaining: $${remaining.toFixed(2)}`);
         }
       }
 

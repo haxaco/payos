@@ -316,7 +316,7 @@ const tools: Tool[] = [
   },
   {
     name: 'ucp_complete_checkout',
-    description: 'Complete a UCP checkout — processes payment and creates an order. The checkout must have all required fields and a selected payment instrument.',
+    description: 'Complete a UCP checkout — processes payment and creates an order. The checkout must have all required fields and a selected payment instrument. If a mandate_id is in the checkout metadata, the mandate budget must have sufficient remaining balance or the checkout will be rejected.',
     inputSchema: {
       type: 'object',
       properties: {
