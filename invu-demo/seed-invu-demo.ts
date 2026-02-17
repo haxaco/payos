@@ -142,6 +142,12 @@ async function main() {
         contact: 'Rafi Turgman',
         website: 'https://invupos.com',
         email: 'demo@invu-pos.com',
+        enabled_protocols: {
+          ucp: { enabled_at: new Date().toISOString() },
+          acp: { enabled_at: new Date().toISOString() },
+          x402: { enabled_at: new Date().toISOString() },
+          ap2: { enabled_at: new Date().toISOString() },
+        },
       },
     },
     { onConflict: 'id' }
@@ -269,6 +275,8 @@ async function main() {
         name: m.merchant_name,
         type: 'business',
         currency: m.currency,
+        verification_tier: 2,
+        verification_status: 'verified',
         metadata: {
           invu_merchant_id: m.merchant_id,
           merchant_type: m.merchant_type,

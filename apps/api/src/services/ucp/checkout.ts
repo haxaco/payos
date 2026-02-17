@@ -285,19 +285,37 @@ export async function createCheckout(
   }
 
   // Resolve agent_id: explicit param > metadata fallback
-  const agentId = request.agent_id || (metadata.agent_id as string) || null;
+  let agentId = request.agent_id || (metadata.agent_id as string) || null;
 
-  // Validate agent_id exists in agents table
+  // Support agent lookup by name (non-UUID strings resolve to name search)
   if (agentId && supabase) {
-    const { data: agent, error: agentError } = await supabase
-      .from('agents')
-      .select('id')
-      .eq('id', agentId)
-      .eq('tenant_id', tenantId)
-      .single();
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId);
 
-    if (agentError || !agent) {
-      throw new Error(`Agent not found: ${agentId}`);
+    if (isUUID) {
+      const { data: agent, error: agentError } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('id', agentId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (agentError || !agent) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+    } else {
+      // Look up agent by name
+      const { data: agent, error: agentError } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .ilike('name', agentId)
+        .limit(1)
+        .single();
+
+      if (agentError || !agent) {
+        throw new Error(`Agent not found by name: ${agentId}`);
+      }
+      agentId = agent.id;
     }
   }
 

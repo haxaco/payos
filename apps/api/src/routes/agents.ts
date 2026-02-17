@@ -19,6 +19,47 @@ import { ErrorCode } from '@sly/types';
 const agents = new Hono();
 
 // ============================================
+// EFFECTIVE LIMITS CALCULATION
+// ============================================
+
+interface TierLimits {
+  per_transaction: number;
+  daily: number;
+  monthly: number;
+}
+
+/**
+ * Compute effective limits = min(agent KYA tier limits, parent account tier limits)
+ */
+async function computeEffectiveLimits(
+  supabase: ReturnType<typeof createClient>,
+  kyaTier: number,
+  parentVerificationTier: number,
+): Promise<{ limits: TierLimits; capped: boolean }> {
+  // Fetch both tier limit tables in parallel
+  const [kyaResult, accountResult] = await Promise.all([
+    supabase.from('kya_tier_limits').select('per_transaction, daily, monthly').eq('tier', kyaTier).single(),
+    supabase.from('verification_tier_limits').select('per_transaction, daily, monthly').eq('tier', parentVerificationTier).single(),
+  ]);
+
+  const kyaLimits: TierLimits = kyaResult.data || { per_transaction: 0, daily: 0, monthly: 0 };
+  const accountLimits: TierLimits = accountResult.data || { per_transaction: 0, daily: 0, monthly: 0 };
+
+  const effective: TierLimits = {
+    per_transaction: Math.min(kyaLimits.per_transaction, accountLimits.per_transaction),
+    daily: Math.min(kyaLimits.daily, accountLimits.daily),
+    monthly: Math.min(kyaLimits.monthly, accountLimits.monthly),
+  };
+
+  const capped =
+    effective.per_transaction < kyaLimits.per_transaction ||
+    effective.daily < kyaLimits.daily ||
+    effective.monthly < kyaLimits.monthly;
+
+  return { limits: effective, capped };
+}
+
+// ============================================
 // VALIDATION SCHEMAS
 // ============================================
 
@@ -445,17 +486,47 @@ agents.patch('/:id', async (c) => {
       ...parsed.data.permissions,
     };
   }
-  if (parsed.data.dailyLimit !== undefined) {
-    updates.limit_daily = parsed.data.dailyLimit;
-    updates.effective_limit_daily = parsed.data.dailyLimit;
-  }
-  if (parsed.data.monthlyLimit !== undefined) {
-    updates.limit_monthly = parsed.data.monthlyLimit;
-    updates.effective_limit_monthly = parsed.data.monthlyLimit;
-  }
-  if (parsed.data.perTransactionLimit !== undefined) {
-    updates.limit_per_transaction = parsed.data.perTransactionLimit;
-    updates.effective_limit_per_tx = parsed.data.perTransactionLimit;
+  // If any limits are being updated, cap by parent account tier
+  const hasLimitUpdate =
+    parsed.data.dailyLimit !== undefined ||
+    parsed.data.monthlyLimit !== undefined ||
+    parsed.data.perTransactionLimit !== undefined;
+
+  if (hasLimitUpdate) {
+    // Fetch parent account tier to cap limits
+    const { data: parentAccount } = await supabase
+      .from('accounts')
+      .select('verification_tier')
+      .eq('id', existing.parent_account_id)
+      .single();
+
+    const parentTier = parentAccount?.verification_tier ?? 0;
+    const { data: accountTierLimits } = await supabase
+      .from('verification_tier_limits')
+      .select('per_transaction, daily, monthly')
+      .eq('tier', parentTier)
+      .single();
+
+    const parentLimits = accountTierLimits || { per_transaction: 0, daily: 0, monthly: 0 };
+
+    if (parsed.data.perTransactionLimit !== undefined) {
+      updates.limit_per_transaction = parsed.data.perTransactionLimit;
+      updates.effective_limit_per_tx = Math.min(parsed.data.perTransactionLimit, parentLimits.per_transaction);
+    }
+    if (parsed.data.dailyLimit !== undefined) {
+      updates.limit_daily = parsed.data.dailyLimit;
+      updates.effective_limit_daily = Math.min(parsed.data.dailyLimit, parentLimits.daily);
+    }
+    if (parsed.data.monthlyLimit !== undefined) {
+      updates.limit_monthly = parsed.data.monthlyLimit;
+      updates.effective_limit_monthly = Math.min(parsed.data.monthlyLimit, parentLimits.monthly);
+    }
+
+    // Check if any effective limit was capped
+    updates.effective_limits_capped =
+      (updates.effective_limit_per_tx !== undefined && updates.effective_limit_per_tx < (updates.limit_per_transaction ?? existing.limit_per_transaction)) ||
+      (updates.effective_limit_daily !== undefined && updates.effective_limit_daily < (updates.limit_daily ?? existing.limit_daily)) ||
+      (updates.effective_limit_monthly !== undefined && updates.effective_limit_monthly < (updates.limit_monthly ?? existing.limit_monthly));
   }
 
   if (Object.keys(updates).length === 0) {
@@ -963,13 +1034,32 @@ agents.post('/:id/verify', async (c) => {
     throw new NotFoundError('Agent', id);
   }
   
-  // Update KYA status
+  // Fetch parent account verification tier
+  const { data: parentAccount } = await supabase
+    .from('accounts')
+    .select('verification_tier')
+    .eq('id', existing.parent_account_id)
+    .single();
+
+  const parentTier = parentAccount?.verification_tier ?? 0;
+
+  // Compute effective limits = min(KYA tier limits, parent account tier limits)
+  const { limits: effectiveLimits, capped } = await computeEffectiveLimits(supabase, tier, parentTier);
+
+  // Update KYA status and effective limits
   const { data, error } = await supabase
     .from('agents')
     .update({
       kya_tier: tier,
       kya_status: tier > 0 ? 'verified' : 'unverified',
       kya_verified_at: tier > 0 ? new Date().toISOString() : null,
+      limit_per_transaction: effectiveLimits.per_transaction,
+      limit_daily: effectiveLimits.daily,
+      limit_monthly: effectiveLimits.monthly,
+      effective_limit_per_tx: effectiveLimits.per_transaction,
+      effective_limit_daily: effectiveLimits.daily,
+      effective_limit_monthly: effectiveLimits.monthly,
+      effective_limits_capped: capped,
     })
     .eq('id', id)
     .select(`
@@ -979,7 +1069,7 @@ agents.post('/:id/verify', async (c) => {
       )
     `)
     .single();
-  
+
   if (error) {
     console.error('Error verifying agent:', error);
     throw new Error('Failed to verify agent in database');

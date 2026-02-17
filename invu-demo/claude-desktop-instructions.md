@@ -26,7 +26,7 @@ Use the Sly UCP checkout tools to create and complete orders:
    - `line_items`: products from the merchant's catalog (use the product IDs, names, prices from the discovery response)
    - `buyer`: `{"name": "Invu Concierge Agent", "email": "agent@invupos.com"}`
    - `payment_instruments`: `[{"id": "pi_invu_order", "handler": "invu", "type": "invu_pos"}]`
-   - `agent_id`: "00000000-1a00-de00-a9e0-000000000001"
+   - `agent_id`: "Invu Concierge Agent" (accepts agent name or UUID)
    - `metadata`: include `merchant_name` and `merchant_id` from the catalog
 
 2. **Complete the checkout** using `ucp_complete_checkout` with the checkout ID
