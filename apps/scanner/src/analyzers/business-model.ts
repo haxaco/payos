@@ -74,7 +74,7 @@ function mapPlatformToModel(platform: string): BusinessModel | null {
   if (['shopify', 'woocommerce', 'magento', 'bigcommerce', 'prestashop', 'salesforce_commerce', 'squarespace', 'wix'].includes(lower)) {
     return 'retail';
   }
-  if (lower === 'etsy') return 'marketplace';
+  if (['etsy', 'amazon', 'ebay', 'walmart', 'mercadolibre'].includes(lower)) return 'marketplace';
   return null;
 }
 

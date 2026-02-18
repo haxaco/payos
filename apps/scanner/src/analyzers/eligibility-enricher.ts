@@ -48,6 +48,14 @@ export function enrichProbeResults(
       }
     }
 
+    if (platform === 'amazon') {
+      if (result.protocol === 'acp' && result.status === 'not_detected') {
+        enriched.status = 'platform_enabled';
+        enriched.confidence = 'low';
+        enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Amazon marketplace can support ACP integration'];
+      }
+    }
+
     if (platform === 'woocommerce') {
       if (result.protocol === 'ucp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';

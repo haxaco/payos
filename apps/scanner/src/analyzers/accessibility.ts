@@ -77,6 +77,8 @@ const CAPTCHA_SIGNATURES = [
   'hcaptcha', 'hcaptcha.com',
   'turnstile', 'challenges.cloudflare.com',
   'funcaptcha', 'arkoselabs.com',
+  'captcha-delivery.com', 'datadome',
+  'perimeterx', 'px-captcha',
 ];
 
 export async function analyzeAccessibility(
@@ -126,7 +128,7 @@ export async function analyzeAccessibility(
     const $ = cheerio.load(html);
 
     // Detect platform
-    const platform = detectPlatform(html, $);
+    const platform = detectPlatform(html, $, domain);
     if (platform) {
       result.ecommerce_platform = platform.name;
       result.platform_version = platform.version;
@@ -172,6 +174,15 @@ export async function analyzeAccessibility(
 
     // Checkout steps estimation
     result.checkout_steps_count = estimateCheckoutSteps($, html, result.ecommerce_platform);
+  }
+
+  // Domain-based platform fallback (when HTML is blocked by anti-bot / 403)
+  if (!result.ecommerce_platform) {
+    const stripped = domain.replace(/^www\./, '');
+    const platformFromDomain = DOMAIN_PLATFORM_MAP[stripped];
+    if (platformFromDomain) {
+      result.ecommerce_platform = platformFromDomain;
+    }
   }
 
   return result;
@@ -249,7 +260,19 @@ function parseRobotsTxt(txt: string): RobotsTxtParsed {
   return result;
 }
 
-function detectPlatform(html: string, $: cheerio.CheerioAPI): { name: string; version?: string } | null {
+// Domain-based platform detection (fallback when HTML is blocked by anti-bot)
+const DOMAIN_PLATFORM_MAP: Record<string, string> = {
+  'etsy.com': 'etsy',
+  'amazon.com': 'amazon',
+  'ebay.com': 'ebay',
+  'walmart.com': 'walmart',
+  'mercadolibre.com': 'mercadolibre',
+  'mercadolibre.com.br': 'mercadolibre',
+  'mercadolibre.com.mx': 'mercadolibre',
+  'mercadolibre.com.ar': 'mercadolibre',
+};
+
+function detectPlatform(html: string, $: cheerio.CheerioAPI, domain?: string): { name: string; version?: string } | null {
   const htmlLower = html.toLowerCase();
 
   let bestName: string | null = null;
@@ -273,6 +296,15 @@ function detectPlatform(html: string, $: cheerio.CheerioAPI): { name: string; ve
   // (e.g. stripe.com mentioning "woocommerce" in an analytics label)
   if (bestName && bestScore >= 2) {
     return { name: bestName, version: bestVersion };
+  }
+
+  // Fallback: domain-based detection for known platforms that block bots
+  if (domain) {
+    const stripped = domain.replace(/^www\./, '');
+    const platformFromDomain = DOMAIN_PLATFORM_MAP[stripped];
+    if (platformFromDomain) {
+      return { name: platformFromDomain };
+    }
   }
 
   return null;
