@@ -59,11 +59,21 @@ export async function scanDomain(options: ScanOptions): Promise<MerchantScan> {
   });
 
   try {
-    // Run probes, structured data, and accessibility analysis in parallel
-    const [probeResults, structuredData, accessibilityData] = await Promise.all([
+    // Overall scan timeout (15s) to prevent any scan from running forever
+    const OVERALL_TIMEOUT_MS = parseInt(process.env.SCANNER_OVERALL_TIMEOUT_MS || '15000');
+    const scanPromise = Promise.all([
       runProbes(domain, config),
       analyzeStructuredData(domain, config),
       analyzeAccessibility(domain, config),
+    ]);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Scan timed out after ${OVERALL_TIMEOUT_MS}ms`)), OVERALL_TIMEOUT_MS)
+    );
+
+    // Run probes, structured data, and accessibility analysis in parallel
+    const [probeResults, structuredData, accessibilityData] = await Promise.race([
+      scanPromise,
+      timeoutPromise,
     ]);
 
     // Store results in parallel

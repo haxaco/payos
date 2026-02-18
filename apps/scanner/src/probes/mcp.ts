@@ -1,10 +1,15 @@
 import { fetch } from 'undici';
 import type { ProbeResult, ScanConfig } from './types.js';
-import { buildUrl } from './types.js';
+import { buildUrl, withProbeTimeout } from './types.js';
 
 const MCP_PATHS = ['/.well-known/mcp', '/mcp', '/.well-known/mcp.json'];
+const NOT_DETECTED: ProbeResult = { protocol: 'mcp', detected: false, capabilities: {} };
 
 export async function probeMCP(domain: string, config: ScanConfig): Promise<ProbeResult> {
+  return withProbeTimeout(() => _probeMCP(domain, config), NOT_DETECTED, config.timeout_ms + 1000);
+}
+
+async function _probeMCP(domain: string, config: ScanConfig): Promise<ProbeResult> {
   const start = Date.now();
 
   for (const path of MCP_PATHS) {

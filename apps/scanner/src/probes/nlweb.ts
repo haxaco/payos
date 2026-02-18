@@ -1,10 +1,15 @@
 import { fetch } from 'undici';
 import type { ProbeResult, ScanConfig } from './types.js';
-import { buildUrl } from './types.js';
+import { buildUrl, withProbeTimeout } from './types.js';
 
 const NLWEB_PATHS = ['/.well-known/nlweb', '/ask', '/nlweb'];
+const NOT_DETECTED: ProbeResult = { protocol: 'nlweb', detected: false, capabilities: {} };
 
 export async function probeNLWeb(domain: string, config: ScanConfig): Promise<ProbeResult> {
+  return withProbeTimeout(() => _probeNLWeb(domain, config), NOT_DETECTED, config.timeout_ms + 1000);
+}
+
+async function _probeNLWeb(domain: string, config: ScanConfig): Promise<ProbeResult> {
   const start = Date.now();
 
   for (const path of NLWEB_PATHS) {

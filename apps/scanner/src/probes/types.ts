@@ -19,11 +19,26 @@ export interface ScanConfig {
 }
 
 export const DEFAULT_SCAN_CONFIG: ScanConfig = {
-  timeout_ms: parseInt(process.env.SCANNER_PROBE_TIMEOUT_MS || '10000'),
+  timeout_ms: parseInt(process.env.SCANNER_PROBE_TIMEOUT_MS || '5000'),
   user_agent: process.env.SCANNER_USER_AGENT || 'SlyScanner/1.0 (+https://sly.dev/scanner)',
   rate_limit_delay_ms: parseInt(process.env.SCANNER_RATE_LIMIT_DELAY_MS || '200'),
   max_requests_per_domain: parseInt(process.env.SCANNER_RATE_LIMIT_PER_DOMAIN || '5'),
 };
+
+/**
+ * Wraps a probe function with an overall timeout.
+ * Prevents multi-path probes from taking N * timeout_ms.
+ */
+export function withProbeTimeout<T>(
+  fn: () => Promise<T>,
+  fallback: T,
+  timeoutMs: number,
+): Promise<T> {
+  return Promise.race([
+    fn(),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+  ]);
+}
 
 export function buildUrl(domain: string, path: string): string {
   const clean = domain.replace(/^https?:\/\//, '').replace(/\/+$/, '');

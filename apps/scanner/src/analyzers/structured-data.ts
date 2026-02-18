@@ -116,14 +116,14 @@ export async function analyzeStructuredData(
       }
     }
 
-    // Fetch product pages for additional data
+    // Fetch product pages in parallel for additional data
     const pagesToFetch = productUrls.slice(0, 3);
-    for (const pageUrl of pagesToFetch) {
-      try {
-        const pageProducts = await fetchProductPage(pageUrl, config);
-        products.push(...pageProducts);
-      } catch {
-        // Skip failed product pages
+    const pageResults = await Promise.allSettled(
+      pagesToFetch.map(pageUrl => fetchProductPage(pageUrl, config))
+    );
+    for (const pageResult of pageResults) {
+      if (pageResult.status === 'fulfilled') {
+        products.push(...pageResult.value);
       }
     }
 

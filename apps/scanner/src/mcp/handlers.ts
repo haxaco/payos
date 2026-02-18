@@ -5,7 +5,7 @@ import { getDemandBrief, getDemandStats } from '../demand/intelligence.js';
 import * as queries from '../db/queries.js';
 import { getReadinessGrade } from '@sly/utils';
 
-const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const DEFAULT_TENANT_ID = process.env.SCANNER_TENANT_ID || 'dad4308f-f9b6-4529-a406-7c2bdf3c6071';
 const batchProcessor = new BatchProcessor();
 
 export async function handleToolCall(request: CallToolRequest): Promise<{
