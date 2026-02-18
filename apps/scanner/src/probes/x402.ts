@@ -5,6 +5,9 @@ import { buildUrl, withProbeTimeout } from './types.js';
 // Paths that commonly return HTTP 402 Payment Required
 const X402_PATHS = ['/api/paid', '/x402', '/v1', '/v2', '/api/v1', '/api/v2'];
 
+// CDP Facilitator Bazaar registry
+const BAZAAR_URL = 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources';
+
 const NOT_DETECTED: ProbeResult = {
   protocol: 'x402', status: 'not_detected', confidence: 'high', capabilities: {},
 };
@@ -15,12 +18,19 @@ export async function probeX402(domain: string, config: ScanConfig): Promise<Pro
 
 async function _probeX402(domain: string, config: ScanConfig): Promise<ProbeResult> {
   const start = Date.now();
-
-  // Build list of origins to probe: primary domain + api. subdomain
-  const origins = [domain];
   const stripped = domain.replace(/^www\./, '');
+
+  // 0. Query Bazaar registry for registered resources matching this domain
+  const bazaarResult = await checkBazaarRegistry(stripped, config, start);
+  if (bazaarResult) return bazaarResult;
+
+  // Build list of origins to probe: primary domain + api. subdomain + x402. subdomain
+  const origins = [domain];
   if (!stripped.startsWith('api.')) {
     origins.push(`api.${stripped}`);
+  }
+  if (!stripped.startsWith('x402.')) {
+    origins.push(`x402.${stripped}`);
   }
 
   // 1. Check .well-known/x402.json manifest on each origin (Bazaar discovery)
@@ -44,6 +54,88 @@ async function _probeX402(domain: string, config: ScanConfig): Promise<ProbeResu
     response_time_ms: Date.now() - start,
     capabilities: {},
   };
+}
+
+/**
+ * Query the CDP Facilitator Bazaar registry for resources matching a domain.
+ * The registry indexes all x402-enabled endpoints registered with Coinbase's facilitator.
+ */
+async function checkBazaarRegistry(
+  domain: string,
+  config: ScanConfig,
+  start: number,
+): Promise<ProbeResult | null> {
+  try {
+    // Bazaar doesn't support domain filtering, so we fetch a page and search
+    // We search for the domain across multiple pages with a reasonable limit
+    const res = await fetch(`${BAZAAR_URL}?limit=100&offset=0`, {
+      method: 'GET',
+      headers: { 'User-Agent': config.user_agent, Accept: 'application/json' },
+      signal: AbortSignal.timeout(config.timeout_ms),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json() as {
+      items: Array<{ resource: string; x402Version?: number; accepts?: Array<Record<string, unknown>> }>;
+      pagination: { total: number };
+    };
+
+    // Search for resources matching this domain (including subdomains)
+    const matching = data.items.filter(item => {
+      try {
+        const url = new URL(item.resource);
+        return url.hostname === domain ||
+               url.hostname.endsWith(`.${domain}`);
+      } catch { return false; }
+    });
+
+    if (matching.length === 0) return null;
+
+    const capabilities: Record<string, unknown> = {
+      bazaar_registered: true,
+      resource_count: matching.length,
+      registry_total: data.pagination.total,
+    };
+
+    // Extract sample resources with pricing
+    capabilities.sample_resources = matching.slice(0, 5).map(item => {
+      const accepts = item.accepts?.[0] as Record<string, unknown> | undefined;
+      return {
+        url: item.resource,
+        price_usdc: accepts?.maxAmountRequired
+          ? Number(accepts.maxAmountRequired) / 1e6
+          : undefined,
+        network: accepts?.network,
+        description: accepts?.description
+          ? String(accepts.description).slice(0, 80)
+          : undefined,
+      };
+    });
+
+    // Extract networks
+    const networks = new Set<string>();
+    for (const item of matching) {
+      for (const acc of item.accepts || []) {
+        const net = (acc as Record<string, unknown>).network;
+        if (typeof net === 'string') networks.add(net);
+      }
+    }
+    if (networks.size > 0) capabilities.networks = [...networks];
+
+    return {
+      protocol: 'x402',
+      status: 'confirmed',
+      confidence: 'high',
+      detection_method: 'Bazaar registry (CDP facilitator)',
+      endpoint_url: matching[0].resource,
+      capabilities,
+      response_time_ms: Date.now() - start,
+      is_functional: true,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
