@@ -2,8 +2,8 @@ import { fetch } from 'undici';
 import type { ProbeResult, ScanConfig } from './types.js';
 import { buildUrl, withProbeTimeout } from './types.js';
 
-// Paths that return HTTP 402 Payment Required
-const X402_PATHS = ['/api/paid', '/x402'];
+// Paths that commonly return HTTP 402 Payment Required
+const X402_PATHS = ['/api/paid', '/x402', '/v1', '/v2', '/api/v1', '/api/v2'];
 
 const NOT_DETECTED: ProbeResult = {
   protocol: 'x402', status: 'not_detected', confidence: 'high', capabilities: {},
@@ -16,45 +16,24 @@ export async function probeX402(domain: string, config: ScanConfig): Promise<Pro
 async function _probeX402(domain: string, config: ScanConfig): Promise<ProbeResult> {
   const start = Date.now();
 
-  // 1. Check .well-known/x402.json manifest (Bazaar discovery)
-  const manifestResult = await checkBazaarManifest(domain, config, start);
-  if (manifestResult) return manifestResult;
+  // Build list of origins to probe: primary domain + api. subdomain
+  const origins = [domain];
+  const stripped = domain.replace(/^www\./, '');
+  if (!stripped.startsWith('api.')) {
+    origins.push(`api.${stripped}`);
+  }
 
-  // 2. Probe known paths for HTTP 402 responses
-  for (const path of X402_PATHS) {
-    const url = buildUrl(domain, path);
+  // 1. Check .well-known/x402.json manifest on each origin (Bazaar discovery)
+  for (const origin of origins) {
+    const manifestResult = await checkBazaarManifest(origin, config, start);
+    if (manifestResult) return manifestResult;
+  }
 
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { 'User-Agent': config.user_agent },
-        signal: AbortSignal.timeout(config.timeout_ms),
-        redirect: 'manual',
-      });
-
-      const responseTime = Date.now() - start;
-
-      if (res.status === 402) {
-        const capabilities: Record<string, unknown> = {};
-        const priceHeader = res.headers.get('x-payment-required');
-        const x402Header = res.headers.get('x-402-version');
-
-        if (priceHeader) capabilities.price = priceHeader;
-        if (x402Header) capabilities.version = x402Header;
-
-        return {
-          protocol: 'x402',
-          status: 'confirmed',
-          confidence: 'high',
-          detection_method: `402 response on ${path}`,
-          endpoint_url: url,
-          capabilities,
-          response_time_ms: responseTime,
-          is_functional: true,
-        };
-      }
-    } catch {
-      // Try next path
+  // 2. Probe known paths for HTTP 402 responses (or 401 with x402 body)
+  for (const origin of origins) {
+    for (const path of X402_PATHS) {
+      const result = await check402Response(origin, path, config, start);
+      if (result) return result;
     }
   }
 
@@ -65,6 +44,115 @@ async function _probeX402(domain: string, config: ScanConfig): Promise<ProbeResu
     response_time_ms: Date.now() - start,
     capabilities: {},
   };
+}
+
+/**
+ * Check a single path for x402 signals:
+ * - HTTP 402 status code (standard x402)
+ * - HTTP 401 with x402Version in JSON body (Neynar-style)
+ */
+async function check402Response(
+  domain: string,
+  path: string,
+  config: ScanConfig,
+  start: number,
+): Promise<ProbeResult | null> {
+  const url = buildUrl(domain, path);
+
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'User-Agent': config.user_agent },
+      signal: AbortSignal.timeout(config.timeout_ms),
+      redirect: 'manual',
+    });
+
+    const responseTime = Date.now() - start;
+
+    // Standard: HTTP 402 Payment Required
+    if (res.status === 402) {
+      const capabilities = await extractX402Capabilities(res);
+      return {
+        protocol: 'x402',
+        status: 'confirmed',
+        confidence: 'high',
+        detection_method: `402 response on ${path}`,
+        endpoint_url: url,
+        capabilities,
+        response_time_ms: responseTime,
+        is_functional: true,
+      };
+    }
+
+    // Some services return 401 with x402 payment info in the body
+    if (res.status === 401) {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('json')) {
+        try {
+          const body = await res.json() as Record<string, unknown>;
+          if (body.x402Version || body.accepts) {
+            const capabilities = extractX402CapabilitiesFromBody(body);
+            return {
+              protocol: 'x402',
+              status: 'confirmed',
+              confidence: 'high',
+              detection_method: `401 with x402 body on ${path}`,
+              endpoint_url: url,
+              capabilities,
+              response_time_ms: responseTime,
+              is_functional: true,
+            };
+          }
+        } catch {
+          // Not valid JSON or no x402 fields
+        }
+      }
+    }
+  } catch {
+    // Connection failed, try next
+  }
+
+  return null;
+}
+
+/** Extract capabilities from HTTP headers on a 402 response */
+async function extractX402Capabilities(res: { headers: { get(name: string): string | null }; json(): Promise<unknown> }): Promise<Record<string, unknown>> {
+  const capabilities: Record<string, unknown> = {};
+  const priceHeader = res.headers.get('x-payment-required');
+  const x402Header = res.headers.get('x-402-version');
+
+  if (priceHeader) capabilities.price = priceHeader;
+  if (x402Header) capabilities.version = x402Header;
+
+  // Try to parse body for richer x402 data
+  try {
+    const body = await res.json() as Record<string, unknown>;
+    Object.assign(capabilities, extractX402CapabilitiesFromBody(body));
+  } catch {
+    // Body not JSON, headers are enough
+  }
+
+  return capabilities;
+}
+
+/** Extract capabilities from a JSON body containing x402 fields */
+function extractX402CapabilitiesFromBody(body: Record<string, unknown>): Record<string, unknown> {
+  const capabilities: Record<string, unknown> = {};
+
+  if (body.x402Version) capabilities.version = body.x402Version;
+
+  if (Array.isArray(body.accepts) && body.accepts.length > 0) {
+    const first = body.accepts[0] as Record<string, unknown>;
+    capabilities.network = first.network;
+    capabilities.max_amount = first.maxAmountRequired;
+    capabilities.asset = first.asset;
+    capabilities.pay_to = first.payTo;
+    if (first.extra && typeof first.extra === 'object') {
+      capabilities.token_name = (first.extra as Record<string, unknown>).name;
+    }
+  }
+
+  return capabilities;
 }
 
 /**

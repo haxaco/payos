@@ -10,9 +10,14 @@ import { classifyBusinessModel, applyBusinessModelFilter } from '../src/analyzer
 import type { ProbeResult } from '../src/probes/types.js';
 
 const MERCHANTS = [
-  { domain: 'x402engine.app', note: 'Live x402 — expect x402 confirmed via .well-known/x402.json' },
-  { domain: '402.pinata.cloud', note: 'Pinata x402 — expect x402 via 402 response' },
-  { domain: 'firecrawl.dev', note: 'Firecrawl x402 — web scraping API' },
+  { domain: 'x402engine.app', note: 'x402 manifest — 51 APIs (image, video, LLM, code)' },
+  { domain: 'api.neynar.com', note: 'Neynar API — x402 on Farcaster data endpoints' },
+  { domain: '402.pinata.cloud', note: 'Pinata — IPFS uploads via x402' },
+  { domain: 'firecrawl.dev', note: 'Firecrawl — web scraping API' },
+  { domain: 'blockrun.ai', note: 'BlockRun — LLM gateway' },
+  { domain: 'asterpay.io', note: 'AsterPay — market data, DeFi analytics' },
+  { domain: 'blackswan.wtf', note: 'BlackSwan — risk intelligence' },
+  { domain: 'x402stt.dtelecom.org', note: 'dTelecom — speech-to-text' },
 ];
 
 function statusLabel(p: ProbeResult): string {
