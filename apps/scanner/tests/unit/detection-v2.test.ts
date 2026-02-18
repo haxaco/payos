@@ -66,7 +66,7 @@ describe('enrichProbeResults', () => {
 
     const acp = result.find(r => r.protocol === 'acp')!;
     expect(acp.status).toBe('eligible');
-    expect(acp.eligibility_signals).toContain('Stripe.js detected — can adopt ACP via Stripe');
+    expect(acp.eligibility_signals).toContain('Stripe detected — can enable ACP (ChatGPT Instant Checkout) via Stripe integration');
   });
 
   it('marks UCP and ACP as platform_enabled for Shopify', () => {
@@ -83,6 +83,7 @@ describe('enrichProbeResults', () => {
 
     const acp = result.find(r => r.protocol === 'acp')!;
     expect(acp.status).toBe('platform_enabled');
+    expect(acp.eligibility_signals).toContain('Shopify supports ACP — ChatGPT Instant Checkout available via platform');
   });
 
   it('marks ACP as platform_enabled for Etsy', () => {
@@ -95,7 +96,7 @@ describe('enrichProbeResults', () => {
 
     const acp = result.find(r => r.protocol === 'acp')!;
     expect(acp.status).toBe('platform_enabled');
-    expect(acp.eligibility_signals).toContain('Etsy marketplace platform supports ACP integration');
+    expect(acp.eligibility_signals).toContain('Etsy has live ACP integration — ChatGPT Instant Checkout enabled');
 
     const ucp = result.find(r => r.protocol === 'ucp')!;
     expect(ucp.status).toBe('not_detected');

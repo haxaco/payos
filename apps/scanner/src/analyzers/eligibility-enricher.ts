@@ -27,6 +27,7 @@ export function enrichProbeResults(
     const enriched = { ...result };
 
     // Platform-enabled signals
+    // ACP = OpenAI + Stripe Agentic Commerce Protocol (powers ChatGPT Instant Checkout)
     if (platform === 'shopify') {
       if (result.protocol === 'ucp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
@@ -36,15 +37,15 @@ export function enrichProbeResults(
       if (result.protocol === 'acp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
         enriched.confidence = 'medium';
-        enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Shopify platform supports ACP integration'];
+        enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Shopify supports ACP — ChatGPT Instant Checkout available via platform'];
       }
     }
 
     if (platform === 'etsy') {
       if (result.protocol === 'acp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
-        enriched.confidence = 'medium';
-        enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Etsy marketplace platform supports ACP integration'];
+        enriched.confidence = 'high';
+        enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Etsy has live ACP integration — ChatGPT Instant Checkout enabled'];
       }
     }
 
@@ -77,7 +78,7 @@ export function enrichProbeResults(
       if (hasStripe && result.protocol === 'acp') {
         enriched.status = 'eligible';
         enriched.confidence = 'medium';
-        enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Stripe.js detected — can adopt ACP via Stripe'];
+        enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Stripe detected — can enable ACP (ChatGPT Instant Checkout) via Stripe integration'];
       }
     }
 
