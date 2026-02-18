@@ -94,25 +94,51 @@ async function checkBazaarManifest(
     const text = await res.text();
     const manifest = JSON.parse(text);
 
-    // Validate it looks like an x402 manifest (has resources or endpoints)
-    const resources = manifest.resources || manifest.endpoints || manifest.services;
-    if (!resources && !manifest.x402Version && !manifest.accepts) return null;
+    // Validate it looks like an x402 manifest
+    // Real-world formats: flat arrays (resources/endpoints/services) or categorized objects (categories)
+    const flatResources = manifest.resources || manifest.endpoints || manifest.services;
+    const categories = manifest.categories;
+    if (!flatResources && !categories && !manifest.x402Version && !manifest.accepts) return null;
 
     const capabilities: Record<string, unknown> = {};
 
     if (manifest.x402Version) capabilities.version = manifest.x402Version;
-    if (Array.isArray(resources)) {
-      capabilities.resource_count = resources.length;
-      // Sample first few endpoints
-      capabilities.sample_resources = resources.slice(0, 5).map((r: any) => ({
+    if (manifest.name) capabilities.service_name = manifest.name;
+    if (manifest.baseUrl) capabilities.base_url = manifest.baseUrl;
+
+    // Handle flat resource arrays
+    if (Array.isArray(flatResources)) {
+      capabilities.resource_count = flatResources.length;
+      capabilities.sample_resources = flatResources.slice(0, 5).map((r: any) => ({
         path: r.resource || r.path || r.url,
         method: r.method,
         price: r.price || r.accepts?.[0]?.maxAmountRequired,
         currency: r.currency || r.accepts?.[0]?.asset,
       }));
     }
+
+    // Handle categorized resources (e.g. x402engine uses { categories: { compute: [...], web: [...] } })
+    if (categories && typeof categories === 'object' && !Array.isArray(categories)) {
+      const categoryNames = Object.keys(categories);
+      const allResources = categoryNames.flatMap(cat => Array.isArray(categories[cat]) ? categories[cat] : []);
+      capabilities.resource_count = allResources.length;
+      capabilities.category_names = categoryNames;
+      capabilities.sample_resources = allResources.slice(0, 5).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        path: r.endpoint || r.resource || r.path || r.url,
+        price: r.price,
+      }));
+    }
+
+    // Network support
+    if (manifest.networks) {
+      capabilities.networks = Object.keys(manifest.networks);
+    }
+
     if (manifest.accepts) capabilities.accepts = manifest.accepts;
     if (manifest.bazaar) capabilities.bazaar = true;
+    if (manifest.mcp) capabilities.has_mcp = true;
 
     return {
       protocol: 'x402',

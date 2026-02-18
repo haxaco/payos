@@ -79,12 +79,18 @@ export async function scanDomain(options: ScanOptions): Promise<MerchantScan> {
     ]);
 
     // Classify business model
+    const confirmedProtocols = probeResults
+      .filter(p => p.status === 'confirmed')
+      .map(p => p.protocol);
+
     const businessModel = classifyBusinessModel({
       merchant_category: options.merchant_category,
       ecommerce_platform: accessibilityData.ecommerce_platform,
       has_schema_product: structuredData.has_schema_product,
       has_schema_offer: structuredData.has_schema_offer,
       product_count: structuredData.product_count,
+      has_homepage: accessibilityData.homepage_accessible,
+      detected_protocols: confirmedProtocols,
     });
 
     // Enrich probe results with eligibility signals and business model filtering

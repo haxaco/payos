@@ -4,6 +4,7 @@ import type { ScanConfig } from '../probes/types.js';
 import { buildUrl } from '../probes/types.js';
 
 interface AccessibilityResult {
+  homepage_accessible: boolean;
   robots_txt_exists: boolean;
   robots_blocks_gptbot: boolean;
   robots_blocks_claudebot: boolean;
@@ -86,6 +87,7 @@ export async function analyzeAccessibility(
   config: ScanConfig,
 ): Promise<AccessibilityResult> {
   const result: AccessibilityResult = {
+    homepage_accessible: false,
     robots_txt_exists: false,
     robots_blocks_gptbot: false,
     robots_blocks_claudebot: false,
@@ -124,6 +126,7 @@ export async function analyzeAccessibility(
 
   // Process homepage HTML
   if (htmlResult.status === 'fulfilled' && htmlResult.value) {
+    result.homepage_accessible = true;
     const html = htmlResult.value;
     const $ = cheerio.load(html);
 

@@ -10,10 +10,9 @@ import { classifyBusinessModel, applyBusinessModelFilter } from '../src/analyzer
 import type { ProbeResult } from '../src/probes/types.js';
 
 const MERCHANTS = [
-  { domain: 'skims.com', note: 'Known ACP user — expect ACP confirmed' },
-  { domain: 'etsy.com', note: 'Marketplace — expect ACP platform_enabled' },
-  { domain: 'amazon.com', note: 'Major retailer — interesting to compare' },
-  { domain: 'nike.com', note: 'Big retail brand' },
+  { domain: 'x402engine.app', note: 'Live x402 — expect x402 confirmed via .well-known/x402.json' },
+  { domain: '402.pinata.cloud', note: 'Pinata x402 — expect x402 via 402 response' },
+  { domain: 'firecrawl.dev', note: 'Firecrawl x402 — web scraping API' },
 ];
 
 function statusLabel(p: ProbeResult): string {
@@ -43,11 +42,17 @@ async function testMerchant(domain: string, note: string) {
   console.log(`\nPlatform: ${accessibilityData.ecommerce_platform || 'none'}`);
   console.log(`Payment Processors: ${accessibilityData.payment_processors.join(', ') || 'none'}`);
 
+  const confirmedProtocols = probeResults
+    .filter(p => p.status === 'confirmed')
+    .map(p => p.protocol);
+
   const businessModel = classifyBusinessModel({
     ecommerce_platform: accessibilityData.ecommerce_platform,
     has_schema_product: structuredData.has_schema_product,
     has_schema_offer: structuredData.has_schema_offer,
     product_count: structuredData.product_count,
+    has_homepage: accessibilityData.homepage_accessible,
+    detected_protocols: confirmedProtocols,
   });
   console.log(`Business Model: ${businessModel}`);
 
@@ -59,6 +64,12 @@ async function testMerchant(domain: string, note: string) {
     const label = statusLabel(p);
     const conf = `[${p.confidence}]`;
     console.log(`  ${p.protocol.padEnd(22)} ${label.padEnd(50)} ${conf}`);
+    if (p.status === 'confirmed' && p.detection_method) {
+      console.log(`    Detection: ${p.detection_method}`);
+    }
+    if (p.capabilities && Object.keys(p.capabilities).length > 0) {
+      console.log(`    Capabilities: ${JSON.stringify(p.capabilities, null, 2).split('\n').join('\n    ')}`);
+    }
   }
 }
 

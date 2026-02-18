@@ -8,6 +8,8 @@ interface ClassificationInput {
   has_schema_offer: boolean;
   product_count: number;
   html_signals?: HtmlSignals;
+  has_homepage?: boolean;
+  detected_protocols?: string[];
 }
 
 interface HtmlSignals {
@@ -53,6 +55,14 @@ export function classifyBusinessModel(input: ClassificationInput): BusinessModel
     if (input.html_signals.has_api_docs) return 'api_provider';
     if (input.html_signals.has_pricing_page && input.html_signals.has_signup) return 'saas';
     if (input.html_signals.has_blog && !input.html_signals.has_pricing_page) return 'content';
+  }
+
+  // 5. Protocol-based inference: if x402 is confirmed, likely an API provider
+  if (input.detected_protocols?.includes('x402')) return 'api_provider';
+
+  // 6. No homepage + no platform + no products = likely API service, not retail
+  if (input.has_homepage === false && !input.ecommerce_platform && !input.has_schema_product) {
+    return 'api_provider';
   }
 
   // Default: retail (most common for commerce scanning)
