@@ -6,6 +6,13 @@ export * from './protocol-metadata.js';
 export * from './protocol-metadata-schemas.js';
 
 // ============================================
+// SCANNER & DEMAND INTELLIGENCE (Epic 56)
+// ============================================
+
+export * from './scanner.js';
+export * from './demand.js';
+
+// ============================================
 // ERROR TAXONOMY & STRUCTURED RESPONSES (Epic 30)
 // ============================================
 

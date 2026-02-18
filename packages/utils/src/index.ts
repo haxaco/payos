@@ -1,4 +1,11 @@
 // ============================================
+// READINESS SCORE (Epic 56 — Scanner)
+// ============================================
+
+export { computeReadinessScore, getReadinessGrade } from './readiness-score.js';
+export type { ReadinessScoreInput, ReadinessScoreResult } from './readiness-score.js';
+
+// ============================================
 // CURRENCY UTILITIES
 // ============================================
 

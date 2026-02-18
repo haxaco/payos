@@ -1,0 +1,16 @@
+domain,merchant_name,category,country_code,region
+booking.com,Booking.com,travel,NL,europe
+expedia.com,Expedia,travel,US,north_america
+airbnb.com,Airbnb,travel,US,north_america
+marriott.com,Marriott International,travel,US,north_america
+hilton.com,Hilton Hotels,travel,US,north_america
+kayak.com,Kayak,travel,US,north_america
+tripadvisor.com,Tripadvisor,travel,US,north_america
+hotels.com,Hotels.com,travel,US,north_america
+agoda.com,Agoda,travel,SG,asia
+skyscanner.com,Skyscanner,travel,GB,europe
+vrbo.com,Vrbo,travel,US,north_america
+hyatt.com,Hyatt Hotels,travel,US,north_america
+ihg.com,IHG Hotels & Resorts,travel,GB,europe
+accor.com,Accor,travel,FR,europe
+hostelworld.com,Hostelworld,travel,IE,europe

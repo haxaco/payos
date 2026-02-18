@@ -1,0 +1,146 @@
+[
+  {
+    "source": "Tollbit",
+    "metric": "ai_bot_traffic_share",
+    "value": 12.3,
+    "unit": "%",
+    "description": "AI bot traffic as percentage of total web traffic (Q4 2025)",
+    "confidence": "high",
+    "period": "Q4 2025"
+  },
+  {
+    "source": "Tollbit",
+    "metric": "ai_bot_traffic_growth_yoy",
+    "value": 340,
+    "unit": "%",
+    "description": "Year-over-year growth in AI bot traffic to merchant sites",
+    "confidence": "high",
+    "period": "2025"
+  },
+  {
+    "source": "Visa",
+    "metric": "agentic_commerce_tam",
+    "value": 380,
+    "unit": "billion USD",
+    "category": "retail",
+    "description": "Total addressable market for AI-assisted commerce by 2028",
+    "confidence": "medium",
+    "period": "2028 forecast"
+  },
+  {
+    "source": "Adobe Analytics",
+    "metric": "ai_referral_traffic",
+    "value": 8.7,
+    "unit": "%",
+    "category": "retail",
+    "description": "E-commerce traffic referred by AI agents and assistants",
+    "confidence": "high",
+    "period": "Q4 2025"
+  },
+  {
+    "source": "McKinsey",
+    "metric": "enterprise_ai_agent_adoption",
+    "value": 42,
+    "unit": "%",
+    "category": "b2b",
+    "description": "Enterprises using AI agents for procurement decisions",
+    "confidence": "medium",
+    "period": "2025"
+  },
+  {
+    "source": "Shopify",
+    "metric": "ai_checkout_attempts",
+    "value": 2.1,
+    "unit": "million/month",
+    "category": "retail",
+    "description": "Estimated AI agent checkout attempts across Shopify stores",
+    "confidence": "low",
+    "period": "Q1 2026"
+  },
+  {
+    "source": "Stripe",
+    "metric": "acp_merchant_interest",
+    "value": 15000,
+    "unit": "merchants",
+    "description": "Merchants expressing interest in Agentic Commerce Protocol",
+    "confidence": "medium",
+    "period": "Q1 2026"
+  },
+  {
+    "source": "Google",
+    "metric": "search_to_agent_shift",
+    "value": 18,
+    "unit": "%",
+    "description": "Percentage of product searches shifting from traditional to agent-mediated",
+    "confidence": "medium",
+    "period": "2025"
+  },
+  {
+    "source": "Gartner",
+    "metric": "b2b_agent_procurement",
+    "value": 35,
+    "unit": "%",
+    "category": "b2b",
+    "description": "B2B procurement decisions influenced by AI agents by 2027",
+    "confidence": "medium",
+    "period": "2027 forecast"
+  },
+  {
+    "source": "Mercado Libre",
+    "metric": "latam_ai_commerce_growth",
+    "value": 210,
+    "unit": "%",
+    "region": "latam",
+    "description": "Growth in AI-assisted transactions in LATAM",
+    "confidence": "medium",
+    "period": "2025"
+  },
+  {
+    "source": "EBANX",
+    "metric": "latam_digital_payment_volume",
+    "value": 85,
+    "unit": "billion USD",
+    "region": "latam",
+    "description": "Digital payment volume in LATAM (Pix + SPEI + cards)",
+    "confidence": "high",
+    "period": "2025"
+  },
+  {
+    "source": "Cloudflare",
+    "metric": "bot_traffic_to_ecommerce",
+    "value": 31,
+    "unit": "%",
+    "category": "retail",
+    "description": "Bot traffic percentage to e-commerce sites (includes AI agents)",
+    "confidence": "high",
+    "period": "2025"
+  },
+  {
+    "source": "Coinbase",
+    "metric": "x402_payment_volume",
+    "value": 4.2,
+    "unit": "million USD",
+    "description": "Monthly x402 payment volume across all endpoints",
+    "confidence": "medium",
+    "period": "Q1 2026"
+  },
+  {
+    "source": "OpenAI",
+    "metric": "chatgpt_plugin_commerce",
+    "value": 28,
+    "unit": "%",
+    "category": "retail",
+    "description": "ChatGPT users who have attempted product purchases via plugins",
+    "confidence": "low",
+    "period": "2025"
+  },
+  {
+    "source": "Forrester",
+    "metric": "agent_commerce_revenue_impact",
+    "value": 1.2,
+    "unit": "trillion USD",
+    "description": "Revenue influenced by AI agents across all commerce by 2028",
+    "confidence": "medium",
+    "period": "2028 forecast"
+  }
+]
