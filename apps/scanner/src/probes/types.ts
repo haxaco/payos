@@ -1,8 +1,14 @@
 import type { AgenticProtocol } from '@sly/types';
 
+export type DetectionStatus = 'confirmed' | 'eligible' | 'platform_enabled' | 'not_detected' | 'not_applicable';
+export type DetectionConfidence = 'high' | 'medium' | 'low';
+
 export interface ProbeResult {
   protocol: AgenticProtocol;
   detected: boolean;
+  status: DetectionStatus;
+  confidence: DetectionConfidence;
+  eligibility_signals?: string[];
   detection_method?: string;
   endpoint_url?: string;
   capabilities: Record<string, unknown>;

@@ -82,11 +82,15 @@ async function handleScanMerchant(args: {
     `- Checkout: ${result.checkout_score}/100`,
   ];
 
+  if (result.business_model) {
+    summary.push(`**Business Model:** ${result.business_model}`);
+  }
+
   if (result.protocol_results) {
     summary.push('', '### Protocol Detection');
     for (const p of result.protocol_results) {
-      const status = p.detected ? (p.is_functional ? 'Functional' : 'Detected') : 'Not detected';
-      summary.push(`- **${p.protocol}**: ${status}${p.endpoint_url ? ` (${p.endpoint_url})` : ''}`);
+      const statusLabel = formatDetectionStatus(p);
+      summary.push(`- **${p.protocol}**: ${statusLabel}${p.endpoint_url ? ` (${p.endpoint_url})` : ''}`);
     }
   }
 
@@ -322,4 +326,28 @@ async function handleGetTestResults(args: { domain: string }) {
       text: `No test results found for ${args.domain}. Agent shopping tests are not yet implemented (Story 56.20).`,
     }],
   };
+}
+
+function formatDetectionStatus(p: {
+  detected: boolean;
+  is_functional?: boolean;
+  status?: string;
+  confidence?: string;
+  eligibility_signals?: string[];
+}): string {
+  const status = p.status || (p.detected ? 'confirmed' : 'not_detected');
+
+  switch (status) {
+    case 'confirmed':
+      return p.is_functional ? 'Confirmed (Functional)' : 'Confirmed';
+    case 'eligible':
+      return `Eligible${p.eligibility_signals?.length ? ` (${p.eligibility_signals[0]})` : ''}`;
+    case 'platform_enabled':
+      return `Platform-Enabled${p.eligibility_signals?.length ? ` (${p.eligibility_signals[0]})` : ''}`;
+    case 'not_applicable':
+      return 'N/A (not applicable to business model)';
+    case 'not_detected':
+    default:
+      return 'Not detected';
+  }
 }

@@ -4,6 +4,8 @@ import type { ScanConfig } from './probes/types.js';
 import { analyzeStructuredData } from './analyzers/structured-data.js';
 import { analyzeAccessibility } from './analyzers/accessibility.js';
 import { computeScoreFromScanResults } from './analyzers/readiness-score.js';
+import { enrichProbeResults } from './analyzers/eligibility-enricher.js';
+import { classifyBusinessModel, applyBusinessModelFilter } from './analyzers/business-model.js';
 import * as queries from './db/queries.js';
 
 export interface ScanOptions {
@@ -76,18 +78,31 @@ export async function scanDomain(options: ScanOptions): Promise<MerchantScan> {
       timeoutPromise,
     ]);
 
+    // Classify business model
+    const businessModel = classifyBusinessModel({
+      merchant_category: options.merchant_category,
+      ecommerce_platform: accessibilityData.ecommerce_platform,
+      has_schema_product: structuredData.has_schema_product,
+      has_schema_offer: structuredData.has_schema_offer,
+      product_count: structuredData.product_count,
+    });
+
+    // Enrich probe results with eligibility signals and business model filtering
+    let enrichedResults = enrichProbeResults(probeResults, accessibilityData);
+    enrichedResults = applyBusinessModelFilter(enrichedResults, businessModel);
+
     // Store results in parallel
     await Promise.all([
-      queries.insertProtocolResults(scan.id, probeResults),
+      queries.insertProtocolResults(scan.id, enrichedResults),
       queries.upsertStructuredData(scan.id, structuredData),
       queries.upsertAccessibility(scan.id, accessibilityData),
     ]);
 
     // Compute readiness scores
-    const scores = computeScoreFromScanResults(probeResults, structuredData, accessibilityData);
+    const scores = computeScoreFromScanResults(enrichedResults, structuredData, accessibilityData);
     const durationMs = Date.now() - startTime;
 
-    // Update scan with scores
+    // Update scan with scores and business model
     await queries.updateMerchantScan(scan.id, {
       scan_status: 'completed',
       readiness_score: scores.readiness_score,
@@ -95,6 +110,7 @@ export async function scanDomain(options: ScanOptions): Promise<MerchantScan> {
       data_score: scores.data_score,
       accessibility_score: scores.accessibility_score,
       checkout_score: scores.checkout_score,
+      business_model: businessModel,
       last_scanned_at: new Date().toISOString(),
       scan_duration_ms: durationMs,
       error_message: null,
@@ -104,6 +120,7 @@ export async function scanDomain(options: ScanOptions): Promise<MerchantScan> {
     return {
       ...scan,
       scan_status: 'completed' as const,
+      business_model: businessModel,
       readiness_score: scores.readiness_score,
       protocol_score: scores.protocol_score,
       data_score: scores.data_score,
@@ -111,11 +128,14 @@ export async function scanDomain(options: ScanOptions): Promise<MerchantScan> {
       checkout_score: scores.checkout_score,
       last_scanned_at: new Date().toISOString(),
       scan_duration_ms: durationMs,
-      protocol_results: probeResults.map(p => ({
+      protocol_results: enrichedResults.map(p => ({
         id: '',
         merchant_scan_id: scan.id,
         protocol: p.protocol,
         detected: p.detected,
+        status: p.status,
+        confidence: p.confidence,
+        eligibility_signals: p.eligibility_signals,
         detection_method: p.detection_method,
         endpoint_url: p.endpoint_url,
         capabilities: p.capabilities,

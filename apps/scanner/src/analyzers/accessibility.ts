@@ -54,6 +54,9 @@ const PLATFORM_SIGNATURES: Record<string, { patterns: string[]; versionPattern?:
   salesforce_commerce: {
     patterns: ['demandware.net', 'salesforce-commerce', 'dw.js'],
   },
+  etsy: {
+    patterns: ['etsy.com', 'etsy.me', 'etsystatic.com', 'data-etsy'],
+  },
 };
 
 // Payment processor signatures
@@ -249,16 +252,25 @@ function parseRobotsTxt(txt: string): RobotsTxtParsed {
 function detectPlatform(html: string, $: cheerio.CheerioAPI): { name: string; version?: string } | null {
   const htmlLower = html.toLowerCase();
 
+  let bestName: string | null = null;
+  let bestScore = 0;
+  let bestVersion: string | undefined;
+
   for (const [name, sig] of Object.entries(PLATFORM_SIGNATURES)) {
-    const found = sig.patterns.some(p => htmlLower.includes(p.toLowerCase()));
-    if (found) {
-      let version: string | undefined;
+    const matchCount = sig.patterns.filter(p => htmlLower.includes(p.toLowerCase())).length;
+    if (matchCount > bestScore) {
+      bestScore = matchCount;
+      bestName = name;
+      bestVersion = undefined;
       if (sig.versionPattern) {
         const match = html.match(sig.versionPattern);
-        if (match) version = match[1];
+        if (match) bestVersion = match[1];
       }
-      return { name, version };
     }
+  }
+
+  if (bestName && bestScore > 0) {
+    return { name: bestName, version: bestVersion };
   }
 
   return null;

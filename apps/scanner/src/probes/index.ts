@@ -36,6 +36,8 @@ export async function runProbes(
     return {
       protocol: PROBE_ORDER[i],
       detected: false,
+      status: 'not_detected' as const,
+      confidence: 'low' as const,
       capabilities: {},
       error: r.reason instanceof Error ? r.reason.message : 'Probe failed',
     };
@@ -43,4 +45,4 @@ export async function runProbes(
 }
 
 export { DEFAULT_SCAN_CONFIG } from './types.js';
-export type { ProbeResult, ScanConfig } from './types.js';
+export type { ProbeResult, ScanConfig, DetectionStatus, DetectionConfidence } from './types.js';

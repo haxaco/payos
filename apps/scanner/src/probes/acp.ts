@@ -3,7 +3,9 @@ import type { ProbeResult, ScanConfig } from './types.js';
 import { buildUrl, withProbeTimeout } from './types.js';
 
 const ACP_PATHS = ['/acp/checkout', '/.well-known/acp', '/api/acp'];
-const NOT_DETECTED: ProbeResult = { protocol: 'acp', detected: false, capabilities: {} };
+const NOT_DETECTED: ProbeResult = {
+  protocol: 'acp', detected: false, status: 'not_detected', confidence: 'high', capabilities: {},
+};
 
 export async function probeACP(domain: string, config: ScanConfig): Promise<ProbeResult> {
   return withProbeTimeout(() => _probeACP(domain, config), NOT_DETECTED, config.timeout_ms + 1000);
@@ -25,9 +27,8 @@ async function _probeACP(domain: string, config: ScanConfig): Promise<ProbeResul
       const responseTime = Date.now() - start;
       const acpVersion = res.headers.get('x-acp-version');
 
-      if (acpVersion || res.ok) {
-        const capabilities: Record<string, unknown> = {};
-        if (acpVersion) capabilities.version = acpVersion;
+      if (acpVersion) {
+        const capabilities: Record<string, unknown> = { version: acpVersion };
 
         const allowHeader = res.headers.get('allow');
         if (allowHeader) capabilities.methods = allowHeader.split(',').map(m => m.trim());
@@ -35,11 +36,13 @@ async function _probeACP(domain: string, config: ScanConfig): Promise<ProbeResul
         return {
           protocol: 'acp',
           detected: true,
+          status: 'confirmed',
+          confidence: 'high',
           detection_method: `OPTIONS ${path}`,
           endpoint_url: url,
           capabilities,
           response_time_ms: responseTime,
-          is_functional: !!acpVersion,
+          is_functional: true,
         };
       }
     } catch {
@@ -50,6 +53,8 @@ async function _probeACP(domain: string, config: ScanConfig): Promise<ProbeResul
   return {
     protocol: 'acp',
     detected: false,
+    status: 'not_detected',
+    confidence: 'high',
     response_time_ms: Date.now() - start,
     capabilities: {},
   };

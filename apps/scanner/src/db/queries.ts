@@ -44,6 +44,7 @@ export async function updateMerchantScan(
     data_score: number;
     accessibility_score: number;
     checkout_score: number;
+    business_model: string;
     last_scanned_at: string;
     scan_duration_ms: number;
     error_message: string | null;
@@ -186,6 +187,9 @@ export async function insertProtocolResults(
   results: Array<{
     protocol: string;
     detected: boolean;
+    status?: string;
+    confidence?: string;
+    eligibility_signals?: string[];
     detection_method?: string;
     endpoint_url?: string;
     capabilities: Record<string, unknown>;
@@ -205,6 +209,9 @@ export async function insertProtocolResults(
     merchant_scan_id: merchantScanId,
     protocol: r.protocol,
     detected: r.detected,
+    status: r.status || 'not_detected',
+    confidence: r.confidence || 'medium',
+    eligibility_signals: r.eligibility_signals || [],
     detection_method: r.detection_method,
     endpoint_url: r.endpoint_url,
     capabilities: r.capabilities,

@@ -18,6 +18,7 @@ export interface MerchantScan {
   accessibility_score: number;
   checkout_score: number;
 
+  business_model?: BusinessModel;
   scan_status: ScanStatus;
   last_scanned_at?: string;
   scan_duration_ms?: number;
@@ -42,11 +43,18 @@ export type AgenticProtocol =
   | 'ucp' | 'acp' | 'ap2' | 'x402' | 'mcp' | 'nlweb'
   | 'visa_vic' | 'mastercard_agentpay';
 
+export type DetectionStatus = 'confirmed' | 'eligible' | 'platform_enabled' | 'not_detected' | 'not_applicable';
+export type DetectionConfidence = 'high' | 'medium' | 'low';
+export type BusinessModel = 'retail' | 'saas' | 'marketplace' | 'api_provider' | 'content';
+
 export interface ScanProtocolResult {
   id: string;
   merchant_scan_id: string;
   protocol: AgenticProtocol;
   detected: boolean;
+  status?: DetectionStatus;
+  confidence?: DetectionConfidence;
+  eligibility_signals?: string[];
   detection_method?: string;
   endpoint_url?: string;
   capabilities: Record<string, unknown>;
