@@ -269,7 +269,9 @@ function detectPlatform(html: string, $: cheerio.CheerioAPI): { name: string; ve
     }
   }
 
-  if (bestName && bestScore > 0) {
+  // Require at least 2 pattern matches to avoid false positives
+  // (e.g. stripe.com mentioning "woocommerce" in an analytics label)
+  if (bestName && bestScore >= 2) {
     return { name: bestName, version: bestVersion };
   }
 
