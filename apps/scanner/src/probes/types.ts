@@ -5,7 +5,6 @@ export type DetectionConfidence = 'high' | 'medium' | 'low';
 
 export interface ProbeResult {
   protocol: AgenticProtocol;
-  detected: boolean;
   status: DetectionStatus;
   confidence: DetectionConfidence;
   eligibility_signals?: string[];
@@ -15,6 +14,11 @@ export interface ProbeResult {
   response_time_ms?: number;
   is_functional?: boolean;
   error?: string;
+}
+
+/** Derive a boolean from status for DB backward compat */
+export function isDetected(status: DetectionStatus): boolean {
+  return status === 'confirmed' || status === 'platform_enabled' || status === 'eligible';
 }
 
 export interface ScanConfig {

@@ -35,7 +35,6 @@ export async function runProbes(
     if (r.status === 'fulfilled') return r.value;
     return {
       protocol: PROBE_ORDER[i],
-      detected: false,
       status: 'not_detected' as const,
       confidence: 'low' as const,
       capabilities: {},
@@ -46,3 +45,4 @@ export async function runProbes(
 
 export { DEFAULT_SCAN_CONFIG } from './types.js';
 export type { ProbeResult, ScanConfig, DetectionStatus, DetectionConfidence } from './types.js';
+export { isDetected } from './types.js';

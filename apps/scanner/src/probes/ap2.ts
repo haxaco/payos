@@ -16,7 +16,7 @@ export async function probeAP2(domain: string, config: ScanConfig): Promise<Prob
     const responseTime = Date.now() - start;
 
     if (!res.ok) {
-      return { protocol: 'ap2', detected: false, status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
+      return { protocol: 'ap2', status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
     }
 
     const text = await res.text();
@@ -24,12 +24,11 @@ export async function probeAP2(domain: string, config: ScanConfig): Promise<Prob
     try {
       profile = JSON.parse(text);
     } catch {
-      return { protocol: 'ap2', detected: false, status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
+      return { protocol: 'ap2', status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
     }
 
     return {
       protocol: 'ap2',
-      detected: true,
       status: 'confirmed',
       confidence: 'high',
       detection_method: '/.well-known/ap2',
@@ -41,7 +40,6 @@ export async function probeAP2(domain: string, config: ScanConfig): Promise<Prob
   } catch (err) {
     return {
       protocol: 'ap2',
-      detected: false,
       status: 'not_detected',
       confidence: 'low',
       response_time_ms: Date.now() - start,

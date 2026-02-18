@@ -1,5 +1,5 @@
 import type { MerchantScan } from '@sly/types';
-import { runProbes, DEFAULT_SCAN_CONFIG } from './probes/index.js';
+import { runProbes, DEFAULT_SCAN_CONFIG, isDetected } from './probes/index.js';
 import type { ScanConfig } from './probes/types.js';
 import { analyzeStructuredData } from './analyzers/structured-data.js';
 import { analyzeAccessibility } from './analyzers/accessibility.js';
@@ -132,7 +132,7 @@ export async function scanDomain(options: ScanOptions): Promise<MerchantScan> {
         id: '',
         merchant_scan_id: scan.id,
         protocol: p.protocol,
-        detected: p.detected,
+        detected: isDetected(p.status),
         status: p.status,
         confidence: p.confidence,
         eligibility_signals: p.eligibility_signals,

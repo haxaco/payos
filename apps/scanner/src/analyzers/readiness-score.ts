@@ -41,7 +41,7 @@ export function computeScoreFromScanResults(
   return computeReadinessScore({
     protocol: probeResults.map(p => ({
       protocol: p.protocol,
-      detected: p.detected,
+      status: p.status,
       is_functional: p.is_functional,
     })),
     structured: structuredData,

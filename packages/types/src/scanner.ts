@@ -51,9 +51,9 @@ export interface ScanProtocolResult {
   id: string;
   merchant_scan_id: string;
   protocol: AgenticProtocol;
-  detected: boolean;
-  status?: DetectionStatus;
-  confidence?: DetectionConfidence;
+  status: DetectionStatus;
+  confidence: DetectionConfidence;
+  detected?: boolean;
   eligibility_signals?: string[];
   detection_method?: string;
   endpoint_url?: string;

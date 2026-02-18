@@ -1,4 +1,4 @@
-import type { ProbeResult, DetectionStatus } from '../probes/types.js';
+import type { ProbeResult } from '../probes/types.js';
 
 interface AccessibilityData {
   ecommerce_platform?: string;
@@ -31,13 +31,11 @@ export function enrichProbeResults(
       if (result.protocol === 'ucp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
         enriched.confidence = 'medium';
-        enriched.detected = true;
         enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Shopify platform supports UCP integration'];
       }
       if (result.protocol === 'acp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
         enriched.confidence = 'medium';
-        enriched.detected = true;
         enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Shopify platform supports ACP integration'];
       }
     }
@@ -46,7 +44,6 @@ export function enrichProbeResults(
       if (result.protocol === 'acp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
         enriched.confidence = 'medium';
-        enriched.detected = true;
         enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Etsy marketplace platform supports ACP integration'];
       }
     }
@@ -55,7 +52,6 @@ export function enrichProbeResults(
       if (result.protocol === 'ucp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
         enriched.confidence = 'medium';
-        enriched.detected = true;
         enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'WooCommerce platform supports UCP plugin'];
       }
     }
@@ -64,7 +60,6 @@ export function enrichProbeResults(
       if (result.protocol === 'ucp' && result.status === 'not_detected') {
         enriched.status = 'platform_enabled';
         enriched.confidence = 'low';
-        enriched.detected = true;
         enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'BigCommerce platform can support UCP integration'];
       }
     }
@@ -74,7 +69,6 @@ export function enrichProbeResults(
       if (hasStripe && result.protocol === 'acp') {
         enriched.status = 'eligible';
         enriched.confidence = 'medium';
-        enriched.detected = true;
         enriched.eligibility_signals = [...(enriched.eligibility_signals || []), 'Stripe.js detected — can adopt ACP via Stripe'];
       }
     }

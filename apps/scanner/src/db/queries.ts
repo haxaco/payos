@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MerchantScan, ScanProtocolResult, ScanBatch } from '@sly/types';
+import type { MerchantScan, ScanProtocolResult, ScanBatch, DetectionStatus } from '@sly/types';
 import { getClient } from './client.js';
+
+function isDetected(status?: string): boolean {
+  return status === 'confirmed' || status === 'platform_enabled' || status === 'eligible';
+}
 
 function db(): SupabaseClient {
   return getClient();
@@ -186,7 +190,6 @@ export async function insertProtocolResults(
   merchantScanId: string,
   results: Array<{
     protocol: string;
-    detected: boolean;
     status?: string;
     confidence?: string;
     eligibility_signals?: string[];
@@ -208,7 +211,7 @@ export async function insertProtocolResults(
   const rows = results.map(r => ({
     merchant_scan_id: merchantScanId,
     protocol: r.protocol,
-    detected: r.detected,
+    detected: isDetected(r.status),
     status: r.status || 'not_detected',
     confidence: r.confidence || 'medium',
     eligibility_signals: r.eligibility_signals || [],

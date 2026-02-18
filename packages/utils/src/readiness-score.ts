@@ -2,11 +2,17 @@
 // READINESS SCORE ALGORITHM (Epic 56)
 // ============================================
 
-import type { ScanProtocolResult, ScanStructuredData, ScanAccessibility, ReadinessGrade } from '@sly/types';
+import type { ScanStructuredData, ScanAccessibility, ReadinessGrade, DetectionStatus } from '@sly/types';
 import { READINESS_GRADES } from '@sly/types';
 
+export interface ProtocolInput {
+  protocol: string;
+  status: DetectionStatus;
+  is_functional?: boolean;
+}
+
 export interface ReadinessScoreInput {
-  protocol: Pick<ScanProtocolResult, 'protocol' | 'detected' | 'is_functional'>[];
+  protocol: ProtocolInput[];
   structured: Pick<ScanStructuredData,
     'has_schema_product' | 'has_schema_offer' | 'has_schema_organization' |
     'has_json_ld' | 'has_open_graph' | 'has_microdata' |
@@ -31,25 +37,42 @@ export interface ReadinessScoreResult {
   checkout_score: number;
 }
 
+/** Status hierarchy multiplier: confirmed=1.0, platform_enabled=0.5, eligible=0.3 */
+function statusMultiplier(status: DetectionStatus): number {
+  switch (status) {
+    case 'confirmed': return 1.0;
+    case 'platform_enabled': return 0.5;
+    case 'eligible': return 0.3;
+    default: return 0;
+  }
+}
+
+function getProtocolPoints(
+  protocols: ProtocolInput[],
+  name: string,
+  functionalPoints: number,
+  detectedPoints: number,
+): number {
+  const match = protocols.find(p => p.protocol === name);
+  if (!match) return 0;
+  const mult = statusMultiplier(match.status);
+  if (mult === 0) return 0;
+  const base = match.is_functional ? functionalPoints : detectedPoints;
+  return Math.round(base * mult);
+}
+
 export function computeReadinessScore(input: ReadinessScoreInput): ReadinessScoreResult {
   // --- PROTOCOL SCORE (40% weight) ---
   let protocolScore = 0;
-  const protocols = input.protocol.filter(p => p.detected);
 
-  if (protocols.some(p => p.protocol === 'ucp' && p.is_functional)) protocolScore += 30;
-  else if (protocols.some(p => p.protocol === 'ucp')) protocolScore += 20;
-
-  if (protocols.some(p => p.protocol === 'acp' && p.is_functional)) protocolScore += 20;
-  else if (protocols.some(p => p.protocol === 'acp')) protocolScore += 12;
-
-  if (protocols.some(p => p.protocol === 'mcp' && p.is_functional)) protocolScore += 15;
-  else if (protocols.some(p => p.protocol === 'mcp')) protocolScore += 8;
-
-  if (protocols.some(p => p.protocol === 'x402' && p.is_functional)) protocolScore += 10;
-  if (protocols.some(p => p.protocol === 'ap2' && p.is_functional)) protocolScore += 10;
-  if (protocols.some(p => p.protocol === 'visa_vic')) protocolScore += 5;
-  if (protocols.some(p => p.protocol === 'mastercard_agentpay')) protocolScore += 5;
-  if (protocols.some(p => p.protocol === 'nlweb')) protocolScore += 5;
+  protocolScore += getProtocolPoints(input.protocol, 'ucp', 30, 20);
+  protocolScore += getProtocolPoints(input.protocol, 'acp', 20, 12);
+  protocolScore += getProtocolPoints(input.protocol, 'mcp', 15, 8);
+  protocolScore += getProtocolPoints(input.protocol, 'x402', 10, 0);
+  protocolScore += getProtocolPoints(input.protocol, 'ap2', 10, 0);
+  protocolScore += getProtocolPoints(input.protocol, 'visa_vic', 5, 5);
+  protocolScore += getProtocolPoints(input.protocol, 'mastercard_agentpay', 5, 5);
+  protocolScore += getProtocolPoints(input.protocol, 'nlweb', 5, 5);
 
   protocolScore = Math.min(100, protocolScore);
 

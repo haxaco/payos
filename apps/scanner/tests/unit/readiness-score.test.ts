@@ -49,9 +49,9 @@ describe('computeReadinessScore', () => {
   it('gives max protocol score for functional UCP + ACP + MCP', () => {
     const result = computeReadinessScore({
       protocol: [
-        { protocol: 'ucp', detected: true, is_functional: true },
-        { protocol: 'acp', detected: true, is_functional: true },
-        { protocol: 'mcp', detected: true, is_functional: true },
+        { protocol: 'ucp', status: 'confirmed', is_functional: true },
+        { protocol: 'acp', status: 'confirmed', is_functional: true },
+        { protocol: 'mcp', status: 'confirmed', is_functional: true },
       ],
       structured: {
         has_schema_product: false, has_schema_offer: false, has_schema_organization: false,
@@ -77,14 +77,14 @@ describe('computeReadinessScore', () => {
   it('caps protocol score at 100', () => {
     const result = computeReadinessScore({
       protocol: [
-        { protocol: 'ucp', detected: true, is_functional: true },
-        { protocol: 'acp', detected: true, is_functional: true },
-        { protocol: 'mcp', detected: true, is_functional: true },
-        { protocol: 'x402', detected: true, is_functional: true },
-        { protocol: 'ap2', detected: true, is_functional: true },
-        { protocol: 'visa_vic', detected: true, is_functional: true },
-        { protocol: 'mastercard_agentpay', detected: true, is_functional: true },
-        { protocol: 'nlweb', detected: true, is_functional: true },
+        { protocol: 'ucp', status: 'confirmed', is_functional: true },
+        { protocol: 'acp', status: 'confirmed', is_functional: true },
+        { protocol: 'mcp', status: 'confirmed', is_functional: true },
+        { protocol: 'x402', status: 'confirmed', is_functional: true },
+        { protocol: 'ap2', status: 'confirmed', is_functional: true },
+        { protocol: 'visa_vic', status: 'confirmed', is_functional: true },
+        { protocol: 'mastercard_agentpay', status: 'confirmed', is_functional: true },
+        { protocol: 'nlweb', status: 'confirmed', is_functional: true },
       ],
       structured: {
         has_schema_product: false, has_schema_offer: false, has_schema_organization: false,
@@ -130,10 +130,64 @@ describe('computeReadinessScore', () => {
     expect(result.accessibility_score).toBe(20);
   });
 
+  it('applies status hierarchy multipliers (platform_enabled = 0.5x)', () => {
+    const result = computeReadinessScore({
+      protocol: [
+        { protocol: 'ucp', status: 'platform_enabled', is_functional: false },
+        { protocol: 'acp', status: 'eligible', is_functional: false },
+      ],
+      structured: {
+        has_schema_product: false, has_schema_offer: false, has_schema_organization: false,
+        has_json_ld: false, has_open_graph: false, has_microdata: false,
+        product_count: 0, products_with_price: 0, products_with_availability: 0,
+        products_with_sku: 0, products_with_image: 0,
+      },
+      accessibility: {
+        robots_txt_exists: true, robots_blocks_gptbot: false, robots_blocks_claudebot: false,
+        robots_blocks_all_bots: false, robots_allows_agents: false,
+        has_captcha: false, requires_javascript: false,
+        guest_checkout_available: false, requires_account: false,
+        checkout_steps_count: undefined, payment_processors: [],
+        supports_digital_wallets: false, supports_crypto: false,
+        supports_pix: false, supports_spei: false,
+      },
+    });
+
+    // UCP platform_enabled (not functional): 20 * 0.5 = 10
+    // ACP eligible (not functional): 12 * 0.3 = 4 (rounded)
+    expect(result.protocol_score).toBe(14);
+  });
+
+  it('gives zero protocol score for not_detected status', () => {
+    const result = computeReadinessScore({
+      protocol: [
+        { protocol: 'ucp', status: 'not_detected', is_functional: false },
+        { protocol: 'acp', status: 'not_applicable', is_functional: false },
+      ],
+      structured: {
+        has_schema_product: false, has_schema_offer: false, has_schema_organization: false,
+        has_json_ld: false, has_open_graph: false, has_microdata: false,
+        product_count: 0, products_with_price: 0, products_with_availability: 0,
+        products_with_sku: 0, products_with_image: 0,
+      },
+      accessibility: {
+        robots_txt_exists: true, robots_blocks_gptbot: false, robots_blocks_claudebot: false,
+        robots_blocks_all_bots: false, robots_allows_agents: false,
+        has_captcha: false, requires_javascript: false,
+        guest_checkout_available: false, requires_account: false,
+        checkout_steps_count: undefined, payment_processors: [],
+        supports_digital_wallets: false, supports_crypto: false,
+        supports_pix: false, supports_spei: false,
+      },
+    });
+
+    expect(result.protocol_score).toBe(0);
+  });
+
   it('correctly weights composite score', () => {
     const result = computeReadinessScore({
       protocol: [
-        { protocol: 'ucp', detected: true, is_functional: true },
+        { protocol: 'ucp', status: 'confirmed', is_functional: true },
       ],
       structured: {
         has_schema_product: true, has_schema_offer: true, has_schema_organization: false,

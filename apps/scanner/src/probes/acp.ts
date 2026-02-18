@@ -4,7 +4,7 @@ import { buildUrl, withProbeTimeout } from './types.js';
 
 const ACP_PATHS = ['/acp/checkout', '/.well-known/acp', '/api/acp'];
 const NOT_DETECTED: ProbeResult = {
-  protocol: 'acp', detected: false, status: 'not_detected', confidence: 'high', capabilities: {},
+  protocol: 'acp', status: 'not_detected', confidence: 'high', capabilities: {},
 };
 
 export async function probeACP(domain: string, config: ScanConfig): Promise<ProbeResult> {
@@ -35,7 +35,6 @@ async function _probeACP(domain: string, config: ScanConfig): Promise<ProbeResul
 
         return {
           protocol: 'acp',
-          detected: true,
           status: 'confirmed',
           confidence: 'high',
           detection_method: `OPTIONS ${path}`,
@@ -52,7 +51,6 @@ async function _probeACP(domain: string, config: ScanConfig): Promise<ProbeResul
 
   return {
     protocol: 'acp',
-    detected: false,
     status: 'not_detected',
     confidence: 'high',
     response_time_ms: Date.now() - start,

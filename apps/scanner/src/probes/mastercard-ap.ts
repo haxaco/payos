@@ -32,7 +32,7 @@ export async function probeMastercardAP(domain: string, config: ScanConfig): Pro
 
     if (!res.ok) {
       return {
-        protocol: 'mastercard_agentpay', detected: false, status: 'not_detected', confidence: 'high',
+        protocol: 'mastercard_agentpay', status: 'not_detected', confidence: 'high',
         response_time_ms: responseTime, capabilities: {},
       };
     }
@@ -66,23 +66,21 @@ export async function probeMastercardAP(domain: string, config: ScanConfig): Pro
       }
     });
 
-    const detected = mcMeta || mcScript || mcDataAttrs || mcGlobal;
+    const found = mcMeta || mcScript || mcDataAttrs || mcGlobal;
 
     return {
       protocol: 'mastercard_agentpay',
-      detected,
-      status: detected ? 'confirmed' : 'not_detected',
+      status: found ? 'confirmed' : 'not_detected',
       confidence: 'high',
-      detection_method: detected ? 'HTML meta/script/data-attr inspection' : undefined,
-      endpoint_url: detected ? url : undefined,
-      capabilities: detected ? { meta_tag: mcMeta, sdk_script: mcScript, data_attrs: mcDataAttrs, global_var: mcGlobal } : {},
+      detection_method: found ? 'HTML meta/script/data-attr inspection' : undefined,
+      endpoint_url: found ? url : undefined,
+      capabilities: found ? { meta_tag: mcMeta, sdk_script: mcScript, data_attrs: mcDataAttrs, global_var: mcGlobal } : {},
       response_time_ms: responseTime,
-      is_functional: detected,
+      is_functional: found,
     };
   } catch (err) {
     return {
       protocol: 'mastercard_agentpay',
-      detected: false,
       status: 'not_detected',
       confidence: 'low',
       response_time_ms: Date.now() - start,

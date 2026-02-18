@@ -3,7 +3,7 @@ import type { ProbeResult, ScanConfig } from './types.js';
 import { buildUrl, withProbeTimeout } from './types.js';
 
 const NLWEB_PATHS = ['/.well-known/nlweb', '/ask', '/nlweb'];
-const NOT_DETECTED: ProbeResult = { protocol: 'nlweb', detected: false, status: 'not_detected', confidence: 'high', capabilities: {} };
+const NOT_DETECTED: ProbeResult = { protocol: 'nlweb', status: 'not_detected', confidence: 'high', capabilities: {} };
 
 export async function probeNLWeb(domain: string, config: ScanConfig): Promise<ProbeResult> {
   return withProbeTimeout(() => _probeNLWeb(domain, config), NOT_DETECTED, config.timeout_ms + 1000);
@@ -39,7 +39,6 @@ async function _probeNLWeb(domain: string, config: ScanConfig): Promise<ProbeRes
 
       return {
         protocol: 'nlweb',
-        detected: true,
         status: 'confirmed',
         confidence: 'high',
         detection_method: `GET ${path}`,
@@ -55,7 +54,6 @@ async function _probeNLWeb(domain: string, config: ScanConfig): Promise<ProbeRes
 
   return {
     protocol: 'nlweb',
-    detected: false,
     status: 'not_detected',
     confidence: 'high',
     response_time_ms: Date.now() - start,

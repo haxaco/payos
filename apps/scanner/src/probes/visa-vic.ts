@@ -32,7 +32,7 @@ export async function probeVisaVIC(domain: string, config: ScanConfig): Promise<
 
     if (!res.ok) {
       return {
-        protocol: 'visa_vic', detected: false, status: 'not_detected', confidence: 'high',
+        protocol: 'visa_vic', status: 'not_detected', confidence: 'high',
         response_time_ms: responseTime, capabilities: {},
       };
     }
@@ -66,23 +66,21 @@ export async function probeVisaVIC(domain: string, config: ScanConfig): Promise<
       }
     });
 
-    const detected = vicMeta || vicScript || vicDataAttrs || vicGlobal;
+    const found = vicMeta || vicScript || vicDataAttrs || vicGlobal;
 
     return {
       protocol: 'visa_vic',
-      detected,
-      status: detected ? 'confirmed' : 'not_detected',
+      status: found ? 'confirmed' : 'not_detected',
       confidence: 'high',
-      detection_method: detected ? 'HTML meta/script/data-attr inspection' : undefined,
-      endpoint_url: detected ? url : undefined,
-      capabilities: detected ? { meta_tag: vicMeta, sdk_script: vicScript, data_attrs: vicDataAttrs, global_var: vicGlobal } : {},
+      detection_method: found ? 'HTML meta/script/data-attr inspection' : undefined,
+      endpoint_url: found ? url : undefined,
+      capabilities: found ? { meta_tag: vicMeta, sdk_script: vicScript, data_attrs: vicDataAttrs, global_var: vicGlobal } : {},
       response_time_ms: responseTime,
-      is_functional: detected,
+      is_functional: found,
     };
   } catch (err) {
     return {
       protocol: 'visa_vic',
-      detected: false,
       status: 'not_detected',
       confidence: 'low',
       response_time_ms: Date.now() - start,

@@ -30,7 +30,6 @@ export async function probeX402(domain: string, config: ScanConfig): Promise<Pro
 
         return {
           protocol: 'x402',
-          detected: true,
           status: 'confirmed',
           confidence: 'high',
           detection_method: `402 response on ${path}`,
@@ -47,7 +46,6 @@ export async function probeX402(domain: string, config: ScanConfig): Promise<Pro
 
   return {
     protocol: 'x402',
-    detected: false,
     status: 'not_detected',
     confidence: 'high',
     response_time_ms: Date.now() - start,

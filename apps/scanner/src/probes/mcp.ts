@@ -3,7 +3,7 @@ import type { ProbeResult, ScanConfig } from './types.js';
 import { buildUrl, withProbeTimeout } from './types.js';
 
 const MCP_PATHS = ['/.well-known/mcp', '/mcp', '/.well-known/mcp.json'];
-const NOT_DETECTED: ProbeResult = { protocol: 'mcp', detected: false, status: 'not_detected', confidence: 'high', capabilities: {} };
+const NOT_DETECTED: ProbeResult = { protocol: 'mcp', status: 'not_detected', confidence: 'high', capabilities: {} };
 
 export async function probeMCP(domain: string, config: ScanConfig): Promise<ProbeResult> {
   return withProbeTimeout(() => _probeMCP(domain, config), NOT_DETECTED, config.timeout_ms + 1000);
@@ -39,7 +39,6 @@ async function _probeMCP(domain: string, config: ScanConfig): Promise<ProbeResul
 
       return {
         protocol: 'mcp',
-        detected: true,
         status: 'confirmed',
         confidence: 'high',
         detection_method: `GET ${path}`,
@@ -55,7 +54,6 @@ async function _probeMCP(domain: string, config: ScanConfig): Promise<ProbeResul
 
   return {
     protocol: 'mcp',
-    detected: false,
     status: 'not_detected',
     confidence: 'high',
     response_time_ms: Date.now() - start,

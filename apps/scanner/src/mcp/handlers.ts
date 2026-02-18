@@ -329,13 +329,12 @@ async function handleGetTestResults(args: { domain: string }) {
 }
 
 function formatDetectionStatus(p: {
-  detected: boolean;
   is_functional?: boolean;
   status?: string;
   confidence?: string;
   eligibility_signals?: string[];
 }): string {
-  const status = p.status || (p.detected ? 'confirmed' : 'not_detected');
+  const status = p.status || 'not_detected';
 
   switch (status) {
     case 'confirmed':

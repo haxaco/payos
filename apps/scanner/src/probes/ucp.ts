@@ -16,7 +16,7 @@ export async function probeUCP(domain: string, config: ScanConfig): Promise<Prob
     const responseTime = Date.now() - start;
 
     if (!res.ok) {
-      return { protocol: 'ucp', detected: false, status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
+      return { protocol: 'ucp', status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
     }
 
     const text = await res.text();
@@ -24,7 +24,7 @@ export async function probeUCP(domain: string, config: ScanConfig): Promise<Prob
     try {
       profile = JSON.parse(text);
     } catch {
-      return { protocol: 'ucp', detected: false, status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
+      return { protocol: 'ucp', status: 'not_detected', confidence: 'high', response_time_ms: responseTime, capabilities: {} };
     }
 
     const hasCheckoutTypes = Array.isArray(profile.checkout_types) && profile.checkout_types.length > 0;
@@ -32,7 +32,6 @@ export async function probeUCP(domain: string, config: ScanConfig): Promise<Prob
 
     return {
       protocol: 'ucp',
-      detected: true,
       status: 'confirmed',
       confidence: 'high',
       detection_method: '/.well-known/ucp',
@@ -44,7 +43,6 @@ export async function probeUCP(domain: string, config: ScanConfig): Promise<Prob
   } catch (err) {
     return {
       protocol: 'ucp',
-      detected: false,
       status: 'not_detected',
       confidence: 'low',
       response_time_ms: Date.now() - start,
