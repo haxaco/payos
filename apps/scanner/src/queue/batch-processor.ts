@@ -106,7 +106,7 @@ export class BatchProcessor {
       completed_at: new Date().toISOString(),
     });
 
-    console.log(`[Batch ${batchId}] Complete: ${completed} scanned, ${failed} failed out of ${uniqueTargets.length}`);
+    console.error(`[Batch ${batchId}] Complete: ${completed} scanned, ${failed} failed out of ${uniqueTargets.length}`);
   }
 
   cancelBatch(batchId: string): void {
