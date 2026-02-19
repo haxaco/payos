@@ -7,6 +7,7 @@ import { scanRouter } from './routes/scan.js';
 import { batchRouter } from './routes/batch.js';
 import { testsRouter } from './routes/tests.js';
 import { observatoryRouter } from './routes/observatory.js';
+import { prospectsRouter } from './routes/prospects.js';
 import { healthRouter } from './routes/health.js';
 
 const app = new Hono();
@@ -40,6 +41,7 @@ v1.route('/scanner', scanRouter);
 v1.route('/scanner', batchRouter);
 v1.route('/scanner', testsRouter);
 v1.route('/scanner', observatoryRouter);
+v1.route('/scanner', prospectsRouter);
 
 app.route('/v1', v1);
 

@@ -193,3 +193,44 @@ export interface MerchantDemandSignal {
   first_seen: string;
   last_seen: string;
 }
+
+// ============================================
+// PROSPECT SCORING TYPES (Story 56.23)
+// ============================================
+
+export type SalesPriority = 'critical' | 'high' | 'medium' | 'low';
+
+export interface DemandScoreBreakdown {
+  public_intelligence: number;
+  synthetic_test: number;
+  observatory: number;
+  telemetry: number;
+}
+
+export interface ProspectScore {
+  domain: string;
+  merchant_name?: string;
+  merchant_category?: string;
+  region?: string;
+  readiness_score: number;
+  demand_score: number;
+  demand_breakdown: DemandScoreBreakdown;
+  opportunity_score: number;
+  sales_priority: SalesPriority;
+  signals: {
+    has_demand_intelligence: boolean;
+    has_shopping_test: boolean;
+    has_observatory_data: boolean;
+    has_telemetry: boolean;
+  };
+}
+
+export interface HeatMapCell {
+  category: string;
+  region: string;
+  merchant_count: number;
+  avg_readiness: number;
+  avg_demand: number;
+  avg_opportunity: number;
+  top_priority: SalesPriority;
+}

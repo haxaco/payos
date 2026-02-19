@@ -117,14 +117,29 @@ export const SCANNER_TOOLS: Tool[] = [
   },
   {
     name: 'find_best_prospects',
-    description: 'Find the best prospects by opportunity score (high demand + low readiness = high opportunity).',
+    description: 'Find the best prospects by opportunity score (high demand + low readiness = high opportunity). Combines 4 demand signals: public intelligence (30%), synthetic tests (25%), observatory (25%), and telemetry (20%). Returns scored prospects sorted by opportunity.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         category: { type: 'string', description: 'Filter by category' },
         region: { type: 'string', description: 'Filter by region' },
+        min_opportunity: { type: 'number', description: 'Minimum opportunity score (0-100)' },
+        priority: {
+          type: 'string',
+          enum: ['critical', 'high', 'medium', 'low'],
+          description: 'Filter by sales priority',
+        },
         limit: { type: 'number', description: 'Number of results (default 10)' },
+        export_csv: { type: 'boolean', description: 'Return CSV format for CRM export (default false)' },
       },
+    },
+  },
+  {
+    name: 'get_heat_map',
+    description: 'Get a demand heat map showing category × region matrix with aggregated readiness, demand, and opportunity scores. Identifies which market segments have the most opportunity.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
     },
   },
   {

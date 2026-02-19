@@ -4,6 +4,13 @@ import { BatchProcessor } from '../queue/batch-processor.js';
 import { getDemandBrief, getDemandStats } from '../demand/intelligence.js';
 import { runAgentShoppingTest, formatTestResultMarkdown } from '../demand/synthetic-tests.js';
 import { getAgentActivityReport, formatActivityReportMarkdown } from '../demand/observatory.js';
+import {
+  getProspectList,
+  getHeatMap,
+  exportProspectsAsCSV,
+  formatProspectsMarkdown,
+  formatHeatMapMarkdown,
+} from '../demand/prospect-scoring.js';
 import * as queries from '../db/queries.js';
 import { getReadinessGrade } from '@sly/utils';
 
@@ -48,6 +55,8 @@ export async function handleToolCall(request: CallToolRequest): Promise<{
         return await handleGetCheckoutDemand(args as any);
       case 'get_agent_activity':
         return await handleGetAgentActivity(args as any);
+      case 'get_heat_map':
+        return await handleGetHeatMap();
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
     }
@@ -258,29 +267,35 @@ async function handleGetReadinessReport() {
   return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 }
 
-async function handleFindBestProspects(args: { category?: string; region?: string; limit?: number }) {
-  const result = await queries.listMerchantScans(DEFAULT_TENANT_ID, {
+async function handleFindBestProspects(args: {
+  category?: string;
+  region?: string;
+  min_opportunity?: number;
+  priority?: string;
+  limit?: number;
+  export_csv?: boolean;
+}) {
+  const prospects = await getProspectList({
     category: args.category,
     region: args.region,
-    status: 'completed',
-    max_score: 50, // Low readiness = high opportunity
+    min_opportunity: args.min_opportunity,
+    priority: args.priority as 'critical' | 'high' | 'medium' | 'low' | undefined,
     limit: args.limit || 10,
   });
 
-  const lines = [
-    '## Best Prospects (High Opportunity)',
-    'These merchants have low readiness scores, meaning high opportunity for Sly.',
-    '',
-    '| Domain | Score | Grade | Category | Platform |',
-    '|--------|-------|-------|----------|----------|',
-  ];
-
-  for (const scan of result.data) {
-    const grade = getReadinessGrade(scan.readiness_score);
-    lines.push(`| ${scan.domain} | ${scan.readiness_score} | ${grade} | ${scan.merchant_category || '-'} | - |`);
+  if (args.export_csv) {
+    const csv = exportProspectsAsCSV(prospects);
+    return { content: [{ type: 'text' as const, text: csv }] };
   }
 
-  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  const markdown = formatProspectsMarkdown(prospects);
+  return { content: [{ type: 'text' as const, text: markdown }] };
+}
+
+async function handleGetHeatMap() {
+  const heatMap = await getHeatMap();
+  const markdown = formatHeatMapMarkdown(heatMap);
+  return { content: [{ type: 'text' as const, text: markdown }] };
 }
 
 async function handleGetProtocolAdoption() {
