@@ -2,6 +2,7 @@ import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { scanDomain, normalizeDomain } from '../scanner.js';
 import { BatchProcessor } from '../queue/batch-processor.js';
 import { getDemandBrief, getDemandStats } from '../demand/intelligence.js';
+import { runAgentShoppingTest, formatTestResultMarkdown } from '../demand/synthetic-tests.js';
 import * as queries from '../db/queries.js';
 import { getReadinessGrade } from '@sly/utils';
 
@@ -311,21 +312,21 @@ async function handleGetDemandStats(args: {
 }
 
 async function handleRunAgentTest(args: { domain: string; test_type?: string }) {
-  return {
-    content: [{
-      type: 'text' as const,
-      text: `Agent shopping test for ${args.domain} is not yet implemented (Story 56.20). Use \`scan_merchant\` for protocol and readiness analysis.`,
-    }],
-  };
+  const result = await runAgentShoppingTest(
+    args.domain,
+    (args.test_type as 'browse' | 'search' | 'add_to_cart' | 'checkout' | 'full_flow') || undefined,
+  );
+  const markdown = formatTestResultMarkdown(result);
+  return { content: [{ type: 'text' as const, text: markdown }] };
 }
 
 async function handleGetTestResults(args: { domain: string }) {
-  return {
-    content: [{
-      type: 'text' as const,
-      text: `No test results found for ${args.domain}. Agent shopping tests are not yet implemented (Story 56.20).`,
-    }],
-  };
+  const results = await queries.getAgentShoppingTests(normalizeDomain(args.domain));
+  if (results.length === 0) {
+    return { content: [{ type: 'text' as const, text: `No test results for ${args.domain}. Run \`run_agent_shopping_test\` first.` }] };
+  }
+  const markdown = formatTestResultMarkdown(results[0]);
+  return { content: [{ type: 'text' as const, text: markdown }] };
 }
 
 function formatDetectionStatus(p: {

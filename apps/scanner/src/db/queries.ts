@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MerchantScan, ScanProtocolResult, ScanBatch, DetectionStatus } from '@sly/types';
+import type { MerchantScan, ScanProtocolResult, ScanBatch, DetectionStatus, AgentShoppingTestResult } from '@sly/types';
 import { getClient } from './client.js';
 
 function isDetected(status?: string): boolean {
@@ -507,4 +507,90 @@ export async function getProtocolAdoption(tenantId: string): Promise<Record<stri
   }
 
   return adoption;
+}
+
+// ============================================
+// AGENT SHOPPING TESTS
+// ============================================
+
+export async function insertAgentShoppingTest(data: {
+  merchant_scan_id: string;
+  domain: string;
+  test_type: string;
+  status: string;
+  steps: unknown[];
+  blockers: unknown[];
+  total_steps: number;
+  completed_steps: number;
+  success_rate: number;
+  failure_point?: unknown;
+  estimated_monthly_agent_visits?: number;
+  estimated_lost_conversions?: number;
+  estimated_lost_revenue_usd?: number;
+  recommendations?: unknown[];
+  duration_ms?: number;
+  agent_model?: string;
+}): Promise<{ id: string }> {
+  // Delete previous tests for this domain to keep latest only
+  await db()
+    .from('agent_shopping_tests')
+    .delete()
+    .eq('domain', data.domain);
+
+  const { data: row, error } = await db()
+    .from('agent_shopping_tests')
+    .insert({
+      merchant_scan_id: data.merchant_scan_id,
+      domain: data.domain,
+      test_type: data.test_type,
+      status: data.status,
+      steps: data.steps,
+      blockers: data.blockers,
+      total_steps: data.total_steps,
+      completed_steps: data.completed_steps,
+      success_rate: data.success_rate,
+      failure_point: data.failure_point || null,
+      estimated_monthly_agent_visits: data.estimated_monthly_agent_visits,
+      estimated_lost_conversions: data.estimated_lost_conversions,
+      estimated_lost_revenue_usd: data.estimated_lost_revenue_usd,
+      recommendations: data.recommendations || [],
+      duration_ms: data.duration_ms,
+      agent_model: data.agent_model,
+      tested_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single();
+
+  if (error) throw new Error(`Failed to insert agent shopping test: ${error.message}`);
+  return { id: row.id };
+}
+
+export async function getAgentShoppingTests(
+  domain: string,
+  limit = 10,
+): Promise<AgentShoppingTestResult[]> {
+  const { data, error } = await db()
+    .from('agent_shopping_tests')
+    .select('*')
+    .eq('domain', domain)
+    .order('tested_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(`Failed to get agent shopping tests: ${error.message}`);
+  return (data || []) as AgentShoppingTestResult[];
+}
+
+export async function getLatestAgentShoppingTest(
+  domain: string,
+): Promise<AgentShoppingTestResult | null> {
+  const { data, error } = await db()
+    .from('agent_shopping_tests')
+    .select('*')
+    .eq('domain', domain)
+    .order('tested_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to get latest agent shopping test: ${error.message}`);
+  return data as AgentShoppingTestResult | null;
 }

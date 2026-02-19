@@ -163,18 +163,18 @@ export const SCANNER_TOOLS: Tool[] = [
     },
   },
 
-  // Synthetic tests (stubs for future implementation)
+  // Synthetic agent shopping tests
   {
     name: 'run_agent_shopping_test',
-    description: 'Run a synthetic agent shopping test against a merchant (stub — full implementation in Story 56.20).',
+    description: 'Run a synthetic agent shopping test against a merchant. Simulates a 5-step shopping flow (discovery, selection, cart, checkout, payment) to find where agents get blocked.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        domain: { type: 'string', description: 'Domain to test' },
+        domain: { type: 'string', description: 'Domain to test (e.g., "shopify.com")' },
         test_type: {
           type: 'string',
           enum: ['browse', 'search', 'add_to_cart', 'checkout', 'full_flow'],
-          description: 'Type of test to run',
+          description: 'Type of test to run. "full_flow" runs all 5 steps (default).',
         },
       },
       required: ['domain'],
@@ -182,7 +182,7 @@ export const SCANNER_TOOLS: Tool[] = [
   },
   {
     name: 'get_test_results',
-    description: 'Get results from a previous agent shopping test.',
+    description: 'Get results from a previous agent shopping test, including blockers and recommendations.',
     inputSchema: {
       type: 'object' as const,
       properties: {
