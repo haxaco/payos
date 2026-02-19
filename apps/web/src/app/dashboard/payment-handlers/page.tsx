@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Plus, Trash2, CheckCircle, AlertCircle, Clock, RefreshCw, ExternalLink, CreditCard, ArrowRight } from 'lucide-react';
+import { Plug, Plus, Trash2, CheckCircle, AlertCircle, Clock, RefreshCw, ExternalLink, CreditCard, ArrowRight, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { useApiConfig } from '@/lib/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -12,7 +12,7 @@ import { cn } from '@sly/ui';
 // Types
 interface ConnectedAccount {
   id: string;
-  handler_type: 'stripe' | 'paypal' | 'circle' | 'payos_native';
+  handler_type: string;
   handler_name: string;
   status: 'pending' | 'active' | 'inactive' | 'error';
   credentials_preview?: Record<string, string>;
@@ -28,13 +28,28 @@ interface ConnectedAccountsResponse {
   data: ConnectedAccount[];
 }
 
-type HandlerType = 'stripe' | 'paypal' | 'circle' | 'payos_native';
+interface DbHandler {
+  id: string;
+  displayName: string;
+  description: string;
+  status: string;
+  integrationMode: string;
+  supportedTypes: string[];
+  supportedCurrencies: string[];
+  scope: string;
+}
 
-const HANDLER_INFO: Record<HandlerType, { name: string; description: string; icon: string; color: string; docsUrl: string; docsLabel: string }> = {
+interface DbHandlersResponse {
+  data: DbHandler[];
+}
+
+type HardcodedHandlerType = 'stripe' | 'paypal' | 'circle' | 'payos_native';
+
+const HANDLER_INFO: Record<HardcodedHandlerType, { name: string; description: string; icon: string; color: string; docsUrl: string; docsLabel: string }> = {
   stripe: {
     name: 'Stripe',
     description: 'Accept cards, bank transfers, and more',
-    icon: '💳',
+    icon: '\u{1F4B3}',
     color: 'bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400',
     docsUrl: 'https://dashboard.stripe.com/test/apikeys',
     docsLabel: 'Get Stripe API Keys',
@@ -42,7 +57,7 @@ const HANDLER_INFO: Record<HandlerType, { name: string; description: string; ico
   paypal: {
     name: 'PayPal',
     description: 'Accept PayPal and Venmo payments',
-    icon: '🅿️',
+    icon: '\u{1F17F}\uFE0F',
     color: 'bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400',
     docsUrl: 'https://developer.paypal.com/dashboard/applications/sandbox',
     docsLabel: 'Get PayPal Sandbox Credentials',
@@ -50,7 +65,7 @@ const HANDLER_INFO: Record<HandlerType, { name: string; description: string; ico
   circle: {
     name: 'Circle',
     description: 'USDC stablecoin payments',
-    icon: '⭕',
+    icon: '\u2B55',
     color: 'bg-green-100 dark:bg-green-950 text-green-600 dark:text-green-400',
     docsUrl: 'https://console.circle.com/api-keys',
     docsLabel: 'Get Circle API Key',
@@ -58,16 +73,37 @@ const HANDLER_INFO: Record<HandlerType, { name: string; description: string; ico
   payos_native: {
     name: 'Sly Native',
     description: 'Pix (Brazil) and SPEI (Mexico)',
-    icon: '🌎',
+    icon: '\u{1F30E}',
     color: 'bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400',
     docsUrl: 'https://www.bcb.gov.br/estabilidadefinanceira/pix',
     docsLabel: 'Learn about Pix & SPEI',
   },
 };
 
+const HARDCODED_HANDLER_IDS = Object.keys(HANDLER_INFO) as HardcodedHandlerType[];
+
+function isHardcodedHandler(type: string): type is HardcodedHandlerType {
+  return (HARDCODED_HANDLER_IDS as string[]).includes(type);
+}
+
+function getHandlerDisplay(type: string, dbHandlers: DbHandler[]) {
+  if (isHardcodedHandler(type)) {
+    const info = HANDLER_INFO[type];
+    return { name: info.name, icon: info.icon, color: info.color };
+  }
+  const dbHandler = dbHandlers.find((h) => h.id === type);
+  return {
+    name: dbHandler?.displayName || type,
+    icon: null,
+    color: 'bg-cyan-100 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400',
+  };
+}
+
 // API functions
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
 async function fetchConnectedAccounts(authToken: string): Promise<ConnectedAccountsResponse> {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts`, {
+  const response = await fetch(`${API_BASE}/v1/organization/connected-accounts`, {
     headers: {
       'Authorization': `Bearer ${authToken}`,
       'Content-Type': 'application/json',
@@ -79,12 +115,25 @@ async function fetchConnectedAccounts(authToken: string): Promise<ConnectedAccou
   return response.json();
 }
 
+async function fetchDbHandlers(authToken: string): Promise<DbHandlersResponse> {
+  const response = await fetch(`${API_BASE}/v1/payment-handlers`, {
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch payment handlers');
+  }
+  return response.json();
+}
+
 async function createConnectedAccount(authToken: string, data: {
-  handler_type: HandlerType;
+  handler_type: string;
   handler_name: string;
   credentials: Record<string, unknown>;
 }): Promise<ConnectedAccount> {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts`, {
+  const response = await fetch(`${API_BASE}/v1/organization/connected-accounts`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${authToken}`,
@@ -100,7 +149,7 @@ async function createConnectedAccount(authToken: string, data: {
 }
 
 async function deleteConnectedAccount(authToken: string, id: string): Promise<void> {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts/${id}`, {
+  const response = await fetch(`${API_BASE}/v1/organization/connected-accounts/${id}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${authToken}`,
@@ -113,7 +162,7 @@ async function deleteConnectedAccount(authToken: string, id: string): Promise<vo
 }
 
 async function verifyConnectedAccount(authToken: string, id: string): Promise<{ verified: boolean; error?: string }> {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/organization/connected-accounts/${id}/verify`, {
+  const response = await fetch(`${API_BASE}/v1/organization/connected-accounts/${id}/verify`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${authToken}`,
@@ -143,25 +192,51 @@ function StatusBadge({ status }: { status: ConnectedAccount['status'] }) {
   );
 }
 
+// Integration mode badge
+function ModeBadge({ mode }: { mode: string }) {
+  const config: Record<string, { label: string; className: string }> = {
+    demo: { label: 'Demo', className: 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950' },
+    webhook: { label: 'Webhook', className: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950' },
+    custom: { label: 'Custom', className: 'text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950' },
+  };
+  const { label, className } = config[mode] || { label: mode, className: 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800' };
+  return (
+    <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', className)}>
+      {label}
+    </span>
+  );
+}
+
 // Connect dialog component
 function ConnectDialog({
   isOpen,
   onClose,
-  onConnect
+  onConnect,
+  dbHandlers,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onConnect: (type: HandlerType, name: string, credentials: Record<string, unknown>) => void;
+  onConnect: (type: string, name: string, credentials: Record<string, unknown>) => void;
+  dbHandlers: DbHandler[];
 }) {
   const [step, setStep] = useState<'select' | 'credentials'>('select');
-  const [selectedType, setSelectedType] = useState<HandlerType | null>(null);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [selectedDbHandler, setSelectedDbHandler] = useState<DbHandler | null>(null);
   const [handlerName, setHandlerName] = useState('');
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSelectType = (type: HandlerType) => {
+  const handleSelectHardcoded = (type: HardcodedHandlerType) => {
     setSelectedType(type);
+    setSelectedDbHandler(null);
     setHandlerName(`My ${HANDLER_INFO[type].name} Account`);
+    setStep('credentials');
+  };
+
+  const handleSelectDbHandler = (handler: DbHandler) => {
+    setSelectedType(handler.id);
+    setSelectedDbHandler(handler);
+    setHandlerName(`My ${handler.displayName} Account`);
     setStep('credentials');
   };
 
@@ -179,6 +254,7 @@ function ConnectDialog({
   const handleClose = () => {
     setStep('select');
     setSelectedType(null);
+    setSelectedDbHandler(null);
     setHandlerName('');
     setCredentials({});
     onClose();
@@ -186,17 +262,23 @@ function ConnectDialog({
 
   if (!isOpen) return null;
 
+  const hardcodedInfo = selectedType && isHardcodedHandler(selectedType) ? HANDLER_INFO[selectedType] : null;
+  // Filter out DB handlers whose ID collides with hardcoded ones
+  const filteredDbHandlers = dbHandlers.filter((h) => !isHardcodedHandler(h.id));
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="p-6">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="p-6 overflow-y-auto flex-1">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Connect Payment Handler</h2>
 
           {step === 'select' ? (
             <>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Select a payment handler to connect:</p>
+
+              {/* Hardcoded integrations */}
               <div className="space-y-3">
-                {(Object.keys(HANDLER_INFO) as HandlerType[]).map((type) => {
+                {HARDCODED_HANDLER_IDS.map((type) => {
                   const info = HANDLER_INFO[type];
                   return (
                     <div
@@ -204,7 +286,7 @@ function ConnectDialog({
                       className="rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors overflow-hidden"
                     >
                       <button
-                        onClick={() => handleSelectType(type)}
+                        onClick={() => handleSelectHardcoded(type)}
                         className="w-full flex items-center gap-4 p-4 text-left"
                       >
                         <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-2xl', info.color)}>
@@ -231,29 +313,68 @@ function ConnectDialog({
                   );
                 })}
               </div>
+
+              {/* DB-driven platform handlers */}
+              {filteredDbHandlers.length > 0 && (
+                <>
+                  <div className="flex items-center gap-3 my-6">
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Platform Handlers</span>
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                  <div className="space-y-3">
+                    {filteredDbHandlers.map((handler) => (
+                      <button
+                        key={handler.id}
+                        onClick={() => handleSelectDbHandler(handler)}
+                        className="w-full rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors flex items-center gap-4 p-4 text-left"
+                      >
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-cyan-100 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400">
+                          <Zap className="w-6 h-6" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900 dark:text-white">{handler.displayName}</span>
+                            <ModeBadge mode={handler.integrationMode} />
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{handler.description}</div>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {handler.supportedCurrencies.map((cur) => (
+                              <span key={cur} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                                {cur}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <>
               <button
-                onClick={() => setStep('select')}
+                onClick={() => { setStep('select'); setSelectedDbHandler(null); }}
                 className="text-sm text-blue-600 dark:text-blue-400 hover:underline mb-4"
               >
-                ← Choose different handler
+                &larr; Choose different handler
               </button>
 
-              {selectedType && (
+              {/* Header showing selected handler */}
+              {hardcodedInfo ? (
                 <div className="mb-6 space-y-3">
                   <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
-                    <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center text-xl', HANDLER_INFO[selectedType].color)}>
-                      {HANDLER_INFO[selectedType].icon}
+                    <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center text-xl', hardcodedInfo.color)}>
+                      {hardcodedInfo.icon}
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900 dark:text-white">{HANDLER_INFO[selectedType].name}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{HANDLER_INFO[selectedType].description}</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{hardcodedInfo.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{hardcodedInfo.description}</div>
                     </div>
                   </div>
                   <a
-                    href={HANDLER_INFO[selectedType].docsUrl}
+                    href={hardcodedInfo.docsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-lg transition-colors group"
@@ -261,7 +382,7 @@ function ConnectDialog({
                     <div className="flex items-center gap-2">
                       <ExternalLink className="w-4 h-4 text-blue-500" />
                       <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
-                        {HANDLER_INFO[selectedType].docsLabel}
+                        {hardcodedInfo.docsLabel}
                       </span>
                     </div>
                     <span className="text-xs text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300">
@@ -269,7 +390,22 @@ function ConnectDialog({
                     </span>
                   </a>
                 </div>
-              )}
+              ) : selectedDbHandler ? (
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-cyan-100 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400">
+                      <Zap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900 dark:text-white">{selectedDbHandler.displayName}</span>
+                        <ModeBadge mode={selectedDbHandler.integrationMode} />
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{selectedDbHandler.description}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-4">
                 <div>
@@ -280,11 +416,12 @@ function ConnectDialog({
                     type="text"
                     value={handlerName}
                     onChange={(e) => setHandlerName(e.target.value)}
-                    placeholder="My Stripe Account"
+                    placeholder="My Account"
                     className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
+                {/* Hardcoded handler credential forms */}
                 {selectedType === 'stripe' && (
                   <>
                     <div>
@@ -299,7 +436,7 @@ function ConnectDialog({
                         className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
                       />
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Find this in your Stripe Dashboard → Developers → API keys
+                        Find this in your Stripe Dashboard &rarr; Developers &rarr; API keys
                       </p>
                     </div>
                     <div>
@@ -389,6 +526,33 @@ function ConnectDialog({
                     </div>
                   </>
                 )}
+
+                {/* DB handler credential forms */}
+                {selectedDbHandler && selectedDbHandler.integrationMode === 'demo' && (
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      This handler runs in demo mode &mdash; no credentials needed. Payments will be simulated.
+                    </p>
+                  </div>
+                )}
+
+                {selectedDbHandler && selectedDbHandler.integrationMode !== 'demo' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Configuration (JSON)
+                    </label>
+                    <textarea
+                      value={credentials._config || ''}
+                      onChange={(e) => setCredentials({ ...credentials, _config: e.target.value })}
+                      placeholder={'{\n  "api_key": "...",\n  "endpoint": "..."\n}'}
+                      rows={4}
+                      className="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Provide handler-specific configuration as JSON
+                    </p>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -430,9 +594,18 @@ export default function PaymentHandlersPage() {
     enabled: !!authToken,
   });
 
+  // Fetch available DB handlers
+  const { data: dbHandlersData } = useQuery({
+    queryKey: ['payment-handlers'],
+    queryFn: () => fetchDbHandlers(authToken!),
+    enabled: !!authToken,
+  });
+
+  const dbHandlers = dbHandlersData?.data || [];
+
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: ({ type, name, credentials }: { type: HandlerType; name: string; credentials: Record<string, unknown> }) =>
+    mutationFn: ({ type, name, credentials }: { type: string; name: string; credentials: Record<string, unknown> }) =>
       createConnectedAccount(authToken!, { handler_type: type, handler_name: name, credentials }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connected-accounts'] });
@@ -579,12 +752,12 @@ export default function PaymentHandlersPage() {
         ) : (
           <div className="divide-y divide-gray-200 dark:divide-gray-800">
             {accounts.map((account) => {
-              const info = HANDLER_INFO[account.handler_type];
+              const display = getHandlerDisplay(account.handler_type, dbHandlers);
               return (
                 <div key={account.id} className="p-6 flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-2xl', info.color)}>
-                      {info.icon}
+                    <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center text-2xl', display.color)}>
+                      {display.icon || <Zap className="w-6 h-6" />}
                     </div>
                     <div>
                       <div className="flex items-center gap-3">
@@ -592,7 +765,7 @@ export default function PaymentHandlersPage() {
                         <StatusBadge status={account.status} />
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                        {info.name} • Connected {new Date(account.connected_at).toLocaleDateString()}
+                        {display.name} &bull; Connected {new Date(account.connected_at).toLocaleDateString()}
                       </div>
                       {account.error_message && (
                         <div className="text-sm text-red-600 dark:text-red-400 mt-1">
@@ -683,6 +856,7 @@ export default function PaymentHandlersPage() {
         isOpen={showConnectDialog}
         onClose={() => setShowConnectDialog(false)}
         onConnect={(type, name, credentials) => createMutation.mutate({ type, name, credentials })}
+        dbHandlers={dbHandlers}
       />
 
       {/* Delete Confirmation Dialog */}

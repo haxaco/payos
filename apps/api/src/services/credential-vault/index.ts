@@ -182,7 +182,8 @@ export function validateCredentialStructure(
       break;
 
     default:
-      errors.push(`Unknown handler type: ${handlerType}`);
+      // DB-driven handlers: no structural validation (credentials are optional or handler-specific)
+      break;
   }
 
   return {

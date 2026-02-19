@@ -26,12 +26,12 @@ import { validateCircleCredentials } from '../../services/handlers/circle.js';
 const connectedAccounts = new Hono();
 
 // Validation schemas
-const handlerTypes = ['stripe', 'paypal', 'circle', 'payos_native'] as const;
+const HARDCODED_HANDLERS = ['stripe', 'paypal', 'circle', 'payos_native'] as const;
 
 const createConnectedAccountSchema = z.object({
-  handler_type: z.enum(handlerTypes),
+  handler_type: z.string().min(1).max(100),
   handler_name: z.string().min(1).max(100),
-  credentials: z.record(z.unknown()),
+  credentials: z.record(z.unknown()).default({}),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -211,18 +211,42 @@ connectedAccounts.post('/', async (c) => {
     return c.json({ error: 'Invalid request body' }, 400);
   }
 
-  // Validate credential structure
+  const supabase = createClient();
+
+  // Determine if this is a hardcoded handler or a DB-driven one
+  const isHardcodedHandler = (HARDCODED_HANDLERS as readonly string[]).includes(body.handler_type);
+  let dbHandlerMode: string | null = null;
+
+  if (!isHardcodedHandler) {
+    // Look up handler in payment_handlers table
+    const { data: dbHandler } = await supabase
+      .from('payment_handlers')
+      .select('id, integration_mode, display_name')
+      .eq('id', body.handler_type)
+      .eq('status', 'active')
+      .single();
+
+    if (!dbHandler) {
+      return c.json({ error: `Unknown handler type: ${body.handler_type}` }, 400);
+    }
+    dbHandlerMode = dbHandler.integration_mode;
+  }
+
+  // Validate credential structure (hardcoded handlers enforce structure, DB handlers pass through)
   const validation = validateCredentialStructure(body.handler_type, body.credentials);
   if (!validation.valid) {
     return c.json({ error: 'Invalid credentials', details: validation.errors }, 400);
   }
 
-  // Validate credentials work (for supported handlers)
+  // Validate credentials work (for supported hardcoded handlers)
   let verificationResult: { valid: boolean; error?: string; accountInfo?: Record<string, unknown> } = {
     valid: true,
   };
 
-  if (body.handler_type === 'stripe') {
+  if (dbHandlerMode === 'demo') {
+    // Demo-mode DB handlers: no credential validation needed
+    verificationResult = { valid: true, accountInfo: { integration_mode: 'demo' } };
+  } else if (body.handler_type === 'stripe') {
     verificationResult = await validateStripeCredentials(body.credentials as { api_key: string });
   } else if (body.handler_type === 'paypal') {
     verificationResult = await validatePayPalCredentials(body.credentials as {
@@ -236,9 +260,7 @@ connectedAccounts.post('/', async (c) => {
       sandbox?: boolean;
     });
   }
-  // PayOS Native doesn't have API validation (Pix/SPEI keys are validated differently)
-
-  const supabase = createClient();
+  // PayOS Native and non-demo DB handlers don't have API validation
 
   // Check for existing account with same handler type and name
   const { data: existing } = await supabase
