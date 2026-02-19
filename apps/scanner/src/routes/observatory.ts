@@ -34,6 +34,8 @@ observatoryRouter.post('/observatory/sweep', async (c) => {
     crawl_registries: body.crawl_registries,
     detect_drift: body.detect_drift,
     check_domains: body.check_domains,
+    query_perplexity: body.query_perplexity,
+    perplexity_queries: body.perplexity_queries,
   });
   return c.json(result);
 });

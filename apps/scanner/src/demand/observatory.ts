@@ -15,7 +15,10 @@ import * as queries from '../db/queries.js';
 
 const USER_AGENT = 'SlyObservatory/1.0 (+https://sly.dev/scanner)';
 const REQUEST_TIMEOUT_MS = 8000;
+const PERPLEXITY_TIMEOUT_MS = 15000;
 const DEFAULT_TENANT_ID = process.env.SCANNER_TENANT_ID || 'dad4308f-f9b6-4529-a406-7c2bdf3c6071';
+const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY || '';
+const PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions';
 
 // Known MCP registries and agent directories to crawl
 const MCP_REGISTRIES = [
@@ -242,6 +245,171 @@ export async function checkAISearchPresence(domain: string): Promise<Array<{
 }
 
 // ============================================
+// OBSERVATION METHOD 5: Perplexity API Search
+// ============================================
+
+interface PerplexitySearchResult {
+  title: string;
+  url: string;
+  snippet?: string;
+}
+
+interface PerplexityResponse {
+  choices: Array<{ message: { content: string } }>;
+  citations?: string[];
+  search_results?: PerplexitySearchResult[];
+}
+
+/**
+ * Query Perplexity's Sonar API with commercial queries and extract
+ * which merchant domains appear in the results + citations.
+ */
+export async function queryPerplexityForMerchants(
+  commerceQueries?: Array<{ query: string; category: string }>,
+): Promise<Array<{
+  domain: string;
+  query: string;
+  category: string;
+  evidence: string;
+  evidence_url?: string;
+  confidence: 'high' | 'medium' | 'low';
+}>> {
+  if (!PERPLEXITY_API_KEY) {
+    console.warn('[Observatory] PERPLEXITY_API_KEY not set — skipping Perplexity search');
+    return [];
+  }
+
+  const queriesToRun = commerceQueries || COMMERCIAL_QUERIES;
+  const results: Array<{
+    domain: string;
+    query: string;
+    category: string;
+    evidence: string;
+    evidence_url?: string;
+    confidence: 'high' | 'medium' | 'low';
+  }> = [];
+
+  // Dedupe domains across queries
+  const seenDomains = new Set<string>();
+
+  for (const q of queriesToRun) {
+    try {
+      const res = await fetch(PERPLEXITY_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'sonar',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a shopping assistant. List the top merchant websites where someone can buy the requested product or service. For each, mention the domain name.',
+            },
+            {
+              role: 'user',
+              content: q.query,
+            },
+          ],
+          web_search_options: {
+            search_context_size: 'medium',
+          },
+        }),
+        signal: AbortSignal.timeout(PERPLEXITY_TIMEOUT_MS),
+      });
+
+      if (!res.ok) {
+        console.warn(`[Observatory] Perplexity API error for "${q.query}": ${res.status} ${res.statusText}`);
+        continue;
+      }
+
+      const data = await res.json() as PerplexityResponse;
+      const responseText = data.choices?.[0]?.message?.content || '';
+
+      // Extract domains from citations
+      if (data.citations && data.citations.length > 0) {
+        for (const citationUrl of data.citations) {
+          try {
+            const url = new URL(citationUrl);
+            const domain = url.hostname.replace(/^www\./, '');
+            if (domain && !isNonMerchantDomain(domain) && !seenDomains.has(domain)) {
+              seenDomains.add(domain);
+              results.push({
+                domain,
+                query: q.query,
+                category: q.category,
+                evidence: `Perplexity cited ${domain} in response to "${q.query}"`,
+                evidence_url: citationUrl,
+                confidence: 'high',
+              });
+            }
+          } catch { /* invalid URL */ }
+        }
+      }
+
+      // Extract domains from search_results
+      if (data.search_results && data.search_results.length > 0) {
+        for (const sr of data.search_results) {
+          try {
+            const url = new URL(sr.url);
+            const domain = url.hostname.replace(/^www\./, '');
+            if (domain && !isNonMerchantDomain(domain) && !seenDomains.has(domain)) {
+              seenDomains.add(domain);
+              results.push({
+                domain,
+                query: q.query,
+                category: q.category,
+                evidence: `Perplexity search result for "${q.query}": "${sr.title}"`,
+                evidence_url: sr.url,
+                confidence: 'medium',
+              });
+            }
+          } catch { /* invalid URL */ }
+        }
+      }
+
+      // Extract domains mentioned in the response text itself
+      const domainPattern = /(?:https?:\/\/)?([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9][-a-zA-Z0-9]*)*\.(?:com|net|org|io|co|shop|store|ai|dev|app|xyz|me|us|uk|de|fr|br|mx|ar|cl|pe))/g;
+      for (const match of responseText.matchAll(domainPattern)) {
+        const domain = match[1].toLowerCase();
+        if (!isNonMerchantDomain(domain) && !seenDomains.has(domain)) {
+          seenDomains.add(domain);
+          results.push({
+            domain,
+            query: q.query,
+            category: q.category,
+            evidence: `Perplexity mentioned ${domain} in response to "${q.query}"`,
+            confidence: 'low',
+          });
+        }
+      }
+
+      // Rate limit: 1 req/sec to stay well within 50 req/min
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    } catch (err) {
+      console.warn(`[Observatory] Perplexity query failed for "${q.query}":`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  return results;
+}
+
+/** Filter out non-merchant domains (search engines, social, infrastructure) */
+function isNonMerchantDomain(domain: string): boolean {
+  const excluded = [
+    'google.com', 'google.co', 'bing.com', 'yahoo.com', 'duckduckgo.com',
+    'perplexity.ai', 'openai.com', 'anthropic.com', 'chatgpt.com',
+    'wikipedia.org', 'reddit.com', 'twitter.com', 'x.com',
+    'facebook.com', 'instagram.com', 'tiktok.com', 'youtube.com',
+    'github.com', 'npmjs.com', 'stackoverflow.com',
+    'medium.com', 'substack.com', 'wordpress.com', 'blogger.com',
+    'cloudflare.com', 'amazonaws.com', 'vercel.app', 'netlify.app',
+  ];
+  return excluded.some(e => domain === e || domain.endsWith('.' + e));
+}
+
+// ============================================
 // COLLECT ALL OBSERVATIONS
 // ============================================
 
@@ -249,6 +417,8 @@ export async function collectObservations(options: {
   crawl_registries?: boolean;
   detect_drift?: boolean;
   check_domains?: string[];
+  query_perplexity?: boolean;
+  perplexity_queries?: Array<{ query: string; category: string }>;
 } = {}): Promise<{
   observations: Array<{
     domain: string;
@@ -257,9 +427,10 @@ export async function collectObservations(options: {
     evidence: string;
     evidence_url?: string;
     merchant_scan_id?: string;
+    query?: string;
     confidence: 'high' | 'medium' | 'low';
   }>;
-  stats: { registries: number; drift: number; agent_checks: number };
+  stats: { registries: number; drift: number; agent_checks: number; perplexity: number };
 }> {
   const observations: Array<{
     domain: string;
@@ -268,9 +439,10 @@ export async function collectObservations(options: {
     evidence: string;
     evidence_url?: string;
     merchant_scan_id?: string;
+    query?: string;
     confidence: 'high' | 'medium' | 'low';
   }> = [];
-  const stats = { registries: 0, drift: 0, agent_checks: 0 };
+  const stats = { registries: 0, drift: 0, agent_checks: 0, perplexity: 0 };
 
   // 1. MCP Registry Crawl
   if (options.crawl_registries !== false) {
@@ -334,6 +506,27 @@ export async function collectObservations(options: {
     }
   }
 
+  // 4. Perplexity API Search
+  if (options.query_perplexity) {
+    try {
+      const perplexityResults = await queryPerplexityForMerchants(options.perplexity_queries);
+      for (const r of perplexityResults) {
+        observations.push({
+          domain: r.domain,
+          observation_type: 'ai_search_result',
+          source: 'perplexity',
+          evidence: r.evidence,
+          evidence_url: r.evidence_url,
+          query: r.query,
+          confidence: r.confidence,
+        });
+      }
+      stats.perplexity = perplexityResults.length;
+    } catch (err) {
+      console.warn('[Observatory] Perplexity search failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
   return { observations, stats };
 }
 
@@ -345,9 +538,11 @@ export async function runObservatorySweep(options: {
   crawl_registries?: boolean;
   detect_drift?: boolean;
   check_domains?: string[];
+  query_perplexity?: boolean;
+  perplexity_queries?: Array<{ query: string; category: string }>;
 } = {}): Promise<{
   inserted: number;
-  stats: { registries: number; drift: number; agent_checks: number };
+  stats: { registries: number; drift: number; agent_checks: number; perplexity: number };
 }> {
   const { observations, stats } = await collectObservations(options);
 
@@ -358,6 +553,7 @@ export async function runObservatorySweep(options: {
         merchant_scan_id: o.merchant_scan_id,
         observation_type: o.observation_type,
         source: o.source,
+        query: o.query,
         evidence: o.evidence,
         evidence_url: o.evidence_url,
         confidence: o.confidence,
