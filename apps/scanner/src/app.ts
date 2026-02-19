@@ -10,6 +10,7 @@ import { observatoryRouter } from './routes/observatory.js';
 import { prospectsRouter } from './routes/prospects.js';
 import { healthRouter } from './routes/health.js';
 import { trafficMonitorRouter } from './routes/traffic-monitor.js';
+import { reportsRouter } from './routes/reports.js';
 
 const app = new Hono();
 
@@ -44,6 +45,7 @@ v1.route('/scanner', testsRouter);
 v1.route('/scanner', observatoryRouter);
 v1.route('/scanner', prospectsRouter);
 v1.route('/scanner', trafficMonitorRouter);
+v1.route('/scanner', reportsRouter);
 
 app.route('/v1', v1);
 

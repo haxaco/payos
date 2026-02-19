@@ -233,6 +233,33 @@ export const SCANNER_TOOLS: Tool[] = [
     },
   },
 
+  // Snapshots & Trends (Story 56.8)
+  {
+    name: 'generate_snapshot',
+    description: 'Generate a point-in-time snapshot of agentic commerce readiness across all scanned merchants. Captures protocol adoption rates, readiness scores, and breakdowns by category/region. Use periodically to track week-over-week trends.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        period: {
+          type: 'string',
+          enum: ['daily', 'weekly', 'monthly', 'quarterly'],
+          description: 'Snapshot period (default: weekly)',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_trend',
+    description: 'Get historical trend data from snapshots. Shows week-over-week changes in protocol adoption, readiness scores, and key metrics.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        limit: { type: 'number', description: 'Number of snapshots to include (default 12)' },
+        since: { type: 'string', description: 'ISO date to start from (optional)' },
+      },
+    },
+  },
+
   // Agent Traffic Monitor (Story 56.24)
   {
     name: 'get_traffic_monitor',

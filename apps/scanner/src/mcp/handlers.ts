@@ -11,6 +11,12 @@ import {
   formatProspectsMarkdown,
   formatHeatMapMarkdown,
 } from '../demand/prospect-scoring.js';
+import {
+  generateSnapshot,
+  getSnapshots,
+  formatSnapshotMarkdown,
+  formatTrendMarkdown,
+} from '../demand/snapshots.js';
 import * as queries from '../db/queries.js';
 import { getReadinessGrade } from '@sly/utils';
 
@@ -59,6 +65,10 @@ export async function handleToolCall(request: CallToolRequest): Promise<{
         return await handleGetHeatMap();
       case 'get_traffic_monitor':
         return await handleGetTrafficMonitor(args as any);
+      case 'generate_snapshot':
+        return await handleGenerateSnapshot(args as any);
+      case 'get_trend':
+        return await handleGetTrend(args as any);
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
     }
@@ -392,6 +402,37 @@ async function handleGetCheckoutDemand(args: { limit?: number; since?: string; f
 async function handleGetAgentActivity(args: { since?: string }) {
   const report = await getAgentActivityReport(args.since);
   const markdown = formatActivityReportMarkdown(report);
+  return { content: [{ type: 'text' as const, text: markdown }] };
+}
+
+async function handleGenerateSnapshot(args: { period?: string }) {
+  const period = (args.period || 'weekly') as 'daily' | 'weekly' | 'monthly' | 'quarterly';
+  const snapshot = await generateSnapshot(period);
+  const markdown = formatSnapshotMarkdown(snapshot);
+  return { content: [{ type: 'text' as const, text: markdown }] };
+}
+
+async function handleGetTrend(args: { limit?: number; since?: string }) {
+  const snapshots = await getSnapshots({
+    limit: args.limit || 12,
+    since: args.since,
+  });
+
+  if (snapshots.length === 0) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: 'No snapshots found. Use `generate_snapshot` to create the first one, then generate more over time to track trends.',
+      }],
+    };
+  }
+
+  if (snapshots.length === 1) {
+    const markdown = formatSnapshotMarkdown(snapshots[0]);
+    return { content: [{ type: 'text' as const, text: `Only 1 snapshot found (need 2+ for trend comparison).\n\n${markdown}` }] };
+  }
+
+  const markdown = formatTrendMarkdown(snapshots);
   return { content: [{ type: 'text' as const, text: markdown }] };
 }
 
