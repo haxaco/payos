@@ -12,6 +12,7 @@ import {
   getRecentActivity,
   TimeRange,
 } from '../services/analytics/dashboard.js';
+import { createCheckoutTelemetryService } from '../services/telemetry/checkout-telemetry.js';
 
 const app = new Hono();
 
@@ -131,6 +132,37 @@ app.get('/recent-activity', async (c) => {
   } catch (error) {
     console.error('Failed to get recent activity:', error);
     return c.json({ error: 'Failed to get recent activity' }, 500);
+  }
+});
+
+/**
+ * GET /v1/analytics/checkout-demand
+ * Top merchants by checkout attempt volume (Story 56.22)
+ */
+app.get('/checkout-demand', async (c) => {
+  const ctx = c.get('ctx');
+  if (!ctx?.tenantId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const limitParam = c.req.query('limit');
+  const limit = limitParam ? parseInt(limitParam, 10) : 20;
+  const since = c.req.query('since') || undefined;
+  const failures_only = c.req.query('failures_only') === 'true';
+
+  if (isNaN(limit) || limit < 1 || limit > 100) {
+    return c.json({ error: 'Invalid limit. Use 1-100' }, 400);
+  }
+
+  try {
+    const supabase = createClient();
+    const telemetryService = createCheckoutTelemetryService(supabase);
+    const data = await telemetryService.getTopMerchants({ limit, since, failures_only });
+
+    return c.json({ data });
+  } catch (error) {
+    console.error('Failed to get checkout demand:', error);
+    return c.json({ error: 'Failed to get checkout demand' }, 500);
   }
 });
 

@@ -156,3 +156,40 @@ export interface DemandBrief {
   opportunities: string[];
   generated_at: string;
 }
+
+// ============================================
+// CHECKOUT TELEMETRY TYPES (Story 56.22)
+// ============================================
+
+export type TelemetryProtocol = 'ucp' | 'acp' | 'ap2' | 'x402';
+
+export interface CheckoutTelemetryEvent {
+  protocol: TelemetryProtocol;
+  event_type: string;
+  success: boolean;
+  merchant_id?: string;
+  merchant_domain?: string;
+  merchant_name?: string;
+  failure_reason?: string;
+  failure_code?: string;
+  error_details?: Record<string, unknown>;
+  agent_id?: string;
+  agent_name?: string;
+  kya_tier?: number;
+  amount?: number;
+  currency?: string;
+  protocol_metadata?: Record<string, unknown>;
+}
+
+export interface MerchantDemandSignal {
+  merchant_domain: string;
+  merchant_name?: string;
+  total_attempts: number;
+  failed_attempts: number;
+  success_rate: number;
+  failure_reasons: Record<string, number>;
+  protocols_attempted: string[];
+  unique_agents: number;
+  first_seen: string;
+  last_seen: string;
+}

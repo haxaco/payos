@@ -44,6 +44,8 @@ export async function handleToolCall(request: CallToolRequest): Promise<{
         return await handleRunAgentTest(args as any);
       case 'get_test_results':
         return await handleGetTestResults(args as any);
+      case 'get_checkout_demand':
+        return await handleGetCheckoutDemand(args as any);
       case 'get_agent_activity':
         return await handleGetAgentActivity(args as any);
       default:
@@ -330,6 +332,44 @@ async function handleGetTestResults(args: { domain: string }) {
   }
   const markdown = formatTestResultMarkdown(results[0]);
   return { content: [{ type: 'text' as const, text: markdown }] };
+}
+
+async function handleGetCheckoutDemand(args: { limit?: number; since?: string; failures_only?: boolean }) {
+  const signals = await queries.getCheckoutTelemetryTopMerchants({
+    limit: args.limit,
+    since: args.since,
+    failures_only: args.failures_only,
+  });
+
+  if (signals.length === 0) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: 'No checkout telemetry data found. Telemetry is recorded when agents attempt checkouts via UCP, ACP, AP2, or x402 protocols.',
+      }],
+    };
+  }
+
+  const lines = [
+    '## Checkout Demand — Top Merchants by Agent Attempts',
+    '',
+    '| Rank | Merchant | Attempts | Failed | Success Rate | Protocols | Agents | Top Failure |',
+    '|------|----------|----------|--------|-------------|-----------|--------|-------------|',
+  ];
+
+  signals.forEach((s, i) => {
+    const topFailure = Object.entries(s.failure_reasons)
+      .sort(([, a], [, b]) => b - a)[0];
+    const topFailureStr = topFailure ? `${topFailure[0]} (${topFailure[1]})` : '-';
+
+    lines.push(
+      `| ${i + 1} | ${s.merchant_name || s.merchant_domain} | ${s.total_attempts} | ${s.failed_attempts} | ${s.success_rate}% | ${s.protocols_attempted.join(', ')} | ${s.unique_agents} | ${topFailureStr} |`
+    );
+  });
+
+  lines.push('', `_${signals.length} merchants shown. Data from checkout_telemetry table._`);
+
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 }
 
 async function handleGetAgentActivity(args: { since?: string }) {

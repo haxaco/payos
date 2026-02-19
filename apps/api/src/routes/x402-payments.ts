@@ -25,10 +25,11 @@ import {
   invalidatePolicyCache,
   type PolicyContext 
 } from '../services/spending-policy.js';
-import { 
+import {
   createApprovalWorkflowService,
-  type PaymentProtocol 
+  type PaymentProtocol
 } from '../services/approval-workflow.js';
+import { createCheckoutTelemetryService } from '../services/telemetry/checkout-telemetry.js';
 
 const app = new Hono();
 
@@ -551,6 +552,17 @@ app.post('/pay', async (c) => {
     const walletError = consumerWalletError;
 
     if (endpointError || !endpoint) {
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'x402',
+        event_type: 'payment.endpoint_not_found',
+        success: false,
+        failure_reason: 'Endpoint not found',
+        failure_code: 'ENDPOINT_NOT_FOUND',
+        amount: auth.amount,
+        currency: auth.currency,
+        protocol_metadata: { endpoint_id: auth.endpointId, path: auth.path },
+      });
       return c.json({
         error: 'Endpoint not found',
         code: 'ENDPOINT_NOT_FOUND'
@@ -566,6 +578,18 @@ app.post('/pay', async (c) => {
     }
 
     if (walletError || !wallet) {
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'x402',
+        event_type: 'payment.wallet_not_found',
+        success: false,
+        merchant_domain: endpoint.name,
+        failure_reason: 'Wallet not found',
+        failure_code: 'WALLET_NOT_FOUND',
+        amount: auth.amount,
+        currency: auth.currency,
+        protocol_metadata: { endpoint_id: endpoint.id, path: endpoint.path },
+      });
       return c.json({
         error: 'Wallet not found',
         code: 'WALLET_NOT_FOUND'
@@ -617,6 +641,18 @@ app.post('/pay', async (c) => {
     // Check sufficient balance
     const walletBalance = parseFloat(wallet.balance);
     if (walletBalance < auth.amount) {
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'x402',
+        event_type: 'payment.insufficient_balance',
+        success: false,
+        merchant_domain: endpoint.name,
+        failure_reason: 'Insufficient wallet balance',
+        failure_code: 'INSUFFICIENT_BALANCE',
+        amount: auth.amount,
+        currency: auth.currency,
+        protocol_metadata: { endpoint_id: endpoint.id, path: endpoint.path, available: walletBalance },
+      });
       return c.json({
         error: 'Insufficient wallet balance',
         available: walletBalance,
@@ -704,6 +740,19 @@ app.post('/pay', async (c) => {
       }
 
       // Hard limit exceeded - reject outright
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'x402',
+        event_type: 'payment.policy_blocked',
+        success: false,
+        merchant_domain: endpoint.name,
+        failure_reason: policyCheck.reason || 'Spending policy violation',
+        failure_code: 'POLICY_VIOLATION',
+        amount: auth.amount,
+        currency: auth.currency,
+        agent_id: wallet.managed_by_agent_id || undefined,
+        protocol_metadata: { endpoint_id: endpoint.id, path: endpoint.path },
+      });
       return c.json({
         error: 'Payment blocked by spending policy',
         reason: policyCheck.reason,
@@ -939,6 +988,21 @@ app.post('/pay', async (c) => {
     // OPTIMIZATION: Use balance from settlement result instead of extra DB query
     // Savings: ~120ms per request
     
+    // Record successful payment telemetry
+    {
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'x402',
+        event_type: 'payment.completed',
+        success: true,
+        merchant_domain: endpoint.name,
+        amount: auth.amount,
+        currency: auth.currency,
+        agent_id: wallet.managed_by_agent_id || undefined,
+        protocol_metadata: { endpoint_id: endpoint.id, path: endpoint.path },
+      });
+    }
+
     // Mark request as processed in bloom filter for future idempotency checks
     markRequestProcessed(auth.requestId);
     

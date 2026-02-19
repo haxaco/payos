@@ -192,6 +192,20 @@ export const SCANNER_TOOLS: Tool[] = [
     },
   },
 
+  // Checkout Demand Telemetry (Story 56.22)
+  {
+    name: 'get_checkout_demand',
+    description: 'Get top merchants by checkout attempt volume across all 4 protocols (UCP, ACP, AP2, x402). Shows which merchants agents are trying to reach, failure rates, and top failure reasons.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        limit: { type: 'number', description: 'Number of merchants to return (default 20)' },
+        since: { type: 'string', description: 'ISO 8601 date to filter from (e.g., "2026-01-01")' },
+        failures_only: { type: 'boolean', description: 'Only show merchants with failures (default false)' },
+      },
+    },
+  },
+
   // Agent Behavior Observatory
   {
     name: 'get_agent_activity',

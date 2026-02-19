@@ -20,6 +20,7 @@ import {
   createApprovalWorkflowService
 } from '../services/approval-workflow.js';
 import { getLiveFXService } from '../services/fx/live-rates.js';
+import { createCheckoutTelemetryService, extractMerchantDomain } from '../services/telemetry/checkout-telemetry.js';
 
 const ap2 = new Hono();
 
@@ -368,10 +369,35 @@ ap2.post('/mandates/:id/execute', async (c) => {
     .single();
 
   if (findError || !mandate) {
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'ap2',
+      event_type: 'mandate.not_found',
+      success: false,
+      failure_reason: 'Mandate not found',
+      failure_code: 'MANDATE_NOT_FOUND',
+      amount: Number(amount),
+      currency: currency,
+      protocol_metadata: { mandate_id: id },
+    });
     return c.json({ error: 'Mandate not found' }, 404);
   }
 
   if (mandate.status !== 'active') {
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'ap2',
+      event_type: 'mandate.not_active',
+      success: false,
+      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      failure_reason: `Mandate is ${mandate.status}`,
+      failure_code: 'MANDATE_NOT_ACTIVE',
+      agent_id: mandate.agent_id,
+      agent_name: mandate.agent_name,
+      amount: Number(amount),
+      currency: currency || mandate.currency,
+      protocol_metadata: { mandate_id: mandate.id, mandate_status: mandate.status },
+    });
     return c.json({ error: `Mandate is ${mandate.status}, not active` }, 400);
   }
 
@@ -380,6 +406,20 @@ ap2.post('/mandates/:id/execute', async (c) => {
   const remaining = Number(mandate.authorized_amount) - currentUsed;
 
   if (execAmount > remaining) {
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'ap2',
+      event_type: 'mandate.budget_exceeded',
+      success: false,
+      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      failure_reason: 'Amount exceeds remaining mandate budget',
+      failure_code: 'BUDGET_EXCEEDED',
+      agent_id: mandate.agent_id,
+      agent_name: mandate.agent_name,
+      amount: execAmount,
+      currency: currency || mandate.currency,
+      protocol_metadata: { mandate_id: mandate.id, remaining, requested: execAmount },
+    });
     return c.json({ error: 'Amount exceeds remaining mandate budget' }, 400);
   }
 
@@ -636,6 +676,20 @@ ap2.post('/mandates/:id/execute', async (c) => {
       }
     } else {
       console.warn(`[AP2] Wallet ${wallet.id} has insufficient balance (${currentBalance}) for execution amount (${execAmount})`);
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'ap2',
+        event_type: 'mandate.insufficient_balance',
+        success: false,
+        merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+        failure_reason: 'Insufficient wallet balance',
+        failure_code: 'INSUFFICIENT_BALANCE',
+        agent_id: mandate.agent_id,
+        agent_name: mandate.agent_name,
+        amount: execAmount,
+        currency: currency || mandate.currency,
+        protocol_metadata: { mandate_id: mandate.id, wallet_id: wallet.id, available: currentBalance },
+      });
     }
   }
 
@@ -652,6 +706,22 @@ ap2.post('/mandates/:id/execute', async (c) => {
     order_ids: order_ids || [],
     wallet_deduction: walletDeduction,
   };
+
+  // Record successful mandate execution telemetry
+  {
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'ap2',
+      event_type: 'mandate.executed',
+      success: true,
+      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      agent_id: mandate.agent_id,
+      agent_name: mandate.agent_name,
+      amount: execAmount,
+      currency: currency || mandate.currency,
+      protocol_metadata: { mandate_id: mandate.id, execution_index: newExecIndex },
+    });
+  }
 
   // Enrich with cross-border details
   if (crossBorderInfo) {

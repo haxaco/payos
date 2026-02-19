@@ -21,6 +21,7 @@ import {
   createApprovalWorkflowService
 } from '../services/approval-workflow.js';
 import { createLimitService } from '../services/limits.js';
+import { createCheckoutTelemetryService, extractMerchantDomain } from '../services/telemetry/checkout-telemetry.js';
 
 const app = new Hono();
 
@@ -110,6 +111,19 @@ app.post('/checkouts', async (c) => {
       .single();
 
     if (accountError || !account) {
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'acp',
+        event_type: 'checkout.account_not_found',
+        success: false,
+        merchant_id: validated.merchant_id,
+        merchant_domain: validated.merchant_url,
+        merchant_name: validated.merchant_name,
+        failure_reason: 'Account not found',
+        failure_code: 'ACCOUNT_NOT_FOUND',
+        agent_id: validated.agent_id,
+        agent_name: validated.agent_name,
+      });
       return c.json({ error: 'Account not found' }, 404);
     }
 
@@ -150,6 +164,22 @@ app.post('/checkouts', async (c) => {
 
     if (checkoutError) {
       console.error('[ACP] Create checkout error:', checkoutError);
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'acp',
+        event_type: 'checkout.create_failed',
+        success: false,
+        merchant_id: validated.merchant_id,
+        merchant_domain: validated.merchant_url,
+        merchant_name: validated.merchant_name,
+        failure_reason: 'Failed to create checkout',
+        failure_code: 'CREATE_FAILED',
+        error_details: { message: checkoutError.message },
+        agent_id: validated.agent_id,
+        agent_name: validated.agent_name,
+        amount: total_amount,
+        currency: validated.currency,
+      });
       return c.json({ error: 'Failed to create checkout' }, 500);
     }
 
@@ -681,6 +711,21 @@ app.post('/checkouts/:id/complete', async (c) => {
         }
 
         // Hard limit exceeded
+        const telemetry = createCheckoutTelemetryService(supabase);
+        telemetry.record({
+          protocol: 'acp',
+          event_type: 'checkout.policy_blocked',
+          success: false,
+          merchant_id: checkout.merchant_id,
+          merchant_domain: checkout.merchant_url,
+          merchant_name: checkout.merchant_name,
+          failure_reason: policyCheck.reason || 'Spending policy violation',
+          failure_code: 'POLICY_VIOLATION',
+          agent_id: checkout.agent_id,
+          agent_name: checkout.agent_name,
+          amount: parseFloat(checkout.total_amount),
+          currency: checkout.currency,
+        });
         return c.json({
           error: 'Checkout blocked by spending policy',
           reason: policyCheck.reason,
@@ -733,7 +778,7 @@ app.post('/checkouts/:id/complete', async (c) => {
         }
       } catch (stripeError: any) {
         console.error('[ACP] Stripe payment failed:', stripeError.message);
-        
+
         // Update checkout with failure
         await supabase
           .from('acp_checkouts')
@@ -745,7 +790,23 @@ app.post('/checkouts/:id/complete', async (c) => {
             },
           })
           .eq('id', id);
-        
+
+        const telemetry = createCheckoutTelemetryService(supabase);
+        telemetry.record({
+          protocol: 'acp',
+          event_type: 'checkout.payment_failed',
+          success: false,
+          merchant_id: checkout.merchant_id,
+          merchant_domain: checkout.merchant_url,
+          merchant_name: checkout.merchant_name,
+          failure_reason: stripeError.message,
+          failure_code: 'PAYMENT_FAILED',
+          agent_id: checkout.agent_id,
+          agent_name: checkout.agent_name,
+          amount: parseFloat(checkout.total_amount),
+          currency: checkout.currency,
+        });
+
         return c.json({
           error: 'Payment processing failed',
           details: stripeError.message,
@@ -831,6 +892,21 @@ app.post('/checkouts/:id/complete', async (c) => {
       const limitService = createLimitService(supabase);
       await limitService.recordUsage(checkout.agent_id, parseFloat(checkout.total_amount));
     }
+
+    // Record successful checkout telemetry
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'acp',
+      event_type: 'checkout.completed',
+      success: true,
+      merchant_id: checkout.merchant_id,
+      merchant_domain: checkout.merchant_url,
+      merchant_name: checkout.merchant_name,
+      agent_id: checkout.agent_id,
+      agent_name: checkout.agent_name,
+      amount: parseFloat(checkout.total_amount),
+      currency: checkout.currency,
+    });
 
     return c.json({
       data: {

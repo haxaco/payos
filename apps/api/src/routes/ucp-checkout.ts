@@ -36,6 +36,7 @@ import {
 } from '../services/ucp/index.js';
 import { createClient } from '../db/client.js';
 import { getCircleFXService } from '../services/circle/fx.js';
+import { createCheckoutTelemetryService } from '../services/telemetry/checkout-telemetry.js';
 
 // =============================================================================
 // Validation Schemas
@@ -158,6 +159,17 @@ router.post('/', async (c) => {
       return c.json({ error: error.message }, 400);
     }
     console.error('[UCP Checkout] Create error:', error);
+    const supabase = createClient();
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'ucp',
+      event_type: 'checkout.create_failed',
+      success: false,
+      failure_reason: error.message || 'Failed to create checkout',
+      failure_code: 'CREATE_FAILED',
+      agent_id: body.agent_id,
+      currency: body.currency,
+    });
     return c.json({ error: error.message || 'Failed to create checkout' }, 500);
   }
 });
@@ -490,6 +502,17 @@ router.post('/:id/complete', async (c) => {
     const supabase = createClient();
     const checkout = await completeCheckout(ctx.tenantId, checkoutId, supabase);
 
+    // Record successful checkout telemetry
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'ucp',
+      event_type: 'checkout.completed',
+      success: true,
+      agent_id: checkout.agent_id,
+      currency: checkout.currency,
+      protocol_metadata: { checkout_id: checkoutId },
+    });
+
     return c.json(checkout);
   } catch (error: any) {
     if (error.message === 'Checkout not found') {
@@ -499,9 +522,29 @@ router.post('/:id/complete', async (c) => {
       return c.json({ error: error.message }, 409);
     }
     if (error.message.includes('Payment failed')) {
+      const supabase = createClient();
+      const telemetry = createCheckoutTelemetryService(supabase);
+      telemetry.record({
+        protocol: 'ucp',
+        event_type: 'checkout.complete_failed',
+        success: false,
+        failure_reason: error.message,
+        failure_code: 'PAYMENT_FAILED',
+        protocol_metadata: { checkout_id: checkoutId },
+      });
       return c.json({ error: error.message }, 402); // Payment Required
     }
     console.error('[UCP Checkout] Complete error:', error);
+    const supabase = createClient();
+    const telemetry = createCheckoutTelemetryService(supabase);
+    telemetry.record({
+      protocol: 'ucp',
+      event_type: 'checkout.complete_failed',
+      success: false,
+      failure_reason: error.message || 'Failed to complete checkout',
+      failure_code: 'COMPLETE_FAILED',
+      protocol_metadata: { checkout_id: checkoutId },
+    });
     return c.json({ error: error.message || 'Failed to complete checkout' }, 500);
   }
 });
