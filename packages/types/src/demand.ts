@@ -80,6 +80,70 @@ export interface AgentTestBlocker {
   step_number?: number;
 }
 
+// ============================================
+// AGENT BEHAVIOR OBSERVATORY TYPES (Story 56.21)
+// ============================================
+
+export type ObservationType =
+  | 'ai_search_result'
+  | 'product_recommendation'
+  | 'protocol_announcement'
+  | 'agent_marketplace'
+  | 'news_mention'
+  | 'manual';
+
+export type ObservationSource =
+  | 'perplexity'
+  | 'chatgpt'
+  | 'google_ai'
+  | 'bing_copilot'
+  | 'mcp_registry'
+  | 'press'
+  | 'social'
+  | 'manual'
+  | 'scan_drift';
+
+export interface AgentObservation {
+  id: string;
+  domain: string;
+  merchant_scan_id?: string;
+  observation_type: ObservationType;
+  source: ObservationSource;
+  query?: string;
+  evidence: string;
+  evidence_url?: string;
+  metadata?: Record<string, unknown>;
+  confidence: 'high' | 'medium' | 'low';
+  observed_at: string;
+  created_at: string;
+}
+
+export interface MerchantAIPresence {
+  domain: string;
+  merchant_name?: string;
+  observation_count: number;
+  source_breakdown: Record<string, number>;
+  type_breakdown: Record<string, number>;
+  latest_observation: string;
+  readiness_score?: number;
+  has_agent_protocol: boolean;
+}
+
+export interface AgentActivityReport {
+  period_start: string;
+  period_end: string;
+  total_observations: number;
+  unique_merchants: number;
+  top_merchants: MerchantAIPresence[];
+  by_source: Record<string, number>;
+  by_type: Record<string, number>;
+  latam_coverage: {
+    total: number;
+    merchants: string[];
+  };
+  generated_at: string;
+}
+
 export interface DemandBrief {
   category?: string;
   region?: string;

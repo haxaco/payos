@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MerchantScan, ScanProtocolResult, ScanBatch, DetectionStatus, AgentShoppingTestResult } from '@sly/types';
+import type { MerchantScan, ScanProtocolResult, ScanBatch, DetectionStatus, AgentShoppingTestResult, AgentObservation } from '@sly/types';
 import { getClient } from './client.js';
 
 function isDetected(status?: string): boolean {
@@ -593,4 +593,180 @@ export async function getLatestAgentShoppingTest(
 
   if (error) throw new Error(`Failed to get latest agent shopping test: ${error.message}`);
   return data as AgentShoppingTestResult | null;
+}
+
+// ============================================
+// AGENT OBSERVATIONS (Observatory)
+// ============================================
+
+export async function insertAgentObservation(data: {
+  domain: string;
+  merchant_scan_id?: string;
+  observation_type: string;
+  source: string;
+  query?: string;
+  evidence: string;
+  evidence_url?: string;
+  metadata?: Record<string, unknown>;
+  confidence?: string;
+  observed_at?: string;
+}): Promise<{ id: string }> {
+  const { data: row, error } = await db()
+    .from('agent_observations')
+    .insert({
+      domain: data.domain,
+      merchant_scan_id: data.merchant_scan_id || null,
+      observation_type: data.observation_type,
+      source: data.source,
+      query: data.query,
+      evidence: data.evidence,
+      evidence_url: data.evidence_url,
+      metadata: data.metadata || {},
+      confidence: data.confidence || 'medium',
+      observed_at: data.observed_at || new Date().toISOString(),
+    })
+    .select('id')
+    .single();
+
+  if (error) throw new Error(`Failed to insert agent observation: ${error.message}`);
+  return { id: row.id };
+}
+
+export async function insertAgentObservationsBatch(
+  rows: Array<{
+    domain: string;
+    merchant_scan_id?: string;
+    observation_type: string;
+    source: string;
+    query?: string;
+    evidence: string;
+    evidence_url?: string;
+    metadata?: Record<string, unknown>;
+    confidence?: string;
+    observed_at?: string;
+  }>,
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const { error } = await db()
+    .from('agent_observations')
+    .insert(rows.map(r => ({
+      domain: r.domain,
+      merchant_scan_id: r.merchant_scan_id || null,
+      observation_type: r.observation_type,
+      source: r.source,
+      query: r.query,
+      evidence: r.evidence,
+      evidence_url: r.evidence_url,
+      metadata: r.metadata || {},
+      confidence: r.confidence || 'medium',
+      observed_at: r.observed_at || new Date().toISOString(),
+    })));
+
+  if (error) throw new Error(`Failed to insert agent observations batch: ${error.message}`);
+}
+
+export async function getAgentObservations(filters: {
+  domain?: string;
+  observation_type?: string;
+  source?: string;
+  since?: string;
+  limit?: number;
+} = {}): Promise<AgentObservation[]> {
+  let query = db()
+    .from('agent_observations')
+    .select('*');
+
+  if (filters.domain) query = query.eq('domain', filters.domain);
+  if (filters.observation_type) query = query.eq('observation_type', filters.observation_type);
+  if (filters.source) query = query.eq('source', filters.source);
+  if (filters.since) query = query.gte('observed_at', filters.since);
+
+  query = query.order('observed_at', { ascending: false }).limit(filters.limit || 50);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Failed to get agent observations: ${error.message}`);
+  return (data || []) as AgentObservation[];
+}
+
+export async function getMostReferencedMerchants(
+  limit = 20,
+  since?: string,
+): Promise<Array<{
+  domain: string;
+  observation_count: number;
+  sources: string[];
+  types: string[];
+  latest_observed_at: string;
+}>> {
+  let query = db()
+    .from('agent_observations')
+    .select('domain, source, observation_type, observed_at');
+
+  if (since) query = query.gte('observed_at', since);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Failed to get most referenced merchants: ${error.message}`);
+
+  // Aggregate in application code since Supabase doesn't support GROUP BY well via JS client
+  const byDomain: Record<string, {
+    count: number;
+    sources: Set<string>;
+    types: Set<string>;
+    latest: string;
+  }> = {};
+
+  for (const row of (data || [])) {
+    if (!byDomain[row.domain]) {
+      byDomain[row.domain] = { count: 0, sources: new Set(), types: new Set(), latest: row.observed_at };
+    }
+    byDomain[row.domain].count++;
+    byDomain[row.domain].sources.add(row.source);
+    byDomain[row.domain].types.add(row.observation_type);
+    if (row.observed_at > byDomain[row.domain].latest) {
+      byDomain[row.domain].latest = row.observed_at;
+    }
+  }
+
+  return Object.entries(byDomain)
+    .map(([domain, info]) => ({
+      domain,
+      observation_count: info.count,
+      sources: Array.from(info.sources),
+      types: Array.from(info.types),
+      latest_observed_at: info.latest,
+    }))
+    .sort((a, b) => b.observation_count - a.observation_count)
+    .slice(0, limit);
+}
+
+export async function getObservationStats(): Promise<{
+  total: number;
+  by_source: Record<string, number>;
+  by_type: Record<string, number>;
+  unique_domains: number;
+}> {
+  const { data, error } = await db()
+    .from('agent_observations')
+    .select('domain, source, observation_type');
+
+  if (error) throw new Error(`Failed to get observation stats: ${error.message}`);
+
+  const rows = data || [];
+  const domains = new Set<string>();
+  const bySource: Record<string, number> = {};
+  const byType: Record<string, number> = {};
+
+  for (const row of rows) {
+    domains.add(row.domain);
+    bySource[row.source] = (bySource[row.source] || 0) + 1;
+    byType[row.observation_type] = (byType[row.observation_type] || 0) + 1;
+  }
+
+  return {
+    total: rows.length,
+    by_source: bySource,
+    by_type: byType,
+    unique_domains: domains.size,
+  };
 }

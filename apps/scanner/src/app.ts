@@ -6,6 +6,7 @@ import { prettyJSON } from 'hono/pretty-json';
 import { scanRouter } from './routes/scan.js';
 import { batchRouter } from './routes/batch.js';
 import { testsRouter } from './routes/tests.js';
+import { observatoryRouter } from './routes/observatory.js';
 import { healthRouter } from './routes/health.js';
 
 const app = new Hono();
@@ -38,6 +39,7 @@ const v1 = new Hono();
 v1.route('/scanner', scanRouter);
 v1.route('/scanner', batchRouter);
 v1.route('/scanner', testsRouter);
+v1.route('/scanner', observatoryRouter);
 
 app.route('/v1', v1);
 

@@ -3,6 +3,7 @@ import { scanDomain, normalizeDomain } from '../scanner.js';
 import { BatchProcessor } from '../queue/batch-processor.js';
 import { getDemandBrief, getDemandStats } from '../demand/intelligence.js';
 import { runAgentShoppingTest, formatTestResultMarkdown } from '../demand/synthetic-tests.js';
+import { getAgentActivityReport, formatActivityReportMarkdown } from '../demand/observatory.js';
 import * as queries from '../db/queries.js';
 import { getReadinessGrade } from '@sly/utils';
 
@@ -43,6 +44,8 @@ export async function handleToolCall(request: CallToolRequest): Promise<{
         return await handleRunAgentTest(args as any);
       case 'get_test_results':
         return await handleGetTestResults(args as any);
+      case 'get_agent_activity':
+        return await handleGetAgentActivity(args as any);
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
     }
@@ -326,6 +329,12 @@ async function handleGetTestResults(args: { domain: string }) {
     return { content: [{ type: 'text' as const, text: `No test results for ${args.domain}. Run \`run_agent_shopping_test\` first.` }] };
   }
   const markdown = formatTestResultMarkdown(results[0]);
+  return { content: [{ type: 'text' as const, text: markdown }] };
+}
+
+async function handleGetAgentActivity(args: { since?: string }) {
+  const report = await getAgentActivityReport(args.since);
+  const markdown = formatActivityReportMarkdown(report);
   return { content: [{ type: 'text' as const, text: markdown }] };
 }
 

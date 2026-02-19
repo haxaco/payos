@@ -191,4 +191,16 @@ export const SCANNER_TOOLS: Tool[] = [
       required: ['domain'],
     },
   },
+
+  // Agent Behavior Observatory
+  {
+    name: 'get_agent_activity',
+    description: 'Get an agent behavior observatory report showing AI agent activity in the wild — which merchants are referenced by AI search engines, protocol drift, and LATAM coverage analysis.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        since: { type: 'string', description: 'ISO 8601 date to filter observations from (e.g., "2026-01-01")' },
+      },
+    },
+  },
 ];
