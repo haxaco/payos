@@ -104,6 +104,17 @@ sly/
 │   │   ├── supabase/migrations/ # Database schema & RLS policies
 │   │   ├── scripts/      # Seed data, setup helpers
 │   │   └── tests/        # Unit & integration tests
+│   ├── scanner/          # Agentic Commerce Demand Scanner (port 4100) ← Epic 56
+│   │   ├── src/
+│   │   │   ├── probes/   # Protocol detection (UCP, ACP, x402, AP2, MCP, NLWeb, Visa VIC, Mastercard)
+│   │   │   ├── analyzers/ # Structured data, accessibility, checkout friction, scoring
+│   │   │   ├── queue/    # Batch processor with p-limit
+│   │   │   ├── demand/   # Intelligence, synthetic tests, observatory, telemetry
+│   │   │   ├── mcp/      # MCP server + 13 tool definitions
+│   │   │   ├── routes/   # Hono API routes
+│   │   │   ├── db/       # Supabase client & query helpers
+│   │   │   └── index.ts  # Hono entry point
+│   │   └── seed/         # Pre-built scan lists (1,000 merchants)
 │   └── web/              # Next.js dashboard (port 3000) ← ACTIVE UI
 │       ├── src/
 │       │   ├── app/      # App Router pages
@@ -331,6 +342,53 @@ return c.json({
 5. **Log security events** (failed auth, suspicious activity)
 6. **Expire sessions** appropriately (15 min for JWT)
 7. **Hash sensitive tokens** - never store plaintext API keys/agent tokens
+
+## Scanner Service (Epic 56)
+
+**Spec**: `docs/prd/epics/epic-56-agentic-commerce-demand-scanner.md`
+
+The scanner is a standalone Hono service (`apps/scanner`, port 4100) that scans merchant websites for agentic commerce readiness. It detects protocol support (UCP, ACP, x402, AP2, MCP, NLWeb, Visa VIC, Mastercard), analyzes structured data and checkout friction, computes readiness scores, and powers demand intelligence.
+
+### Three Operational Modes
+
+1. **API On-Demand**: `POST /v1/scanner/scan` — single domain, 2-5 seconds
+2. **CSV Batch Upload**: `POST /v1/scanner/scan/batch` — queue processes 10-20 concurrent, 1,000 merchants in ~5-8 min
+3. **MCP Server for Claude**: 13 tools via stdio transport — Claude becomes dashboard, report generator, sales prep tool
+
+### Scanner Commands
+
+```bash
+# Start scanner service
+pnpm --filter @sly/scanner dev
+
+# Start scanner MCP server (stdio mode for Claude Desktop)
+pnpm --filter @sly/scanner mcp
+```
+
+### Key Dependencies
+
+`undici` (HTTP), `cheerio` (HTML parsing), `p-limit` (concurrency), `csv-parse` (batch import), `@modelcontextprotocol/sdk` (MCP server), `zod` (validation), `hono` (HTTP framework), `@supabase/supabase-js` (storage). **No Puppeteer** — lightweight HTTP probing only.
+
+### Scanner Types
+
+Shared scanner types go in `packages/types/src/scanner.ts` and `packages/types/src/demand.ts`. Readiness score algorithm goes in `packages/utils/src/readiness-score.ts`.
+
+### Scanner Database Migrations
+
+Migrations for scanner tables go in `packages/db/migrations/` (or `apps/api/supabase/migrations/` following existing pattern):
+- `020_scanner_tables.sql` — scan results, protocol detections, structured data
+- `021_demand_intelligence.sql` — demand signals, agent behavior observations
+- `022_agent_shopping_tests.sql` — synthetic test runs and results
+
+### Implementation Sequence
+
+Stories are numbered 56.1–56.24 (138 total points). Build order:
+1. **56.1–56.4**: Core probes + analyzers + scoring (pure functions, no DB)
+2. **56.5 + 56.7**: Batch queue + API routes → Modes 1 & 2 live
+3. **56.14**: MCP server → Mode 3 live
+4. **56.6**: Seed data loaded
+5. **56.19–56.21**: Demand intelligence + synthetic tests + observatory
+6. **56.11 + 56.18**: Public audit tool + 1,000-merchant baseline scan
 
 ## Documentation
 

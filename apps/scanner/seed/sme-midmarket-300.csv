@@ -1,0 +1,332 @@
+domain,merchant_name,merchant_category,country_code,region
+trouva.com,Trouva,retail,GB,europe
+papier.com,Papier,retail,GB,europe
+toast.co.uk,Toast,retail,GB,europe
+rapha.cc,Rapha,retail,GB,europe
+grind.co.uk,Grind,retail,GB,europe
+finisterre.com,Finisterre,retail,GB,europe
+pangaia.com,Pangaia,retail,GB,europe
+gymshark.com,Gymshark,retail,GB,europe
+represent.com,Represent,retail,GB,europe
+myprotein.com,Myprotein,retail,GB,europe
+lush.com,Lush,retail,GB,europe
+thewhitecompany.com,The White Company,retail,GB,europe
+mulberry.com,Mulberry,retail,GB,europe
+endclothing.com,END. Clothing,retail,GB,europe
+tessuti.co.uk,Tessuti,retail,GB,europe
+loaf.com,Loaf,retail,GB,europe
+bravissimo.com,Bravissimo,retail,GB,europe
+bloom-wild.com,Bloom & Wild,retail,GB,europe
+charlottetilbury.com,Charlotte Tilbury,retail,GB,europe
+cultbeauty.co.uk,Cult Beauty,retail,GB,europe
+reiss.com,Reiss,retail,GB,europe
+made.com,Made.com,retail,GB,europe
+rfrshstationery.co.uk,Paperchase,retail,GB,europe
+flannels.com,Flannels,retail,GB,europe
+mintvelvet.com,Mint Velvet,retail,GB,europe
+tide.co,Tide,fintech,GB,europe
+iwoca.co.uk,Iwoca,fintech,GB,europe
+clearbank.co.uk,ClearBank,fintech,GB,europe
+modulr.finance,Modulr,fintech,GB,europe
+thought-machine.com,Thought Machine,fintech,GB,europe
+form3.tech,Form3,fintech,GB,europe
+10x-banking.com,10x Banking,fintech,GB,europe
+zopa.com,Zopa,fintech,GB,europe
+funnel.io,Funnel,saas,SE,europe
+planday.com,Planday,saas,DK,europe
+penneo.com,Penneo,saas,DK,europe
+superoffice.com,SuperOffice,saas,NO,europe
+zettle.com,Zettle,fintech,SE,europe
+boozt.com,Boozt,retail,SE,europe
+lyko.com,Lyko,retail,SE,europe
+na-kd.com,NA-KD,retail,SE,europe
+materialist.com,Materialist,retail,SE,europe
+nordicnest.com,Nordic Nest,retail,SE,europe
+vente-privee.com,Veepee,retail,FR,europe
+mano-mano.com,ManoMano,marketplace,FR,europe
+pennylane.com,Pennylane,fintech,FR,europe
+swile.co,Swile,fintech,FR,europe
+spendesk.com,Spendesk,fintech,FR,europe
+algolia.com,Algolia,saas,FR,europe
+sendinblue.com,Brevo,saas,FR,europe
+aircall.io,Aircall,saas,FR,europe
+livestorm.co,Livestorm,saas,FR,europe
+home24.de,Home24,retail,DE,europe
+flaschenpost.de,Flaschenpost,retail,DE,europe
+personio.de,Personio,saas,DE,europe
+smava.de,Smava,fintech,DE,europe
+solaris.de,Solaris,fintech,DE,europe
+mambu.com,Mambu,fintech,DE,europe
+raisin.com,Raisin,fintech,DE,europe
+trade-republic.com,Trade Republic,fintech,DE,europe
+flixbus.de,FlixBus DE,travel,DE,europe
+holaluz.com,Holaluz,other,ES,europe
+travelperk.com,TravelPerk,saas,ES,europe
+freshly-cosmetics.com,Freshly Cosmetics,retail,ES,europe
+hawkersco.com,Hawkers,retail,ES,europe
+idealista.com,Idealista,marketplace,ES,europe
+brack.ch,Brack.ch,retail,CH,europe
+prozis.com,Prozis,retail,PT,europe
+modivo.pl,Modivo,retail,PL,europe
+erli.pl,Erli,marketplace,PL,europe
+furgonetka.pl,Furgonetka,other,PL,europe
+przelewy24.pl,Przelewy24,fintech,PL,europe
+freshful.ro,Freshful,retail,RO,europe
+smartbill.ro,SmartBill,saas,RO,europe
+planet42.com,Planet42,fintech,EE,europe
+teleport.org,Teleport,saas,EE,europe
+reima.com,Reima,retail,FI,europe
+hive.fi,Hive,saas,FI,europe
+slevomat.cz,Slevomat,marketplace,CZ,europe
+keboola.com,Keboola,saas,CZ,europe
+hostinger.com,Hostinger,saas,LT,europe
+omnisend.com,Omnisend,saas,LT,europe
+nord-security.com,Nord Security,saas,LT,europe
+catawiki.com,Catawiki,marketplace,NL,europe
+messagebird.com,MessageBird,saas,NL,europe
+bunq.com,Bunq,fintech,NL,europe
+bloomon.nl,Bloomon,retail,NL,europe
+kanui.com.br,Kanui,retail,BR,latam
+westwing.com.br,Westwing Brazil,retail,BR,latam
+chico-rei.com,Chico Rei,retail,BR,latam
+useinsider.com.br,Insider Store,retail,BR,latam
+pagar.me,Pagar.me,fintech,BR,latam
+celcoin.com.br,Celcoin,fintech,BR,latam
+zoop.com.br,Zoop,fintech,BR,latam
+cloudwalk.io,CloudWalk,fintech,BR,latam
+picpay.com,PicPay,fintech,BR,latam
+contaazul.com,ContaAzul,saas,BR,latam
+bling.com.br,Bling,saas,BR,latam
+rdstation.com,RD Station,saas,BR,latam
+tray.com.br,Tray,saas,BR,latam
+enjoei.com.br,Enjoei,marketplace,BR,latam
+elo7.com.br,Elo7,marketplace,BR,latam
+dr-consulta.com,Dr. Consulta,healthcare,BR,latam
+alice.com.br,Alice Health,healthcare,BR,latam
+meliuz.com.br,Meliuz,fintech,BR,latam
+cora.com.br,Cora,fintech,BR,latam
+linx.com.br,Linx,saas,BR,latam
+drogasil.com.br,Drogasil,retail,BR,latam
+hering.com.br,Hering,retail,BR,latam
+multilaser.com.br,Multilaser,retail,BR,latam
+mercadoshops.com.mx,Mercado Shops MX,saas,MX,latam
+dafiti.com.mx,Dafiti Mexico,retail,MX,latam
+spin-premia.com.mx,Spin Premia,fintech,MX,latam
+credijusto.com,Credijusto,fintech,MX,latam
+oyster.mx,Oyster MX,fintech,MX,latam
+baz.app,BAZ,fintech,MX,latam
+bnext.mx,Bnext MX,fintech,MX,latam
+facturapi.io,Facturapi,saas,MX,latam
+cornershop.io,Cornershop CL,marketplace,CL,latam
+bsale.cl,Bsale,saas,CL,latam
+khipu.com,Khipu,fintech,CL,latam
+etpay.com,Etpay,fintech,CL,latam
+hites.com,Hites,retail,CL,latam
+lapolar.cl,La Polar,retail,CL,latam
+tributi.com,Tributi,fintech,CO,latam
+liteboxer.com.co,Liteboxer CO,retail,CO,latam
+bancolombia.com,Bancolombia App,fintech,CO,latam
+tottus.com.pe,Tottus Peru,retail,PE,latam
+interbank.pe,Interbank,fintech,PE,latam
+tambo.pe,Tambo+,retail,PE,latam
+tiendamia.com,TiendaMia,marketplace,AR,latam
+brubank.com,Brubank,fintech,AR,latam
+naranjax.com,NaranjaX,fintech,AR,latam
+personal.com.ar,Personal AR,other,AR,latam
+payphone.com.ec,PayPhone,fintech,EC,latam
+yaesta.com,YaEsta,marketplace,EC,latam
+mi-store.com.ec,Mi Store EC,retail,EC,latam
+printivo.com,Printivo,retail,NG,africa
+buypower.ng,BuyPower,other,NG,africa
+helium-health.com,Helium Health,healthcare,NG,africa
+teamapt.com,TeamApt,fintech,NG,africa
+andela.com,Andela,saas,NG,africa
+hotels.ng,Hotels.ng,travel,NG,africa
+myshopnow.ng,MyShop,retail,NG,africa
+paystack.shop,Paystack Shop,saas,NG,africa
+mpesa.in.ke,M-Pesa,fintech,KE,africa
+sky.garden,Sky Garden,marketplace,KE,africa
+flexpay.co.ke,FlexPay Kenya,fintech,KE,africa
+d-light.com,d.light,other,KE,africa
+kytabu.com,Kytabu,other,KE,africa
+moringa.school,Moringa School,other,KE,africa
+mookh.com,Mookh,marketplace,KE,africa
+brimore.com,Brimore,marketplace,EG,africa
+swvl.com,Swvl,other,EG,africa
+breadfast.com,Breadfast,retail,EG,africa
+melcom.com,Melcom,retail,GH,africa
+flocash.com,Flocash,fintech,KE,africa
+ozow.com,Ozow,fintech,ZA,africa
+stitch.money,Stitch,fintech,ZA,africa
+mr-price.com,Mr Price,retail,ZA,africa
+bob-shop.co.za,Bob Shop,retail,ZA,africa
+marketforce.app,MarketForce,marketplace,KE,africa
+faire.com,Faire,marketplace,US,north_america
+whatnot.com,Whatnot,marketplace,US,north_america
+poshmark.com,Poshmark,marketplace,US,north_america
+shipbob.com,ShipBob,saas,US,north_america
+stamped.io,Stamped.io,saas,US,north_america
+gorgias.com,Gorgias,saas,US,north_america
+yotpo.com,Yotpo,saas,US,north_america
+loop-returns.com,Loop Returns,saas,US,north_america
+aftership.com,AfterShip,saas,US,north_america
+bolt.com,Bolt Checkout,fintech,US,north_america
+marqeta.com,Marqeta,fintech,US,north_america
+plaid.com,Plaid,fintech,US,north_america
+dwolla.com,Dwolla,fintech,US,north_america
+circle.com,Circle,fintech,US,north_america
+brex.com,Brex,fintech,US,north_america
+melio.com,Melio,fintech,US,north_america
+bluevine.com,BlueVine,fintech,US,north_america
+pipe.com,Pipe,fintech,US,north_america
+deel.com,Deel,saas,US,north_america
+remote.com,Remote,saas,US,north_america
+webflow.com,Webflow,saas,US,north_america
+ghost.org,Ghost,saas,US,north_america
+retool.com,Retool,saas,US,north_america
+linear.app,Linear,saas,US,north_america
+descript.com,Descript,saas,US,north_america
+clearco.com,Clearco,fintech,CA,north_america
+koho.ca,Koho,fintech,CA,north_america
+wealthsimple.com,Wealthsimple,fintech,CA,north_america
+ssense.com,SSENSE,retail,CA,north_america
+well.ca,Well.ca,retail,CA,north_america
+shopify.dev,Shopify Dev,saas,CA,north_america
+lightspeedhq.com,Lightspeed,saas,CA,north_america
+freshbooks.com,FreshBooks,saas,CA,north_america
+clio.com,Clio,saas,CA,north_america
+wattpad.com,Wattpad,media,CA,north_america
+ritual.co,Ritual,retail,CA,north_america
+goat.com,GOAT,marketplace,US,north_america
+stockx.com,StockX,marketplace,US,north_america
+offerup.com,OfferUp,marketplace,US,north_america
+redbubble.com,Redbubble,marketplace,US,north_america
+printful.com,Printful,saas,US,north_america
+snakemake.com,Snakemake,saas,DE,europe
+scaleway.com,Scaleway,saas,FR,europe
+mangopay.com,MangoPay,fintech,FR,europe
+treezor.com,Treezor,fintech,FR,europe
+getaround.com,Getaround,marketplace,FR,europe
+meero.com,Meero,saas,FR,europe
+younited-credit.com,Younited Credit,fintech,FR,europe
+sezane.com,Sezane,retail,FR,europe
+maje.com,Maje,retail,FR,europe
+sandro-paris.com,Sandro,retail,FR,europe
+back-market.de,Back Market DE,marketplace,DE,europe
+wefox.com,Wefox,fintech,DE,europe
+clark.de,Clark,fintech,DE,europe
+scout24.com,Scout24,marketplace,DE,europe
+hellofresh.de,HelloFresh DE,retail,DE,europe
+jimdo.com,Jimdo,saas,DE,europe
+taxfix.de,Taxfix,fintech,DE,europe
+moonfare.com,Moonfare,fintech,DE,europe
+spryker.com,Spryker,saas,DE,europe
+reclamation.es,Reclamador,saas,ES,europe
+jobandtalent.com,Jobandtalent,saas,ES,europe
+ironhack.com,Ironhack,other,ES,europe
+preply.com,Preply,saas,ES,europe
+fotocasa.es,Fotocasa,marketplace,ES,europe
+spotahome.com,Spotahome,marketplace,ES,europe
+kantox.com,Kantox,fintech,ES,europe
+desigual.com,Desigual,retail,ES,europe
+badi.com,Badi,marketplace,ES,europe
+siteimprove.com,Siteimprove,saas,DK,europe
+zenegy.com,Zenegy,saas,DK,europe
+too-good-to-go.com,Too Good To Go,marketplace,DK,europe
+otovo.com,Otovo,other,NO,europe
+tibber.com,Tibber,other,NO,europe
+kolonial.no,Oda,retail,NO,europe
+gelato.com,Gelato,saas,NO,europe
+nmbrs.com,Nmbrs,saas,NL,europe
+wetransfer.com,WeTransfer,saas,NL,europe
+backbase.com,Backbase,fintech,NL,europe
+bux.com,BUX,fintech,NL,europe
+pricewise.nl,Pricewise,marketplace,NL,europe
+recarga.com,Recarga,fintech,BR,latam
+getnet.com.br,Getnet,fintech,BR,latam
+vindi.com.br,Vindi,fintech,BR,latam
+cielo.com.br,Cielo,fintech,BR,latam
+whirlpool.com.br,Whirlpool BR,retail,BR,latam
+consul.com.br,Consul,retail,BR,latam
+brastemp.com.br,Brastemp,retail,BR,latam
+lojasrenner.com.br,Lojas Renner,retail,BR,latam
+movile.com.br,Movile,saas,BR,latam
+resultados-digitais.com.br,RD,saas,BR,latam
+vtex.com.br,VTEX BR,saas,BR,latam
+instacarro.com,InstaCarro,marketplace,BR,latam
+quinto-andar.com.br,QuintoAndar BR,marketplace,BR,latam
+totalplay.com.mx,Totalplay,other,MX,latam
+undostres.com.mx,UnDosTres,fintech,MX,latam
+praxis.com.mx,Praxis,retail,MX,latam
+bodega-aurrera.com.mx,Bodega Aurrera,retail,MX,latam
+calimax.com,Calimax,retail,MX,latam
+cklass.com,Cklass,retail,MX,latam
+liverpoolmexico.com,Liverpool MX,retail,MX,latam
+cornershop.com.co,Cornershop CO,marketplace,CO,latam
+tpaga.co,TPaga,fintech,CO,latam
+alegra.com,Alegra,saas,CO,latam
+moni.com.ar,Moni,fintech,AR,latam
+pedidosya.com.ar,PedidosYa AR,marketplace,AR,latam
+mercadopago.com.pe,Mercado Pago PE,fintech,PE,latam
+prestamype.com,Prestamype,fintech,PE,latam
+chazki.com,Chazki,other,PE,latam
+flywire.com,Flywire,fintech,US,north_america
+chargebee.com,Chargebee,saas,US,north_america
+fastly.com,Fastly,saas,US,north_america
+segment.com,Segment,saas,US,north_america
+contentstack.com,Contentstack,saas,US,north_america
+postscript.io,Postscript,saas,US,north_america
+attentive.com,Attentive,saas,US,north_america
+recharge.com,ReCharge,saas,US,north_america
+alloy.com,Alloy,fintech,US,north_america
+sardine.ai,Sardine,fintech,US,north_america
+unit.co,Unit,fintech,US,north_america
+payoneer.com,Payoneer,fintech,US,north_america
+flodesk.com,Flodesk,saas,US,north_america
+privy.com,Privy,saas,US,north_america
+junglescout.com,Jungle Scout,saas,US,north_america
+fondy.eu,Fondy,fintech,UA,europe
+pandadoc.com,PandaDoc,saas,US,north_america
+bonsai.com,Bonsai,saas,US,north_america
+lemlist.com,Lemlist,saas,FR,europe
+mangools.com,Mangools,saas,SK,europe
+kinsta.com,Kinsta,saas,US,north_america
+calendly.com,Calendly,saas,US,north_america
+liveagent.com,LiveAgent,saas,SK,europe
+packhelp.com,Packhelp,saas,PL,europe
+voog.com,Voog,saas,EE,europe
+transfermate.com,TransferMate,fintech,IE,europe
+littlebirdie.com.au,Little Birdie,marketplace,AU,apac
+zip.co,Zip,fintech,AU,apac
+mono.co,Mono,fintech,NG,africa
+termii.com,Termii,saas,NG,africa
+prospa.ng,Prospa,fintech,NG,africa
+grey.co,Grey,fintech,NG,africa
+risevest.com,Risevest,fintech,NG,africa
+bamboohr.ng,Bamboo,fintech,NG,africa
+thepeer.co,Thepeer,fintech,NG,africa
+nomba.com,Nomba,fintech,NG,africa
+bujeti.com,Bujeti,fintech,NG,africa
+omnibiz.com,OmniBiz,marketplace,NG,africa
+zazuu.co,Zazuu,fintech,NG,africa
+leatherback.co,Leatherback,fintech,NG,africa
+mfs-africa.com,MFS Africa,fintech,ZA,africa
+revio.co,Revio,fintech,ZA,africa
+kazang.com,Kazang,fintech,ZA,africa
+payflexza.com,PayFlex,fintech,ZA,africa
+mama-money.com,Mama Money,fintech,ZA,africa
+shyftpower.com,Shyft Power,other,KE,africa
+apollo.agriculture,Apollo Agriculture,other,KE,africa
+turaco.co,Turaco,fintech,KE,africa
+kyanda.co.ke,Kyanda,fintech,KE,africa
+craft-silicon.com,Craft Silicon,saas,KE,africa
+flutterwave.com.gh,Flutterwave GH,fintech,GH,africa
+zeepay.com.gh,Zeepay GH,fintech,GH,africa
+float.co,Float,fintech,GH,africa
+nalo.io,Nalo,fintech,CI,africa
+mnotify.com,mNotify,saas,GH,africa
+pawapay.io,PawaPay,fintech,GB,africa
+taeillo.com,Taeillo,retail,NG,africa
+buycoins.africa,Quidax,fintech,NG,africa
+thrive-agric.com,Thrive Agric,other,NG,africa
+mkobo.com.ng,Mkobo,fintech,NG,africa
