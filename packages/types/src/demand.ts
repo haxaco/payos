@@ -234,3 +234,30 @@ export interface HeatMapCell {
   avg_opportunity: number;
   top_priority: SalesPriority;
 }
+
+// ============================================
+// AGENT TRAFFIC MONITOR TYPES (Story 56.24)
+// ============================================
+
+export interface AgentTrafficEvent {
+  site_id: string;
+  domain: string;
+  page_path: string;
+  agent_type: string;
+  detection_method: string;
+  referrer?: string;
+  timestamp: string;
+}
+
+export interface TrafficMonitorStats {
+  site_id: string;
+  domain: string;
+  total_visits: number;
+  unique_agents: number;
+  agent_breakdown: Record<string, number>;
+  top_pages: Array<{ path: string; visits: number }>;
+  daily_trend: Array<{ date: string; visits: number }>;
+  detection_methods: Record<string, number>;
+  first_seen: string;
+  last_seen: string;
+}

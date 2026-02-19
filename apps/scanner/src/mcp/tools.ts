@@ -232,4 +232,18 @@ export const SCANNER_TOOLS: Tool[] = [
       },
     },
   },
+
+  // Agent Traffic Monitor (Story 56.24)
+  {
+    name: 'get_traffic_monitor',
+    description: 'Get AI agent traffic data from the free-tier traffic monitor. Shows which merchants are getting AI agent visits and which agents are visiting. If site_id is provided, returns detailed stats for that site. Otherwise, returns top merchants by agent traffic volume.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        site_id: { type: 'string', description: 'Site ID to get detailed stats for (optional)' },
+        domain: { type: 'string', description: 'Domain to filter by (optional)' },
+        limit: { type: 'number', description: 'Number of results for top merchants (default 20)' },
+      },
+    },
+  },
 ];

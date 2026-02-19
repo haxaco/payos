@@ -57,6 +57,8 @@ export async function handleToolCall(request: CallToolRequest): Promise<{
         return await handleGetAgentActivity(args as any);
       case 'get_heat_map':
         return await handleGetHeatMap();
+      case 'get_traffic_monitor':
+        return await handleGetTrafficMonitor(args as any);
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
     }
@@ -391,6 +393,95 @@ async function handleGetAgentActivity(args: { since?: string }) {
   const report = await getAgentActivityReport(args.since);
   const markdown = formatActivityReportMarkdown(report);
   return { content: [{ type: 'text' as const, text: markdown }] };
+}
+
+async function handleGetTrafficMonitor(args: { site_id?: string; domain?: string; limit?: number }) {
+  if (args.site_id) {
+    const stats = await queries.getTrafficStats(args.site_id);
+    if (!stats) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `No traffic data found for site_id "${args.site_id}". The merchant needs to install the traffic monitor snippet first.`,
+        }],
+      };
+    }
+
+    const lines = [
+      `## Agent Traffic Monitor — ${stats.domain}`,
+      `**Site ID:** ${stats.site_id}`,
+      `**Total AI Visits:** ${stats.total_visits}`,
+      `**Unique Agent Types:** ${stats.unique_agents}`,
+      `**First Seen:** ${stats.first_seen}`,
+      `**Last Seen:** ${stats.last_seen}`,
+      '',
+      '### Agent Breakdown',
+      '| Agent | Visits | Share |',
+      '|-------|--------|-------|',
+    ];
+
+    for (const [agent, count] of Object.entries(stats.agent_breakdown).sort(([, a], [, b]) => b - a)) {
+      const share = stats.total_visits > 0 ? Math.round((count / stats.total_visits) * 100) : 0;
+      lines.push(`| ${agent} | ${count} | ${share}% |`);
+    }
+
+    if (stats.top_pages.length > 0) {
+      lines.push('', '### Top Pages', '| Page | Visits |', '|------|--------|');
+      for (const p of stats.top_pages.slice(0, 10)) {
+        lines.push(`| ${p.path} | ${p.visits} |`);
+      }
+    }
+
+    if (stats.daily_trend.length > 0) {
+      lines.push('', '### Daily Trend', '| Date | Visits |', '|------|--------|');
+      for (const d of stats.daily_trend.slice(-14)) {
+        lines.push(`| ${d.date} | ${d.visits} |`);
+      }
+    }
+
+    const estLostRevenue = Math.round(stats.total_visits * 0.03 * 50);
+    lines.push(
+      '',
+      '### Revenue Impact',
+      `- **AI Agent Visits:** ${stats.total_visits}`,
+      `- **Conversions from AI:** 0`,
+      `- **Estimated Lost Revenue:** $${estLostRevenue.toLocaleString()}`,
+      '',
+      `_${stats.total_visits} agent visits with 0 conversions. Sly can fix this._`,
+    );
+
+    return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  }
+
+  // No site_id — return top merchants
+  const limit = args.limit || 20;
+  const merchants = await queries.getTopMerchantsByAgentTraffic(limit);
+
+  if (merchants.length === 0) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: 'No agent traffic data yet. Merchants need to install the traffic monitor snippet to start tracking AI agent visits.',
+      }],
+    };
+  }
+
+  const lines = [
+    '## Agent Traffic Monitor — Top Merchants',
+    '',
+    '| Rank | Domain | AI Visits | Top Agent | Top Page | First Seen | Last Seen |',
+    '|------|--------|-----------|-----------|----------|------------|-----------|',
+  ];
+
+  merchants.forEach((m, i) => {
+    lines.push(
+      `| ${i + 1} | ${m.domain} | ${m.total_visits} | ${m.top_agent} | ${m.top_page} | ${m.first_seen.slice(0, 10)} | ${m.last_seen.slice(0, 10)} |`,
+    );
+  });
+
+  lines.push('', `_${merchants.length} merchants with traffic monitor installed._`);
+
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 }
 
 function formatDetectionStatus(p: {

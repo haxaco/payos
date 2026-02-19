@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MerchantScan, ScanProtocolResult, ScanBatch, DetectionStatus, AgentShoppingTestResult, AgentObservation } from '@sly/types';
+import type { MerchantScan, ScanProtocolResult, ScanBatch, DetectionStatus, AgentShoppingTestResult, AgentObservation, AgentTrafficEvent, TrafficMonitorStats } from '@sly/types';
 import { getClient } from './client.js';
 
 function isDetected(status?: string): boolean {
@@ -868,4 +868,161 @@ export async function getObservationStats(): Promise<{
     by_type: byType,
     unique_domains: domains.size,
   };
+}
+
+// ============================================
+// AGENT TRAFFIC MONITOR (Story 56.24)
+// ============================================
+
+export async function insertAgentTrafficEvent(event: {
+  site_id: string;
+  domain: string;
+  page_path: string;
+  agent_type: string;
+  detection_method: string;
+  referrer?: string;
+  user_agent_raw?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const { error } = await db()
+    .from('agent_traffic_events')
+    .insert({
+      site_id: event.site_id,
+      domain: event.domain,
+      page_path: event.page_path || '/',
+      agent_type: event.agent_type,
+      detection_method: event.detection_method,
+      referrer: event.referrer || null,
+      user_agent_raw: event.user_agent_raw || null,
+      metadata: event.metadata || {},
+    });
+
+  if (error) throw new Error(`Failed to insert agent traffic event: ${error.message}`);
+}
+
+export async function getTrafficStats(siteId: string): Promise<TrafficMonitorStats | null> {
+  const { data, error } = await db()
+    .from('agent_traffic_events')
+    .select('site_id, domain, page_path, agent_type, detection_method, created_at')
+    .eq('site_id', siteId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(`Failed to get traffic stats: ${error.message}`);
+  if (!data || data.length === 0) return null;
+
+  const agentBreakdown: Record<string, number> = {};
+  const pageBreakdown: Record<string, number> = {};
+  const dailyBreakdown: Record<string, number> = {};
+  const methodBreakdown: Record<string, number> = {};
+  const agentTypes = new Set<string>();
+  let firstSeen = data[data.length - 1].created_at;
+  let lastSeen = data[0].created_at;
+
+  for (const row of data) {
+    agentTypes.add(row.agent_type);
+    agentBreakdown[row.agent_type] = (agentBreakdown[row.agent_type] || 0) + 1;
+    pageBreakdown[row.page_path] = (pageBreakdown[row.page_path] || 0) + 1;
+    methodBreakdown[row.detection_method] = (methodBreakdown[row.detection_method] || 0) + 1;
+
+    const day = row.created_at.slice(0, 10);
+    dailyBreakdown[day] = (dailyBreakdown[day] || 0) + 1;
+
+    if (row.created_at < firstSeen) firstSeen = row.created_at;
+    if (row.created_at > lastSeen) lastSeen = row.created_at;
+  }
+
+  const topPages = Object.entries(pageBreakdown)
+    .map(([path, visits]) => ({ path, visits }))
+    .sort((a, b) => b.visits - a.visits)
+    .slice(0, 20);
+
+  const dailyTrend = Object.entries(dailyBreakdown)
+    .map(([date, visits]) => ({ date, visits }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    site_id: siteId,
+    domain: data[0].domain,
+    total_visits: data.length,
+    unique_agents: agentTypes.size,
+    agent_breakdown: agentBreakdown,
+    top_pages: topPages,
+    daily_trend: dailyTrend,
+    detection_methods: methodBreakdown,
+    first_seen: firstSeen,
+    last_seen: lastSeen,
+  };
+}
+
+export async function getTopMerchantsByAgentTraffic(limit = 20): Promise<Array<{
+  domain: string;
+  site_id: string;
+  total_visits: number;
+  top_agent: string;
+  top_page: string;
+  first_seen: string;
+  last_seen: string;
+}>> {
+  const { data, error } = await db()
+    .from('agent_traffic_events')
+    .select('site_id, domain, agent_type, page_path, created_at');
+
+  if (error) throw new Error(`Failed to get top merchants by traffic: ${error.message}`);
+  if (!data || data.length === 0) return [];
+
+  const byDomain: Record<string, {
+    site_id: string;
+    count: number;
+    agents: Record<string, number>;
+    pages: Record<string, number>;
+    first_seen: string;
+    last_seen: string;
+  }> = {};
+
+  for (const row of data) {
+    if (!byDomain[row.domain]) {
+      byDomain[row.domain] = {
+        site_id: row.site_id,
+        count: 0,
+        agents: {},
+        pages: {},
+        first_seen: row.created_at,
+        last_seen: row.created_at,
+      };
+    }
+    const entry = byDomain[row.domain];
+    entry.count++;
+    entry.agents[row.agent_type] = (entry.agents[row.agent_type] || 0) + 1;
+    entry.pages[row.page_path] = (entry.pages[row.page_path] || 0) + 1;
+    if (row.created_at < entry.first_seen) entry.first_seen = row.created_at;
+    if (row.created_at > entry.last_seen) entry.last_seen = row.created_at;
+  }
+
+  return Object.entries(byDomain)
+    .map(([domain, info]) => {
+      const topAgent = Object.entries(info.agents).sort(([, a], [, b]) => b - a)[0];
+      const topPage = Object.entries(info.pages).sort(([, a], [, b]) => b - a)[0];
+      return {
+        domain,
+        site_id: info.site_id,
+        total_visits: info.count,
+        top_agent: topAgent?.[0] || 'unknown',
+        top_page: topPage?.[0] || '/',
+        first_seen: info.first_seen,
+        last_seen: info.last_seen,
+      };
+    })
+    .sort((a, b) => b.total_visits - a.total_visits)
+    .slice(0, limit);
+}
+
+export async function getTrafficEventCount(siteId: string, since: string): Promise<number> {
+  const { count, error } = await db()
+    .from('agent_traffic_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('site_id', siteId)
+    .gte('created_at', since);
+
+  if (error) throw new Error(`Failed to count traffic events: ${error.message}`);
+  return count || 0;
 }
