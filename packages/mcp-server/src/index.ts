@@ -1540,6 +1540,96 @@ const tools: Tool[] = [
       required: [],
     },
   },
+
+  // ==========================================================================
+  // A2A Tools (Google Agent-to-Agent Protocol)
+  // ==========================================================================
+  {
+    name: 'a2a_discover_agent',
+    description: 'Discover a remote A2A agent by URL. Fetches the agent\'s Agent Card from /.well-known/agent.json or a direct card URL. Returns the agent\'s capabilities, skills, and payment protocols.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'Base URL of the remote agent (e.g., https://example.com) or direct agent card URL',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'a2a_send_task',
+    description: 'Send a task to a local or remote A2A agent. For local agents, provide agent_id. For remote agents, provide remote_url. The message should contain parts describing what the agent should do.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent_id: {
+          type: 'string',
+          description: 'Local Sly agent ID (for sending to a local agent)',
+        },
+        remote_url: {
+          type: 'string',
+          description: 'Remote A2A JSON-RPC endpoint URL (for sending to an external agent)',
+        },
+        message: {
+          type: 'string',
+          description: 'Text message to send to the agent (will be wrapped as a text part)',
+        },
+        context_id: {
+          type: 'string',
+          description: 'Context ID for multi-turn conversations (optional)',
+        },
+      },
+      required: ['message'],
+    },
+  },
+  {
+    name: 'a2a_get_task',
+    description: 'Get the status and details of an A2A task, including its messages, artifacts, and payment info.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The A2A task ID',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'a2a_list_tasks',
+    description: 'List A2A tasks for the tenant. Can filter by agent, state, and direction (inbound/outbound).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent_id: {
+          type: 'string',
+          description: 'Filter by agent ID',
+        },
+        state: {
+          type: 'string',
+          enum: ['submitted', 'working', 'input-required', 'completed', 'failed', 'canceled', 'rejected'],
+          description: 'Filter by task state',
+        },
+        direction: {
+          type: 'string',
+          enum: ['inbound', 'outbound'],
+          description: 'Filter by direction',
+        },
+        limit: {
+          type: 'number',
+          description: 'Number of results per page (default: 20, max: 100)',
+        },
+        page: {
+          type: 'number',
+          description: 'Page number (default: 1)',
+        },
+      },
+      required: [],
+    },
+  },
 ];
 
 /**
@@ -2706,6 +2796,96 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await sly.request('/v1/x402/verify', {
           method: 'POST',
           body: JSON.stringify({ jwt, requestId, transferId }),
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // ====================================================================
+      // A2A Tools
+      // ====================================================================
+      case 'a2a_discover_agent': {
+        const { url } = args as { url: string };
+        const result = await sly.request('/v1/a2a/discover', {
+          method: 'POST',
+          body: JSON.stringify({ url }),
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'a2a_send_task': {
+        const { agent_id, remote_url, message, context_id } = args as {
+          agent_id?: string;
+          remote_url?: string;
+          message: string;
+          context_id?: string;
+        };
+        const result = await sly.request('/v1/a2a/tasks', {
+          method: 'POST',
+          body: JSON.stringify({
+            agent_id,
+            remote_url,
+            message: {
+              parts: [{ kind: 'text', text: message }],
+            },
+            context_id,
+          }),
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'a2a_get_task': {
+        const { task_id } = args as { task_id: string };
+        const result = await sly.request(`/v1/a2a/tasks/${task_id}`, {
+          method: 'GET',
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'a2a_list_tasks': {
+        const { agent_id, state, direction, limit, page } = args as {
+          agent_id?: string;
+          state?: string;
+          direction?: string;
+          limit?: number;
+          page?: number;
+        };
+        const params = new URLSearchParams();
+        if (agent_id) params.set('agent_id', agent_id);
+        if (state) params.set('state', state);
+        if (direction) params.set('direction', direction);
+        if (limit) params.set('limit', String(limit));
+        if (page) params.set('page', String(page));
+        const query = params.toString();
+        const result = await sly.request(`/v1/a2a/tasks${query ? `?${query}` : ''}`, {
+          method: 'GET',
         });
         return {
           content: [

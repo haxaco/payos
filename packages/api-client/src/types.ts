@@ -359,10 +359,31 @@ export interface TransfersListParams extends PaginationParams {
   type?: TransferType;
   accountId?: string;
   endpointId?: string;
+  initiated_by_id?: string;
+  initiated_by_type?: 'agent' | 'user' | 'api_key';
   x402_endpoint_id?: string;
   x402_provider_account_id?: string;
   x402_consumer_account_id?: string;
   x402_wallet_id?: string;
+}
+
+// ============================================
+// Agent Transaction Types
+// ============================================
+
+export interface AgentTransaction {
+  id: string;
+  type: string;
+  status: string;
+  currency: string;
+  amount: number;
+  order_id: string | null;
+  created_at: string;
+  description: string | null;
+  from_account_name: string | null;
+  to_account_name: string | null;
+  protocol: string | null;
+  fee_amount: number;
 }
 
 // ============================================
@@ -1277,4 +1298,124 @@ export interface ApprovalsListParams extends PaginationParams {
 
 export interface ApproveRejectInput {
   reason?: string;
+}
+
+// ============================================
+// A2A Types (Google Agent-to-Agent Protocol)
+// ============================================
+
+export type A2ATaskState = 'submitted' | 'working' | 'input-required' | 'completed' | 'failed' | 'canceled' | 'rejected';
+
+export interface A2AAgentCard {
+  id: string;
+  name: string;
+  description?: string;
+  version: string;
+  provider?: {
+    organization: string;
+    url?: string;
+    contactEmail?: string;
+  };
+  capabilities: {
+    streaming: boolean;
+    multiTurn: boolean;
+    stateTransitionHistory: boolean;
+  };
+  skills: A2ASkill[];
+  interfaces: Array<{
+    type: string;
+    url: string;
+    contentTypes?: string[];
+  }>;
+  securitySchemes: Record<string, unknown>;
+  security: Array<Record<string, string[]>>;
+  extensions?: Array<{
+    uri: string;
+    data?: Record<string, unknown>;
+  }>;
+}
+
+export interface A2ASkill {
+  id: string;
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  tags?: string[];
+}
+
+export interface A2ATaskStatus {
+  state: A2ATaskState;
+  message?: string;
+  timestamp: string;
+}
+
+export interface A2AMessage {
+  id: string;
+  role: 'user' | 'agent';
+  parts: Array<{
+    kind: 'text' | 'data' | 'file';
+    text?: string;
+    data?: Record<string, unknown>;
+    uri?: string;
+    mimeType?: string;
+  }>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2AArtifact {
+  id: string;
+  label?: string;
+  mimeType: string;
+  parts: Array<{
+    kind: 'text' | 'data' | 'file';
+    text?: string;
+    data?: Record<string, unknown>;
+    uri?: string;
+    mimeType?: string;
+  }>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2ATask {
+  id: string;
+  contextId?: string;
+  status: A2ATaskStatus;
+  messages: A2AMessage[];
+  artifacts: A2AArtifact[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2ATaskSummary {
+  id: string;
+  agentId: string;
+  agentName?: string;
+  contextId?: string;
+  state: A2ATaskState;
+  statusMessage?: string;
+  direction: 'inbound' | 'outbound';
+  remoteAgentUrl?: string;
+  clientAgentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SendA2ATaskInput {
+  agentId?: string;
+  remoteUrl?: string;
+  message: {
+    parts: Array<{
+      kind: 'text' | 'data' | 'file';
+      text?: string;
+      data?: Record<string, unknown>;
+    }>;
+  };
+  contextId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2ATasksListParams extends PaginationParams {
+  state?: A2ATaskState;
+  agentId?: string;
+  direction?: 'inbound' | 'outbound';
 }

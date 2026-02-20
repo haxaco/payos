@@ -33,12 +33,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * GET /v1/ap2/agent-card
- * Agent discovery endpoint
+ * Agent discovery endpoint.
+ * Delegates to the A2A agent card service for consistency.
  */
 ap2.get('/agent-card', async (c) => {
-  const mandateService = getAP2MandateService();
-  const card = mandateService.getAgentCard();
-  
+  const { generatePlatformCard } = await import('../services/a2a/agent-card.js');
+  const card = generatePlatformCard();
   return c.json({ data: card });
 });
 

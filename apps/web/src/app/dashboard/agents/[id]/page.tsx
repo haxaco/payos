@@ -25,6 +25,7 @@ import {
   FileText,
   ShoppingCart,
   Trash2,
+  Network,
 } from 'lucide-react';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import type { Agent, Stream, AgentLimits } from '@sly/api-client';
@@ -45,7 +46,7 @@ import type { AgentAction } from '@/lib/mock-data/agent-activity';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 
-type TabType = 'overview' | 'streams' | 'mandates' | 'checkouts' | 'permissions' | 'kya' | 'activity';
+type TabType = 'overview' | 'streams' | 'mandates' | 'checkouts' | 'a2a' | 'permissions' | 'kya' | 'activity';
 
 function getAgentIcon(agentName: string) {
   if (agentName.includes('Inference API Consumer')) {
@@ -216,6 +217,7 @@ export default function AgentDetailPage() {
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: Array.isArray(streams) ? streams.length : 0 },
     { id: 'mandates' as TabType, label: 'Mandates', icon: FileText },
     { id: 'checkouts' as TabType, label: 'Checkouts', icon: ShoppingCart },
+    { id: 'a2a' as TabType, label: 'A2A', icon: Network },
     { id: 'permissions' as TabType, label: 'Permissions', icon: Key },
     { id: 'kya' as TabType, label: 'KYA', icon: Shield },
     { id: 'activity' as TabType, label: 'Activity', icon: History },
@@ -479,6 +481,9 @@ export default function AgentDetailPage() {
       {activeTab === 'checkouts' && (
         <CheckoutsTab agentId={agentId} />
       )}
+      {activeTab === 'a2a' && (
+        <A2ATab agentId={agentId} />
+      )}
       {activeTab === 'permissions' && (
         <PermissionsTab agent={agent} />
       )}
@@ -543,85 +548,27 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
 function RecentTransfers({ agentId }: { agentId: string }) {
   const api = useApiClient();
 
-  // Fetch transfers initiated by this agent
-  const { data: transfersData, isLoading: transfersLoading } = useTanstackQuery({
-    queryKey: ['transfers', 'agent', agentId],
+  // Fetch unified agent transactions (all protocols in one call)
+  const { data: txData, isLoading } = useTanstackQuery({
+    queryKey: ['agent-transactions', agentId, 'recent'],
     queryFn: async () => {
       if (!api) return [];
-      const result = await api.transfers.list({ initiated_by_id: agentId, limit: 10 } as any);
+      const result = await api.agents.getTransactions(agentId, { limit: 10 });
       const raw = result as any;
-      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+      return Array.isArray(raw?.data) ? raw.data : [];
     },
     enabled: !!api,
   });
 
-  // Fetch ACP checkouts for this agent
-  const { data: acpData, isLoading: acpLoading } = useTanstackQuery({
-    queryKey: ['acp-checkouts', 'agent', agentId],
-    queryFn: async () => {
-      if (!api) return [];
-      const result = await api.acp.list({ agent_id: agentId, limit: 20 });
-      const raw = result as any;
-      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
-    },
-    enabled: !!api,
-  });
-
-  // Fetch UCP checkouts filtered by agent_id (server-side)
-  const { data: ucpData, isLoading: ucpLoading } = useTanstackQuery({
-    queryKey: ['ucp-checkouts', 'agent', agentId],
-    queryFn: async () => {
-      if (!api) return [];
-      const result = await api.ucp.checkouts.list({ agent_id: agentId, limit: 100 });
-      const raw = result as any;
-      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
-    },
-    enabled: !!api,
-  });
-
-  const isLoading = transfersLoading || acpLoading || ucpLoading;
-
-  // Collect transfer IDs linked to ACP checkouts so we don't show duplicates
-  const acpTransferIds = new Set(
-    (acpData || []).map((c: any) => c.transfer_id || c.transferId).filter(Boolean)
-  );
-
-  // Normalize and merge all sources
-  const transfers = (transfersData || [])
-    .filter((tx: any) => !acpTransferIds.has(tx.id))
-    .map((tx: any) => ({
-      id: tx.id,
-      type: 'transfer' as const,
-      description: tx.description || `${tx.type} transfer`,
-      amount: tx.amount ?? 0,
-      currency: tx.currency ?? 'USDC',
-      status: tx.status,
-      date: tx.createdAt || tx.created_at,
-    }));
-
-  const acpCheckouts = (acpData || []).map((c: any) => ({
-    id: c.id,
-    type: 'acp_checkout' as const,
-    description: c.merchant_name || c.checkout_id || 'ACP Checkout',
-    amount: parseFloat(c.total_amount || c.totalAmount || 0),
-    currency: c.currency || 'USD',
-    status: c.status,
-    date: c.created_at || c.createdAt,
+  const merged: Array<{ id: string; type: string; description: string; amount: number; currency: string; status: string; date: string }> = (txData || []).map((tx: any) => ({
+    id: tx.id,
+    type: tx.type as string,
+    description: tx.description || `${tx.type} transfer`,
+    amount: tx.amount ?? 0,
+    currency: tx.currency ?? 'USDC',
+    status: tx.status,
+    date: tx.created_at,
   }));
-
-  const ucpCheckouts = (ucpData || []).map((s: any) => ({
-    id: s.id,
-    type: 'ucp_checkout' as const,
-    description: s.metadata?.merchant_name || s.line_items?.[0]?.name || 'UCP Checkout',
-    amount: (s.totals?.find((t: any) => t.type === 'total')?.amount ?? 0) / 100,
-    currency: s.currency || 'USD',
-    status: s.status,
-    date: s.created_at || s.createdAt,
-  }));
-
-  const merged = [...transfers, ...acpCheckouts, ...ucpCheckouts]
-    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
-    .slice(0, 10);
 
   if (isLoading) {
     return <div className="h-20 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />;
@@ -1341,105 +1288,217 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
 }
 
 // Activity Tab - Real data from transfers, checkouts, and mandate executions
+// A2A Tab — shows agent card, inbound/outbound tasks
+function A2ATab({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+  const [showCard, setShowCard] = useState(false);
+
+  // Fetch agent card
+  const { data: cardData, isLoading: cardLoading } = useTanstackQuery({
+    queryKey: ['a2a-card', agentId],
+    queryFn: async () => {
+      if (!api) return null;
+      const result = await api.a2a.getAgentCard(agentId);
+      const raw = result as any;
+      return raw?.data || raw || null;
+    },
+    enabled: !!api,
+  });
+
+  // Fetch A2A tasks
+  const { data: tasksData, isLoading: tasksLoading } = useTanstackQuery({
+    queryKey: ['a2a-tasks', agentId],
+    queryFn: async () => {
+      if (!api) return { data: [], pagination: null };
+      const result = await api.a2a.listTasks({ agentId, limit: 50 });
+      return result;
+    },
+    enabled: !!api,
+  });
+
+  const tasks = (tasksData as any)?.data || [];
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const cardUrl = `${baseUrl}/a2a/agents/${agentId}/card`;
+  const rpcUrl = `${baseUrl}/a2a/${agentId}`;
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const getStateColor = (state: string) => {
+    switch (state) {
+      case 'completed': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300';
+      case 'working': case 'submitted': return 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300';
+      case 'input-required': return 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300';
+      case 'failed': case 'rejected': return 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300';
+      case 'canceled': return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* A2A Endpoint Info */}
+      <div className="bg-gradient-to-r from-indigo-50 to-violet-50 dark:from-indigo-950/30 dark:to-violet-950/30 rounded-2xl p-6 border border-indigo-200 dark:border-indigo-900">
+        <div className="flex items-center gap-3 mb-4">
+          <Network className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">A2A Protocol</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Google Agent-to-Agent protocol endpoints for this agent.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Agent Card URL</label>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="flex-1 px-3 py-2 bg-white dark:bg-gray-950 rounded-lg text-sm font-mono border border-gray-200 dark:border-gray-800 truncate">
+                {cardUrl}
+              </code>
+              <button onClick={() => copyToClipboard(cardUrl)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
+                <Copy className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">JSON-RPC Endpoint</label>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="flex-1 px-3 py-2 bg-white dark:bg-gray-950 rounded-lg text-sm font-mono border border-gray-200 dark:border-gray-800 truncate">
+                {rpcUrl}
+              </code>
+              <button onClick={() => copyToClipboard(rpcUrl)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
+                <Copy className="h-4 w-4 text-gray-500" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Agent Card JSON */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Agent Card</h3>
+          <div className="flex items-center gap-2">
+            {cardData && (
+              <button
+                onClick={() => copyToClipboard(JSON.stringify(cardData, null, 2))}
+                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+              >
+                <Copy className="h-3 w-3" /> Copy JSON
+              </button>
+            )}
+            <button
+              onClick={() => setShowCard(!showCard)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              {showCard ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        </div>
+        {cardLoading && <div className="h-20 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />}
+        {showCard && cardData && (
+          <pre className="text-xs font-mono text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-900 p-4 rounded-xl overflow-x-auto max-h-96 overflow-y-auto">
+            {JSON.stringify(cardData, null, 2)}
+          </pre>
+        )}
+        {!showCard && cardData && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <dt className="text-gray-500 dark:text-gray-400">Skills</dt>
+              <dd className="font-medium text-gray-900 dark:text-white">{(cardData as any).skills?.length || 0}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500 dark:text-gray-400">Multi-Turn</dt>
+              <dd className="font-medium text-gray-900 dark:text-white">{(cardData as any).capabilities?.multiTurn ? 'Yes' : 'No'}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500 dark:text-gray-400">Extensions</dt>
+              <dd className="font-medium text-gray-900 dark:text-white">{(cardData as any).extensions?.length || 0}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500 dark:text-gray-400">Version</dt>
+              <dd className="font-medium text-gray-900 dark:text-white">{(cardData as any).version || '—'}</dd>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* A2A Tasks */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">A2A Tasks</h3>
+        {tasksLoading && <div className="h-20 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />}
+        {!tasksLoading && tasks.length === 0 && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">No A2A tasks yet. Tasks will appear here when other agents communicate with this agent.</p>
+        )}
+        {!tasksLoading && tasks.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Task ID</TableHead>
+                <TableHead>Direction</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Client</TableHead>
+                <TableHead>Created</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks.map((task: any) => (
+                <TableRow key={task.id}>
+                  <TableCell className="font-mono text-xs">{task.id.slice(0, 8)}...</TableCell>
+                  <TableCell>
+                    <span className="text-xs text-gray-500">
+                      {task.direction === 'inbound' ? 'Inbound' : 'Outbound'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStateColor(task.state)}`}>
+                      {task.state}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs text-gray-500">{task.clientAgentId || task.remoteAgentUrl || '—'}</TableCell>
+                  <TableCell className="text-xs text-gray-500">
+                    {task.createdAt ? format(new Date(task.createdAt), 'MMM d, h:mm a') : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ActivityTab({ agentId }: { agentId: string }) {
   const api = useApiClient();
 
-  // Fetch transfers initiated by this agent
-  const { data: transfersData, isLoading: transfersLoading } = useTanstackQuery({
-    queryKey: ['activity-transfers', agentId],
+  // Fetch unified agent transactions (all protocols in one call)
+  const { data: txData, isLoading } = useTanstackQuery({
+    queryKey: ['agent-transactions', agentId, 'activity'],
     queryFn: async () => {
       if (!api) return [];
-      const result = await api.transfers.list({ initiated_by_id: agentId, limit: 50 } as any);
+      const result = await api.agents.getTransactions(agentId, { limit: 50 });
       const raw = result as any;
-      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+      return Array.isArray(raw?.data) ? raw.data : [];
     },
     enabled: !!api,
   });
 
-  // Fetch ACP checkouts
-  const { data: acpData, isLoading: acpLoading } = useTanstackQuery({
-    queryKey: ['activity-acp', agentId],
-    queryFn: async () => {
-      if (!api) return [];
-      const result = await api.acp.list({ agent_id: agentId, limit: 50 });
-      const raw = result as any;
-      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
+  // Map unified transactions to AgentAction format
+  const activities: AgentAction[] = (txData || []).map((tx: any) => ({
+    id: tx.id,
+    timestamp: tx.created_at,
+    type: 'transfer' as const,
+    status: tx.status === 'completed' ? 'success' as const : tx.status === 'failed' ? 'failed' as const : 'pending' as const,
+    description: tx.description || `${tx.type} transfer`,
+    details: {
+      amount: tx.amount ?? 0,
+      currency: tx.currency || 'USDC',
+      recipient: tx.to_account_name || undefined,
+      reference: tx.id?.slice(0, 12),
     },
-    enabled: !!api,
-  });
-
-  // Fetch UCP checkouts
-  const { data: ucpData, isLoading: ucpLoading } = useTanstackQuery({
-    queryKey: ['activity-ucp', agentId],
-    queryFn: async () => {
-      if (!api) return [];
-      const result = await api.ucp.checkouts.list({ agent_id: agentId, limit: 50 });
-      const raw = result as any;
-      return Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw?.data?.data) ? raw.data.data : []);
-    },
-    enabled: !!api,
-  });
-
-  const isLoading = transfersLoading || acpLoading || ucpLoading;
-
-  // Map real data to AgentAction format
-  const activities: AgentAction[] = [];
-
-  // Map transfers
-  (transfersData || []).forEach((tx: any) => {
-    const isMandateExec = tx.protocol_metadata?.operation === 'mandate_execution' || tx.protocolMetadata?.operation === 'mandate_execution';
-    activities.push({
-      id: tx.id,
-      timestamp: tx.createdAt || tx.created_at,
-      type: 'transfer',
-      status: tx.status === 'completed' ? 'success' : tx.status === 'failed' ? 'failed' : 'pending',
-      description: tx.description || `${tx.type} transfer`,
-      details: {
-        amount: parseFloat(tx.amount) || 0,
-        currency: tx.currency || 'USDC',
-        recipient: tx.to?.accountName || tx.to_account_name || undefined,
-        reference: tx.id?.slice(0, 12),
-      },
-      reasoning: isMandateExec
-        ? `Executed under mandate ${(tx.protocol_metadata?.mandate_id || tx.protocolMetadata?.mandate_id || '').slice(0, 12)}. Funds deducted from wallet.`
-        : undefined,
-    });
-  });
-
-  // Map ACP checkouts
-  (acpData || []).forEach((c: any) => {
-    activities.push({
-      id: c.id,
-      timestamp: c.created_at || c.createdAt,
-      type: 'transfer',
-      status: c.status === 'completed' ? 'success' : c.status === 'cancelled' ? 'failed' : 'pending',
-      description: c.merchant_name || c.checkout_id || 'ACP Checkout',
-      details: {
-        amount: parseFloat(c.total_amount || c.totalAmount || 0),
-        currency: c.currency || 'USD',
-        reference: c.checkout_id || c.id?.slice(0, 12),
-      },
-    });
-  });
-
-  // Map UCP checkouts
-  (ucpData || []).forEach((s: any) => {
-    activities.push({
-      id: s.id,
-      timestamp: s.created_at || s.createdAt,
-      type: 'transfer',
-      status: s.status === 'completed' ? 'success' : s.status === 'canceled' ? 'failed' : 'pending',
-      description: s.metadata?.merchant_name || s.line_items?.[0]?.name || 'UCP Checkout',
-      details: {
-        amount: (s.totals?.find((t: any) => t.type === 'total')?.amount ?? 0) / 100,
-        currency: s.currency || 'USD',
-        reference: s.id?.slice(0, 12),
-      },
-    });
-  });
-
-  // Sort by most recent
-  activities.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+  }));
 
   return (
     <div className="space-y-6">

@@ -62,6 +62,8 @@ import circleWebhooksRouter from './routes/circle-webhooks.js';
 import stripeWebhooksRouter from './routes/stripe-webhooks.js';
 import x402BridgeRouter from './routes/x402-bridge.js';
 import wellKnownUcpRouter from './routes/well-known-ucp.js';
+import wellKnownA2aRouter from './routes/well-known-a2a.js';
+import { a2aPublicRouter, a2aRouter } from './routes/a2a.js';
 import ucpSchemasRouter from './routes/ucp-schemas.js';
 import ucpRouter from './routes/ucp.js';
 import ucpCheckoutRouter from './routes/ucp-checkout.js';
@@ -124,7 +126,7 @@ app.use(
       'http://localhost:3001',
       'https://payos-web.vercel.app', // Production dashboard
     ],
-    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Request-ID'],
     exposeHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset', 'X-Request-ID'],
     credentials: true,
@@ -212,6 +214,14 @@ app.route('/webhooks/stripe', stripeWebhooksRouter);
 // Story 43.1: UCP Profile Endpoint
 app.route('/.well-known/ucp', wellKnownUcpRouter);
 
+// A2A Well-Known endpoint (public - for Google A2A protocol discovery)
+// Epic 57: Google A2A Protocol Integration
+app.route('/.well-known/agent.json', wellKnownA2aRouter);
+
+// A2A public routes (agent card discovery + JSON-RPC endpoint)
+// Epic 57: Google A2A Protocol Integration
+app.route('/a2a', a2aPublicRouter);
+
 // UCP Schemas (public - for capability discovery)
 // Story 43.2: UCP Capability Definitions
 app.route('/ucp', ucpSchemasRouter);
@@ -272,6 +282,7 @@ v1.route('/agents/x402', agentsX402Router);
 v1.route('/webhooks', webhooksRouter);
 v1.route('/agentic-payments', agenticPaymentsRouter);
 v1.route('/ap2', ap2Router);
+v1.route('/a2a', a2aRouter); // Google A2A protocol management (Epic 57)
 v1.route('/acp', acpRouter);
 v1.route('/reconciliation', reconciliationRouter);
 v1.route('/settlement-windows', settlementWindowsRouter);

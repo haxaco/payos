@@ -11,6 +11,7 @@ import type {
   UpdateAgentInput,
   CreateAgentResponse,
   AgentsListParams,
+  AgentTransaction,
   Stream,
   StreamEvent,
   StreamStats,
@@ -85,6 +86,12 @@ import type {
   PendingApprovalsSummary,
   ApprovalsListParams,
   ApproveRejectInput,
+  // A2A types
+  A2AAgentCard,
+  A2ATask,
+  A2ATaskSummary,
+  A2ATasksListParams,
+  SendA2ATaskInput,
 } from './types';
 
 export interface SlyClientConfig {
@@ -363,6 +370,12 @@ export class SlyClient {
      */
     rotateToken: (id: string) =>
       this.post<{ success: boolean; credentials: { token: string; prefix: string; warning: string }; previousTokenRevoked: boolean }>(`/agents/${id}/rotate-token`),
+
+    /**
+     * Get agent transaction history (unified across all protocols)
+     */
+    getTransactions: (id: string, params?: PaginationParams & { type?: string; from?: string; to?: string }) =>
+      this.get<{ data: AgentTransaction[]; pagination: { limit: number; offset: number; total: number } }>(`/agents/${id}/transactions`, params),
   };
 
   // ============================================
@@ -973,6 +986,65 @@ export class SlyClient {
      */
     getAnalytics: (params?: { period?: string }) =>
       this.get<{ data: any }>('/ap2/analytics', params).then(r => r.data),
+  };
+
+  // ============================================
+  // A2A API (Google Agent-to-Agent Protocol)
+  // ============================================
+
+  a2a = {
+    /**
+     * Discover a remote A2A agent
+     */
+    discover: (url: string) =>
+      this.post<{ data: A2AAgentCard }>('/a2a/discover', { url }).then(r => r.data),
+
+    /**
+     * Get a per-agent Agent Card
+     */
+    getAgentCard: (agentId: string) =>
+      this.get<{ data: A2AAgentCard }>(`/a2a/agents/${agentId}/card`).then(r => r.data),
+
+    /**
+     * Send a task to a local or remote A2A agent
+     */
+    sendTask: (input: SendA2ATaskInput) =>
+      this.post<{ data: A2ATask }>('/a2a/tasks', {
+        agent_id: input.agentId,
+        remote_url: input.remoteUrl,
+        message: input.message,
+        context_id: input.contextId,
+        metadata: input.metadata,
+      }).then(r => r.data),
+
+    /**
+     * Get a task by ID
+     */
+    getTask: (taskId: string) =>
+      this.get<{ data: A2ATask }>(`/a2a/tasks/${taskId}`).then(r => r.data),
+
+    /**
+     * List A2A tasks
+     */
+    listTasks: (params?: A2ATasksListParams) => {
+      const searchParams = new URLSearchParams();
+      if (params?.page) searchParams.set('page', String(params.page));
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      if (params?.state) searchParams.set('state', params.state);
+      if (params?.agentId) searchParams.set('agent_id', params.agentId);
+      if (params?.direction) searchParams.set('direction', params.direction);
+      const query = searchParams.toString();
+      return this.get<any>(`/a2a/tasks${query ? `?${query}` : ''}`).then(response => ({
+        data: Array.isArray(response.data) ? response.data : (response.data?.data || []),
+        pagination: response.pagination || response.data?.pagination,
+      }));
+    },
+
+    /**
+     * Cancel an A2A task
+     */
+    cancelTask: (taskId: string) =>
+      this.post<{ data: A2ATask }>(`/a2a/tasks/${taskId}/cancel`, {}).then(r => r.data),
   };
 
   // ============================================
