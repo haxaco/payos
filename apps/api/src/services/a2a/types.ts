@@ -1,7 +1,7 @@
 /**
  * Google A2A (Agent-to-Agent) Protocol Types
  *
- * Interfaces matching the A2A protocol spec v0.3.
+ * Interfaces matching the A2A protocol spec v1.0 (Linux Foundation RC).
  * Enables inter-agent communication, task lifecycle, and paid-service workflows.
  *
  * @see Epic 57: Google A2A Protocol Integration
@@ -16,11 +16,14 @@ export interface A2AAgentCard {
   id: string;
   name: string;
   description?: string;
+  url: string;
   version: string;
   provider?: A2AProvider;
   capabilities: A2ACapabilities;
+  defaultInputModes: string[];
+  defaultOutputModes: string[];
   skills: A2ASkill[];
-  interfaces: A2AInterface[];
+  supportedInterfaces: A2ASupportedInterface[];
   securitySchemes: Record<string, A2ASecurityScheme>;
   security: Array<Record<string, string[]>>;
   extensions?: A2AExtension[];
@@ -35,7 +38,7 @@ export interface A2AProvider {
 export interface A2ACapabilities {
   streaming: boolean;
   multiTurn: boolean;
-  stateTransitionHistory: boolean;
+  stateTransition: boolean;
 }
 
 export interface A2ASkill {
@@ -44,11 +47,14 @@ export interface A2ASkill {
   description?: string;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
+  inputModes?: string[];
+  outputModes?: string[];
   tags?: string[];
 }
 
-export interface A2AInterface {
-  type: 'jsonrpc';
+export interface A2ASupportedInterface {
+  protocolBinding: string;
+  protocolVersion: string;
   url: string;
   contentTypes?: string[];
 }
@@ -63,6 +69,16 @@ export interface A2ASecurityScheme {
 export interface A2AExtension {
   uri: string;
   data?: Record<string, unknown>;
+}
+
+// =============================================================================
+// Configuration Type (v1.0)
+// =============================================================================
+
+export interface A2AConfiguration {
+  historyLength?: number;
+  blocking?: boolean;
+  acceptedOutputModes?: string[];
 }
 
 // =============================================================================
@@ -82,7 +98,7 @@ export interface A2ATask {
   id: string;
   contextId?: string;
   status: A2ATaskStatus;
-  messages: A2AMessage[];
+  history: A2AMessage[];
   artifacts: A2AArtifact[];
   metadata?: Record<string, unknown>;
 }
@@ -98,7 +114,7 @@ export interface A2ATaskStatus {
 // =============================================================================
 
 export interface A2AMessage {
-  id: string;
+  messageId: string;
   role: 'user' | 'agent';
   parts: A2APart[];
   metadata?: Record<string, unknown>;
@@ -110,20 +126,16 @@ export type A2APart =
   | A2AFilePart;
 
 export interface A2ATextPart {
-  kind: 'text';
   text: string;
 }
 
 export interface A2ADataPart {
-  kind: 'data';
   data: Record<string, unknown>;
-  mimeType?: string;
+  metadata?: { mimeType?: string };
 }
 
 export interface A2AFilePart {
-  kind: 'file';
-  uri: string;
-  mimeType?: string;
+  file: { uri: string; mimeType?: string; name?: string; bytes?: string };
 }
 
 // =============================================================================
@@ -131,9 +143,9 @@ export interface A2AFilePart {
 // =============================================================================
 
 export interface A2AArtifact {
-  id: string;
-  label?: string;
-  mimeType: string;
+  artifactId: string;
+  name?: string;
+  mediaType: string;
   parts: A2APart[];
   metadata?: Record<string, unknown>;
 }
@@ -219,4 +231,15 @@ export interface A2AArtifactRow {
   parts: A2APart[];
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+/**
+ * Normalize parts to v1.0 format by stripping the v0.x `kind` discriminator.
+ * Handles both inbound (before storage) and outbound (legacy DB rows).
+ */
+export function normalizeParts(parts: A2APart[]): A2APart[] {
+  return parts.map((part) => {
+    const { kind, ...rest } = part as any;
+    return rest as A2APart;
+  });
 }

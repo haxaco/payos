@@ -1,7 +1,7 @@
 /**
  * A2A Task Service
  *
- * Core task lifecycle operations for the A2A protocol.
+ * Core task lifecycle operations for the A2A protocol (v1.0).
  * Manages tasks, messages, and artifacts in the database.
  *
  * @see Epic 57: Google A2A Protocol Integration
@@ -18,6 +18,7 @@ import type {
   A2AMessageRow,
   A2AArtifactRow,
 } from './types.js';
+import { normalizeParts } from './types.js';
 
 export interface ListTasksFilters {
   agentId?: string | null;
@@ -70,7 +71,7 @@ export class A2ATaskService {
         tenant_id: this.tenantId,
         task_id: taskRow.id,
         role: message.role || 'user',
-        parts: message.parts,
+        parts: normalizeParts(message.parts),
         metadata: message.metadata || {},
       })
       .select()
@@ -166,7 +167,7 @@ export class A2ATaskService {
         tenant_id: this.tenantId,
         task_id: taskId,
         role,
-        parts,
+        parts: normalizeParts(parts),
         metadata: metadata || {},
       })
       .select()
@@ -181,19 +182,20 @@ export class A2ATaskService {
 
   /**
    * Add an artifact to a task.
+   * v1.0: accepts `name` and `mediaType` (not `label`/`mimeType`).
    */
   async addArtifact(
     taskId: string,
-    artifact: { label?: string; mimeType?: string; parts: A2APart[]; metadata?: Record<string, unknown> },
+    artifact: { name?: string; mediaType?: string; parts: A2APart[]; metadata?: Record<string, unknown> },
   ): Promise<A2AArtifact> {
     const { data: row, error } = await this.supabase
       .from('a2a_artifacts')
       .insert({
         tenant_id: this.tenantId,
         task_id: taskId,
-        label: artifact.label || null,
-        mime_type: artifact.mimeType || 'text/plain',
-        parts: artifact.parts,
+        label: artifact.name || null,
+        mime_type: artifact.mediaType || 'text/plain',
+        parts: normalizeParts(artifact.parts),
         metadata: artifact.metadata || {},
       })
       .select()
@@ -316,7 +318,7 @@ export class A2ATaskService {
         message: row.status_message || undefined,
         timestamp: row.updated_at,
       },
-      messages: messages.map((m) => this.rowToMessage(m)),
+      history: messages.map((m) => this.rowToMessage(m)),
       artifacts: artifacts.map((a) => this.rowToArtifact(a)),
       metadata: row.metadata || undefined,
     };
@@ -324,19 +326,19 @@ export class A2ATaskService {
 
   private rowToMessage(row: A2AMessageRow): A2AMessage {
     return {
-      id: row.id,
+      messageId: row.id,
       role: row.role,
-      parts: row.parts,
+      parts: normalizeParts(row.parts),
       metadata: row.metadata || undefined,
     };
   }
 
   private rowToArtifact(row: A2AArtifactRow): A2AArtifact {
     return {
-      id: row.id,
-      label: row.label || undefined,
-      mimeType: row.mime_type,
-      parts: row.parts,
+      artifactId: row.id,
+      name: row.label || undefined,
+      mediaType: row.mime_type,
+      parts: normalizeParts(row.parts),
       metadata: row.metadata || undefined,
     };
   }

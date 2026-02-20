@@ -14,7 +14,7 @@ import { createClient } from '../db/client.js';
 import { generateAgentCard } from '../services/a2a/agent-card.js';
 import { A2ATaskService } from '../services/a2a/task-service.js';
 import { handleJsonRpc } from '../services/a2a/jsonrpc-handler.js';
-import type { A2AJsonRpcRequest } from '../services/a2a/types.js';
+import type { A2AJsonRpcRequest, A2APart } from '../services/a2a/types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -81,6 +81,7 @@ a2aPublicRouter.get('/agents/:agentId/card', async (c) => {
       'Content-Type': 'application/json',
       'Cache-Control': 'public, max-age=300',
       'Access-Control-Allow-Origin': '*',
+      'A2A-Version': '1.0',
     },
   });
 });
@@ -111,8 +112,19 @@ a2aPublicRouter.options('/agents/:agentId/card', (c) => {
 a2aPublicRouter.post('/:agentId', async (c) => {
   const agentId = c.req.param('agentId');
 
+  // Helper: return raw JSON-RPC (bypasses response wrapper for A2A interop)
+  const jsonRpc = (body: Record<string, unknown>, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: {
+        'Content-Type': 'application/json',
+        'A2A-Version': '1.0',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+
   if (!UUID_RE.test(agentId)) {
-    return c.json({
+    return jsonRpc({
       jsonrpc: '2.0',
       error: { code: -32602, message: 'Invalid agent ID format' },
       id: null,
@@ -156,7 +168,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
       .single();
 
     if (!targetAgent || targetAgent.status !== 'active') {
-      return c.json({
+      return jsonRpc({
         jsonrpc: '2.0',
         error: { code: -32002, message: 'Agent not found or inactive' },
         id: null,
@@ -171,7 +183,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
   try {
     rpcRequest = await c.req.json();
   } catch {
-    return c.json({
+    return jsonRpc({
       jsonrpc: '2.0',
       error: { code: -32700, message: 'Parse error' },
       id: null,
@@ -180,7 +192,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
 
   // Validate JSON-RPC envelope
   if (rpcRequest.jsonrpc !== '2.0' || !rpcRequest.method || !rpcRequest.id) {
-    return c.json({
+    return jsonRpc({
       jsonrpc: '2.0',
       error: { code: -32600, message: 'Invalid JSON-RPC request' },
       id: rpcRequest?.id ?? null,
@@ -189,9 +201,9 @@ a2aPublicRouter.post('/:agentId', async (c) => {
 
   // Dispatch to JSON-RPC handler
   const taskService = new A2ATaskService(createClient(), tenantId);
-  const response = await handleJsonRpc(rpcRequest, agentId, taskService);
+  const rpcResponse = await handleJsonRpc(rpcRequest, agentId, taskService);
 
-  return c.json(response);
+  return jsonRpc(rpcResponse as Record<string, unknown>);
 });
 
 /**
@@ -320,7 +332,7 @@ a2aRouter.post('/tasks', async (c) => {
   const body = {
     agentId: raw.agentId || raw.agent_id,
     remoteUrl: raw.remoteUrl || raw.remote_url,
-    message: raw.message as { parts: Array<{ kind: string; text?: string; data?: unknown }> },
+    message: raw.message as { parts: A2APart[] },
     contextId: raw.contextId || raw.context_id,
     metadata: raw.metadata as Record<string, unknown> | undefined,
   };
@@ -337,7 +349,7 @@ a2aRouter.post('/tasks', async (c) => {
     const { A2AClient } = await import('../services/a2a/client.js');
     const client = new A2AClient();
     try {
-      const result = await client.sendTask(body.remoteUrl, body.message, body.contextId);
+      const result = await client.sendMessage(body.remoteUrl, body.message, body.contextId);
 
       // Store outbound task locally for tracking
       const task = await taskService.createTask(
