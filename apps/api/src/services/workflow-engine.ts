@@ -18,12 +18,13 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID, createHmac } from 'crypto';
+import { createBalanceService } from './balances.js';
 
 // ============================================
 // Types
 // ============================================
 
-export type WorkflowTriggerType = 'manual' | 'on_transfer' | 'on_event';
+export type WorkflowTriggerType = 'manual' | 'on_record_change';
 export type WorkflowInstanceStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'timed_out';
 export type WorkflowStepStatus = 'pending' | 'running' | 'waiting_approval' | 'waiting_external' | 'waiting_schedule' | 'approved' | 'rejected' | 'completed' | 'failed' | 'skipped' | 'timed_out';
 export type WorkflowStepType = 'approval' | 'condition' | 'action' | 'wait' | 'notification' | 'external';
@@ -181,7 +182,7 @@ export interface PendingWorkflowOptions extends ListOptions {
 // Expression Evaluator (Story 29.4)
 // ============================================
 
-function evaluateExpression(expression: string, data: Record<string, unknown>): boolean {
+export function evaluateExpression(expression: string, data: Record<string, unknown>): boolean {
   // Simple expression evaluator for conditions
   // Supports: trigger.field op value, context.field op value
   // Ops: ==, !=, >, <, >=, <=, contains, starts_with
@@ -218,7 +219,7 @@ function evaluateExpression(expression: string, data: Record<string, unknown>): 
   }
 }
 
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+export function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.');
   let current: unknown = obj;
 
@@ -231,7 +232,7 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
-function parseValue(raw: string): unknown {
+export function parseValue(raw: string): unknown {
   // Remove surrounding quotes
   if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
     return raw.slice(1, -1);
@@ -247,7 +248,7 @@ function parseValue(raw: string): unknown {
   return raw;
 }
 
-function compareValues(a: unknown, op: string, b: unknown): boolean {
+export function compareValues(a: unknown, op: string, b: unknown): boolean {
   switch (op) {
     case '==': return a == b;
     case '!=': return a != b;
@@ -733,16 +734,214 @@ export class WorkflowEngine {
 
     switch (action) {
       case 'execute_transfer': {
-        // Simulate transfer execution (in production, this would call the transfer service)
-        output.result = { status: 'executed', action: 'execute_transfer', params };
+        const transferId = params.transfer_id as string;
+        if (!transferId) throw new Error('execute_transfer requires transfer_id');
+
+        // Fetch the transfer, scoped to tenant
+        const { data: transfer, error: fetchErr } = await this.supabase
+          .from('transfers')
+          .select('*')
+          .eq('id', transferId)
+          .eq('tenant_id', tenantId)
+          .single();
+
+        if (fetchErr || !transfer) throw new Error(`Transfer not found: ${transferId}`);
+        if (transfer.status !== 'pending') {
+          throw new Error(`Transfer ${transferId} is not pending (current status: ${transfer.status})`);
+        }
+
+        // Mark as processing
+        await this.supabase
+          .from('transfers')
+          .update({ status: 'processing', processing_at: new Date().toISOString() })
+          .eq('id', transferId);
+
+        if (transfer.type === 'internal') {
+          // Execute balance movement for internal transfers
+          const balanceService = createBalanceService(this.supabase);
+          try {
+            await balanceService.transfer(
+              transfer.from_account_id,
+              transfer.to_account_id,
+              parseFloat(transfer.amount),
+              'transfer',
+              transfer.id,
+              transfer.description || 'Workflow-executed transfer'
+            );
+          } catch (balanceErr: any) {
+            await this.supabase
+              .from('transfers')
+              .update({ status: 'failed', failed_at: new Date().toISOString(), failure_reason: balanceErr.message })
+              .eq('id', transferId);
+            throw new Error(`Balance transfer failed: ${balanceErr.message}`);
+          }
+
+          await this.supabase
+            .from('transfers')
+            .update({ status: 'completed', completed_at: new Date().toISOString() })
+            .eq('id', transferId);
+
+          output.result = {
+            status: 'completed',
+            transfer_id: transferId,
+            amount: parseFloat(transfer.amount),
+            from_account_id: transfer.from_account_id,
+            to_account_id: transfer.to_account_id,
+          };
+        } else {
+          // Cross-border or other types stay in processing (PSP handles completion)
+          output.result = {
+            status: 'processing',
+            transfer_id: transferId,
+            amount: parseFloat(transfer.amount),
+            from_account_id: transfer.from_account_id,
+            to_account_id: transfer.to_account_id,
+          };
+        }
         break;
       }
       case 'create_transfer': {
-        output.result = { status: 'created', action: 'create_transfer', params };
+        const fromAccountId = params.from_account_id as string;
+        const toAccountId = params.to_account_id as string;
+        const rawAmount = params.amount;
+        const currency = (params.currency as string) || 'USDC';
+        const description = (params.description as string) || 'Workflow-created transfer';
+        const transferType = (params.type as string) || 'internal';
+
+        if (!fromAccountId || !toAccountId) {
+          throw new Error('create_transfer requires from_account_id and to_account_id');
+        }
+
+        const amount = parseFloat(String(rawAmount));
+        if (!amount || amount <= 0) {
+          throw new Error('create_transfer requires a positive amount');
+        }
+
+        // Validate both accounts exist and belong to tenant
+        const { data: fromAccount, error: fromErr } = await this.supabase
+          .from('accounts')
+          .select('id, name')
+          .eq('id', fromAccountId)
+          .eq('tenant_id', tenantId)
+          .single();
+        if (fromErr || !fromAccount) throw new Error(`Source account not found: ${fromAccountId}`);
+
+        const { data: toAccount, error: toErr } = await this.supabase
+          .from('accounts')
+          .select('id, name')
+          .eq('id', toAccountId)
+          .eq('tenant_id', tenantId)
+          .single();
+        if (toErr || !toAccount) throw new Error(`Destination account not found: ${toAccountId}`);
+
+        const isInternal = transferType === 'internal';
+
+        // Insert the transfer record
+        const { data: transfer, error: createErr } = await this.supabase
+          .from('transfers')
+          .insert({
+            tenant_id: tenantId,
+            type: transferType,
+            status: isInternal ? 'completed' : 'pending',
+            from_account_id: fromAccountId,
+            from_account_name: fromAccount.name,
+            to_account_id: toAccountId,
+            to_account_name: toAccount.name,
+            initiated_by_type: 'system',
+            initiated_by_id: 'workflow-engine',
+            initiated_by_name: 'Workflow Engine',
+            amount,
+            currency,
+            destination_amount: amount,
+            destination_currency: currency,
+            fx_rate: 1,
+            fee_amount: 0,
+            description,
+            completed_at: isInternal ? new Date().toISOString() : null,
+          })
+          .select()
+          .single();
+
+        if (createErr || !transfer) throw new Error(`Failed to create transfer: ${createErr?.message}`);
+
+        // For internal transfers, execute balance movement immediately
+        if (isInternal) {
+          const balanceService = createBalanceService(this.supabase);
+          try {
+            await balanceService.transfer(
+              fromAccountId,
+              toAccountId,
+              amount,
+              'transfer',
+              transfer.id,
+              description
+            );
+          } catch (balanceErr: any) {
+            await this.supabase
+              .from('transfers')
+              .update({ status: 'failed', failed_at: new Date().toISOString(), failure_reason: balanceErr.message })
+              .eq('id', transfer.id);
+            throw new Error(`Balance transfer failed: ${balanceErr.message}`);
+          }
+        }
+
+        output.result = {
+          status: transfer.status,
+          transfer_id: transfer.id,
+          amount,
+          from_account_id: fromAccountId,
+          to_account_id: toAccountId,
+        };
         break;
       }
       case 'update_metadata': {
-        output.result = { status: 'updated', action: 'update_metadata', params };
+        const entityType = params.entity_type as string;
+        const entityId = params.entity_id as string;
+        const metadata = params.metadata as Record<string, unknown>;
+
+        if (!entityType || !entityId || !metadata) {
+          throw new Error('update_metadata requires entity_type, entity_id, and metadata');
+        }
+
+        // Whitelist of supported entity types → table names
+        const tableMap: Record<string, string> = {
+          account: 'accounts',
+          agent: 'agents',
+          wallet: 'wallets',
+        };
+        const tableName = tableMap[entityType];
+        if (!tableName) {
+          throw new Error(`update_metadata does not support entity_type '${entityType}'. Supported: ${Object.keys(tableMap).join(', ')}`);
+        }
+
+        // Fetch existing entity to get current metadata
+        const { data: entity, error: fetchErr } = await this.supabase
+          .from(tableName)
+          .select('id, metadata')
+          .eq('id', entityId)
+          .eq('tenant_id', tenantId)
+          .single();
+
+        if (fetchErr || !entity) throw new Error(`${entityType} not found: ${entityId}`);
+
+        // Shallow-merge new metadata into existing
+        const existingMetadata = (entity.metadata && typeof entity.metadata === 'object') ? entity.metadata as Record<string, unknown> : {};
+        const mergedMetadata = { ...existingMetadata, ...metadata };
+
+        const { error: updateErr } = await this.supabase
+          .from(tableName)
+          .update({ metadata: mergedMetadata })
+          .eq('id', entityId)
+          .eq('tenant_id', tenantId);
+
+        if (updateErr) throw new Error(`Failed to update ${entityType} metadata: ${updateErr.message}`);
+
+        output.result = {
+          status: 'updated',
+          entity_type: entityType,
+          entity_id: entityId,
+          metadata: mergedMetadata,
+        };
         break;
       }
       default: {
@@ -764,7 +963,8 @@ export class WorkflowEngine {
     stepInput: Record<string, unknown>
   ): Promise<void> {
     const config = step.stepConfig;
-    const notificationType = (config.type as string) || 'webhook';
+    // Read notification_type with fallback to type for backward compat
+    const notificationType = (config.notification_type as string) || (config.type as string) || 'webhook';
 
     let output: Record<string, unknown> = { type: notificationType };
 
@@ -786,6 +986,18 @@ export class WorkflowEngine {
           output.error = err instanceof Error ? err.message : String(err);
         }
       }
+    } else if (notificationType === 'email') {
+      // Email notification — no email service yet, store intent
+      const recipients = config.recipients as string;
+      const subject = interpolateTemplate((config.subject as string) || 'Workflow Notification', stepInput);
+      const message = interpolateTemplate((config.message as string) || '', stepInput);
+      output.pending_email = {
+        recipients: recipients ? recipients.split(',').map((r: string) => r.trim()) : [],
+        subject,
+        message,
+      };
+      output.delivered = false;
+      output.status = 'pending_email';
     } else if (notificationType === 'internal') {
       // Send internal workflow webhook
       await this.sendWorkflowWebhook(tenantId, 'workflow.notification', {
@@ -1009,6 +1221,14 @@ export class WorkflowEngine {
 
     if (step.stepType !== 'approval') {
       throw new Error('Step is not an approval step');
+    }
+
+    // Check required approvers from step config
+    const requiredApprovers = step.stepConfig.required_approvers as string[] | undefined;
+    if (requiredApprovers?.length) {
+      if (!requiredApprovers.includes(request.approvedBy)) {
+        throw new Error('You are not an authorized approver for this step');
+      }
     }
 
     // Check agent permissions for approval
