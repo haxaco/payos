@@ -309,19 +309,21 @@ a2aRouter.post('/discover', async (c) => {
  */
 a2aRouter.post('/tasks', async (c) => {
   const ctx = c.get('ctx');
-  let body: {
-    agentId?: string;
-    remoteUrl?: string;
-    message: { parts: Array<{ kind: string; text?: string; data?: unknown }> };
-    contextId?: string;
-    metadata?: Record<string, unknown>;
-  };
-
+  let raw: Record<string, any>;
   try {
-    body = await c.req.json();
+    raw = await c.req.json();
   } catch {
     return c.json({ error: 'Invalid request body' }, 400);
   }
+
+  // Normalize snake_case → camelCase (MCP server sends snake_case)
+  const body = {
+    agentId: raw.agentId || raw.agent_id,
+    remoteUrl: raw.remoteUrl || raw.remote_url,
+    message: raw.message as { parts: Array<{ kind: string; text?: string; data?: unknown }> },
+    contextId: raw.contextId || raw.context_id,
+    metadata: raw.metadata as Record<string, unknown> | undefined,
+  };
 
   if (!body.message?.parts?.length) {
     return c.json({ error: 'message.parts is required' }, 400);
