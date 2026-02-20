@@ -14,9 +14,78 @@ import { createClient } from '../db/client.js';
 import { generateAgentCard } from '../services/a2a/agent-card.js';
 import { A2ATaskService } from '../services/a2a/task-service.js';
 import { handleJsonRpc } from '../services/a2a/jsonrpc-handler.js';
+import { handleGatewayJsonRpc } from '../services/a2a/gateway-handler.js';
 import type { A2AJsonRpcRequest, A2APart } from '../services/a2a/types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// =============================================================================
+// Shared Helpers
+// =============================================================================
+
+/** Fetch agent + account + wallet and generate an A2A Agent Card. */
+async function fetchAgentCard(agentId: string, tenantId?: string) {
+  const supabase = createClient();
+
+  let query = supabase
+    .from('agents')
+    .select('id, name, description, status, kya_tier, permissions, parent_account_id')
+    .eq('id', agentId);
+  if (tenantId) query = query.eq('tenant_id', tenantId);
+
+  const { data: agent, error: agentError } = await query.single();
+  if (agentError || !agent) return { error: 'Agent not found' as const, status: 404 as const };
+  if (agent.status !== 'active') return { error: 'Agent is not active' as const, status: 404 as const };
+
+  let accountQuery = supabase
+    .from('accounts')
+    .select('id, name')
+    .eq('id', agent.parent_account_id);
+  if (tenantId) accountQuery = accountQuery.eq('tenant_id', tenantId);
+  const { data: account } = await accountQuery.single();
+
+  let walletQuery = supabase
+    .from('wallets')
+    .select('id, currency')
+    .eq('managed_by_agent_id', agentId)
+    .limit(1);
+  if (tenantId) walletQuery = walletQuery.eq('tenant_id', tenantId);
+  const { data: wallet } = await walletQuery.maybeSingle();
+
+  const card = generateAgentCard(
+    agent as any,
+    account || { id: agent.parent_account_id, name: 'Unknown' },
+    wallet,
+  );
+
+  return { card };
+}
+
+/** Return a raw A2A Agent Card response with proper headers. */
+function agentCardResponse(card: object) {
+  return new Response(JSON.stringify(card), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=300',
+      'Access-Control-Allow-Origin': '*',
+      'A2A-Version': '1.0',
+    },
+  });
+}
+
+/** CORS preflight response for GET endpoints. */
+function corsPreflightGet() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+}
 
 // =============================================================================
 // Public Routes (no auth — discovery must be frictionless)
@@ -27,75 +96,92 @@ export const a2aPublicRouter = new Hono();
 /**
  * GET /a2a/agents/:agentId/card
  * Public per-agent Agent Card (no auth required).
- * Rate-limited at the global middleware level.
  */
 a2aPublicRouter.get('/agents/:agentId/card', async (c) => {
   const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agent ID format' }, 400);
 
-  if (!UUID_RE.test(agentId)) {
-    return c.json({ error: 'Invalid agent ID format' }, 400);
-  }
-
-  const supabase = createClient();
-
-  // Fetch agent
-  const { data: agent, error: agentError } = await supabase
-    .from('agents')
-    .select('id, name, description, status, kya_tier, permissions, parent_account_id')
-    .eq('id', agentId)
-    .single();
-
-  if (agentError || !agent) {
-    return c.json({ error: 'Agent not found' }, 404);
-  }
-
-  if (agent.status !== 'active') {
-    return c.json({ error: 'Agent is not active' }, 404);
-  }
-
-  // Fetch parent account
-  const { data: account } = await supabase
-    .from('accounts')
-    .select('id, name')
-    .eq('id', agent.parent_account_id)
-    .single();
-
-  // Fetch wallet (optional)
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('id, currency')
-    .eq('managed_by_agent_id', agentId)
-    .limit(1)
-    .maybeSingle();
-
-  const card = generateAgentCard(
-    agent as any,
-    account || { id: agent.parent_account_id, name: 'Unknown' },
-    wallet,
-  );
-
-  // Return raw card without response wrapper
-  return new Response(JSON.stringify(card), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=300',
-      'Access-Control-Allow-Origin': '*',
-      'A2A-Version': '1.0',
-    },
-  });
+  const result = await fetchAgentCard(agentId);
+  if ('error' in result) return c.json({ error: result.error }, result.status);
+  return agentCardResponse(result.card);
 });
 
 /**
  * OPTIONS /a2a/agents/:agentId/card
  * CORS preflight for agent card discovery.
  */
-a2aPublicRouter.options('/agents/:agentId/card', (c) => {
+a2aPublicRouter.options('/agents/:agentId/card', () => corsPreflightGet());
+
+/**
+ * GET /a2a/:agentId/.well-known/agent.json
+ * Spec-compliant per-agent discovery (Layer 2).
+ */
+a2aPublicRouter.get('/:agentId/.well-known/agent.json', async (c) => {
+  const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agent ID format' }, 400);
+
+  const result = await fetchAgentCard(agentId);
+  if ('error' in result) return c.json({ error: result.error }, result.status);
+  return agentCardResponse(result.card);
+});
+
+/**
+ * OPTIONS /a2a/:agentId/.well-known/agent.json
+ * CORS preflight for spec-compliant discovery.
+ */
+a2aPublicRouter.options('/:agentId/.well-known/agent.json', () => corsPreflightGet());
+
+/**
+ * POST /a2a
+ * Platform gateway JSON-RPC endpoint (Layer 1).
+ * Handles agent discovery via find_agent / list_agents skills.
+ * No auth required — public front door for the directory.
+ */
+a2aPublicRouter.post('/', async (c) => {
+  const jsonRpc = (body: Record<string, unknown>, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: {
+        'Content-Type': 'application/json',
+        'A2A-Version': '1.0',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+
+  let rpcRequest: A2AJsonRpcRequest;
+  try {
+    rpcRequest = await c.req.json();
+  } catch {
+    return jsonRpc({
+      jsonrpc: '2.0',
+      error: { code: -32700, message: 'Parse error' },
+      id: null,
+    }, 400);
+  }
+
+  if (rpcRequest.jsonrpc !== '2.0' || !rpcRequest.method || !rpcRequest.id) {
+    return jsonRpc({
+      jsonrpc: '2.0',
+      error: { code: -32600, message: 'Invalid JSON-RPC request' },
+      id: rpcRequest?.id ?? null,
+    }, 400);
+  }
+
+  const supabase = createClient();
+  const rpcResponse = await handleGatewayJsonRpc(rpcRequest, supabase);
+  return jsonRpc(rpcResponse as Record<string, unknown>);
+});
+
+/**
+ * OPTIONS /a2a
+ * CORS preflight for platform gateway.
+ */
+a2aPublicRouter.options('/', () => {
   return new Response(null, {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400',
     },
@@ -235,46 +321,11 @@ export const a2aRouter = new Hono();
 a2aRouter.get('/agents/:agentId/card', async (c) => {
   const ctx = c.get('ctx');
   const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agent ID format' }, 400);
 
-  if (!UUID_RE.test(agentId)) {
-    return c.json({ error: 'Invalid agent ID format' }, 400);
-  }
-
-  const supabase = createClient();
-
-  const { data: agent } = await supabase
-    .from('agents')
-    .select('id, name, description, status, kya_tier, permissions, parent_account_id')
-    .eq('id', agentId)
-    .eq('tenant_id', ctx.tenantId)
-    .single();
-
-  if (!agent) {
-    return c.json({ error: 'Agent not found' }, 404);
-  }
-
-  const { data: account } = await supabase
-    .from('accounts')
-    .select('id, name')
-    .eq('id', agent.parent_account_id)
-    .eq('tenant_id', ctx.tenantId)
-    .single();
-
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('id, currency')
-    .eq('managed_by_agent_id', agentId)
-    .eq('tenant_id', ctx.tenantId)
-    .limit(1)
-    .maybeSingle();
-
-  const card = generateAgentCard(
-    agent as any,
-    account || { id: agent.parent_account_id, name: 'Unknown' },
-    wallet,
-  );
-
-  return c.json({ data: card });
+  const result = await fetchAgentCard(agentId, ctx.tenantId);
+  if ('error' in result) return c.json({ error: result.error }, result.status);
+  return c.json({ data: result.card });
 });
 
 /**
@@ -294,21 +345,9 @@ a2aRouter.post('/discover', async (c) => {
   }
 
   try {
-    // Fetch remote agent card
-    const wellKnownUrl = body.url.endsWith('/agent.json')
-      ? body.url
-      : `${body.url.replace(/\/$/, '')}/.well-known/agent.json`;
-
-    const response = await fetch(wellKnownUrl, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!response.ok) {
-      return c.json({ error: `Failed to fetch agent card: ${response.status}` }, 502);
-    }
-
-    const card = await response.json();
+    const { A2AClient } = await import('../services/a2a/client.js');
+    const client = new A2AClient();
+    const card = await client.discover(body.url);
     return c.json({ data: card });
   } catch (error: any) {
     return c.json({ error: `Discovery failed: ${error.message}` }, 502);

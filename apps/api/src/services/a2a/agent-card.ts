@@ -1,7 +1,7 @@
 /**
  * A2A Agent Card Generator
  *
- * Generates A2A-compliant Agent Cards for registered Sly agents.
+ * Generates A2A v1.0-compliant Agent Cards for registered Sly agents.
  * Maps agent permissions to A2A skills and declares payment capabilities.
  *
  * @see Epic 57: Google A2A Protocol Integration
@@ -40,11 +40,13 @@ export function generateAgentCard(
 ): A2AAgentCard {
   const skills = buildSkills(agent);
   const extensions = buildExtensions(agent, wallet);
+  const endpointUrl = `${BASE_URL}/a2a/${agent.id}`;
 
   return {
     id: agent.id,
     name: agent.name,
     description: agent.description || `Sly agent managed by ${account.name}`,
+    url: endpointUrl,
     version: '1.0.0',
     provider: {
       organization: 'Sly',
@@ -54,14 +56,17 @@ export function generateAgentCard(
     capabilities: {
       streaming: false,
       multiTurn: true,
-      stateTransitionHistory: true,
+      stateTransition: true,
     },
+    defaultInputModes: ['text'],
+    defaultOutputModes: ['text', 'data'],
     skills,
-    interfaces: [
+    supportedInterfaces: [
       {
-        type: 'jsonrpc',
-        url: `${BASE_URL}/a2a/${agent.id}`,
-        contentTypes: ['application/json'],
+        protocolBinding: 'jsonrpc/http',
+        protocolVersion: '1.0',
+        url: endpointUrl,
+        contentTypes: ['application/json', 'application/a2a+json'],
       },
     ],
     securitySchemes: {
@@ -87,10 +92,13 @@ export function generateAgentCard(
  * Generate the Sly platform Agent Card (for /.well-known/agent.json).
  */
 export function generatePlatformCard(): A2AAgentCard {
+  const endpointUrl = `${BASE_URL}/a2a`;
+
   return {
     id: 'sly-platform',
     name: 'Sly Payment Platform',
     description: 'Universal agentic payment orchestration for LATAM',
+    url: endpointUrl,
     version: '1.0.0',
     provider: {
       organization: 'Sly',
@@ -100,33 +108,65 @@ export function generatePlatformCard(): A2AAgentCard {
     capabilities: {
       streaming: false,
       multiTurn: true,
-      stateTransitionHistory: true,
+      stateTransition: true,
     },
+    defaultInputModes: ['text'],
+    defaultOutputModes: ['text', 'data'],
     skills: [
+      {
+        id: 'find_agent',
+        name: 'Find Agent',
+        description: 'Find a Sly agent by capability, region, or keyword',
+        inputModes: ['text', 'data'],
+        outputModes: ['data'],
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query (capability, region, keyword)' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Filter by skill tags' },
+          },
+        },
+        tags: ['discovery', 'directory'],
+      },
+      {
+        id: 'list_agents',
+        name: 'List Agents',
+        description: 'List all publicly discoverable Sly agents',
+        inputModes: ['text'],
+        outputModes: ['data'],
+        tags: ['discovery', 'directory'],
+      },
       {
         id: 'make_payment',
         name: 'Make Payment',
         description: 'Execute a stablecoin or fiat payment via multiple rails (x402, Pix, SPEI)',
+        inputModes: ['text', 'data'],
+        outputModes: ['text', 'data'],
         tags: ['payments', 'stablecoin', 'latam'],
       },
       {
         id: 'create_mandate',
         name: 'Create Payment Mandate',
         description: 'Create an AP2 mandate for recurring or automated agent payments',
+        inputModes: ['text', 'data'],
+        outputModes: ['text', 'data'],
         tags: ['payments', 'mandates', 'ap2'],
       },
       {
         id: 'manage_wallet',
         name: 'Manage Wallet',
         description: 'Deposit, withdraw, and check balances on stablecoin wallets',
+        inputModes: ['text'],
+        outputModes: ['text', 'data'],
         tags: ['wallets', 'stablecoin'],
       },
     ],
-    interfaces: [
+    supportedInterfaces: [
       {
-        type: 'jsonrpc',
-        url: `${BASE_URL}/a2a`,
-        contentTypes: ['application/json'],
+        protocolBinding: 'jsonrpc/http',
+        protocolVersion: '1.0',
+        url: endpointUrl,
+        contentTypes: ['application/json', 'application/a2a+json'],
       },
     ],
     securitySchemes: {
@@ -145,6 +185,13 @@ export function generatePlatformCard(): A2AAgentCard {
       { bearer: [] },
     ],
     extensions: [
+      {
+        uri: 'urn:a2a:ext:agent-directory',
+        data: {
+          directoryEndpoint: `${BASE_URL}/a2a`,
+          description: 'Send message/send to discover individual agents',
+        },
+      },
       {
         uri: 'urn:a2a:ext:x402',
         data: {
@@ -189,6 +236,8 @@ function buildSkills(agent: AgentRecord): A2ASkill[] {
       id: 'make_payment',
       name: 'Make Payment',
       description: 'Initiate a payment transfer',
+      inputModes: ['text', 'data'],
+      outputModes: ['text', 'data'],
       inputSchema: {
         type: 'object',
         properties: {
@@ -208,6 +257,8 @@ function buildSkills(agent: AgentRecord): A2ASkill[] {
       id: 'check_balance',
       name: 'Check Balance',
       description: 'Check wallet or account balance',
+      inputModes: ['text'],
+      outputModes: ['text', 'data'],
       tags: ['wallets', 'balance'],
     });
   }
@@ -218,6 +269,8 @@ function buildSkills(agent: AgentRecord): A2ASkill[] {
       id: 'create_stream',
       name: 'Create Payment Stream',
       description: 'Create a real-time per-second payment stream',
+      inputModes: ['text', 'data'],
+      outputModes: ['text', 'data'],
       inputSchema: {
         type: 'object',
         properties: {
@@ -237,6 +290,8 @@ function buildSkills(agent: AgentRecord): A2ASkill[] {
       id: 'lookup_account',
       name: 'Lookup Account',
       description: 'Look up account details and verification status',
+      inputModes: ['text'],
+      outputModes: ['text', 'data'],
       tags: ['accounts'],
     });
   }
@@ -246,6 +301,8 @@ function buildSkills(agent: AgentRecord): A2ASkill[] {
     id: 'agent_info',
     name: 'Agent Info',
     description: 'Get this agent\'s capabilities and status',
+    inputModes: ['text'],
+    outputModes: ['text'],
     tags: ['info'],
   });
 

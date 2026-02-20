@@ -1,8 +1,8 @@
 /**
  * A2A Client (Outbound)
  *
- * Client for sending tasks to remote A2A agents.
- * Handles discovery, task sending, polling, and payment flows.
+ * Client for sending messages to remote A2A v1.0 agents.
+ * Handles discovery, message sending, polling, and payment flows.
  *
  * @see Epic 57: Google A2A Protocol Integration
  */
@@ -26,12 +26,15 @@ export class A2AClient {
    * Discover a remote agent by fetching its Agent Card.
    */
   async discover(url: string): Promise<A2AAgentCard> {
-    const wellKnownUrl = url.endsWith('/agent.json')
+    const wellKnownUrl = (url.endsWith('/agent.json') || url.endsWith('/card'))
       ? url
       : `${url.replace(/\/$/, '')}/.well-known/agent.json`;
 
     const response = await fetch(wellKnownUrl, {
-      headers: { 'Accept': 'application/json' },
+      headers: {
+        'Accept': 'application/json, application/a2a+json',
+        'A2A-Version': '1.0',
+      },
       signal: AbortSignal.timeout(this.defaultTimeout),
     });
 
@@ -43,9 +46,9 @@ export class A2AClient {
   }
 
   /**
-   * Send a task to a remote A2A agent.
+   * Send a message to a remote A2A agent (v1.0: message/send).
    */
-  async sendTask(
+  async sendMessage(
     remoteUrl: string,
     message: SendMessageInput,
     contextId?: string,
@@ -53,7 +56,7 @@ export class A2AClient {
   ): Promise<A2AJsonRpcResponse> {
     const rpcRequest: A2AJsonRpcRequest = {
       jsonrpc: '2.0',
-      method: 'tasks/send',
+      method: 'message/send',
       params: {
         message,
         ...(contextId ? { contextId } : {}),
@@ -110,6 +113,7 @@ export class A2AClient {
   ): Promise<A2AJsonRpcResponse> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'A2A-Version': '1.0',
     };
 
     if (auth) {

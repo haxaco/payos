@@ -1546,13 +1546,13 @@ const tools: Tool[] = [
   // ==========================================================================
   {
     name: 'a2a_discover_agent',
-    description: 'Discover a remote A2A agent by URL. Fetches the agent\'s Agent Card from /.well-known/agent.json or a direct card URL. Returns the agent\'s capabilities, skills, and payment protocols.',
+    description: 'Discover a remote A2A agent by URL. Fetches the agent\'s Agent Card from /.well-known/agent.json, a /card URL, or a per-agent discovery URL (/a2a/{id}/.well-known/agent.json). Returns the agent\'s capabilities, skills, and payment protocols.',
     inputSchema: {
       type: 'object',
       properties: {
         url: {
           type: 'string',
-          description: 'Base URL of the remote agent (e.g., https://example.com) or direct agent card URL',
+          description: 'Base URL of the remote agent (e.g., https://example.com), direct card URL ending in /card, or per-agent .well-known URL',
         },
       },
       required: ['url'],
@@ -1560,7 +1560,7 @@ const tools: Tool[] = [
   },
   {
     name: 'a2a_send_task',
-    description: 'Send a task to a local or remote A2A agent. For local agents, provide agent_id. For remote agents, provide remote_url. The message should contain parts describing what the agent should do.',
+    description: 'Send a message to a local or remote A2A v1.0 agent (message/send). For local agents, provide agent_id. For remote agents, provide remote_url. The message should contain parts describing what the agent should do.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2839,7 +2839,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             agent_id,
             remote_url,
             message: {
-              parts: [{ kind: 'text', text: message }],
+              parts: [{ text: message }],
             },
             context_id,
           }),
