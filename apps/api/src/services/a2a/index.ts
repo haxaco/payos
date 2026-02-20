@@ -10,3 +10,4 @@ export { A2ATaskService } from './task-service.js';
 export { handleJsonRpc } from './jsonrpc-handler.js';
 export { A2APaymentHandler } from './payment-handler.js';
 export { A2AClient } from './client.js';
+export { A2ATaskProcessor } from './task-processor.js';

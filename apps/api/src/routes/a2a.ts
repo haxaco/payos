@@ -443,4 +443,80 @@ a2aRouter.post('/tasks/:taskId/cancel', async (c) => {
   return c.json({ data: task });
 });
 
+/**
+ * POST /v1/a2a/tasks/:taskId/process
+ * Manually trigger processing of a submitted task.
+ * Demonstrates the full lifecycle: submitted → working → completed.
+ */
+a2aRouter.post('/tasks/:taskId/process', async (c) => {
+  const ctx = c.get('ctx');
+  const taskId = c.req.param('taskId');
+
+  if (!UUID_RE.test(taskId)) {
+    return c.json({ error: 'Invalid task ID format' }, 400);
+  }
+
+  const supabase = createClient();
+  const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+  const processor = new A2ATaskProcessor(supabase, ctx.tenantId);
+
+  const result = await processor.processTask(taskId);
+
+  if (!result) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
+  return c.json({ data: result });
+});
+
+/**
+ * POST /v1/a2a/process
+ * Process all submitted tasks (batch). Optionally filter by agentId.
+ */
+a2aRouter.post('/process', async (c) => {
+  const ctx = c.get('ctx');
+  let body: Record<string, any> = {};
+  try { body = await c.req.json(); } catch { /* empty body ok */ }
+
+  const agentId = body.agentId || body.agent_id;
+  const paymentThreshold = body.paymentThreshold || body.payment_threshold || 500;
+
+  const supabase = createClient();
+  const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+  const processor = new A2ATaskProcessor(supabase, ctx.tenantId, {
+    agentId,
+    paymentThreshold,
+  });
+
+  // Find and process all submitted tasks
+  const { data: tasks } = await supabase
+    .from('a2a_tasks')
+    .select('id')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('state', 'submitted')
+    .eq('direction', 'inbound')
+    .order('created_at', { ascending: true })
+    .limit(20);
+
+  if (!tasks?.length) {
+    return c.json({ data: { processed: 0, message: 'No submitted tasks found' } });
+  }
+
+  const results = [];
+  for (const row of tasks) {
+    if (agentId) {
+      const { data: task } = await supabase
+        .from('a2a_tasks')
+        .select('agent_id')
+        .eq('id', row.id)
+        .single();
+      if (task?.agent_id !== agentId) continue;
+    }
+    const result = await processor.processTask(row.id);
+    if (result) results.push({ id: result.id, state: result.status.state });
+  }
+
+  return c.json({ data: { processed: results.length, tasks: results } });
+});
+
 export default a2aRouter;
