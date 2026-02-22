@@ -411,6 +411,12 @@ Stories are numbered 56.1–56.24 (138 total points). Build order:
 
 **Type errors in UI**: Make sure `@sly/types` package is built and up-to-date.
 
+## Security Rules for Claude Code
+
+- **NEVER commit credentials, passwords, API keys, or tokens** in scripts, config files, or any tracked file. If a one-off script needs credentials, write it to `/tmp/` and run it from there — never inside the repo tree.
+- **NEVER create new script files inside the repo** that contain hardcoded secrets (passwords, API keys, tokens, connection strings). Use environment variables instead.
+- If you need to share credentials with the user, output them to the terminal only — do not write them to any file that could be committed.
+
 ## Key Files Reference
 
 - **API Entry**: `apps/api/src/index.ts:1` - Server startup
