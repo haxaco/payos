@@ -78,6 +78,7 @@ export default function TransfersPage() {
       pagination.pageSize,
       statusFilter,
       typeFilter,
+      initiatedByFilter,
     ],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
@@ -86,7 +87,7 @@ export default function TransfersPage() {
         limit: pagination.pageSize,
         status: statusFilter !== 'all' ? (statusFilter as TransferStatus) : undefined,
         type: typeFilter !== 'all' ? (typeFilter as TransferType) : undefined,
-        // Protocol filtering would happen here ideally, or client side
+        initiated_by_type: initiatedByFilter !== 'all' ? (initiatedByFilter as 'agent' | 'user' | 'api_key') : undefined,
       });
     },
     enabled: !!api && isConfigured,

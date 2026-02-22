@@ -43,7 +43,21 @@ const formSchema = z.object({
     }),
     currency: z.string().min(1, "Currency is required"),
     expiresAt: z.string().optional(),
+    fundingSourceId: z.string().optional(),
+    settlementRail: z.string().optional(),
 });
+
+const NONE = "__none__";
+
+const SETTLEMENT_RAILS = [
+    { value: NONE, label: "Auto (default)" },
+    { value: "internal", label: "Internal" },
+    { value: "circle_usdc", label: "Circle USDC" },
+    { value: "pix", label: "PIX (Brazil)" },
+    { value: "spei", label: "SPEI (Mexico)" },
+    { value: "ach", label: "ACH (US)" },
+    { value: "wire", label: "Wire Transfer" },
+];
 
 export default function CreateMandatePage() {
     const router = useRouter();
@@ -71,7 +85,6 @@ export default function CreateMandatePage() {
         enabled: !!api,
     });
 
-
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
@@ -81,7 +94,21 @@ export default function CreateMandatePage() {
             accountId: "",
             authorizedAmount: "",
             currency: "USDC",
+            fundingSourceId: NONE,
+            settlementRail: NONE,
         },
+    });
+
+    const selectedAccountId = form.watch("accountId");
+
+    // Fetch funding sources for the selected account
+    const { data: fundingSources } = useQuery({
+        queryKey: ["funding-sources", selectedAccountId],
+        queryFn: async () => {
+            if (!api || !selectedAccountId) return [];
+            return api.fundingSources.list({ accountId: selectedAccountId, status: "active" });
+        },
+        enabled: !!api && !!selectedAccountId,
     });
 
     async function onSubmit(values: z.infer<typeof formSchema>) {
@@ -94,6 +121,8 @@ export default function CreateMandatePage() {
             const payload = {
                 ...values,
                 authorizedAmount: Number(values.authorizedAmount),
+                fundingSourceId: values.fundingSourceId === NONE ? undefined : values.fundingSourceId,
+                settlementRail: values.settlementRail === NONE ? undefined : values.settlementRail,
             };
             const mandate = await api.ap2.create(payload);
 
@@ -272,6 +301,65 @@ export default function CreateMandatePage() {
                                     </FormItem>
                                 )}
                             />
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormField
+                                    control={form.control}
+                                    name="fundingSourceId"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Payment Instrument (Optional)</FormLabel>
+                                            <Select onValueChange={field.onChange} value={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Use wallet (default)" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    <SelectItem value={NONE}>Use wallet (default)</SelectItem>
+                                                    {(fundingSources || []).map((fs: any) => (
+                                                        <SelectItem key={fs.id} value={fs.id}>
+                                                            {fs.displayName || fs.display_name || `${fs.brand || fs.type} ••••${fs.lastFour || fs.last_four || ''}`}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormDescription>
+                                                Bind a specific card or bank account to this mandate.
+                                            </FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name="settlementRail"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Settlement Rail (Optional)</FormLabel>
+                                            <Select onValueChange={field.onChange} value={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Auto (default)" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    {SETTLEMENT_RAILS.map((rail) => (
+                                                        <SelectItem key={rail.value} value={rail.value}>
+                                                            {rail.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormDescription>
+                                                Force a specific settlement rail for executions.
+                                            </FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
 
                             <div className="flex justify-end gap-2 pt-4">
                                 <Button variant="outline" type="button" onClick={() => router.back()}>

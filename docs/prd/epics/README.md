@@ -100,6 +100,10 @@ Every story must meet these criteria before completion:
 ### Demo & Sales Enablement
 - [Epic 55: Demo Scenario Readiness](./epic-55-demo-scenario-readiness.md) 🎯 - Seed data, KPI panels, settlement timeline, demo walkthrough for all 8 scenarios
 
+### Agent Interoperability ⭐ NEW
+- [Epic 57: Google A2A Protocol](./epic-57-google-a2a-protocol.md) 🤝 ✅ - Google A2A protocol for agent discovery, communication, and paid task execution
+- [Epic 58: A2A Task Processor Worker](./epic-58-a2a-task-processor.md) ⚙️ - Background worker for processing A2A tasks with LLM handlers, tool registry, and payment gating
+
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) 🏭 - x402 facilitator for LATAM ecosystem
 - [Epic 38: Payment-Optimized Chains](./epic-38-payment-optimized-chains.md) ⛓️ - Tempo & future chain integration
@@ -147,12 +151,14 @@ Strategic explorations before committing to implementation:
 | Epic 51: Unified Onboarding | Jan 22, 2026 | 52 | Protocol-specific onboarding |
 | Epic 53: Card Networks | Jan 27, 2026 | 62 | Visa VIC + Mastercard Agent Pay |
 | Epic 54: Sly Rebranding | Jan 27, 2026 | 34 | PayOS → Sly rename |
-| **Total Completed** | | **~731** | |
+| Epic 57: Google A2A | Feb 21, 2026 | 89 | Agent discovery, communication, paid tasks |
+| **Total Completed** | | **~820** | |
 
 ### Current Focus 🚧
 
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
+| Epic 58: A2A Task Processor | P0 | 119 | Background worker, LLM handlers, payment gating |
 | Epic 55: Demo Readiness | P0 | 89 | Seed data + demo UI for 8 scenarios |
 | Epic 29: Workflow Engine | P0 | 52 | Multi-step workflows |
 | Epic 41: On-Ramp | P1 | 110 | Non-crypto customers |
@@ -190,16 +196,41 @@ Strategic explorations before committing to implementation:
 
 ### Points Summary
 
-- **Completed:** ~731 points
-- **Current Focus:** ~251 points (55, 29, 41)
+- **Completed:** ~820 points
+- **Current Focus:** ~370 points (58, 55, 29, 41)
 - **P0/P1 Planned:** ~36 points
 - **P2 Planned:** ~153 points
 - **P3 Future:** ~268 points
-- **Total Defined:** ~1,439 points
+- **Total Defined:** ~1,647 points
 
 ---
 
 ## Recent Changes
+
+### February 21, 2026
+- **Epic 57: Google A2A Protocol** — COMPLETE ✅ (89 points)
+  - Full A2A v0.3 protocol support: Agent Cards, JSON-RPC 2.0, task lifecycle
+  - Per-agent discovery at `/a2a/agents/:id/card` (public, no auth)
+  - Platform discovery at `/.well-known/agent.json`
+  - Payment integration: x402 payment gating + AP2 mandate linking within tasks
+  - Outbound A2A client for remote agent communication
+  - SDK types + client methods in `@sly/api-client`
+  - 4 MCP tools: `a2a_discover_agent`, `a2a_send_task`, `a2a_get_task`, `a2a_list_tasks`
+  - Dashboard: A2A tab on agent detail, tasks + sessions pages
+  - Integration tests (599 lines)
+- **AP2 Mandate Payment Instruments** — Enhancement
+  - `funding_source_id` and `settlement_rail` columns on `ap2_mandates`
+  - Create/update/execute mandates with bound payment instruments
+  - UI: funding source + settlement rail selectors on create page, display on detail page
+  - Agent detail page: "Payment Instruments" section showing bound instruments
+
+### February 19, 2026
+- **Epic 57: Google A2A Protocol** — NEW (89 points, P0)
+  - Google's Agent-to-Agent protocol for agent discovery, communication, and paid task execution
+  - 14 stories across 6 phases: Agent Cards, Task DB + JSON-RPC, Payment Integration, Outbound Client, SDK + Frontend, Testing
+  - Hybrid auth: Sly API keys for known partners + verified bearer tokens for open federation
+  - Reuses existing AP2 mandates, x402 payments, wallet system
+  - Adds 4 MCP tools, A2A tab on agent detail page, `sly.a2a` SDK module
 
 ### February 6, 2026
 - **Epic 55: Demo Scenario Readiness** — NEW (89 points, P0)
@@ -303,14 +334,15 @@ Strategic explorations before committing to implementation:
 
 ## Protocol Support Matrix
 
-PayOS supports **FOUR** agentic payment protocols:
+Sly supports **FIVE** agentic payment and communication protocols:
 
-| Protocol | Owner | Focus | PayOS Status |
-|----------|-------|-------|--------------|
+| Protocol | Owner | Focus | Sly Status |
+|----------|-------|-------|------------|
 | **x402** | Coinbase | Micropayments | ✅ Full support |
 | **AP2** | Google | Agent mandates | ✅ Full support |
 | **ACP** | Stripe/OpenAI | E-commerce | ✅ Full support |
 | **UCP** | Google+Shopify | Full commerce | ✅ Epic 43 |
+| **A2A** | Google | Agent communication | ✅ Epic 57 |
 
 **Card Network Support:**
 
@@ -346,7 +378,8 @@ PayOS supports **FOUR** agentic payment protocols:
 | `payos.cards` | Card network operations | `verify()`, `createInstruction()`, `complete()` |
 | `payos.cards.visa` | Visa VIC operations | `createInstruction()`, `getCredentials()` |
 | `payos.cards.mastercard` | Mastercard Agent Pay | `registerAgent()`, `createToken()`, `getDTVC()` |
+| `payos.a2a` | A2A protocol operations | `discover()`, `sendTask()`, `getTask()`, `getAgentCard()` |
 
 ---
 
-*Last updated: February 6, 2026*
+*Last updated: February 21, 2026*

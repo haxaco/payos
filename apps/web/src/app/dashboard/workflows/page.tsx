@@ -16,7 +16,11 @@ import {
   ChevronRight,
   LayoutList,
   Settings2,
+  Pencil,
 } from 'lucide-react';
+import { CreateTemplateDialog } from '@/components/workflows/create-template-dialog';
+import { EditTemplateDialog } from '@/components/workflows/edit-template-dialog';
+import { RunWorkflowDialog } from '@/components/workflows/run-workflow-dialog';
 
 type Tab = 'instances' | 'templates' | 'pending';
 
@@ -25,6 +29,9 @@ export default function WorkflowsPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('instances');
   const [showCreateTemplate, setShowCreateTemplate] = useState(false);
+  const [showRunWorkflow, setShowRunWorkflow] = useState(false);
+  const [runWorkflowTemplateId, setRunWorkflowTemplateId] = useState<string | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   // Fetch workflow instances
   const { data: instancesData, isLoading: instancesLoading } = useQuery({
@@ -72,6 +79,10 @@ export default function WorkflowsPage() {
   const templates = templatesData?.data || [];
   const pending = pendingData?.data || [];
 
+  // Lookup map: template_id → template name
+  const templateNameMap: Record<string, string> = {};
+  templates.forEach((t: any) => { templateNameMap[t.id] = t.name; });
+
   const statusIcon = (status: string) => {
     switch (status) {
       case 'completed': return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -116,6 +127,22 @@ export default function WorkflowsPage() {
             <p className="text-gray-500 dark:text-gray-400 mt-1">
               Configure and monitor multi-step workflow processes
             </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCreateTemplate(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+            >
+              <Plus className="h-4 w-4" />
+              New Template
+            </button>
+            <button
+              onClick={() => { setRunWorkflowTemplateId(null); setShowRunWorkflow(true); }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+            >
+              <Play className="h-4 w-4" />
+              Run Workflow
+            </button>
           </div>
         </div>
 
@@ -185,7 +212,7 @@ export default function WorkflowsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b text-left text-xs text-gray-500 uppercase tracking-wider">
-                    <th className="px-4 py-3">Instance</th>
+                    <th className="px-4 py-3">Workflow</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Step</th>
                     <th className="px-4 py-3">Initiated By</th>
@@ -197,7 +224,8 @@ export default function WorkflowsPage() {
                   {instances.map((instance: any) => (
                     <tr key={instance.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/50">
                       <td className="px-4 py-3">
-                        <div className="font-mono text-sm">{instance.id.slice(0, 8)}...</div>
+                        <div className="font-medium text-sm">{templateNameMap[instance.template_id] || 'Unknown Template'}</div>
+                        <div className="font-mono text-xs text-gray-400">{instance.id.slice(0, 8)}...</div>
                       </td>
                       <td className="px-4 py-3">{statusBadge(instance.status)}</td>
                       <td className="px-4 py-3 text-sm">Step {instance.current_step_index}</td>
@@ -244,6 +272,7 @@ export default function WorkflowsPage() {
                     <th className="px-4 py-3">Version</th>
                     <th className="px-4 py-3">Active</th>
                     <th className="px-4 py-3">Created</th>
+                    <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -258,6 +287,24 @@ export default function WorkflowsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500">
                         {new Date(template.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setEditingTemplateId(template.id)}
+                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition"
+                            title="Edit template"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => { setRunWorkflowTemplateId(template.id); setShowRunWorkflow(true); }}
+                            className="p-1.5 text-green-500 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition"
+                            title="Run this workflow"
+                          >
+                            <Play className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -312,6 +359,24 @@ export default function WorkflowsPage() {
               </table>
             )}
           </div>
+        )}
+        {/* Dialogs */}
+        {showCreateTemplate && (
+          <CreateTemplateDialog onClose={() => setShowCreateTemplate(false)} />
+        )}
+        {showRunWorkflow && (
+          <RunWorkflowDialog
+            onClose={() => setShowRunWorkflow(false)}
+            onSuccess={() => { setShowRunWorkflow(false); setActiveTab('instances'); }}
+            templates={templates}
+            preselectedTemplateId={runWorkflowTemplateId}
+          />
+        )}
+        {editingTemplateId && (
+          <EditTemplateDialog
+            templateId={editingTemplateId}
+            onClose={() => setEditingTemplateId(null)}
+          />
         )}
       </div>
     </div>

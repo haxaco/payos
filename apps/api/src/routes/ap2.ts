@@ -12,6 +12,7 @@ import { getAP2MandateService } from '../services/ap2/index.js';
 import { ValidationError } from '../middleware/error.js';
 import { randomUUID } from 'crypto';
 import { createClient } from '../db/client.js';
+import { sanitizeSearchInput } from '../utils/helpers.js';
 import { 
   createSpendingPolicyService,
   type PolicyContext 
@@ -26,6 +27,12 @@ const ap2 = new Hono();
 
 // Helper: detect UUID format to avoid Postgres cast errors on the UUID `id` column
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Valid settlement rails for mandate binding
+const VALID_SETTLEMENT_RAILS = [
+  'auto', 'internal', 'circle_usdc', 'base_chain', 'pix', 'spei',
+  'wire', 'ach', 'visa_pull', 'mastercard_pull', 'mock',
+];
 
 // =============================================================================
 // Discovery
@@ -79,6 +86,32 @@ ap2.post('/mandates', async (c) => {
     throw new ValidationError('mandate_type must be one of: intent, cart, payment');
   }
 
+  // Validate optional funding_source_id
+  const funding_source_id = body.funding_source_id || null;
+  if (funding_source_id) {
+    const { data: fs, error: fsError } = await supabase
+      .from('funding_sources')
+      .select('id, status, account_id')
+      .eq('id', funding_source_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+    if (fsError || !fs) {
+      throw new ValidationError('funding_source_id not found');
+    }
+    if (fs.status !== 'active') {
+      throw new ValidationError('Funding source is not active');
+    }
+    if (fs.account_id !== account_id) {
+      throw new ValidationError('Funding source does not belong to the specified account');
+    }
+  }
+
+  // Validate optional settlement_rail
+  const settlement_rail = body.settlement_rail || null;
+  if (settlement_rail && !VALID_SETTLEMENT_RAILS.includes(settlement_rail)) {
+    throw new ValidationError(`settlement_rail must be one of: ${VALID_SETTLEMENT_RAILS.join(', ')}`);
+  }
+
   // Look up agent name
   const { data: agent } = await supabase
     .from('agents')
@@ -101,6 +134,8 @@ ap2.post('/mandates', async (c) => {
       expires_at: body.expires_at || body.expiresAt || body.valid_until || null,
       mandate_data: body.mandate_data || {},
       metadata: body.metadata || {},
+      funding_source_id,
+      settlement_rail,
     })
     .select('*')
     .single();
@@ -147,7 +182,20 @@ ap2.get('/mandates/:id', async (c) => {
     .eq('mandate_id', mandate.id)
     .order('execution_index', { ascending: true });
 
-  return c.json({ data: { ...mandate, executions: executions || [] } });
+  // Join funding source display info if bound
+  let funding_source = null;
+  if (mandate.funding_source_id) {
+    const { data: fs } = await supabase
+      .from('funding_sources')
+      .select('id, type, provider, display_name, last_four, brand, status')
+      .eq('id', mandate.funding_source_id)
+      .single();
+    if (fs) {
+      funding_source = fs;
+    }
+  }
+
+  return c.json({ data: { ...mandate, executions: executions || [], funding_source } });
 });
 
 /**
@@ -173,6 +221,29 @@ ap2.patch('/mandates/:id', async (c) => {
   if (body.expires_at !== undefined) updates.expires_at = body.expires_at;
   if (body.metadata !== undefined) updates.metadata = body.metadata;
   if (body.mandate_data !== undefined) updates.mandate_data = body.mandate_data;
+
+  // Handle funding_source_id (null clears it)
+  if (body.funding_source_id !== undefined) {
+    if (body.funding_source_id) {
+      const { data: fs, error: fsError } = await supabase
+        .from('funding_sources')
+        .select('id, status')
+        .eq('id', body.funding_source_id)
+        .eq('tenant_id', ctx.tenantId)
+        .single();
+      if (fsError || !fs) throw new ValidationError('funding_source_id not found');
+      if (fs.status !== 'active') throw new ValidationError('Funding source is not active');
+    }
+    updates.funding_source_id = body.funding_source_id;
+  }
+
+  // Handle settlement_rail (null clears it)
+  if (body.settlement_rail !== undefined) {
+    if (body.settlement_rail && !VALID_SETTLEMENT_RAILS.includes(body.settlement_rail)) {
+      throw new ValidationError(`settlement_rail must be one of: ${VALID_SETTLEMENT_RAILS.join(', ')}`);
+    }
+    updates.settlement_rail = body.settlement_rail;
+  }
 
   // Look up by UUID id or user-defined mandate_id (avoid UUID cast error)
   const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
@@ -315,7 +386,8 @@ ap2.get('/mandates', async (c) => {
     query = query.eq('account_id', accountId);
   }
   if (search) {
-    query = query.or(`mandate_id.ilike.%${search}%,agent_name.ilike.%${search}%`);
+    const safe = sanitizeSearchInput(search);
+    query = query.or(`mandate_id.ilike.%${safe}%,agent_name.ilike.%${safe}%`);
   }
 
   const { data: mandates, error, count } = await query;
@@ -498,12 +570,56 @@ ap2.post('/mandates/:id/execute', async (c) => {
   }
 
   // ============================================
+  // Funding source charge (if bound to mandate)
+  // ============================================
+  let fundingSourceCharge: { fundingSourceId: string; fundingTransactionId: string } | null = null;
+  let skipWalletDeduction = false;
+
+  if (mandate.funding_source_id) {
+    // Check if the funding source is still active
+    const { data: fs } = await supabase
+      .from('funding_sources')
+      .select('id, status, provider, type, account_id')
+      .eq('id', mandate.funding_source_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (fs && fs.status === 'active') {
+      // Create a funding_transactions record (mock: instant completion)
+      const { data: fundingTx } = await supabase
+        .from('funding_transactions')
+        .insert({
+          tenant_id: ctx.tenantId,
+          funding_source_id: fs.id,
+          account_id: fs.account_id,
+          amount_cents: Math.round(execAmount * 100),
+          currency: currency || mandate.currency,
+          status: 'completed',
+          provider: fs.provider,
+          provider_transaction_id: `mock_${randomUUID().slice(0, 12)}`,
+          completed_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (fundingTx) {
+        fundingSourceCharge = {
+          fundingSourceId: fs.id,
+          fundingTransactionId: fundingTx.id,
+        };
+        skipWalletDeduction = true;
+      }
+    }
+    // If funding source inactive, fall through to wallet deduction
+  }
+
+  // ============================================
   // Wallet deduction (settle funds from agent wallet)
   // ============================================
   let walletDeduction: { walletId: string; previousBalance: number; newBalance: number; transferId?: string } | null = null;
 
   // Find wallet managed by this agent or owned by the mandate's account
-  const { data: wallet } = await supabase
+  const { data: wallet } = !skipWalletDeduction ? await supabase
     .from('wallets')
     .select('id, balance, currency, owner_account_id, status')
     .eq('tenant_id', ctx.tenantId)
@@ -511,7 +627,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     .eq('status', 'active')
     .order('managed_by_agent_id', { ascending: false, nullsFirst: false })
     .limit(1)
-    .single();
+    .single() : { data: null };
 
   if (wallet) {
     const currentBalance = Number(wallet.balance);
@@ -574,7 +690,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
           transferInsert.settled_at = now;
           transferInsert.settlement_metadata = {
             corridor: crossBorderInfo.corridor_id,
-            rail: 'raast',
+            rail: mandate.settlement_rail || 'raast',
             fx_rate: crossBorderInfo.fx_rate,
             fx_source: 'live_exchangerate_api',
             destination_amount: crossBorderInfo.destination_amount,
@@ -705,6 +821,8 @@ ap2.post('/mandates/:id/execute', async (c) => {
     description,
     order_ids: order_ids || [],
     wallet_deduction: walletDeduction,
+    funding_source_charge: fundingSourceCharge,
+    settlement_rail: mandate.settlement_rail || null,
   };
 
   // Record successful mandate execution telemetry

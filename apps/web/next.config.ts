@@ -1,14 +1,8 @@
 import type { NextConfig } from 'next';
-import path from 'path';
 
 const nextConfig: NextConfig = {
   // Enable React strict mode for better development experience
   reactStrictMode: true,
-
-  // Set Turbopack root to the monorepo root to prevent lockfile detection issues
-  turbopack: {
-    root: path.resolve(__dirname, '../..'),
-  },
 
   // Environment variables exposed to the browser
   env: {

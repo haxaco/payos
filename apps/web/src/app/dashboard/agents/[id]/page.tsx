@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   Trash2,
   Network,
+  CreditCard,
 } from 'lucide-react';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import type { Agent, Stream, AgentLimits } from '@sly/api-client';
@@ -540,6 +541,101 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
       </div>
     </div>
     <WalletSpendingPolicies agent={agent} />
+    <LinkedPaymentInstruments agent={agent} />
+    </div>
+  );
+}
+
+// Linked Payment Instruments — shows funding sources bound to this agent's mandates
+function LinkedPaymentInstruments({ agent }: { agent: Agent }) {
+  const api = useApiClient();
+  const parentAccountId = agent.parentAccount?.id || (agent as any).parent_account_id;
+
+  // Fetch agent's mandates
+  const { data: mandatesData, isLoading: mandatesLoading } = useTanstackQuery({
+    queryKey: ['agent-mandates-instruments', agent.id],
+    queryFn: async () => {
+      if (!api) return [];
+      const result = await api.ap2.list({ agentId: agent.id, limit: 100 });
+      const raw = result as any;
+      const data = raw?.data || raw;
+      return Array.isArray(data) ? data : (data?.data || []);
+    },
+    enabled: !!api,
+  });
+
+  // Fetch parent account's funding sources
+  const { data: sourcesData, isLoading: sourcesLoading } = useTanstackQuery({
+    queryKey: ['funding-sources', parentAccountId],
+    queryFn: async () => {
+      if (!api || !parentAccountId) return [];
+      return api.fundingSources.list({ accountId: parentAccountId });
+    },
+    enabled: !!api && !!parentAccountId,
+  });
+
+  const isLoading = mandatesLoading || sourcesLoading;
+  const mandates = mandatesData || [];
+  const allSources = sourcesData || [];
+
+  // Filter mandates that have a funding source bound
+  const boundMandates = mandates.filter((m: any) => m.fundingSourceId || m.funding_source_id);
+
+  // Group by funding source ID
+  const sourceToMandates = new Map<string, any[]>();
+  for (const m of boundMandates) {
+    const fsId = m.fundingSourceId || m.funding_source_id;
+    if (!fsId) continue;
+    if (!sourceToMandates.has(fsId)) sourceToMandates.set(fsId, []);
+    sourceToMandates.get(fsId)!.push(m);
+  }
+
+  if (isLoading) return null;
+  if (sourceToMandates.size === 0 && allSources.length === 0) return null;
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <CreditCard className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Payment Instruments</h3>
+      </div>
+      {sourceToMandates.size > 0 ? (
+        <div className="space-y-3">
+          {Array.from(sourceToMandates.entries()).map(([fsId, mList]) => {
+            const source = allSources.find((s: any) => s.id === fsId) as any;
+            const displayName = source?.displayName || source?.display_name || `Source ••••${source?.lastFour || source?.last_four || ''}`;
+            return (
+              <div key={fsId} className="border border-gray-200 dark:border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center">
+                      <CreditCard className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white text-sm">{displayName}</div>
+                      {source && (
+                        <div className="text-xs text-muted-foreground capitalize">{source.provider || source.type}</div>
+                      )}
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {mList.length} mandate{mList.length !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })}
+          {allSources.length > sourceToMandates.size && (
+            <p className="text-xs text-muted-foreground mt-2">
+              {allSources.length - sourceToMandates.size} additional instrument{allSources.length - sourceToMandates.size !== 1 ? 's' : ''} available on parent account
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {allSources.length} instrument{allSources.length !== 1 ? 's' : ''} available on parent account. None bound to mandates yet.
+        </p>
+      )}
     </div>
   );
 }

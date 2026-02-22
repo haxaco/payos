@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Copy, Play, Calendar, ArrowRight, Link2 } from "lucide-react";
+import { Copy, Play, Calendar, ArrowRight, Link2, CreditCard, Route } from "lucide-react";
 import { useApiClient } from "@/lib/api-client";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
@@ -212,6 +212,41 @@ export default function MandateDetailPage() {
                                     {account?.name || mandate.account.name}
                                 </div>
                             </div>
+                            {(mandate.fundingSource || mandate.fundingSourceId) && (() => {
+                                const fs = mandate.fundingSource as any;
+                                const displayName = fs?.displayName || fs?.display_name || `Source ••••${fs?.lastFour || fs?.last_four || ''}`;
+                                return (
+                                    <>
+                                        <Separator />
+                                        <div>
+                                            <div className="text-sm text-muted-foreground mb-1">Payment Instrument</div>
+                                            <div className="font-medium flex items-center gap-2">
+                                                <div className="h-6 w-6 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center text-xs">
+                                                    <CreditCard className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm">{displayName}</div>
+                                                    {fs?.provider && (
+                                                        <div className="text-xs text-muted-foreground capitalize">{fs.provider} &middot; {fs.type}</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                            {mandate.settlementRail && (
+                                <>
+                                    <Separator />
+                                    <div>
+                                        <div className="text-sm text-muted-foreground mb-1">Settlement Rail</div>
+                                        <Badge variant="outline" className="uppercase text-xs">
+                                            <Route className="h-3 w-3 mr-1" />
+                                            {mandate.settlementRail}
+                                        </Badge>
+                                    </div>
+                                </>
+                            )}
                             <Separator />
                             <div>
                                 <div className="text-sm text-muted-foreground mb-1">Type</div>

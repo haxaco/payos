@@ -10,11 +10,13 @@ import {
   paginationResponse,
   normalizeFields,
   buildDeprecationHeader,
+  sanitizeSearchInput,
 } from '../utils/helpers.js';
 import { createLimitService } from '../services/limits.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { generateAgentToken, hashApiKey, getKeyPrefix } from '../utils/crypto.js';
 import { ErrorCode } from '@sly/types';
+import { triggerWorkflows } from '../services/workflow-trigger.js';
 
 const agents = new Hono();
 
@@ -148,7 +150,8 @@ agents.get('/', async (c) => {
     .range((page - 1) * limit, page * limit - 1);
   
   if (search) {
-    dbQuery = dbQuery.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
+    const safe = sanitizeSearchInput(search);
+    dbQuery = dbQuery.or(`name.ilike.%${safe}%,description.ilike.%${safe}%`);
   }
   if (status) {
     dbQuery = dbQuery.eq('status', status);
@@ -373,6 +376,11 @@ agents.post('/', async (c) => {
     verificationTier: parentAccount.verification_tier,
   };
 
+  // Fire workflow auto-triggers (fire-and-forget)
+  triggerWorkflows(supabase, ctx.tenantId, 'agent', 'insert', {
+    id: data.id, name, account_id: accountId, kya_tier: 0, status: 'active',
+  }).catch(console.error);
+
   // Include auth credentials in response (only on creation)
   // WARNING: This is the ONLY time the plaintext token is available!
   return c.json({
@@ -577,7 +585,13 @@ agents.patch('/:id', async (c) => {
       verificationTier: data.accounts.verification_tier,
     };
   }
-  
+
+  // Fire workflow auto-triggers (fire-and-forget)
+  triggerWorkflows(supabase, ctx.tenantId, 'agent', 'update', {
+    id: data.id, name: data.name, kya_tier: data.kya_tier, status: data.status,
+    account_id: data.parent_account_id,
+  }).catch(console.error);
+
   return c.json({ data: agent });
 });
 
@@ -951,6 +965,63 @@ agents.get('/:id/transactions', async (c) => {
 
   const { data: acpCheckouts, count: acpTotal } = await acpQuery.range(offset, offset + limit - 1);
 
+  // Fetch transfers initiated by this agent (AP2 mandate executions, etc.)
+  // Exclude ACP-type transfers to avoid duplicating data already fetched above
+  let transferQuery = supabase
+    .from('transfers')
+    .select('id, type, status, currency, amount, description, created_at, from_account_id, to_account_id, from_account_name, to_account_name, fee_amount, protocol_metadata', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .eq('initiated_by_type', 'agent')
+    .eq('initiated_by_id', id)
+    .not('type', 'eq', 'acp')
+    .order('created_at', { ascending: false });
+
+  if (dateFrom) transferQuery = transferQuery.gte('created_at', dateFrom);
+  if (dateTo) transferQuery = transferQuery.lte('created_at', dateTo);
+
+  const { data: agentTransfers, count: transferTotal } = await transferQuery.range(offset, offset + limit - 1);
+
+  // Also fetch x402 transfers made via wallets managed by this agent
+  // (These may have initiated_by_type='api_key' when called via MCP/API,
+  //  but the wallet is agent-managed, so we attribute to the agent)
+  const { data: agentWallets } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('managed_by_agent_id', id);
+
+  const agentWalletIds = (agentWallets || []).map((w: any) => w.id);
+  const directTransferIds = new Set((agentTransfers || []).map((t: any) => t.id));
+
+  let walletTransfers: any[] = [];
+  let walletTransferTotal = 0;
+
+  if (agentWalletIds.length > 0) {
+    let walletTxQuery = supabase
+      .from('transfers')
+      .select('id, type, status, currency, amount, description, created_at, from_account_id, to_account_id, from_account_name, to_account_name, fee_amount, protocol_metadata', { count: 'exact' })
+      .eq('tenant_id', ctx.tenantId)
+      .eq('type', 'x402')
+      .order('created_at', { ascending: false });
+
+    if (agentWalletIds.length === 1) {
+      walletTxQuery = walletTxQuery.contains('protocol_metadata', { wallet_id: agentWalletIds[0] });
+    } else {
+      // Multiple wallets: use OR filter
+      walletTxQuery = walletTxQuery.or(
+        agentWalletIds.map((wid: string) => `protocol_metadata.cs.{"wallet_id":"${wid}"}`).join(',')
+      );
+    }
+
+    if (dateFrom) walletTxQuery = walletTxQuery.gte('created_at', dateFrom);
+    if (dateTo) walletTxQuery = walletTxQuery.lte('created_at', dateTo);
+
+    const { data: wTransfers, count: wTotal } = await walletTxQuery.range(offset, offset + limit - 1);
+    // Deduplicate: exclude any already found in agentTransfers
+    walletTransfers = (wTransfers || []).filter((t: any) => !directTransferIds.has(t.id));
+    walletTransferTotal = Math.max(0, (wTotal || 0) - ((wTransfers || []).length - walletTransfers.length));
+  }
+
   // Normalize into unified transaction format
   const transactions = [
     ...(ucpCheckouts || []).map((c: any) => {
@@ -964,6 +1035,10 @@ agents.get('/:id/transactions', async (c) => {
         order_id: c.order_id,
         created_at: c.created_at,
         description: c.metadata?.description || c.metadata?.vendor || null,
+        from_account_name: null,
+        to_account_name: null,
+        protocol: 'ucp',
+        fee_amount: 0,
       };
     }),
     ...(acpCheckouts || []).map((c: any) => ({
@@ -975,6 +1050,24 @@ agents.get('/:id/transactions', async (c) => {
       order_id: null,
       created_at: c.created_at,
       description: c.metadata?.description || null,
+      from_account_name: null,
+      to_account_name: null,
+      protocol: 'acp',
+      fee_amount: 0,
+    })),
+    ...([...(agentTransfers || []), ...walletTransfers]).map((t: any) => ({
+      id: t.id,
+      type: t.type as string,
+      status: t.status,
+      currency: t.currency,
+      amount: parseFloat(t.amount) || 0,
+      order_id: null,
+      created_at: t.created_at,
+      description: t.description || `${t.type} transfer`,
+      from_account_name: t.from_account_name || null,
+      to_account_name: t.to_account_name || null,
+      protocol: t.protocol_metadata?.protocol || t.type || null,
+      fee_amount: parseFloat(t.fee_amount) || 0,
     })),
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
@@ -983,7 +1076,7 @@ agents.get('/:id/transactions', async (c) => {
     pagination: {
       limit,
       offset,
-      total: (ucpTotal || 0) + (acpTotal || 0),
+      total: (ucpTotal || 0) + (acpTotal || 0) + (transferTotal || 0) + walletTransferTotal,
     },
   });
 });
@@ -1155,7 +1248,8 @@ agents.post('/:id/rotate-token', async (c) => {
       auth_token_hash: newTokenHash,
       auth_token_prefix: newTokenPrefix,
     })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId);
 
   if (updateError) {
     console.error('Error rotating token:', updateError);
@@ -1408,7 +1502,8 @@ agents.delete('/:id/signing-keys', async (c) => {
   const { error: deleteError } = await supabase
     .from('agent_signing_keys')
     .delete()
-    .eq('id', existingKey.id);
+    .eq('id', existingKey.id)
+    .eq('tenant_id', ctx.tenantId);
 
   if (deleteError) {
     console.error('Error deleting signing key:', deleteError);

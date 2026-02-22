@@ -9,13 +9,14 @@ import {
   paginationResponse,
 } from '../utils/helpers.js';
 import { createBalanceService } from '../services/balances.js';
-import { 
-  ValidationError, 
-  NotFoundError, 
-  InsufficientBalanceError 
+import {
+  ValidationError,
+  NotFoundError,
+  InsufficientBalanceError
 } from '../middleware/error.js';
 import { storeIdempotencyResponse } from '../middleware/idempotency.js';
 import { ErrorCode } from '@sly/types';
+import { triggerWorkflows } from '../services/workflow-trigger.js';
 
 const transfers = new Hono();
 
@@ -49,6 +50,7 @@ transfers.get('/', async (c) => {
   
   // Agent/actor filter
   const initiatedById = query.initiated_by_id;
+  const initiatedByType = query.initiated_by_type;
 
   // x402-specific filters
   const endpointId = query.endpointId;
@@ -90,6 +92,9 @@ transfers.get('/', async (c) => {
   
   if (initiatedById) {
     dbQuery = dbQuery.eq('initiated_by_id', initiatedById);
+  }
+  if (initiatedByType) {
+    dbQuery = dbQuery.eq('initiated_by_type', initiatedByType);
   }
 
   // Protocol-specific filters using JSONB metadata
@@ -323,7 +328,19 @@ transfers.post('/', async (c) => {
     },
   });
   
-  const responseBody = { 
+  // Fire workflow auto-triggers (fire-and-forget)
+  triggerWorkflows(supabase, ctx.tenantId, 'transfer', 'insert', {
+    id: transfer.id,
+    type: transferType,
+    amount,
+    currency: 'USDC',
+    from_account_id: fromAccountId,
+    to_account_id: toAccountId,
+    description,
+    status: transfer.status,
+  }).catch(console.error);
+
+  const responseBody = {
     data: mapTransferFromDb(transfer),
     links: {
       self: `/v1/transfers/${transfer.id}`,

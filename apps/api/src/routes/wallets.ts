@@ -19,6 +19,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { getCircleService, USDC_CONTRACTS, EURC_CONTRACTS } from '../services/circle-mock.js';
 import { getWalletVerificationService } from '../services/wallet/index.js';
 import { normalizeFields, buildDeprecationHeader } from '../utils/helpers.js';
+import { triggerWorkflows } from '../services/workflow-trigger.js';
 
 const app = new Hono();
 
@@ -357,6 +358,12 @@ app.post('/', async (c) => {
           }
         });
     }
+
+    // Fire workflow auto-triggers (fire-and-forget)
+    triggerWorkflows(supabase, ctx.tenantId, 'wallet', 'insert', {
+      id: wallet.id, name: wallet.name, network: wallet.network,
+      address: wallet.wallet_address, currency: wallet.currency,
+    }).catch(console.error);
 
     return c.json({
       data: mapWalletFromDb(wallet)
@@ -982,6 +989,13 @@ app.post('/:id/deposit', async (c) => {
       // In production, this should be a transaction
     }
 
+    // Fire workflow auto-triggers (fire-and-forget)
+    triggerWorkflows(supabase, ctx.tenantId, 'wallet', 'update', {
+      id: wallet.id, name: wallet.name, network: wallet.network,
+      address: wallet.wallet_address, amount: validated.amount,
+      balance: newBalance, operation: 'deposit',
+    }).catch(console.error);
+
     return c.json({
       data: {
         walletId: wallet.id,
@@ -1109,6 +1123,13 @@ app.post('/:id/withdraw', async (c) => {
       // Note: balance already updated, but transfer record failed
       // In production, this should be a transaction
     }
+
+    // Fire workflow auto-triggers (fire-and-forget)
+    triggerWorkflows(supabase, ctx.tenantId, 'wallet', 'update', {
+      id: wallet.id, name: wallet.name, network: wallet.network,
+      address: wallet.wallet_address, amount: validated.amount,
+      balance: newBalance, operation: 'withdrawal',
+    }).catch(console.error);
 
     return c.json({
       data: {

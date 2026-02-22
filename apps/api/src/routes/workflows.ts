@@ -48,7 +48,7 @@ const stepDefinitionSchema = z.object({
 const createTemplateSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
-  trigger_type: z.enum(['manual', 'on_transfer', 'on_event']).optional().default('manual'),
+  trigger_type: z.enum(['manual', 'on_record_change']).optional().default('manual'),
   trigger_config: z.record(z.unknown()).optional(),
   steps: z.array(stepDefinitionSchema).min(1).max(50),
   is_active: z.boolean().optional(),
@@ -58,7 +58,7 @@ const createTemplateSchema = z.object({
 const updateTemplateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
-  trigger_type: z.enum(['manual', 'on_transfer', 'on_event']).optional(),
+  trigger_type: z.enum(['manual', 'on_record_change']).optional(),
   trigger_config: z.record(z.unknown()).optional(),
   steps: z.array(stepDefinitionSchema).min(1).max(50).optional(),
   is_active: z.boolean().optional(),
