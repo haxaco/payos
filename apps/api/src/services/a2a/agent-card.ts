@@ -17,7 +17,9 @@ function resolveBaseUrl(baseUrl?: string): string {
 /** Derive the public base URL from a Hono request context, respecting reverse proxies. */
 export function getBaseUrlFromRequest(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
   const url = new URL(c.req.url);
-  const proto = c.req.header('x-forwarded-proto') || url.protocol.replace(':', '');
+  const forwardedProto = c.req.header('x-forwarded-proto');
+  const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  const proto = forwardedProto || (isLocalhost ? 'http' : 'https');
   return `${proto}://${url.host}`;
 }
 
