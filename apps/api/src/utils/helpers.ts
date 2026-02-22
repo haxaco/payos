@@ -122,6 +122,10 @@ export function mapAgentFromDb(row: any): Agent {
     ap2_enabled: row.ap2_enabled !== null ? row.ap2_enabled : false,
     acp_enabled: row.acp_enabled !== null ? row.acp_enabled : false,
     ucp_enabled: row.ucp_enabled !== null ? row.ucp_enabled : false,
+    processing_mode: row.processing_mode || 'manual',
+    processing_config: row.processing_config || {},
+    processingMode: row.processing_mode || 'manual',
+    processingConfig: row.processing_config || {},
     total_volume: parseFloat(row.total_volume) || 0,
     total_transactions: row.total_transactions || 0,
     tenant_id: row.tenant_id,
@@ -293,6 +297,23 @@ export function isValidUUID(str: string): boolean {
 export function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
+}
+
+/**
+ * Sanitize a string for safe use in PostgREST `.or()` / `.ilike()` filters.
+ * Escapes characters that could break out of the filter expression:
+ * commas (filter separator), parens (grouping), backslashes (escape char),
+ * and percent/underscore (SQL LIKE wildcards — we add our own %).
+ */
+export function sanitizeSearchInput(input: string): string {
+  return input
+    .replace(/\\/g, '\\\\')  // escape backslashes first
+    .replace(/%/g, '\\%')    // escape existing % (we add our own)
+    .replace(/_/g, '\\_')    // escape _ (SQL single-char wildcard)
+    .replace(/,/g, '')       // remove commas (PostgREST filter separator)
+    .replace(/[()]/g, '')    // remove parens (PostgREST grouping)
+    .replace(/\./g, '')      // remove dots (PostgREST operator separator)
+    .slice(0, 200);          // length limit
 }
 
 // ============================================

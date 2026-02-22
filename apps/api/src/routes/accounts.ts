@@ -1,19 +1,21 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { 
-  mapAccountFromDb, 
-  mapAgentFromDb, 
+import {
+  mapAccountFromDb,
+  mapAgentFromDb,
   mapStreamFromDb,
   logAudit,
   isValidUUID,
   isValidEmail,
   getPaginationParams,
   paginationResponse,
+  sanitizeSearchInput,
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { ErrorCode } from '@sly/types';
 import { onboardEntity, type OnboardingInput } from '../services/entity-onboarding.js';
+import { triggerWorkflows } from '../services/workflow-trigger.js';
 
 const accounts = new Hono();
 
@@ -61,7 +63,8 @@ accounts.get('/', async (c) => {
     dbQuery = dbQuery.eq('type', type);
   }
   if (search) {
-    dbQuery = dbQuery.or(`name.ilike.%${search}%,email.ilike.%${search}%`);
+    const safe = sanitizeSearchInput(search);
+    dbQuery = dbQuery.or(`name.ilike.%${safe}%,email.ilike.%${safe}%`);
   }
   if (status) {
     dbQuery = dbQuery.eq('verification_status', status);
@@ -174,8 +177,13 @@ accounts.post('/', async (c) => {
     metadata: { type, name },
   });
   
+  // Fire workflow auto-triggers (fire-and-forget)
+  triggerWorkflows(supabase, ctx.tenantId, 'account', 'insert', {
+    id: data.id, name, type, email,
+  }).catch(console.error);
+
   const account = mapAccountFromDb(data);
-  return c.json({ 
+  return c.json({
     data: account,
     links: {
       self: `/v1/accounts/${data.id}`,
@@ -340,8 +348,13 @@ accounts.patch('/:id', async (c) => {
       after: { name: data.name, email: data.email },
     },
   });
-  
-  return c.json({ 
+
+  // Fire workflow auto-triggers (fire-and-forget)
+  triggerWorkflows(supabase, ctx.tenantId, 'account', 'update', {
+    id: data.id, name: data.name, email: data.email, type: data.type,
+  }).catch(console.error);
+
+  return c.json({
     data: mapAccountFromDb(data),
     links: {
       self: `/v1/accounts/${id}`,
@@ -856,9 +869,10 @@ accounts.post('/:id/verify', async (c) => {
       },
     })
     .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
     .select('*')
     .single();
-  
+
   if (error) {
     console.error('Error verifying account:', error);
     throw new Error('Failed to verify account in database');
@@ -869,7 +883,8 @@ accounts.post('/:id/verify', async (c) => {
   await supabase
     .from('agents')
     .update({ updated_at: new Date().toISOString() })
-    .eq('parent_account_id', id);
+    .eq('parent_account_id', id)
+    .eq('tenant_id', ctx.tenantId);
   
   // Audit log
   await logAudit(supabase, {
@@ -935,18 +950,20 @@ accounts.post('/:id/suspend', async (c) => {
   const { error: updateError } = await supabase
     .from('accounts')
     .update({ verification_status: 'suspended' })
-    .eq('id', id);
-  
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId);
+
   if (updateError) {
     console.error('Error suspending account:', updateError);
     throw new Error('Failed to suspend account in database');
   }
-  
+
   // CASCADE: Suspend all agents under this account
   const { data: suspendedAgents, error: agentError } = await supabase
     .from('agents')
     .update({ status: 'suspended' })
     .eq('parent_account_id', id)
+    .eq('tenant_id', ctx.tenantId)
     .eq('status', 'active')
     .select('id, name');
   
@@ -1012,8 +1029,9 @@ accounts.post('/:id/activate', async (c) => {
   const { error: updateError } = await supabase
     .from('accounts')
     .update({ verification_status: newStatus })
-    .eq('id', id);
-  
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId);
+
   if (updateError) {
     console.error('Error activating account:', updateError);
     throw new Error('Failed to activate account in database');
