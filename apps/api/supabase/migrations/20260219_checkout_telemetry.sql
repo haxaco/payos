@@ -26,3 +26,8 @@ CREATE INDEX idx_ct_merchant_domain ON checkout_telemetry(merchant_domain);
 CREATE INDEX idx_ct_success ON checkout_telemetry(success);
 CREATE INDEX idx_ct_created_at ON checkout_telemetry(created_at DESC);
 CREATE INDEX idx_ct_demand_query ON checkout_telemetry(merchant_domain, success, created_at DESC);
+
+-- RLS
+ALTER TABLE checkout_telemetry ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "service_role_checkout_telemetry" ON checkout_telemetry
+  FOR ALL USING (true) WITH CHECK (true);

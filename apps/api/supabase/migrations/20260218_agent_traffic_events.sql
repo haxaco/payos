@@ -20,3 +20,8 @@ CREATE INDEX idx_ate_domain ON agent_traffic_events(domain);
 CREATE INDEX idx_ate_agent_type ON agent_traffic_events(agent_type);
 CREATE INDEX idx_ate_created_at ON agent_traffic_events(created_at DESC);
 CREATE INDEX idx_ate_domain_date ON agent_traffic_events(domain, created_at DESC);
+
+-- RLS
+ALTER TABLE agent_traffic_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "service_role_agent_traffic_events" ON agent_traffic_events
+  FOR ALL USING (true) WITH CHECK (true);

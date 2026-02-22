@@ -29,3 +29,8 @@ CREATE TABLE IF NOT EXISTS agent_shopping_tests (
 CREATE INDEX idx_ast_scan ON agent_shopping_tests(merchant_scan_id);
 CREATE INDEX idx_ast_domain ON agent_shopping_tests(domain);
 CREATE INDEX idx_ast_tested ON agent_shopping_tests(tested_at DESC);
+
+-- RLS
+ALTER TABLE agent_shopping_tests ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "service_role_agent_shopping_tests" ON agent_shopping_tests
+  FOR ALL USING (true) WITH CHECK (true);
