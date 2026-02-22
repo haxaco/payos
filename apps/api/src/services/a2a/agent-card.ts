@@ -54,7 +54,7 @@ export function generateAgentCard(
       contactEmail: 'support@sly.dev',
     },
     capabilities: {
-      streaming: false,
+      streaming: true,
       multiTurn: true,
       stateTransition: true,
     },
@@ -106,7 +106,7 @@ export function generatePlatformCard(): A2AAgentCard {
       contactEmail: 'support@sly.dev',
     },
     capabilities: {
-      streaming: false,
+      streaming: true,
       multiTurn: true,
       stateTransition: true,
     },

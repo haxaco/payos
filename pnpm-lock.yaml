@@ -52,6 +52,9 @@ importers:
       '@sly/cards':
         specifier: workspace:*
         version: link:../../packages/cards
+      '@sly/mcp-server':
+        specifier: workspace:*
+        version: link:../../packages/mcp-server
       '@sly/types':
         specifier: workspace:*
         version: link:../../packages/types

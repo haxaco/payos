@@ -19,11 +19,13 @@ import type {
   A2AArtifactRow,
 } from './types.js';
 import { normalizeParts } from './types.js';
+import { taskEventBus } from './task-event-bus.js';
 
 export interface ListTasksFilters {
   agentId?: string | null;
   state?: A2ATaskState;
   direction?: 'inbound' | 'outbound';
+  contextId?: string | null;
   page?: number;
   limit?: number;
 }
@@ -44,6 +46,8 @@ export class A2ATaskService {
     direction: 'inbound' | 'outbound' = 'inbound',
     remoteAgentUrl?: string,
     remoteTaskId?: string,
+    callbackUrl?: string,
+    callbackSecret?: string,
   ): Promise<A2ATask> {
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
@@ -56,6 +60,8 @@ export class A2ATaskService {
         direction,
         remote_agent_url: remoteAgentUrl || null,
         remote_task_id: remoteTaskId || null,
+        callback_url: callbackUrl || null,
+        callback_secret: callbackSecret || null,
       })
       .select()
       .single();
@@ -139,6 +145,12 @@ export class A2ATaskService {
     if (statusMessage !== undefined) updateData.status_message = statusMessage;
     if (metadata) updateData.metadata = metadata;
 
+    // When re-submitting a task, clear processor claim so worker can re-acquire it
+    if (state === 'submitted') {
+      updateData.processor_id = null;
+      updateData.processing_started_at = null;
+    }
+
     const { data: taskRow, error } = await this.supabase
       .from('a2a_tasks')
       .update(updateData)
@@ -148,6 +160,13 @@ export class A2ATaskService {
       .single();
 
     if (error || !taskRow) return null;
+
+    taskEventBus.emitTask(taskId, {
+      type: 'status',
+      taskId,
+      data: { state, statusMessage: statusMessage || null },
+      timestamp: new Date().toISOString(),
+    });
 
     return this.getTask(taskId);
   }
@@ -177,7 +196,16 @@ export class A2ATaskService {
       throw new Error(`Failed to add message: ${error?.message || 'unknown error'}`);
     }
 
-    return this.rowToMessage(msgRow as A2AMessageRow);
+    const msg = this.rowToMessage(msgRow as A2AMessageRow);
+
+    taskEventBus.emitTask(taskId, {
+      type: 'message',
+      taskId,
+      data: { messageId: msg.messageId, role, parts: msg.parts },
+      timestamp: new Date().toISOString(),
+    });
+
+    return msg;
   }
 
   /**
@@ -205,7 +233,21 @@ export class A2ATaskService {
       throw new Error(`Failed to add artifact: ${error?.message || 'unknown error'}`);
     }
 
-    return this.rowToArtifact(row as A2AArtifactRow);
+    const art = this.rowToArtifact(row as A2AArtifactRow);
+
+    taskEventBus.emitTask(taskId, {
+      type: 'artifact',
+      taskId,
+      data: {
+        artifactId: art.artifactId,
+        name: art.name || null,
+        mediaType: art.mediaType,
+        parts: art.parts,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    return art;
   }
 
   /**
@@ -219,7 +261,7 @@ export class A2ATaskService {
    * List tasks with filtering and pagination.
    */
   async listTasks(filters: ListTasksFilters = {}) {
-    const { agentId, state, direction, page = 1, limit = 20 } = filters;
+    const { agentId, state, direction, contextId, page = 1, limit = 20 } = filters;
     const offset = (page - 1) * limit;
 
     let query = this.supabase
@@ -232,6 +274,7 @@ export class A2ATaskService {
     if (agentId) query = query.eq('agent_id', agentId);
     if (state) query = query.eq('state', state);
     if (direction) query = query.eq('direction', direction);
+    if (contextId) query = query.eq('context_id', contextId);
 
     const { data: rows, count, error } = await query;
 
@@ -239,19 +282,44 @@ export class A2ATaskService {
       throw new Error(`Failed to list tasks: ${error.message}`);
     }
 
-    const tasks = (rows || []).map((row: any) => ({
-      id: row.id,
-      agentId: row.agent_id,
-      agentName: row.agents?.name || null,
-      contextId: row.context_id,
-      state: row.state,
-      statusMessage: row.status_message,
-      direction: row.direction,
-      remoteAgentUrl: row.remote_agent_url,
-      clientAgentId: row.client_agent_id,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    // Batch-fetch transfer amounts for tasks with linked transfers
+    const transferIds = (rows || [])
+      .map((r: any) => r.transfer_id)
+      .filter(Boolean) as string[];
+    const transferAmounts = new Map<string, { amount: number; currency: string; status: string }>();
+    if (transferIds.length > 0) {
+      const { data: transfers } = await this.supabase
+        .from('transfers')
+        .select('id, amount, currency, status')
+        .in('id', transferIds)
+        .eq('tenant_id', this.tenantId);
+      for (const t of transfers || []) {
+        transferAmounts.set(t.id, { amount: Number(t.amount) || 0, currency: t.currency, status: t.status });
+      }
+    }
+
+    const tasks = (rows || []).map((row: any) => {
+      const transfer = row.transfer_id ? transferAmounts.get(row.transfer_id) : undefined;
+      return {
+        id: row.id,
+        agentId: row.agent_id,
+        agentName: row.agents?.name || null,
+        contextId: row.context_id,
+        state: row.state,
+        statusMessage: row.status_message,
+        direction: row.direction,
+        remoteAgentUrl: row.remote_agent_url,
+        clientAgentId: row.client_agent_id,
+        transferId: row.transfer_id || undefined,
+        transferAmount: transfer?.amount,
+        transferCurrency: transfer?.currency,
+        transferStatus: transfer?.status,
+        mandateId: row.mandate_id || undefined,
+        sessionId: row.a2a_session_id || undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
 
     return {
       data: tasks,
@@ -309,7 +377,14 @@ export class A2ATaskService {
     row: A2ATaskRow,
     messages: A2AMessageRow[],
     artifacts: A2AArtifactRow[],
-  ): A2ATask {
+  ): A2ATask & {
+    direction?: string;
+    transferId?: string;
+    mandateId?: string;
+    agentId?: string;
+    remoteAgentUrl?: string;
+    clientAgentId?: string;
+  } {
     return {
       id: row.id,
       contextId: row.context_id || undefined,
@@ -321,6 +396,12 @@ export class A2ATaskService {
       history: messages.map((m) => this.rowToMessage(m)),
       artifacts: artifacts.map((a) => this.rowToArtifact(a)),
       metadata: row.metadata || undefined,
+      direction: row.direction || undefined,
+      transferId: row.transfer_id || undefined,
+      mandateId: row.mandate_id || undefined,
+      agentId: row.agent_id || undefined,
+      remoteAgentUrl: row.remote_agent_url || undefined,
+      clientAgentId: row.client_agent_id || undefined,
     };
   }
 

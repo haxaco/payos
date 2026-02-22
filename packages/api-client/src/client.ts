@@ -47,6 +47,7 @@ import type {
   UpdateMandateInput,
   ExecuteMandatePaymentInput,
   MandatesListParams,
+  FundingSourceSummary,
   // x402 types
   X402Endpoint,
   CreateX402EndpointInput,
@@ -92,6 +93,12 @@ import type {
   A2ATaskSummary,
   A2ATasksListParams,
   SendA2ATaskInput,
+  AgentProcessingConfig,
+  TaskStateUpdate,
+  A2ADlqTask,
+  A2AStreamEvent,
+  A2AStreamEventType,
+  RespondToTaskInput,
 } from './types';
 
 export interface SlyClientConfig {
@@ -104,7 +111,7 @@ export interface SlyClientConfig {
 export type PayOSClientConfig = SlyClientConfig;
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined>;
   headers?: Record<string, string>;
@@ -205,6 +212,10 @@ export class SlyClient {
 
   private patch<T>(endpoint: string, body: unknown) {
     return this.request<T>(endpoint, { method: 'PATCH', body });
+  }
+
+  private put<T>(endpoint: string, body: unknown) {
+    return this.request<T>(endpoint, { method: 'PUT', body });
   }
 
   private delete<T>(endpoint: string) {
@@ -844,6 +855,28 @@ export class SlyClient {
   };
 
   // ============================================
+  // Funding Sources API
+  // ============================================
+
+  fundingSources = {
+    /**
+     * List funding sources (optionally filtered by account)
+     */
+    list: (params?: { accountId?: string; status?: string; limit?: number }) =>
+      this.get<{ data: FundingSourceSummary[] }>('/funding/sources', {
+        account_id: params?.accountId,
+        status: params?.status,
+        limit: params?.limit,
+      }).then(r => r.data),
+
+    /**
+     * Get a single funding source
+     */
+    get: (id: string) =>
+      this.get<{ data: FundingSourceSummary }>(`/funding/sources/${id}`).then(r => r.data),
+  };
+
+  // ============================================
   // x402 Payments API
   // ============================================
 
@@ -950,6 +983,8 @@ export class SlyClient {
         currency: input.currency,
         expires_at: input.expiresAt,
         metadata: input.metadata,
+        funding_source_id: input.fundingSourceId,
+        settlement_rail: input.settlementRail,
       }).then(r => transformMandate(r.data)),
 
     /**
@@ -961,6 +996,8 @@ export class SlyClient {
         authorized_amount: input.authorizedAmount,
         expires_at: input.expiresAt,
         metadata: input.metadata,
+        funding_source_id: input.fundingSourceId,
+        settlement_rail: input.settlementRail,
       }).then(r => transformMandate(r.data)),
 
     /**
@@ -1015,6 +1052,8 @@ export class SlyClient {
         message: input.message,
         context_id: input.contextId,
         metadata: input.metadata,
+        callback_url: input.callbackUrl,
+        callback_secret: input.callbackSecret,
       }).then(r => r.data),
 
     /**
@@ -1033,6 +1072,7 @@ export class SlyClient {
       if (params?.state) searchParams.set('state', params.state);
       if (params?.agentId) searchParams.set('agent_id', params.agentId);
       if (params?.direction) searchParams.set('direction', params.direction);
+      if (params?.contextId) searchParams.set('context_id', params.contextId);
       const query = searchParams.toString();
       return this.get<any>(`/a2a/tasks${query ? `?${query}` : ''}`).then(response => ({
         data: Array.isArray(response.data) ? response.data : (response.data?.data || []),
@@ -1045,6 +1085,156 @@ export class SlyClient {
      */
     cancelTask: (taskId: string) =>
       this.post<{ data: A2ATask }>(`/a2a/tasks/${taskId}/cancel`, {}).then(r => r.data),
+
+    /**
+     * Get A2A task statistics
+     */
+    getStats: () =>
+      this.get<{ data: any }>('/a2a/stats').then(r => r.data),
+
+    /**
+     * List A2A sessions (grouped by context_id)
+     */
+    listSessions: () =>
+      this.get<{ data: any[] }>('/a2a/sessions').then(r => r.data),
+
+    /**
+     * Get agent processing configuration
+     */
+    getAgentConfig: (agentId: string) =>
+      this.get<AgentProcessingConfig>(`/a2a/agents/${agentId}/config`),
+
+    /**
+     * Update agent processing configuration
+     */
+    updateAgentConfig: (agentId: string, config: AgentProcessingConfig) =>
+      this.put<AgentProcessingConfig>(`/a2a/agents/${agentId}/config`, {
+        processing_mode: config.processingMode,
+        processing_config: config.processingConfig,
+      }),
+
+    /**
+     * Respond to an escalated (input-required) task.
+     * Used by humans or dashboards to provide input that unblocks the agent.
+     * (Story 58.6 + 58.11)
+     */
+    respondToTask: (taskId: string, input: RespondToTaskInput) =>
+      this.post<{ data: A2ATask }>(`/a2a/tasks/${taskId}/respond`, {
+        parts: input.parts,
+        metadata: input.metadata,
+      }).then(r => r.data),
+
+    /**
+     * Update task state (external webhook callback)
+     */
+    updateTaskState: (taskId: string, update: TaskStateUpdate) =>
+      this.patch<{ data: A2ATask }>(`/a2a/tasks/${taskId}`, update).then(r => r.data),
+
+    /**
+     * List dead-letter-queue tasks
+     */
+    listDlqTasks: (params?: PaginationParams) =>
+      this.get<{ data: A2ADlqTask[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/a2a/tasks/dlq', params),
+
+    /**
+     * Retry a DLQ'd task
+     */
+    retryDlqTask: (taskId: string) =>
+      this.post<{ data: { id: string; state: string; message: string } }>(`/a2a/tasks/${taskId}/retry`, {}),
+
+    /**
+     * Stream task events via SSE (message/stream JSON-RPC method).
+     * Returns an AsyncGenerator that yields A2AStreamEvent objects.
+     */
+    streamTask: (input: SendA2ATaskInput): AsyncIterable<A2AStreamEvent> => {
+      const self = this;
+      async function* generate(): AsyncGenerator<A2AStreamEvent> {
+        const agentId = input.agentId;
+        if (!agentId) throw new Error('agentId is required for streamTask');
+
+        const url = new URL(`/a2a/${agentId}`, self.baseUrl);
+        const configuration: Record<string, unknown> = {};
+        if (input.callbackUrl) configuration.callbackUrl = input.callbackUrl;
+        if (input.callbackSecret) configuration.callbackSecret = input.callbackSecret;
+
+        const body = {
+          jsonrpc: '2.0',
+          id: `stream-${Date.now()}`,
+          method: 'message/stream',
+          params: {
+            message: input.message,
+            contextId: input.contextId,
+            metadata: input.metadata,
+            ...(Object.keys(configuration).length > 0 ? { configuration } : {}),
+          },
+        };
+
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${self.apiKey}`,
+            'Accept': 'text/event-stream',
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok || !response.body) {
+          const text = await response.text();
+          throw new Error(`Stream request failed (${response.status}): ${text}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = '';
+        let currentData = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              if (line.startsWith('event: ')) {
+                currentEvent = line.slice(7).trim();
+              } else if (line.startsWith('data: ')) {
+                currentData = line.slice(6);
+              } else if (line === '' && currentEvent && currentData) {
+                // End of SSE event block
+                try {
+                  const parsed = JSON.parse(currentData);
+                  const event: A2AStreamEvent = {
+                    type: currentEvent as A2AStreamEventType,
+                    taskId: parsed.taskId || '',
+                    data: parsed,
+                    timestamp: parsed.timestamp || new Date().toISOString(),
+                  };
+                  yield event;
+
+                  // Stop on terminal states
+                  if (currentEvent === 'status' && ['completed', 'failed', 'canceled', 'rejected'].includes(parsed.state)) {
+                    return;
+                  }
+                } catch {
+                  // Skip malformed events
+                }
+                currentEvent = '';
+                currentData = '';
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      }
+
+      return generate();
+    },
   };
 
   // ============================================
@@ -1556,6 +1746,9 @@ function transformMandate(data: any): Mandate {
     expiresAt: data.expires_at,
     metadata: data.metadata,
     mandateData: data.mandate_data,
+    fundingSource: data.funding_source || null,
+    fundingSourceId: data.funding_source_id || null,
+    settlementRail: data.settlement_rail || null,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     executions: data.executions?.map((e: any) => ({

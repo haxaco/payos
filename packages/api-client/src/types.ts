@@ -93,6 +93,8 @@ export interface Agent {
     verificationTier: number;
   };
   permissions: AgentPermissions;
+  processingMode?: 'managed' | 'webhook' | 'manual';
+  processingConfig?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -863,6 +865,16 @@ export interface MandateExecution {
   completedAt?: string;
 }
 
+export interface FundingSourceSummary {
+  id: string;
+  type: string;
+  provider: string;
+  displayName: string;
+  lastFour?: string;
+  brand?: string;
+  status: string;
+}
+
 export interface Mandate {
   id: string;
   tenantId: string;
@@ -887,6 +899,9 @@ export interface Mandate {
   expiresAt?: string;
   metadata?: Record<string, unknown>;
   mandateData?: Record<string, unknown>;
+  fundingSource?: FundingSourceSummary | null;
+  fundingSourceId?: string | null;
+  settlementRail?: string | null;
   createdAt: string;
   updatedAt: string;
   executions?: MandateExecution[];
@@ -901,6 +916,8 @@ export interface CreateMandateInput {
   currency?: string;
   expiresAt?: string;
   metadata?: Record<string, unknown>;
+  fundingSourceId?: string;
+  settlementRail?: string;
 }
 
 export interface UpdateMandateInput {
@@ -908,6 +925,8 @@ export interface UpdateMandateInput {
   authorizedAmount?: number;
   expiresAt?: string;
   metadata?: Record<string, unknown>;
+  fundingSourceId?: string | null;
+  settlementRail?: string | null;
 }
 
 export interface ExecuteMandatePaymentInput {
@@ -1384,6 +1403,12 @@ export interface A2ATask {
   messages: A2AMessage[];
   artifacts: A2AArtifact[];
   metadata?: Record<string, unknown>;
+  direction?: 'inbound' | 'outbound';
+  transferId?: string;
+  mandateId?: string;
+  agentId?: string;
+  remoteAgentUrl?: string;
+  clientAgentId?: string;
 }
 
 export interface A2ATaskSummary {
@@ -1396,6 +1421,12 @@ export interface A2ATaskSummary {
   direction: 'inbound' | 'outbound';
   remoteAgentUrl?: string;
   clientAgentId?: string;
+  transferId?: string;
+  transferAmount?: number;
+  transferCurrency?: string;
+  transferStatus?: string;
+  mandateId?: string;
+  sessionId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1412,10 +1443,90 @@ export interface SendA2ATaskInput {
   };
   contextId?: string;
   metadata?: Record<string, unknown>;
+  callbackUrl?: string;
+  callbackSecret?: string;
 }
 
 export interface A2ATasksListParams extends PaginationParams {
   state?: A2ATaskState;
   agentId?: string;
   direction?: 'inbound' | 'outbound';
+  contextId?: string;
+}
+
+export interface A2AStats {
+  total: number;
+  active: number;
+  completed: number;
+  inbound: number;
+  outbound: number;
+  totalCost: number;
+  transferCount: number;
+}
+
+export interface A2ASession {
+  contextId: string;
+  taskCount: number;
+  agentNames: string[];
+  directions: string[];
+  latestState: A2ATaskState;
+  totalCost: number;
+  transferCount: number;
+  firstTaskAt: string;
+  lastTaskAt: string;
+  messageCount: number;
+}
+
+// ============================================
+// Agent Processing Config Types (Story 58.1)
+// ============================================
+
+export interface AgentProcessingConfig {
+  processingMode: 'managed' | 'webhook' | 'manual';
+  processingConfig: Record<string, unknown>;
+}
+
+export interface TaskStateUpdate {
+  state: A2ATaskState;
+  statusMessage?: string;
+  message?: {
+    role: 'agent';
+    parts: Array<{ text?: string; data?: Record<string, unknown> }>;
+    metadata?: Record<string, unknown>;
+  };
+  artifacts?: Array<{
+    name?: string;
+    mediaType?: string;
+    parts: Array<{ text?: string; data?: Record<string, unknown> }>;
+    metadata?: Record<string, unknown>;
+  }>;
+}
+
+export interface RespondToTaskInput {
+  parts: Array<{ text?: string; data?: Record<string, unknown> }>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2ADlqTask {
+  id: string;
+  agentId: string;
+  agentName?: string;
+  webhookAttempts: number;
+  lastResponseCode?: number;
+  dlqAt: string;
+  dlqReason: string;
+  createdAt: string;
+}
+
+// ============================================
+// A2A Stream Event Types (Story 58.13)
+// ============================================
+
+export type A2AStreamEventType = 'status' | 'message' | 'artifact' | 'error' | 'heartbeat';
+
+export interface A2AStreamEvent {
+  type: A2AStreamEventType;
+  taskId: string;
+  data: Record<string, unknown>;
+  timestamp: string;
 }

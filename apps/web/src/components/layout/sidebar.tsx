@@ -40,6 +40,8 @@ import {
   Rocket,
   GitBranch,
   DollarSign,
+  Network,
+  MessageSquare,
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useState } from 'react';
@@ -88,6 +90,14 @@ const agenticPaymentsChildren = [
     children: [
       { href: '/dashboard/agentic-payments/x402/endpoints', label: 'Endpoints', icon: Globe },
       { href: '/dashboard/agentic-payments/x402/integration', label: 'Integration', icon: Code },
+    ]
+  },
+  {
+    label: 'A2A',
+    icon: Network,
+    children: [
+      { href: '/dashboard/agentic-payments/a2a/tasks', label: 'Tasks', icon: FileText },
+      { href: '/dashboard/agentic-payments/a2a/sessions', label: 'Sessions', icon: MessageSquare },
     ]
   },
   {

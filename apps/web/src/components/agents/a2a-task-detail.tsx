@@ -24,23 +24,22 @@ interface A2ATaskDetailProps {
       message?: string;
       timestamp: string;
     };
-    messages: Array<{
-      id: string;
+    history: Array<{
+      messageId: string;
       role: 'user' | 'agent';
       parts: Array<{
-        kind: string;
         text?: string;
         data?: Record<string, any>;
-        mimeType?: string;
+        file?: { uri: string; mimeType?: string; name?: string };
+        metadata?: { mimeType?: string };
       }>;
       metadata?: Record<string, any>;
     }>;
     artifacts: Array<{
-      id: string;
-      label?: string;
-      mimeType: string;
+      artifactId: string;
+      name?: string;
+      mediaType: string;
       parts: Array<{
-        kind: string;
         text?: string;
         data?: Record<string, any>;
       }>;
@@ -154,16 +153,16 @@ export function A2ATaskDetail({ task, direction }: A2ATaskDetailProps) {
         </div>
       )}
 
-      {/* Messages */}
+      {/* Messages (history) */}
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
           <MessageSquare className="h-5 w-5 text-blue-500" />
-          Messages ({task.messages.length})
+          Messages ({task.history.length})
         </h3>
         <div className="space-y-4">
-          {task.messages.map((msg) => (
+          {task.history.map((msg) => (
             <div
-              key={msg.id}
+              key={msg.messageId}
               className={`p-4 rounded-xl ${
                 msg.role === 'user'
                   ? 'bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 ml-0 mr-12'
@@ -177,10 +176,10 @@ export function A2ATaskDetail({ task, direction }: A2ATaskDetailProps) {
               </div>
               {msg.parts.map((part, i) => (
                 <div key={i}>
-                  {part.kind === 'text' && (
+                  {'text' in part && part.text && (
                     <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{part.text}</p>
                   )}
-                  {part.kind === 'data' && (
+                  {'data' in part && part.data && (
                     <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-950 p-2 rounded mt-1 overflow-x-auto">
                       {JSON.stringify(part.data, null, 2)}
                     </pre>
@@ -189,7 +188,7 @@ export function A2ATaskDetail({ task, direction }: A2ATaskDetailProps) {
               ))}
             </div>
           ))}
-          {task.messages.length === 0 && (
+          {task.history.length === 0 && (
             <p className="text-sm text-gray-500">No messages yet</p>
           )}
         </div>
@@ -204,19 +203,19 @@ export function A2ATaskDetail({ task, direction }: A2ATaskDetailProps) {
           </h3>
           <div className="space-y-3">
             {task.artifacts.map((artifact) => (
-              <div key={artifact.id} className="p-3 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
+              <div key={artifact.artifactId} className="p-3 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-900 dark:text-white">
-                    {artifact.label || 'Untitled'}
+                    {artifact.name || 'Untitled'}
                   </span>
-                  <span className="text-xs text-gray-500">{artifact.mimeType}</span>
+                  <span className="text-xs text-gray-500">{artifact.mediaType}</span>
                 </div>
                 {artifact.parts.map((part, i) => (
                   <div key={i}>
-                    {part.kind === 'text' && (
+                    {'text' in part && part.text && (
                       <p className="text-sm text-gray-700 dark:text-gray-300">{part.text}</p>
                     )}
-                    {part.kind === 'data' && (
+                    {'data' in part && part.data && (
                       <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 overflow-x-auto">
                         {JSON.stringify(part.data, null, 2)}
                       </pre>

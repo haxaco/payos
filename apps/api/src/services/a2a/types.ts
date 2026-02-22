@@ -79,6 +79,9 @@ export interface A2AConfiguration {
   historyLength?: number;
   blocking?: boolean;
   acceptedOutputModes?: string[];
+  // Completion webhook — notify caller when task reaches terminal state
+  callbackUrl?: string;
+  callbackSecret?: string;
 }
 
 // =============================================================================
@@ -208,6 +211,32 @@ export interface A2ATaskRow {
   transfer_id: string | null;
   client_agent_id: string | null;
   client_agent_url: string | null;
+  processor_id: string | null;
+  processing_started_at: string | null;
+  processing_completed_at: string | null;
+  processing_duration_ms: number | null;
+  error_details: Record<string, unknown> | null;
+  retry_count: number;
+  max_retries: number;
+  // Webhook delivery tracking (Story 58.5 + 58.6)
+  webhook_status: WebhookDeliveryStatus | null;
+  webhook_delivery_id: string | null;
+  webhook_attempts: number;
+  webhook_next_retry_at: string | null;
+  webhook_last_response_code: number | null;
+  webhook_last_response_body: string | null;
+  webhook_last_response_time_ms: number | null;
+  webhook_last_attempt_at: string | null;
+  webhook_dlq_at: string | null;
+  webhook_dlq_reason: string | null;
+  // Completion webhook tracking (Story 58.16)
+  callback_url: string | null;
+  callback_secret: string | null;
+  callback_status: string | null;
+  callback_attempts: number;
+  callback_last_attempt_at: string | null;
+  callback_last_response_code: number | null;
+  callback_next_retry_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -231,6 +260,47 @@ export interface A2AArtifactRow {
   parts: A2APart[];
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+// =============================================================================
+// Processing Configuration Types (Story 58.1)
+// =============================================================================
+
+export type ProcessingMode = 'managed' | 'webhook' | 'manual';
+
+export interface ManagedConfig {
+  model: string;           // e.g. "claude-sonnet-4-20250514"
+  systemPrompt: string;    // Agent instructions
+  tools?: string[];        // Tool names (Story 58.2 fills this)
+  maxTokens?: number;      // Default: 4096, range: 512–200000
+  temperature?: number;    // Default: 0.3, range: 0.0–2.0
+  requireApprovalAbove?: number; // Escalate to human if payment > this amount (Story 58.6)
+}
+
+export interface WebhookConfig {
+  callbackUrl: string;     // HTTPS endpoint
+  callbackSecret?: string; // HMAC signing key
+  timeoutMs?: number;      // Default: 30000, max: 120000
+}
+
+export type ProcessingConfig = ManagedConfig | WebhookConfig | Record<string, never>;
+
+export interface AgentProcessingConfig {
+  processingMode: ProcessingMode;
+  processingConfig: ProcessingConfig;
+}
+
+// =============================================================================
+// Webhook Delivery Types (Story 58.5 + 58.6)
+// =============================================================================
+
+export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed' | 'dlq';
+
+export interface TaskStateUpdate {
+  state: A2ATaskState;
+  statusMessage?: string;
+  message?: { role: 'agent'; parts: A2APart[]; metadata?: Record<string, unknown> };
+  artifacts?: Array<{ name?: string; mediaType?: string; parts: A2APart[]; metadata?: Record<string, unknown> }>;
 }
 
 /**

@@ -11,3 +11,5 @@ export { handleJsonRpc } from './jsonrpc-handler.js';
 export { A2APaymentHandler } from './payment-handler.js';
 export { A2AClient } from './client.js';
 export { A2ATaskProcessor } from './task-processor.js';
+export { taskEventBus } from './task-event-bus.js';
+export { completionWebhooks } from './completion-webhook.js';

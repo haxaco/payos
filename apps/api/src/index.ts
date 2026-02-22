@@ -6,6 +6,7 @@ import { startIdempotencyCleanupWorker } from './workers/idempotency-cleanup.js'
 import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
 import { SettlementWindowProcessor } from './workers/settlement-window-processor.js';
 import { TreasuryWorker } from './workers/treasury-worker.js';
+import { getA2ATaskWorker } from './workers/a2a-task-worker.js';
 import { environmentManager } from './config/environment.js';
 import { loadHandlersFromDB } from './services/ucp/payment-handlers/index.js';
 import { createClient } from './db/client.js';
@@ -20,6 +21,7 @@ const mockMode = process.env.MOCK_SCHEDULED_TRANSFERS === 'true' || process.env.
 const enableWebhookCleanup = process.env.ENABLE_WEBHOOK_CLEANUP !== 'false'; // Enabled by default
 const enableSettlementWindows = process.env.ENABLE_SETTLEMENT_WINDOWS !== 'false'; // Enabled by default
 const enableTreasuryWorker = process.env.ENABLE_TREASURY_WORKER !== 'false'; // Enabled by default
+const enableA2AWorker = process.env.ENABLE_A2A_WORKER === 'true';
 
 console.log(`
 ╔══════════════════════════════════════════════════╗
@@ -34,6 +36,7 @@ console.log(`
 ║  🧹 Webhook Cleanup: ${(enableWebhookCleanup ? 'ON' : 'OFF').padEnd(26)}║
 ║  ⏱️  Settlement Windows: ${(enableSettlementWindows ? 'ON' : 'OFF').padEnd(23)}║
 ║  💰 Treasury Sync: ${(enableTreasuryWorker ? 'ON' : 'OFF').padEnd(28)}║
+║  🤖 A2A Task Worker: ${(enableA2AWorker ? 'ON' : 'OFF').padEnd(25)}║
 ╚══════════════════════════════════════════════════╝
 `);
 
@@ -84,8 +87,15 @@ if (enableTreasuryWorker) {
   });
 }
 
+// Start A2A task worker - Story 58.3
+let a2aWorker: ReturnType<typeof getA2ATaskWorker> | null = null;
+if (enableA2AWorker) {
+  a2aWorker = getA2ATaskWorker();
+  a2aWorker.start();
+}
+
 // Graceful shutdown
-const shutdown = (signal: string) => {
+const shutdown = async (signal: string) => {
   console.log(`${signal} received, shutting down gracefully...`);
   if (worker) {
     worker.stop();
@@ -99,6 +109,9 @@ const shutdown = (signal: string) => {
   }
   if (treasuryWorker) {
     treasuryWorker.stop();
+  }
+  if (a2aWorker) {
+    await a2aWorker.stop();
   }
   process.exit(0);
 };

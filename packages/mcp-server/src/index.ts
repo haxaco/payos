@@ -63,7 +63,7 @@ const server = new Server(
 /**
  * Define MCP tools from Sly capabilities
  */
-const tools: Tool[] = [
+export const tools: Tool[] = [
   // ==========================================================================
   // Core Settlement Tools
   // ==========================================================================

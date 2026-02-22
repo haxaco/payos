@@ -1,7 +1,7 @@
 /**
  * External A2A Test Agent — "Invoice Bot"
  *
- * A standalone A2A-compatible agent that lives OUTSIDE Sly.
+ * A standalone A2A v1.0-compatible agent that lives OUTSIDE Sly.
  * Demonstrates true inter-platform agent-to-agent communication:
  *
  *  1. Serves its own Agent Card at /.well-known/agent.json
@@ -25,10 +25,10 @@ interface Task {
   id: string;
   contextId?: string;
   status: { state: string; message?: string; timestamp: string };
-  messages: Array<{
-    id: string;
+  history: Array<{
+    messageId: string;
     role: 'user' | 'agent';
-    parts: Array<{ kind: string; text: string }>;
+    parts: Array<{ text?: string; data?: Record<string, unknown>; metadata?: { mimeType?: string } }>;
   }>;
   artifacts: Array<Record<string, unknown>>;
 }
@@ -36,11 +36,13 @@ interface Task {
 const tasks = new Map<string, Task>();
 let taskCounter = 0;
 
-// ─── Agent Card ─────────────────────────────────────────────
+// --- Agent Card (v1.0) ---
+const endpointUrl = `http://localhost:${PORT}/a2a`;
 const agentCard = {
   id: 'invoice-bot-external',
   name: 'Invoice Bot',
   description: 'External A2A agent that generates and tracks invoices. Not hosted on Sly.',
+  url: endpointUrl,
   version: '1.0.0',
   provider: {
     organization: 'ACME Corp',
@@ -50,13 +52,17 @@ const agentCard = {
   capabilities: {
     streaming: false,
     multiTurn: true,
-    stateTransitionHistory: false,
+    stateTransition: true,
   },
+  defaultInputModes: ['text'],
+  defaultOutputModes: ['text', 'data'],
   skills: [
     {
       id: 'create_invoice',
       name: 'Create Invoice',
       description: 'Generate an invoice for goods or services',
+      inputModes: ['text', 'data'],
+      outputModes: ['text', 'data'],
       inputSchema: {
         type: 'object',
         properties: {
@@ -73,20 +79,25 @@ const agentCard = {
       id: 'check_invoice_status',
       name: 'Check Invoice Status',
       description: 'Look up the payment status of an invoice',
+      inputModes: ['text'],
+      outputModes: ['text', 'data'],
       tags: ['invoicing', 'status'],
     },
     {
       id: 'list_invoices',
       name: 'List Invoices',
       description: 'List all invoices for a given client',
+      inputModes: ['text'],
+      outputModes: ['text', 'data'],
       tags: ['invoicing', 'listing'],
     },
   ],
-  interfaces: [
+  supportedInterfaces: [
     {
-      type: 'jsonrpc',
-      url: `http://localhost:${PORT}/a2a`,
-      contentTypes: ['application/json'],
+      protocolBinding: 'jsonrpc/http',
+      protocolVersion: '1.0',
+      url: endpointUrl,
+      contentTypes: ['application/json', 'application/a2a+json'],
     },
   ],
   securitySchemes: {
@@ -95,17 +106,18 @@ const agentCard = {
   security: [{ bearer: [] }],
 };
 
-// ─── Middleware ──────────────────────────────────────────────
+// --- Middleware ---
 app.use('*', cors());
 
-// ─── Discovery: Agent Card ──────────────────────────────────
+// --- Discovery: Agent Card ---
 app.get('/.well-known/agent.json', (c) => {
   return c.json(agentCard, 200, {
     'Cache-Control': 'public, max-age=3600',
+    'A2A-Version': '1.0',
   });
 });
 
-// ─── JSON-RPC Endpoint ──────────────────────────────────────
+// --- JSON-RPC Endpoint ---
 app.post('/a2a', async (c) => {
   const body = await c.req.json();
 
@@ -117,9 +129,11 @@ app.post('/a2a', async (c) => {
     });
   }
 
+  c.header('A2A-Version', '1.0');
+
   switch (body.method) {
-    case 'tasks/send':
-      return c.json(handleTasksSend(body));
+    case 'message/send':
+      return c.json(handleMessageSend(body));
     case 'tasks/get':
       return c.json(handleTasksGet(body));
     case 'tasks/cancel':
@@ -133,9 +147,9 @@ app.post('/a2a', async (c) => {
   }
 });
 
-// ─── JSON-RPC Handlers ─────────────────────────────────────
+// --- JSON-RPC Handlers ---
 
-function handleTasksSend(req: any) {
+function handleMessageSend(req: any) {
   const params = req.params || {};
   const message = params.message;
 
@@ -153,8 +167,8 @@ function handleTasksSend(req: any) {
   // Add to existing task
   if (taskId && tasks.has(taskId)) {
     const task = tasks.get(taskId)!;
-    task.messages.push({
-      id: crypto.randomUUID(),
+    task.history.push({
+      messageId: crypto.randomUUID(),
       role: message.role || 'user',
       parts: message.parts,
     });
@@ -165,8 +179,8 @@ function handleTasksSend(req: any) {
   if (contextId) {
     for (const task of tasks.values()) {
       if (task.contextId === contextId && !['completed', 'canceled'].includes(task.status.state)) {
-        task.messages.push({
-          id: crypto.randomUUID(),
+        task.history.push({
+          messageId: crypto.randomUUID(),
           role: message.role || 'user',
           parts: message.parts,
         });
@@ -181,9 +195,9 @@ function handleTasksSend(req: any) {
     id: newId,
     contextId: contextId || undefined,
     status: { state: 'submitted', timestamp: new Date().toISOString() },
-    messages: [
+    history: [
       {
-        id: crypto.randomUUID(),
+        messageId: crypto.randomUUID(),
         role: message.role || 'user',
         parts: message.parts,
       },
@@ -196,17 +210,17 @@ function handleTasksSend(req: any) {
   const text = message.parts[0]?.text || '';
   const autoResponse = generateInvoiceResponse(text);
   if (autoResponse) {
-    task.messages.push({
-      id: crypto.randomUUID(),
+    task.history.push({
+      messageId: crypto.randomUUID(),
       role: 'agent',
-      parts: [{ kind: 'text', text: autoResponse }],
+      parts: [{ text: autoResponse }],
     });
     task.status = { state: 'completed', message: 'Invoice processed', timestamp: new Date().toISOString() };
     task.artifacts.push({
-      id: crypto.randomUUID(),
+      artifactId: crypto.randomUUID(),
       name: `invoice-${++taskCounter}.json`,
+      mediaType: 'application/json',
       parts: [{
-        kind: 'data',
         data: {
           invoiceNumber: `INV-ACME-2026-${String(taskCounter).padStart(4, '0')}`,
           amount: extractAmount(text),
@@ -247,7 +261,7 @@ function handleTasksCancel(req: any) {
   return { jsonrpc: '2.0', result: task, id: req.id };
 }
 
-// ─── Auto-response Logic ────────────────────────────────────
+// --- Auto-response Logic ---
 
 function generateInvoiceResponse(text: string): string | null {
   const lower = text.toLowerCase();
@@ -272,7 +286,7 @@ function extractCurrency(text: string): string {
   return match ? match[1].toUpperCase() : 'USDC';
 }
 
-// ─── Outbound: Discover + Talk to Sly ───────────────────────
+// --- Outbound: Discover + Talk to Sly ---
 
 async function discoverSlyAgent(agentId: string) {
   const url = `${SLY_BASE}/a2a/agents/${agentId}/card`;
@@ -288,11 +302,11 @@ async function sendTaskToSly(agentId: string, text: string, contextId?: string) 
   const body: any = {
     jsonrpc: '2.0',
     id: `invoice-bot-${Date.now()}`,
-    method: 'tasks/send',
+    method: 'message/send',
     params: {
       message: {
         role: 'user',
-        parts: [{ kind: 'text', text }],
+        parts: [{ text }],
       },
     },
   };
@@ -302,6 +316,7 @@ async function sendTaskToSly(agentId: string, text: string, contextId?: string) 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'A2A-Version': '1.0',
       Authorization: `Bearer ${SLY_API_KEY}`,
     },
     body: JSON.stringify(body),
@@ -309,7 +324,7 @@ async function sendTaskToSly(agentId: string, text: string, contextId?: string) 
   return await res.json();
 }
 
-// ─── CLI Commands (via query params) ────────────────────────
+// --- CLI Commands (via query params) ---
 
 app.get('/test/discover/:agentId', async (c) => {
   try {
@@ -338,18 +353,18 @@ app.get('/test/tasks', (c) => {
       id: t.id,
       contextId: t.contextId,
       state: t.status.state,
-      messageCount: t.messages.length,
+      messageCount: t.history.length,
       artifactCount: t.artifacts.length,
     })),
   });
 });
 
-// ─── Health ─────────────────────────────────────────────────
+// --- Health ---
 app.get('/health', (c) => {
   return c.json({ status: 'healthy', agent: 'Invoice Bot', port: PORT, tasks: tasks.size });
 });
 
-// ─── Start ──────────────────────────────────────────────────
+// --- Start ---
 console.log(`
 ╔══════════════════════════════════════════════════╗
 ║         Invoice Bot — External A2A Agent         ║

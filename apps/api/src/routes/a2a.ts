@@ -10,12 +10,17 @@
  */
 
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { createClient } from '../db/client.js';
 import { generateAgentCard } from '../services/a2a/agent-card.js';
 import { A2ATaskService } from '../services/a2a/task-service.js';
 import { handleJsonRpc } from '../services/a2a/jsonrpc-handler.js';
 import { handleGatewayJsonRpc } from '../services/a2a/gateway-handler.js';
-import type { A2AJsonRpcRequest, A2APart } from '../services/a2a/types.js';
+import { A2AWebhookHandler } from '../services/a2a/webhook-handler.js';
+import { taskEventBus } from '../services/a2a/task-event-bus.js';
+import type { A2AJsonRpcRequest, A2APart, A2ATaskState, A2AConfiguration } from '../services/a2a/types.js';
+import { normalizeParts } from '../services/a2a/types.js';
+import { verifyApiKey } from '../utils/crypto.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -217,7 +222,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
     }, 400);
   }
 
-  // ---- Auth: try Sly API key / agent token ----
+  // ---- Auth: try Sly API key / agent token (prefix lookup + hash verification) ----
   const authHeader = c.req.header('Authorization');
   let tenantId: string | null = null;
 
@@ -226,21 +231,25 @@ a2aPublicRouter.post('/:agentId', async (c) => {
     const supabase = createClient();
 
     if (token.startsWith('pk_')) {
-      // API key auth — look up tenant
+      // API key auth — prefix lookup + hash verification
       const prefix = token.slice(0, 12);
       const { data: apiKey } = await (supabase.from('api_keys') as any)
-        .select('tenant_id')
+        .select('tenant_id, key_hash')
         .eq('key_prefix', prefix)
         .single();
-      if (apiKey) tenantId = apiKey.tenant_id;
+      if (apiKey && apiKey.key_hash && verifyApiKey(token, apiKey.key_hash)) {
+        tenantId = apiKey.tenant_id;
+      }
     } else if (token.startsWith('agent_')) {
-      // Agent token auth
+      // Agent token auth — prefix lookup + hash verification
       const prefix = token.slice(0, 12);
       const { data: agentRow } = await (supabase.from('agents') as any)
-        .select('tenant_id')
+        .select('tenant_id, auth_token_hash')
         .eq('auth_token_prefix', prefix)
         .single();
-      if (agentRow) tenantId = agentRow.tenant_id;
+      if (agentRow && agentRow.auth_token_hash && verifyApiKey(token, agentRow.auth_token_hash)) {
+        tenantId = agentRow.tenant_id;
+      }
     }
   }
 
@@ -285,9 +294,15 @@ a2aPublicRouter.post('/:agentId', async (c) => {
     }, 400);
   }
 
+  // ---- SSE streaming for message/stream ----
+  if (rpcRequest.method === 'message/stream') {
+    return handleMessageStream(c, rpcRequest, agentId, tenantId);
+  }
+
   // Dispatch to JSON-RPC handler
-  const taskService = new A2ATaskService(createClient(), tenantId);
-  const rpcResponse = await handleJsonRpc(rpcRequest, agentId, taskService);
+  const supabase = createClient();
+  const taskService = new A2ATaskService(supabase, tenantId);
+  const rpcResponse = await handleJsonRpc(rpcRequest, agentId, taskService, supabase, tenantId || undefined);
 
   return jsonRpc(rpcResponse as Record<string, unknown>);
 });
@@ -309,6 +324,207 @@ a2aPublicRouter.options('/:agentId', (c) => {
 });
 
 // =============================================================================
+// SSE Streaming Handler (Story 58.13)
+// =============================================================================
+
+const TERMINAL_STATES = new Set(['completed', 'failed', 'canceled', 'rejected']);
+const SSE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const HEARTBEAT_INTERVAL_MS = 30 * 1000; // 30 seconds
+
+/**
+ * Handle `message/stream` JSON-RPC method.
+ * Creates/resumes a task (same logic as message/send), then returns an SSE
+ * stream that forwards lifecycle events from the TaskEventBus.
+ */
+async function handleMessageStream(
+  c: any,
+  rpcRequest: A2AJsonRpcRequest,
+  agentId: string,
+  tenantId: string,
+) {
+  const params = rpcRequest.params || {};
+  const message = params.message as { role?: string; parts?: A2APart[]; metadata?: Record<string, unknown> } | undefined;
+
+  if (!message?.parts?.length) {
+    return new Response(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32602, message: 'message.parts is required and must not be empty' },
+        id: rpcRequest.id,
+      }),
+      { status: 400, headers: { 'Content-Type': 'application/json', 'A2A-Version': '1.0' } },
+    );
+  }
+
+  const role = (message.role === 'agent' ? 'agent' : 'user') as 'user' | 'agent';
+  const contextId = params.contextId as string | undefined;
+  const taskId = params.id as string | undefined;
+  const configuration = params.configuration as A2AConfiguration | undefined;
+  const callbackUrl = configuration?.callbackUrl;
+  const callbackSecret = configuration?.callbackSecret;
+
+  const supabase = createClient();
+  const taskService = new A2ATaskService(supabase, tenantId);
+
+  // Resolve or create the task (mirrors message/send logic)
+  let task: any;
+  try {
+    if (taskId) {
+      const existing = await taskService.getTask(taskId, configuration?.historyLength);
+      if (!existing) {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: `Task not found: ${taskId}` },
+            id: rpcRequest.id,
+          }),
+          { status: 404, headers: { 'Content-Type': 'application/json', 'A2A-Version': '1.0' } },
+        );
+      }
+      if (['completed', 'failed', 'canceled'].includes(existing.status.state)) {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32602, message: `Cannot stream task in state: ${existing.status.state}` },
+            id: rpcRequest.id,
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json', 'A2A-Version': '1.0' } },
+        );
+      }
+      await taskService.addMessage(taskId, role, message.parts, message.metadata);
+      if (existing.status.state === 'input-required') {
+        await taskService.updateTaskState(taskId, 'working', 'Processing new input');
+      }
+      task = await taskService.getTask(taskId, configuration?.historyLength);
+    } else if (contextId) {
+      const existing = await taskService.findTaskByContext(agentId, contextId);
+      if (existing && !TERMINAL_STATES.has(existing.status.state)) {
+        await taskService.addMessage(existing.id, role, message.parts, message.metadata);
+        if (existing.status.state === 'input-required') {
+          await taskService.updateTaskState(existing.id, 'working', 'Processing new input');
+        }
+        task = await taskService.getTask(existing.id, configuration?.historyLength);
+      } else {
+        task = await taskService.createTask(agentId, { role, parts: message.parts, metadata: message.metadata }, contextId, 'inbound', undefined, undefined, callbackUrl, callbackSecret);
+      }
+    } else {
+      task = await taskService.createTask(agentId, { role, parts: message.parts, metadata: message.metadata }, undefined, 'inbound', undefined, undefined, callbackUrl, callbackSecret);
+    }
+  } catch (err: any) {
+    return new Response(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32603, message: err.message || 'Internal error' },
+        id: rpcRequest.id,
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json', 'A2A-Version': '1.0' } },
+    );
+  }
+
+  const streamTaskId = task.id;
+
+  // Set SSE-specific headers
+  c.header('X-Accel-Buffering', 'no');
+  c.header('A2A-Version', '1.0');
+
+  return streamSSE(c, async (stream) => {
+    let isActive = true;
+
+    // Send initial status event
+    await stream.writeSSE({
+      event: 'status',
+      data: JSON.stringify({
+        taskId: streamTaskId,
+        state: task.status.state,
+        statusMessage: task.status.message || null,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+
+    // If the task is already in a terminal state, close immediately
+    if (TERMINAL_STATES.has(task.status.state)) {
+      return;
+    }
+
+    // Subscribe to task events
+    const unsubscribe = taskEventBus.subscribe(streamTaskId, async (event) => {
+      if (!isActive) return;
+      try {
+        await stream.writeSSE({
+          event: event.type,
+          data: JSON.stringify({
+            taskId: event.taskId,
+            ...event.data,
+            timestamp: event.timestamp,
+          }),
+        });
+
+        // Close stream on terminal state
+        if (event.type === 'status' && TERMINAL_STATES.has(event.data.state as string)) {
+          isActive = false;
+          cleanup();
+        }
+      } catch {
+        // Stream probably closed by client
+        isActive = false;
+        cleanup();
+      }
+    });
+
+    // Heartbeat to keep connection alive
+    const heartbeatId = setInterval(async () => {
+      if (!isActive) {
+        clearInterval(heartbeatId);
+        return;
+      }
+      try {
+        await stream.writeSSE({
+          event: 'heartbeat',
+          data: JSON.stringify({ timestamp: new Date().toISOString() }),
+        });
+      } catch {
+        isActive = false;
+        cleanup();
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+
+    // Safety timeout — 5 minutes max
+    const timeoutId = setTimeout(async () => {
+      if (!isActive) return;
+      try {
+        await stream.writeSSE({
+          event: 'error',
+          data: JSON.stringify({
+            taskId: streamTaskId,
+            message: 'Stream timeout: 5 minute limit reached',
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      } catch {
+        // ignore
+      }
+      isActive = false;
+      cleanup();
+    }, SSE_TIMEOUT_MS);
+
+    function cleanup() {
+      unsubscribe();
+      clearInterval(heartbeatId);
+      clearTimeout(timeoutId);
+    }
+
+    // Handle client disconnect
+    stream.onAbort(() => {
+      isActive = false;
+      cleanup();
+    });
+
+    // Keep the stream alive until closed
+    await new Promise(() => {});
+  });
+}
+
+// =============================================================================
 // Authenticated Management Routes (mounted under /v1/a2a)
 // =============================================================================
 
@@ -326,6 +542,141 @@ a2aRouter.get('/agents/:agentId/card', async (c) => {
   const result = await fetchAgentCard(agentId, ctx.tenantId);
   if ('error' in result) return c.json({ error: result.error }, result.status);
   return c.json({ data: result.card });
+});
+
+/**
+ * GET /v1/a2a/agents/:agentId/config
+ * Get agent processing configuration.
+ */
+a2aRouter.get('/agents/:agentId/config', async (c) => {
+  const ctx = c.get('ctx');
+  const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agent ID format' }, 400);
+
+  const supabase = createClient();
+  const { data: agent, error } = await supabase
+    .from('agents')
+    .select('processing_mode, processing_config')
+    .eq('id', agentId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (error || !agent) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  return c.json({
+    processingMode: (agent as any).processing_mode || 'manual',
+    processingConfig: (agent as any).processing_config || {},
+  });
+});
+
+/**
+ * PUT /v1/a2a/agents/:agentId/config
+ * Update agent processing configuration.
+ */
+a2aRouter.put('/agents/:agentId/config', async (c) => {
+  const ctx = c.get('ctx');
+  const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agent ID format' }, 400);
+
+  let body: Record<string, any>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+
+  // Normalize snake_case or camelCase
+  const processingMode = body.processing_mode || body.processingMode;
+  const processingConfig = body.processing_config || body.processingConfig || {};
+
+  // Validate processing mode
+  if (!processingMode || !['managed', 'webhook', 'manual'].includes(processingMode)) {
+    return c.json({ error: 'processing_mode must be one of: managed, webhook, manual' }, 400);
+  }
+
+  // Mode-specific validation
+  if (processingMode === 'managed') {
+    if (!processingConfig.model || typeof processingConfig.model !== 'string' || processingConfig.model.trim() === '') {
+      return c.json({ error: 'managed mode requires a non-empty model string' }, 400);
+    }
+    if (!processingConfig.systemPrompt || typeof processingConfig.systemPrompt !== 'string' || processingConfig.systemPrompt.trim() === '') {
+      return c.json({ error: 'managed mode requires a non-empty systemPrompt' }, 400);
+    }
+    if (processingConfig.systemPrompt.length > 10000) {
+      return c.json({ error: 'systemPrompt must be 10000 characters or less' }, 400);
+    }
+    if (processingConfig.maxTokens !== undefined) {
+      const maxTokens = Number(processingConfig.maxTokens);
+      if (isNaN(maxTokens) || maxTokens < 512 || maxTokens > 200000) {
+        return c.json({ error: 'maxTokens must be between 512 and 200000' }, 400);
+      }
+    }
+    if (processingConfig.temperature !== undefined) {
+      const temp = Number(processingConfig.temperature);
+      if (isNaN(temp) || temp < 0 || temp > 2) {
+        return c.json({ error: 'temperature must be between 0 and 2' }, 400);
+      }
+    }
+  } else if (processingMode === 'webhook') {
+    if (!processingConfig.callbackUrl || typeof processingConfig.callbackUrl !== 'string') {
+      return c.json({ error: 'webhook mode requires a callbackUrl' }, 400);
+    }
+    try {
+      const url = new URL(processingConfig.callbackUrl);
+      if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+        return c.json({ error: 'callbackUrl must use HTTPS (or localhost for development)' }, 400);
+      }
+    } catch {
+      return c.json({ error: 'callbackUrl must be a valid URL' }, 400);
+    }
+    if (processingConfig.timeoutMs !== undefined) {
+      const timeout = Number(processingConfig.timeoutMs);
+      if (isNaN(timeout) || timeout < 1000 || timeout > 120000) {
+        return c.json({ error: 'timeoutMs must be between 1000 and 120000' }, 400);
+      }
+    }
+  } else if (processingMode === 'manual') {
+    // Manual mode: config should be empty
+    const keys = Object.keys(processingConfig);
+    if (keys.length > 0) {
+      return c.json({ error: 'manual mode does not accept processing config' }, 400);
+    }
+  }
+
+  const supabase = createClient();
+
+  // Verify agent exists and belongs to tenant
+  const { data: existing, error: fetchError } = await supabase
+    .from('agents')
+    .select('id')
+    .eq('id', agentId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (fetchError || !existing) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  // Update
+  const { error: updateError } = await supabase
+    .from('agents')
+    .update({
+      processing_mode: processingMode,
+      processing_config: processingConfig,
+    })
+    .eq('id', agentId)
+    .eq('tenant_id', ctx.tenantId);
+
+  if (updateError) {
+    return c.json({ error: `Failed to update config: ${updateError.message}` }, 500);
+  }
+
+  return c.json({
+    processingMode,
+    processingConfig,
+  });
 });
 
 /**
@@ -374,6 +725,8 @@ a2aRouter.post('/tasks', async (c) => {
     message: raw.message as { parts: A2APart[] },
     contextId: raw.contextId || raw.context_id,
     metadata: raw.metadata as Record<string, unknown> | undefined,
+    callbackUrl: raw.callbackUrl || raw.callback_url,
+    callbackSecret: raw.callbackSecret || raw.callback_secret,
   };
 
   if (!body.message?.parts?.length) {
@@ -415,6 +768,11 @@ a2aRouter.post('/tasks', async (c) => {
     body.agentId,
     body.message,
     body.contextId,
+    'inbound',
+    undefined,
+    undefined,
+    body.callbackUrl,
+    body.callbackSecret,
   );
 
   return c.json({ data: task });
@@ -429,6 +787,7 @@ a2aRouter.get('/tasks', async (c) => {
   const agentId = c.req.query('agent_id');
   const state = c.req.query('state');
   const direction = c.req.query('direction') as 'inbound' | 'outbound' | undefined;
+  const contextId = c.req.query('context_id');
   const page = parseInt(c.req.query('page') || '1');
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
@@ -439,11 +798,177 @@ a2aRouter.get('/tasks', async (c) => {
     agentId,
     state: state as any,
     direction,
+    contextId,
     page,
     limit,
   });
 
   return c.json(result);
+});
+
+/**
+ * GET /v1/a2a/tasks/dlq
+ * List dead-letter-queue tasks (webhook delivery permanently failed).
+ * Must be registered BEFORE /tasks/:taskId to avoid param capture.
+ */
+a2aRouter.get('/tasks/dlq', async (c) => {
+  const ctx = c.get('ctx');
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
+  const offset = (page - 1) * limit;
+
+  const supabase = createClient();
+
+  const { data: tasks, count, error } = await supabase
+    .from('a2a_tasks')
+    .select('id, agent_id, webhook_attempts, webhook_dlq_at, webhook_dlq_reason, webhook_last_response_code, created_at, agents!inner(name)', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .eq('webhook_status', 'dlq')
+    .order('webhook_dlq_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    return c.json({ error: `Failed to fetch DLQ tasks: ${error.message}` }, 500);
+  }
+
+  const dlqTasks = (tasks || []).map((t: any) => ({
+    id: t.id,
+    agentId: t.agent_id,
+    agentName: t.agents?.name || null,
+    webhookAttempts: t.webhook_attempts,
+    lastResponseCode: t.webhook_last_response_code,
+    dlqAt: t.webhook_dlq_at,
+    dlqReason: t.webhook_dlq_reason,
+    createdAt: t.created_at,
+  }));
+
+  return c.json({
+    data: dlqTasks,
+    pagination: {
+      page,
+      limit,
+      total: count || 0,
+      totalPages: Math.ceil((count || 0) / limit),
+    },
+  });
+});
+
+/**
+ * PATCH /v1/a2a/tasks/:taskId
+ * External state update for webhook-mode tasks.
+ * Allows the external agent to report back task completion/failure.
+ */
+a2aRouter.patch('/tasks/:taskId', async (c) => {
+  const ctx = c.get('ctx');
+  const taskId = c.req.param('taskId');
+
+  if (!UUID_RE.test(taskId)) {
+    return c.json({ error: 'Invalid task ID format' }, 400);
+  }
+
+  let body: Record<string, any>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+
+  const newState = body.state as A2ATaskState;
+  if (!newState) {
+    return c.json({ error: 'state is required' }, 400);
+  }
+
+  const supabase = createClient();
+
+  // Fetch current task
+  const { data: task, error: fetchError } = await supabase
+    .from('a2a_tasks')
+    .select('id, state, tenant_id')
+    .eq('id', taskId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (fetchError || !task) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
+  // Validate state transition
+  const currentState = (task as any).state as string;
+  const validTransitions: Record<string, string[]> = {
+    'working': ['completed', 'failed', 'input-required'],
+    'input-required': ['working', 'completed', 'failed'],
+  };
+
+  const allowed = validTransitions[currentState];
+  if (!allowed || !allowed.includes(newState)) {
+    return c.json({
+      error: `Invalid state transition: ${currentState} → ${newState}. ` +
+        `Allowed transitions from '${currentState}': ${allowed ? allowed.join(', ') : 'none'}`,
+    }, 400);
+  }
+
+  const taskService = new A2ATaskService(supabase, ctx.tenantId);
+
+  // Add message if provided
+  if (body.message?.parts?.length) {
+    await taskService.addMessage(
+      taskId,
+      body.message.role || 'agent',
+      normalizeParts(body.message.parts),
+      body.message.metadata,
+    );
+  }
+
+  // Add artifacts if provided
+  if (body.artifacts?.length) {
+    for (const artifact of body.artifacts) {
+      if (artifact.parts?.length) {
+        await taskService.addArtifact(taskId, {
+          name: artifact.name,
+          mediaType: artifact.mediaType,
+          parts: normalizeParts(artifact.parts),
+          metadata: artifact.metadata,
+        });
+      }
+    }
+  }
+
+  // Update state
+  const updated = await taskService.updateTaskState(
+    taskId,
+    newState,
+    body.statusMessage,
+  );
+
+  if (!updated) {
+    return c.json({ error: 'Failed to update task state' }, 500);
+  }
+
+  return c.json({ data: updated });
+});
+
+/**
+ * POST /v1/a2a/tasks/:taskId/retry
+ * Retry a DLQ'd task. Resets to 'submitted' so the worker re-dispatches.
+ */
+a2aRouter.post('/tasks/:taskId/retry', async (c) => {
+  const ctx = c.get('ctx');
+  const taskId = c.req.param('taskId');
+
+  if (!UUID_RE.test(taskId)) {
+    return c.json({ error: 'Invalid task ID format' }, 400);
+  }
+
+  const supabase = createClient();
+  const webhookHandler = new A2AWebhookHandler(supabase);
+
+  const success = await webhookHandler.retryFromDlq(taskId, ctx.tenantId);
+
+  if (!success) {
+    return c.json({ error: 'Task not found in DLQ or retry failed' }, 404);
+  }
+
+  return c.json({ data: { id: taskId, state: 'submitted', message: 'Task requeued for retry' } });
 });
 
 /**
@@ -468,6 +993,76 @@ a2aRouter.get('/tasks/:taskId', async (c) => {
   }
 
   return c.json({ data: task });
+});
+
+/**
+ * POST /v1/a2a/tasks/:taskId/respond
+ * Respond to an escalated (input-required) task.
+ * Used by humans or dashboards to provide input that unblocks the agent.
+ * (Story 58.6: Human-in-the-Loop Escalation)
+ */
+a2aRouter.post('/tasks/:taskId/respond', async (c) => {
+  const ctx = c.get('ctx');
+  const taskId = c.req.param('taskId');
+
+  if (!UUID_RE.test(taskId)) {
+    return c.json({ error: 'Invalid task ID format' }, 400);
+  }
+
+  let body: Record<string, any>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+
+  const supabase = createClient();
+
+  // Verify task exists and is in input-required state
+  const { data: task, error: fetchError } = await supabase
+    .from('a2a_tasks')
+    .select('id, state, tenant_id')
+    .eq('id', taskId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (fetchError || !task) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
+  if ((task as any).state !== 'input-required') {
+    return c.json({
+      error: `Task is in '${(task as any).state}' state. Only 'input-required' tasks can be responded to.`,
+    }, 400);
+  }
+
+  // Validate response body — accept multiple formats:
+  // { parts: [...] }, { message: { parts: [...] } }, { message: "text" }, { text: "text" }
+  let parts = body.parts || body.message?.parts;
+  if (!parts?.length) {
+    const plainText = typeof body.message === 'string' ? body.message : body.text;
+    if (plainText) {
+      parts = [{ text: plainText }];
+    } else {
+      return c.json({ error: 'message.parts, parts, message (string), or text is required' }, 400);
+    }
+  }
+
+  const taskService = new A2ATaskService(supabase, ctx.tenantId);
+
+  // Add the human response as a user message
+  await taskService.addMessage(
+    taskId,
+    'user',
+    normalizeParts(parts),
+    body.metadata || body.message?.metadata,
+  );
+
+  // Transition back to working
+  await taskService.updateTaskState(taskId, 'working', 'Human response received, resuming processing');
+
+  const updated = await taskService.getTask(taskId);
+  return c.json({ data: updated });
 });
 
 /**
@@ -568,6 +1163,142 @@ a2aRouter.post('/process', async (c) => {
   }
 
   return c.json({ data: { processed: results.length, tasks: results } });
+});
+
+/**
+ * GET /v1/a2a/stats
+ * Get A2A task statistics for the tenant.
+ */
+a2aRouter.get('/stats', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  // Get task counts by state and direction
+  const { data: tasks, error } = await supabase
+    .from('a2a_tasks')
+    .select('id, state, direction, transfer_id')
+    .eq('tenant_id', ctx.tenantId);
+
+  if (error) {
+    return c.json({ error: `Failed to fetch stats: ${error.message}` }, 500);
+  }
+
+  const rows = tasks || [];
+  const activeStates = ['submitted', 'working', 'input-required'];
+  const transferIds = rows
+    .map((r: any) => r.transfer_id)
+    .filter(Boolean) as string[];
+
+  let totalCost = 0;
+  if (transferIds.length > 0) {
+    const { data: transfers } = await supabase
+      .from('transfers')
+      .select('amount')
+      .in('id', transferIds)
+      .eq('tenant_id', ctx.tenantId);
+    totalCost = (transfers || []).reduce((sum: number, t: any) => sum + (Number(t.amount) || 0), 0);
+  }
+
+  return c.json({
+    data: {
+      total: rows.length,
+      active: rows.filter((r: any) => activeStates.includes(r.state)).length,
+      completed: rows.filter((r: any) => r.state === 'completed').length,
+      inbound: rows.filter((r: any) => r.direction === 'inbound').length,
+      outbound: rows.filter((r: any) => r.direction === 'outbound').length,
+      totalCost,
+      transferCount: transferIds.length,
+    },
+  });
+});
+
+/**
+ * GET /v1/a2a/sessions
+ * List A2A sessions grouped by context_id.
+ */
+a2aRouter.get('/sessions', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  // Fetch all tasks with a non-null context_id
+  const { data: tasks, error } = await supabase
+    .from('a2a_tasks')
+    .select('id, context_id, state, direction, agent_id, transfer_id, created_at, updated_at, agents!inner(name)')
+    .eq('tenant_id', ctx.tenantId)
+    .not('context_id', 'is', null)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return c.json({ error: `Failed to fetch sessions: ${error.message}` }, 500);
+  }
+
+  const rows = tasks || [];
+
+  // Group by context_id
+  const sessionMap = new Map<string, any[]>();
+  for (const row of rows) {
+    const cid = (row as any).context_id;
+    if (!sessionMap.has(cid)) sessionMap.set(cid, []);
+    sessionMap.get(cid)!.push(row);
+  }
+
+  // Batch fetch transfer amounts for all linked transfers
+  const allTransferIds = rows
+    .map((r: any) => r.transfer_id)
+    .filter(Boolean) as string[];
+  const transferAmounts = new Map<string, number>();
+  if (allTransferIds.length > 0) {
+    const { data: transfers } = await supabase
+      .from('transfers')
+      .select('id, amount')
+      .in('id', allTransferIds)
+      .eq('tenant_id', ctx.tenantId);
+    for (const t of transfers || []) {
+      transferAmounts.set(t.id, Number(t.amount) || 0);
+    }
+  }
+
+  // Batch fetch message counts for all tasks
+  const allTaskIds = rows.map((r: any) => r.id);
+  const messageCounts = new Map<string, number>();
+  if (allTaskIds.length > 0) {
+    const { data: messages } = await supabase
+      .from('a2a_messages')
+      .select('task_id')
+      .in('task_id', allTaskIds)
+      .eq('tenant_id', ctx.tenantId);
+    for (const m of messages || []) {
+      messageCounts.set(m.task_id, (messageCounts.get(m.task_id) || 0) + 1);
+    }
+  }
+
+  // Build sessions
+  const sessions = Array.from(sessionMap.entries()).map(([contextId, taskRows]) => {
+    const agentNames = [...new Set(taskRows.map((r: any) => (r as any).agents?.name).filter(Boolean))];
+    const directions = [...new Set(taskRows.map((r: any) => r.direction))];
+    const latestTask = taskRows[0]; // already sorted desc
+    const transferIds = taskRows.map((r: any) => r.transfer_id).filter(Boolean);
+    const totalCost = transferIds.reduce((sum: number, tid: string) => sum + (transferAmounts.get(tid) || 0), 0);
+    const msgCount = taskRows.reduce((sum: number, r: any) => sum + (messageCounts.get(r.id) || 0), 0);
+
+    return {
+      contextId,
+      taskCount: taskRows.length,
+      agentNames,
+      directions,
+      latestState: latestTask.state,
+      totalCost,
+      transferCount: transferIds.length,
+      firstTaskAt: taskRows[taskRows.length - 1].created_at,
+      lastTaskAt: latestTask.updated_at,
+      messageCount: msgCount,
+    };
+  });
+
+  // Sort by last activity desc
+  sessions.sort((a, b) => new Date(b.lastTaskAt).getTime() - new Date(a.lastTaskAt).getTime());
+
+  return c.json({ data: sessions });
 });
 
 export default a2aRouter;

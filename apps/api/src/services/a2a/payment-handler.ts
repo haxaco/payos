@@ -58,15 +58,13 @@ export class A2APaymentHandler {
     // Add agent message explaining payment requirement
     await this.taskService.addMessage(taskId, 'agent', [
       {
-        kind: 'data',
         data: {
           type: 'payment_required',
           ...requirement,
         },
-        mimeType: 'application/json',
+        metadata: { mimeType: 'application/json' },
       },
       {
-        kind: 'text',
         text: `This task requires a payment of ${requirement.amount} ${requirement.currency}. Please submit payment to proceed.`,
       },
     ]);
@@ -144,14 +142,13 @@ export class A2APaymentHandler {
 
     await this.taskService.addMessage(taskId, 'agent', [
       {
-        kind: 'data',
         data: {
           type: 'payment_verified',
           transferId: transfer.id,
           amount: transfer.amount,
           currency: transfer.currency,
         },
-        mimeType: 'application/json',
+        metadata: { mimeType: 'application/json' },
       },
     ]);
 

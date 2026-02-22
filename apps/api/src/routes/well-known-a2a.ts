@@ -55,6 +55,7 @@ router.get('/', async (c) => {
       'Content-Type': 'application/json',
       'Cache-Control': 'public, max-age=3600',
       'Access-Control-Allow-Origin': '*',
+      'A2A-Version': '1.0',
     },
   });
 });
