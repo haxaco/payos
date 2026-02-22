@@ -92,19 +92,19 @@ async function runAllDemos() {
   try {
     // Run x402 demo (if provider is available)
     console.log(chalk.yellow('▶ Starting x402 demo...\n'));
-    const x402Result = await runX402Demo(payos, PROVIDER_URL);
+    const x402Result = await runX402Demo(sly, PROVIDER_URL);
     results.push(x402Result);
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Run AP2 demo
     console.log(chalk.yellow('▶ Starting AP2 demo...\n'));
-    const ap2Result = await runAP2Demo(payos, USER_EMAIL, USER_ACCOUNT_ID);
+    const ap2Result = await runAP2Demo(sly, USER_EMAIL, USER_ACCOUNT_ID);
     results.push(ap2Result);
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Run ACP demo
     console.log(chalk.yellow('▶ Starting ACP demo...\n'));
-    const acpResult = await runACPDemo(payos, USER_EMAIL, USER_ACCOUNT_ID);
+    const acpResult = await runACPDemo(sly, USER_EMAIL, USER_ACCOUNT_ID);
     results.push(acpResult);
     
     const duration = (Date.now() - startTime) / 1000;
@@ -126,12 +126,12 @@ async function runAllDemos() {
 const command = process.argv[2];
 
 async function main() {
-  // Initialize PayOS SDK
+  // Initialize Sly SDK
   try {
     if (API_KEY) {
       // Use API key if provided
       console.log(chalk.gray('Authenticating with API key...'));
-      payos = new PayOS({
+      sly = new Sly({
         apiKey: API_KEY,
         environment: ENVIRONMENT,
         apiUrl: API_URL,
@@ -139,7 +139,7 @@ async function main() {
     } else if (USER_PASSWORD) {
       // Use username/password authentication
       console.log(chalk.gray(`Authenticating as ${USER_EMAIL}...`));
-      payos = await createWithPassword(
+      sly = await createWithPassword(
         { email: USER_EMAIL, password: USER_PASSWORD },
         ENVIRONMENT,
         API_URL
@@ -161,13 +161,13 @@ async function main() {
   // Run demos
   switch (command) {
     case 'x402':
-      await runX402Demo(payos, PROVIDER_URL);
+      await runX402Demo(sly, PROVIDER_URL);
       break;
     case 'ap2':
-      await runAP2Demo(payos, USER_EMAIL, USER_ACCOUNT_ID);
+      await runAP2Demo(sly, USER_EMAIL, USER_ACCOUNT_ID);
       break;
     case 'acp':
-      await runACPDemo(payos, USER_EMAIL, USER_ACCOUNT_ID);
+      await runACPDemo(sly, USER_EMAIL, USER_ACCOUNT_ID);
       break;
     default:
       await runAllDemos();
