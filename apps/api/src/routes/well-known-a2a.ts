@@ -14,7 +14,7 @@
  */
 
 import { Hono } from 'hono';
-import { generatePlatformCard } from '../services/a2a/agent-card.js';
+import { generatePlatformCard, getBaseUrlFromRequest } from '../services/a2a/agent-card.js';
 
 const router = new Hono();
 
@@ -44,8 +44,7 @@ router.options('/', (c) => {
  * Cache-Control: 1 hour (cards change infrequently).
  */
 router.get('/', async (c) => {
-  const url = new URL(c.req.url);
-  const card = generatePlatformCard(`${url.protocol}//${url.host}`);
+  const card = generatePlatformCard(getBaseUrlFromRequest(c));
 
   // Return raw card without response wrapper — A2A spec requires
   // the agent card at the root level.

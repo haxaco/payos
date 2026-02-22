@@ -14,6 +14,13 @@ function resolveBaseUrl(baseUrl?: string): string {
   return baseUrl || process.env.API_BASE_URL || 'http://localhost:4000';
 }
 
+/** Derive the public base URL from a Hono request context, respecting reverse proxies. */
+export function getBaseUrlFromRequest(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
+  const url = new URL(c.req.url);
+  const proto = c.req.header('x-forwarded-proto') || url.protocol.replace(':', '');
+  return `${proto}://${url.host}`;
+}
+
 interface AgentRecord {
   id: string;
   name: string;

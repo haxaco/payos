@@ -12,7 +12,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { createClient } from '../db/client.js';
-import { generateAgentCard } from '../services/a2a/agent-card.js';
+import { generateAgentCard, getBaseUrlFromRequest } from '../services/a2a/agent-card.js';
 import { A2ATaskService } from '../services/a2a/task-service.js';
 import { handleJsonRpc } from '../services/a2a/jsonrpc-handler.js';
 import { handleGatewayJsonRpc } from '../services/a2a/gateway-handler.js';
@@ -26,8 +26,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** Derive the public base URL from the incoming request. */
 function getBaseUrl(c: any): string {
-  const url = new URL(c.req.url);
-  return `${url.protocol}//${url.host}`;
+  return getBaseUrlFromRequest(c);
 }
 
 // =============================================================================
