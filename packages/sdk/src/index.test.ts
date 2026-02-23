@@ -14,24 +14,24 @@ describe('@sly/sdk', () => {
       expect(payos).toBeInstanceOf(PayOS);
     });
 
-    it('should throw error when testnet lacks EVM key', () => {
+    it('should instantiate with testnet config without EVM key', () => {
       const config: PayOSConfig = {
         apiKey: 'test_key',
         environment: 'testnet',
-        // Missing evmPrivateKey
       };
 
-      expect(() => new PayOS(config)).toThrow(/EVM private key is required/);
+      const payos = new PayOS(config);
+      expect(payos).toBeInstanceOf(PayOS);
     });
 
-    it('should throw error when production lacks EVM key', () => {
+    it('should instantiate with production config without EVM key', () => {
       const config: PayOSConfig = {
         apiKey: 'test_key',
         environment: 'production',
-        // Missing evmPrivateKey
       };
 
-      expect(() => new PayOS(config)).toThrow(/EVM private key is required/);
+      const payos = new PayOS(config);
+      expect(payos).toBeInstanceOf(PayOS);
     });
 
     it('should accept EVM key for testnet', () => {

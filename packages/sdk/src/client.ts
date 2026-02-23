@@ -8,20 +8,23 @@ import type {
   ComplianceCheckResponse,
   CapabilitiesResponse,
 } from './types';
-import { getEnvironmentConfig, validateEnvironment } from './config';
+import { getEnvironmentConfig } from './config';
 
 /**
  * Base API client for Sly
+ *
+ * Note: EVM key validation is intentionally NOT done here.
+ * The base client only makes REST API calls (Bearer token auth).
+ * Protocol-specific clients (x402, etc.) that need EVM signing
+ * validate the key themselves.
  */
 export class SlyClient {
   private apiKey: string;
   private apiUrl: string;
 
   constructor(config: SlyConfig) {
-    validateEnvironment(config.environment, config.evmPrivateKey);
-
     this.apiKey = config.apiKey;
-    
+
     // Use custom API URL if provided, otherwise use environment default
     const envConfig = getEnvironmentConfig(config.environment);
     this.apiUrl = config.apiUrl || envConfig.apiUrl;
