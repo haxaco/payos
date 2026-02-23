@@ -971,7 +971,7 @@ export class A2ATaskProcessor {
 
       const { data: callerWallet } = await this.supabase
         .from('wallets')
-        .select('id, balance, evm_address, owner_account_id')
+        .select('id, balance, wallet_address, owner_account_id')
         .eq('managed_by_agent_id', callerAgentId)
         .eq('tenant_id', this.tenantId)
         .maybeSingle();
@@ -1091,7 +1091,7 @@ export class A2ATaskProcessor {
         network,
         amount: requestedAmountUnits,
         token: chainConfig.contracts.usdc,
-        from: callerWallet.evm_address || callerWallet.id,
+        from: callerWallet.wallet_address || callerWallet.id,
         to: agent.id,
         signature: jwt,
       });

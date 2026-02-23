@@ -32,7 +32,7 @@ function createMockSupabase(overrides: Record<string, any> = {}) {
     wallets: {
       id: 'wallet-001',
       balance: 100,
-      evm_address: '0xCallerAddress',
+      wallet_address: '0xCallerAddress',
       owner_account_id: 'account-001',
     },
     transfers: {
