@@ -300,6 +300,20 @@ export class A2ATaskService {
       }
     }
 
+    // Batch-fetch message counts per task
+    const taskIds = (rows || []).map((r: any) => r.id);
+    const messageCounts = new Map<string, number>();
+    if (taskIds.length > 0) {
+      const { data: msgCounts } = await this.supabase
+        .from('a2a_messages')
+        .select('task_id')
+        .in('task_id', taskIds)
+        .eq('tenant_id', this.tenantId);
+      for (const m of msgCounts || []) {
+        messageCounts.set(m.task_id, (messageCounts.get(m.task_id) || 0) + 1);
+      }
+    }
+
     const tasks = (rows || []).map((row: any) => {
       const transfer = row.transfer_id ? transferAmounts.get(row.transfer_id) : undefined;
       return {
@@ -318,6 +332,7 @@ export class A2ATaskService {
         transferStatus: transfer?.status,
         mandateId: row.mandate_id || undefined,
         sessionId: row.a2a_session_id || undefined,
+        messageCount: messageCounts.get(row.id) || 0,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -433,6 +448,7 @@ export class A2ATaskService {
       role: row.role,
       parts: normalizeParts(row.parts),
       metadata: row.metadata || undefined,
+      createdAt: row.created_at,
     };
   }
 

@@ -363,7 +363,7 @@ async function seed() {
   console.log(`Transfers created: ${transfers.length} (linked to ${linkedCount} tasks)`);
   console.log(`Total cost across transfers: $${totalCost.toLocaleString()}`);
   console.log(`Directions: ${allTasks.filter((t: any) => t.direction === 'outbound').length} outbound, ${allTasks.filter((t: any) => t.direction === 'inbound').length} inbound`);
-  console.log('\nView at: http://localhost:3000/dashboard/agentic-payments/a2a/tasks');
+  console.log('\nView at: http://localhost:3000/dashboard/agents/a2a/tasks');
 }
 
 seed().catch(console.error);

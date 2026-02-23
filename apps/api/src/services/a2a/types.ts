@@ -124,6 +124,7 @@ export interface A2AMessage {
   role: 'user' | 'agent';
   parts: A2APart[];
   metadata?: Record<string, unknown>;
+  createdAt?: string;
 }
 
 export type A2APart =

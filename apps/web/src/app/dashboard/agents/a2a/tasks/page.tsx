@@ -119,7 +119,7 @@ export default function A2ATasksPage() {
             {initialContextId && (
               <span className="ml-2 text-sm">
                 Filtered by session: <code className="text-xs bg-muted px-1 py-0.5 rounded">{initialContextId.slice(0, 8)}...</code>
-                <Link href="/dashboard/agentic-payments/a2a/tasks" className="ml-2 text-blue-600 hover:underline text-xs">
+                <Link href="/dashboard/agents/a2a/tasks" className="ml-2 text-blue-600 hover:underline text-xs">
                   Clear filter
                 </Link>
               </span>
@@ -169,7 +169,7 @@ export default function A2ATasksPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">Total Cost</p>
-                  <p className="text-2xl font-bold mt-1">{formatCurrency(statsData.totalCost ?? 0, 'USD')}</p>
+                  <p className="text-2xl font-bold mt-1">{formatCurrency(statsData.totalCost ?? 0, 'USDC')}</p>
                 </div>
                 <DollarSign className="h-8 w-8 text-blue-500" />
               </div>
@@ -228,6 +228,7 @@ export default function A2ATasksPage() {
                   <TableHead>Agent</TableHead>
                   <TableHead>Direction</TableHead>
                   <TableHead>State</TableHead>
+                  <TableHead>Messages</TableHead>
                   <TableHead>Session</TableHead>
                   <TableHead>Cost</TableHead>
                   <TableHead className="text-right">Created</TableHead>
@@ -236,13 +237,13 @@ export default function A2ATasksPage() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       Loading tasks...
                     </TableCell>
                   </TableRow>
                 ) : filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       No A2A tasks found.
                     </TableCell>
                   </TableRow>
@@ -251,7 +252,7 @@ export default function A2ATasksPage() {
                     <TableRow key={task.id} className="cursor-pointer hover:bg-muted/50">
                       <TableCell className="font-medium">
                         <Link
-                          href={`/dashboard/agentic-payments/a2a/tasks/${task.id}`}
+                          href={`/dashboard/agents/a2a/tasks/${task.id}`}
                           className="font-mono text-xs text-blue-600 hover:underline"
                         >
                           {task.id.slice(0, 8)}...
@@ -265,9 +266,12 @@ export default function A2ATasksPage() {
                         <StateBadge state={task.state} />
                       </TableCell>
                       <TableCell>
+                        <span className="text-sm">{task.messageCount ?? 0}</span>
+                      </TableCell>
+                      <TableCell>
                         {task.contextId ? (
                           <Link
-                            href={`/dashboard/agentic-payments/a2a/tasks?context_id=${task.contextId}`}
+                            href={`/dashboard/agents/a2a/tasks?context_id=${task.contextId}`}
                             className="font-mono text-xs text-blue-600 hover:underline"
                           >
                             {task.contextId.slice(0, 8)}...

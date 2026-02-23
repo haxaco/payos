@@ -146,7 +146,7 @@ export default function A2ASessionsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Total Cost</p>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(totalCost, 'USD')}</p>
+                <p className="text-2xl font-bold mt-1">{formatCurrency(totalCost, 'USDC')}</p>
               </div>
               <DollarSign className="h-8 w-8 text-blue-500" />
             </div>
@@ -199,7 +199,7 @@ export default function A2ASessionsPage() {
                     <TableRow key={session.contextId} className="cursor-pointer hover:bg-muted/50">
                       <TableCell className="font-medium">
                         <Link
-                          href={`/dashboard/agentic-payments/a2a/sessions/${session.contextId}`}
+                          href={`/dashboard/agents/a2a/sessions/${session.contextId}`}
                           className="font-mono text-xs text-blue-600 hover:underline"
                         >
                           {session.contextId.slice(0, 12)}...
@@ -231,7 +231,7 @@ export default function A2ASessionsPage() {
                       </TableCell>
                       <TableCell>
                         {session.totalCost > 0 ? (
-                          <span className="text-sm font-medium">{formatCurrency(session.totalCost, 'USD')}</span>
+                          <span className="text-sm font-medium">{formatCurrency(session.totalCost, 'USDC')}</span>
                         ) : (
                           <span className="text-muted-foreground">--</span>
                         )}

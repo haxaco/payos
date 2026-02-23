@@ -111,7 +111,7 @@ export default function A2ATaskDetailPage({ params }: { params: Promise<{ id: st
     <div className="p-8 space-y-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/dashboard/agentic-payments/a2a/tasks" className="hover:text-foreground flex items-center gap-1">
+        <Link href="/dashboard/agents/a2a/tasks" className="hover:text-foreground flex items-center gap-1">
           <ArrowLeft className="h-4 w-4" />
           Tasks
         </Link>
@@ -175,7 +175,7 @@ export default function A2ATaskDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </div>
               <Link
-                href={`/dashboard/agentic-payments/a2a/sessions/${contextId}`}
+                href={`/dashboard/agents/a2a/sessions/${contextId}`}
                 className="text-xs text-blue-600 hover:underline flex items-center gap-1"
               >
                 View session conversation
@@ -189,7 +189,7 @@ export default function A2ATaskDetailPage({ params }: { params: Promise<{ id: st
                   {siblings.slice(0, 5).map((s: any) => (
                     <Link
                       key={s.id}
-                      href={`/dashboard/agentic-payments/a2a/tasks/${s.id}`}
+                      href={`/dashboard/agents/a2a/tasks/${s.id}`}
                       className="flex items-center justify-between text-xs hover:bg-muted/50 rounded px-2 py-1"
                     >
                       <span className="font-mono text-blue-600">{s.id.slice(0, 8)}...</span>

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useApiClient } from '@/lib/api-client';
 import { formatDate, formatCurrency } from '@/lib/utils';
+import { MessageBubble } from '@/components/agents/message-bubble';
 import {
   Card,
   CardContent,
@@ -41,53 +42,6 @@ function StateBadge({ state }: { state: string }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${colors[state] || colors.canceled}`}>
       {state}
     </span>
-  );
-}
-
-function RoleBubble({ role, parts, taskId, createdAt }: {
-  role: string;
-  parts: Array<{ text?: string; data?: Record<string, any> }>;
-  taskId: string;
-  createdAt: string;
-}) {
-  const isUser = role === 'user';
-  return (
-    <div className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
-      <div
-        className={`max-w-[75%] p-4 rounded-2xl ${
-          isUser
-            ? 'bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800'
-            : 'bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800'
-        }`}
-      >
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-            {role}
-          </span>
-          <span className="text-[10px] text-gray-400 dark:text-gray-600">
-            {formatDate(createdAt)}
-          </span>
-          <Link
-            href={`/dashboard/agentic-payments/a2a/tasks/${taskId}`}
-            className="text-[10px] font-mono text-gray-400 hover:text-blue-500"
-          >
-            {taskId.slice(0, 8)}
-          </Link>
-        </div>
-        {parts.map((part, i) => (
-          <div key={i}>
-            {'text' in part && part.text && (
-              <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{part.text}</p>
-            )}
-            {'data' in part && part.data && (
-              <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-950 p-2 rounded mt-1 overflow-x-auto">
-                {JSON.stringify(part.data, null, 2)}
-              </pre>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -136,7 +90,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ contex
     <div className="p-8 space-y-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/dashboard/agentic-payments/a2a/sessions" className="hover:text-foreground flex items-center gap-1">
+        <Link href="/dashboard/agents/a2a/sessions" className="hover:text-foreground flex items-center gap-1">
           <ArrowLeft className="h-4 w-4" />
           Sessions
         </Link>
@@ -186,7 +140,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ contex
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Total Cost</p>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(summary?.totalCost || 0, 'USD')}</p>
+                <p className="text-2xl font-bold mt-1">{formatCurrency(summary?.totalCost || 0, 'USDC')}</p>
               </div>
               <DollarSign className="h-8 w-8 text-blue-500" />
             </div>
@@ -221,7 +175,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ contex
             {(tasks || []).map((task: any) => (
               <Link
                 key={task.id}
-                href={`/dashboard/agentic-payments/a2a/tasks/${task.id}`}
+                href={`/dashboard/agents/a2a/tasks/${task.id}`}
                 className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-800 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
@@ -257,7 +211,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ contex
           </h3>
           <div className="space-y-3">
             {(messages || []).map((msg: any) => (
-              <RoleBubble
+              <MessageBubble
                 key={msg.messageId}
                 role={msg.role}
                 parts={msg.parts}
@@ -289,7 +243,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ contex
                         {artifact.name || 'Untitled'}
                       </span>
                       <Link
-                        href={`/dashboard/agentic-payments/a2a/tasks/${artifact.taskId}`}
+                        href={`/dashboard/agents/a2a/tasks/${artifact.taskId}`}
                         className="text-[10px] font-mono text-gray-400 hover:text-blue-500"
                       >
                         {artifact.taskId.slice(0, 8)}

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@sly/ui';
 import { format } from 'date-fns';
+import { MessageBubble } from './message-bubble';
 
 interface A2ATaskDetailProps {
   task: {
@@ -34,6 +35,7 @@ interface A2ATaskDetailProps {
         metadata?: { mimeType?: string };
       }>;
       metadata?: Record<string, any>;
+      createdAt?: string;
     }>;
     artifacts: Array<{
       artifactId: string;
@@ -159,37 +161,17 @@ export function A2ATaskDetail({ task, direction }: A2ATaskDetailProps) {
           <MessageSquare className="h-5 w-5 text-blue-500" />
           Messages ({task.history.length})
         </h3>
-        <div className="space-y-4">
+        <div className="space-y-3">
           {task.history.map((msg) => (
-            <div
+            <MessageBubble
               key={msg.messageId}
-              className={`p-4 rounded-xl ${
-                msg.role === 'user'
-                  ? 'bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 ml-0 mr-12'
-                  : 'bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 ml-12 mr-0'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                  {msg.role}
-                </span>
-              </div>
-              {msg.parts.map((part, i) => (
-                <div key={i}>
-                  {'text' in part && part.text && (
-                    <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{part.text}</p>
-                  )}
-                  {'data' in part && part.data && (
-                    <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-950 p-2 rounded mt-1 overflow-x-auto">
-                      {JSON.stringify(part.data, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              ))}
-            </div>
+              role={msg.role}
+              parts={msg.parts}
+              createdAt={msg.createdAt}
+            />
           ))}
           {task.history.length === 0 && (
-            <p className="text-sm text-gray-500">No messages yet</p>
+            <p className="text-sm text-gray-500 text-center py-8">No messages yet</p>
           )}
         </div>
       </div>

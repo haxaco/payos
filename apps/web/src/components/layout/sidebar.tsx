@@ -92,19 +92,6 @@ const agenticPaymentsChildren = [
       { href: '/dashboard/agentic-payments/x402/integration', label: 'Integration', icon: Code },
     ]
   },
-  {
-    label: 'A2A',
-    icon: Network,
-    children: [
-      { href: '/dashboard/agentic-payments/a2a/tasks', label: 'Tasks', icon: FileText },
-      { href: '/dashboard/agentic-payments/a2a/sessions', label: 'Sessions', icon: MessageSquare },
-    ]
-  },
-  {
-    href: '/dashboard/agentic-payments/developers',
-    label: 'Developers',
-    icon: Terminal
-  },
 ];
 
 const configurationNav = [
@@ -138,6 +125,7 @@ export function Sidebar() {
   const { collapsed, setCollapsed } = useSidebar();
   const api = useApiClient();
   const [configExpanded, setConfigExpanded] = useState(false);
+  const [agentsExpanded, setAgentsExpanded] = useState(() => pathname.startsWith('/dashboard/agents'));
   const [agenticExpanded, setAgenticExpanded] = useState(() => pathname.startsWith('/dashboard/agentic-payments'));
 
   // Fetch real compliance count
@@ -155,7 +143,6 @@ export function Sidebar() {
   // Build main nav with dynamic compliance count
   const mainNav = [
     { href: '/dashboard', label: 'Home', icon: Home },
-    { href: '/dashboard/agents', label: 'Agents', icon: Bot },
     { href: '/dashboard/onboarding', label: 'Setup Guide', icon: Rocket },
     { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
     { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
@@ -168,6 +155,7 @@ export function Sidebar() {
     { href: '/dashboard/funding', label: 'Funding', icon: DollarSign },
     { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: complianceCount || undefined },
     { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark },
+    { href: '/dashboard/developers', label: 'Developers', icon: Terminal },
     { href: '/dashboard/reports', label: 'Reports', icon: FileText },
   ];
 
@@ -177,6 +165,9 @@ export function Sidebar() {
     }
     return pathname.startsWith(href);
   };
+
+  // Check if any agents route is active
+  const isAgentsActive = pathname.startsWith('/dashboard/agents');
 
   // Check if any agentic payments route is active
   const isAgenticActive = pathname.startsWith('/dashboard/agentic-payments');
@@ -260,6 +251,58 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {/* Home Link */}
         <NavItem item={mainNav[0]} />
+
+        {/* Agents - Collapsible Section */}
+        <div className="space-y-1">
+          {!collapsed ? (
+            <>
+              <button
+                onClick={() => setAgentsExpanded(!agentsExpanded)}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  isAgentsActive
+                    ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                )}
+              >
+                <Bot className="w-5 h-5 flex-shrink-0" />
+                <span className="flex-1 text-left">Agents</span>
+                <ChevronDown className={cn(
+                  'w-4 h-4 transition-transform',
+                  agentsExpanded && 'rotate-180'
+                )} />
+              </button>
+              {agentsExpanded && (
+                <div className="ml-4 pl-4 border-l border-gray-200 dark:border-gray-700 space-y-1">
+                  <NavItem item={{ href: '/dashboard/agents', label: 'Overview', icon: Bot, exact: true }} className="py-2" />
+                  <div className="space-y-1 mb-1">
+                    <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2 uppercase">
+                      <Network className="w-3.5 h-3.5" />
+                      <span>A2A</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <NavItem item={{ href: '/dashboard/agents/a2a/tasks', label: 'Tasks', icon: FileText }} className="py-2 text-xs" />
+                      <NavItem item={{ href: '/dashboard/agents/a2a/sessions', label: 'Sessions', icon: MessageSquare }} className="py-2 text-xs" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <Link
+              href="/dashboard/agents"
+              className={cn(
+                'w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                isAgentsActive
+                  ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              )}
+              title="Agents"
+            >
+              <Bot className="w-5 h-5" />
+            </Link>
+          )}
+        </div>
 
         {/* Agentic Payments - Collapsible Section */}
         <div className="space-y-1">

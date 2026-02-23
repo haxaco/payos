@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   AlertTriangle,
   ChevronRight,
+  Network,
 } from 'lucide-react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import Link from 'next/link';
@@ -89,7 +90,18 @@ export default function DashboardPage() {
     staleTime: 30 * 1000,
   });
 
-  const loading = agentsLoading || transfersLoading || volumeLoading || complianceLoading;
+  // Fetch A2A stats
+  const { data: a2aStats, isLoading: a2aLoading } = useQuery({
+    queryKey: ['dashboard', 'a2a-stats'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.a2a.getStats();
+    },
+    enabled: !!api && isConfigured,
+    staleTime: 60 * 1000,
+  });
+
+  const loading = agentsLoading || transfersLoading || volumeLoading || complianceLoading || a2aLoading;
 
   const stats: Stats = {
     agentsRegistered: (agentsData as any)?.pagination?.total || 0,
@@ -115,8 +127,8 @@ export default function DashboardPage() {
             <div className="h-5 w-64 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse"></div>
           </div>
           {/* Stats skeleton */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[...Array(4)].map((_, i) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            {[...Array(5)].map((_, i) => (
               <div key={i} className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
                 <div className="h-10 w-10 bg-gray-200 dark:bg-gray-800 rounded-xl mb-4 animate-pulse"></div>
                 <div className="h-8 w-20 bg-gray-200 dark:bg-gray-800 rounded mb-2 animate-pulse"></div>
@@ -176,7 +188,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           {/* Agents Registered */}
           <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800">
             <div className="flex items-start justify-between mb-4">
@@ -234,6 +246,25 @@ export default function DashboardPage() {
                   Click to review
                 </div>
               )}
+            </div>
+          </Link>
+
+          {/* A2A Tasks */}
+          <Link href="/dashboard/agents/a2a/tasks" className="block">
+            <div className="bg-white dark:bg-gray-950 rounded-2xl p-6 border border-gray-200 dark:border-gray-800 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors cursor-pointer group h-full">
+              <div className="flex items-start justify-between mb-4">
+                <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-950 rounded-xl flex items-center justify-center group-hover:bg-indigo-200 dark:group-hover:bg-indigo-900 transition-colors">
+                  <Network className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <ChevronRight className="w-5 h-5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">A2A Tasks</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                {loading ? '...' : ((a2aStats as any)?.active ?? 0)}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                {((a2aStats as any)?.total ?? 0)} total &middot; {formatCurrency((a2aStats as any)?.totalCost ?? 0, 'USDC')}
+              </div>
             </div>
           </Link>
         </div>
