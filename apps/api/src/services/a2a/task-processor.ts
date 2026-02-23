@@ -332,6 +332,199 @@ export class A2ATaskProcessor {
     return { charged: true, fee, currency };
   }
 
+  // --- A2A Settlement (Mandate-Based Pre-Authorization) ---
+
+  /**
+   * Create a settlement mandate (pre-authorization) on the caller agent's wallet.
+   * Money stays in the caller's wallet — the mandate just authorizes the charge.
+   * Returns null if the caller has insufficient funds.
+   */
+  async createSettlementMandate(
+    taskId: string,
+    callerAgentId: string,
+    providerAgentId: string,
+    amount: number,
+    currency: string,
+  ): Promise<{ mandateId: string } | null> {
+    // 1. Check caller's wallet has enough balance (read-only check)
+    const { data: callerWallet } = await this.supabase
+      .from('wallets')
+      .select('id, balance')
+      .eq('managed_by_agent_id', callerAgentId)
+      .eq('tenant_id', this.tenantId)
+      .maybeSingle();
+
+    if (!callerWallet || Number(callerWallet.balance) < amount) return null;
+
+    // 2. Look up caller and provider agents for account linkage
+    const { data: callerAgent } = await this.supabase
+      .from('agents')
+      .select('parent_account_id, name')
+      .eq('id', callerAgentId)
+      .single();
+
+    const { data: providerAgent } = await this.supabase
+      .from('agents')
+      .select('parent_account_id, name')
+      .eq('id', providerAgentId)
+      .single();
+
+    // 3. Create mandate in ap2_mandates table
+    const mandateId = `settlement_${taskId.slice(0, 8)}_${Date.now()}`;
+    const { data: mandate, error } = await this.supabase
+      .from('ap2_mandates')
+      .insert({
+        tenant_id: this.tenantId,
+        account_id: callerAgent?.parent_account_id,
+        agent_id: callerAgentId,
+        mandate_id: mandateId,
+        mandate_type: 'payment',
+        authorized_amount: amount,
+        used_amount: 0,
+        currency,
+        status: 'active',
+        a2a_session_id: taskId,
+        metadata: {
+          source: 'a2a_settlement',
+          taskId,
+          callerAgentId,
+          providerAgentId,
+          providerAccountId: providerAgent?.parent_account_id,
+        },
+      })
+      .select('id, mandate_id')
+      .single();
+
+    if (error || !mandate) return null;
+    return { mandateId: mandate.mandate_id };
+  }
+
+  /**
+   * Resolve a settlement mandate — execute on success, cancel on failure.
+   * On 'completed': deducts from caller wallet, credits provider wallet,
+   * creates a transfer record, and marks mandate completed.
+   * On 'failed': cancels the mandate — no money moves.
+   */
+  async resolveSettlementMandate(
+    taskId: string,
+    mandateId: string,
+    outcome: 'completed' | 'failed',
+  ): Promise<void> {
+    const { data: mandate } = await this.supabase
+      .from('ap2_mandates')
+      .select('*')
+      .eq('mandate_id', mandateId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+
+    if (!mandate || mandate.status !== 'active') return;
+
+    if (outcome === 'completed') {
+      const amount = Number(mandate.authorized_amount);
+      const providerAgentId = mandate.metadata?.providerAgentId;
+      const providerAccountId = mandate.metadata?.providerAccountId;
+
+      // Insert execution record
+      await this.supabase.from('ap2_mandate_executions').insert({
+        tenant_id: this.tenantId,
+        mandate_id: mandate.id,
+        execution_index: 1,
+        amount,
+        currency: mandate.currency,
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      });
+
+      // Deduct from caller wallet
+      const { data: callerWallet } = await this.supabase
+        .from('wallets')
+        .select('id, balance, owner_account_id')
+        .eq('managed_by_agent_id', mandate.agent_id)
+        .eq('tenant_id', this.tenantId)
+        .maybeSingle();
+
+      if (callerWallet) {
+        await this.supabase
+          .from('wallets')
+          .update({ balance: Math.max(0, Number(callerWallet.balance) - amount) })
+          .eq('id', callerWallet.id)
+          .gte('balance', amount);
+
+        // Credit provider wallet
+        if (providerAgentId) {
+          const { data: providerWallet } = await this.supabase
+            .from('wallets')
+            .select('id, balance')
+            .eq('managed_by_agent_id', providerAgentId)
+            .eq('tenant_id', this.tenantId)
+            .maybeSingle();
+
+          if (providerWallet) {
+            await this.supabase
+              .from('wallets')
+              .update({ balance: Number(providerWallet.balance) + amount })
+              .eq('id', providerWallet.id);
+          }
+        }
+
+        // Create transfer record
+        const { data: transfer } = await this.supabase
+          .from('transfers')
+          .insert({
+            tenant_id: this.tenantId,
+            type: 'internal',
+            status: 'completed',
+            amount,
+            currency: mandate.currency,
+            destination_amount: amount,
+            destination_currency: mandate.currency,
+            fx_rate: 1,
+            fee_amount: 0,
+            from_account_id: callerWallet.owner_account_id,
+            to_account_id: providerAccountId,
+            description: `A2A settlement: task ${taskId.slice(0, 8)}`,
+            initiated_by_type: 'agent',
+            initiated_by_id: mandate.agent_id,
+            completed_at: new Date().toISOString(),
+            protocol_metadata: {
+              protocol: 'a2a',
+              settlement: true,
+              mandateId,
+              taskId,
+            },
+          })
+          .select('id')
+          .single();
+
+        // Link transfer to task
+        if (transfer) {
+          await this.supabase
+            .from('a2a_tasks')
+            .update({ transfer_id: transfer.id })
+            .eq('id', taskId)
+            .eq('tenant_id', this.tenantId);
+        }
+      }
+
+      // Mark mandate completed
+      await this.supabase
+        .from('ap2_mandates')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', mandate.id);
+
+    } else {
+      // Cancel mandate — no money moves
+      await this.supabase
+        .from('ap2_mandates')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', mandate.id);
+    }
+  }
+
   // --- Skill Matching & Forwarding ---
 
   /** Map intent actions to known Sly-native skill_ids */
@@ -389,8 +582,44 @@ export class A2ATaskProcessor {
       return this.taskService.getTask(taskId);
     }
 
-    // Charge service fee if applicable
-    if (Number(skill.base_price) > 0) {
+    // --- A2A Settlement: pre-authorize caller wallet via mandate ---
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('client_agent_id, metadata')
+      .eq('id', taskId)
+      .single();
+
+    const callerAgentId = taskRow?.client_agent_id;
+    let settlementMandateId: string | undefined;
+
+    if (callerAgentId && Number(skill.base_price) > 0) {
+      const mandate = await this.createSettlementMandate(
+        taskId,
+        callerAgentId,
+        agentCtx.agentId,
+        Number(skill.base_price),
+        skill.currency,
+      );
+      if (!mandate) {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: `This skill costs ${skill.base_price} ${skill.currency}. Insufficient funds in caller wallet.` },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'input-required', 'Payment required');
+        return this.taskService.getTask(taskId);
+      }
+      settlementMandateId = mandate.mandateId;
+      // Store mandate ID in task metadata for resolution later
+      await this.supabase
+        .from('a2a_tasks')
+        .update({
+          metadata: { ...(taskRow as any)?.metadata, settlementMandateId: mandate.mandateId },
+        })
+        .eq('id', taskId);
+      console.log(`[A2A Processor] Settlement mandate created: ${mandate.mandateId} for task ${taskId.slice(0, 8)}`);
+    }
+
+    // Charge service fee if applicable (self-deduction for platform fees — separate from settlement)
+    if (!callerAgentId && Number(skill.base_price) > 0) {
       const feeResult = await this.chargeServiceFee(taskId, skill.skill_id, agentCtx);
       if (!feeResult.charged) {
         await this.taskService.updateTaskState(taskId, 'failed', 'Insufficient funds for skill fee');
@@ -423,6 +652,16 @@ export class A2ATaskProcessor {
   ): Promise<A2ATask | null> {
     const client = new A2AClient();
 
+    // Helper: read settlement mandate ID from task metadata
+    const getSettlementMandateId = async (): Promise<string | undefined> => {
+      const { data: taskMeta } = await this.supabase
+        .from('a2a_tasks')
+        .select('metadata')
+        .eq('id', taskId)
+        .single();
+      return taskMeta?.metadata?.settlementMandateId;
+    };
+
     try {
       const response = await client.sendMessage(
         agent.endpoint_url,
@@ -436,10 +675,18 @@ export class A2ATaskProcessor {
       const result = (response as any).result;
 
       if (result) {
-        // Store remote task ID for tracking
+        // Store remote task ID for tracking (preserve existing metadata)
+        const { data: currentTask } = await this.supabase
+          .from('a2a_tasks')
+          .select('metadata')
+          .eq('id', taskId)
+          .single();
         await this.supabase
           .from('a2a_tasks')
-          .update({ remote_task_id: result.id, metadata: { forwarded_to: agent.endpoint_url, skill_id: skill.skill_id } })
+          .update({
+            remote_task_id: result.id,
+            metadata: { ...(currentTask?.metadata || {}), forwarded_to: agent.endpoint_url, skill_id: skill.skill_id },
+          })
           .eq('id', taskId)
           .eq('tenant_id', this.tenantId);
 
@@ -467,13 +714,38 @@ export class A2ATaskProcessor {
             }
           }
 
+          // Execute settlement mandate — deduct caller, credit provider
+          const settlementMandateId = await getSettlementMandateId();
+          if (settlementMandateId) {
+            await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
+            await this.taskService.addArtifact(taskId, {
+              name: 'settlement-receipt',
+              mediaType: 'application/json',
+              parts: [{
+                data: { type: 'settlement_receipt', mandateId: settlementMandateId, status: 'executed' },
+                metadata: { mimeType: 'application/json' },
+              }],
+            });
+          }
+
           await this.taskService.updateTaskState(taskId, 'completed', 'Forwarded task completed');
         } else if (remoteState === 'failed') {
           const errorMsg = result.status?.message || 'Remote agent failed';
           await this.taskService.addMessage(taskId, 'agent', [{ text: `Agent returned error: ${errorMsg}` }]);
+
+          // Cancel settlement mandate — no money moves
+          const settlementMandateId = await getSettlementMandateId();
+          if (settlementMandateId) {
+            await this.resolveSettlementMandate(taskId, settlementMandateId, 'failed');
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: 'Pre-authorization cancelled — agent failed.' },
+            ]);
+          }
+
           await this.taskService.updateTaskState(taskId, 'failed', errorMsg);
         } else {
           // Task is still working on the remote side — mark as working, await callback
+          // Settlement mandate stays active — will be resolved when callback arrives
           await this.taskService.addMessage(taskId, 'agent', [
             { text: `Task forwarded to agent. Awaiting response (remote state: ${remoteState || 'working'}).` },
           ]);
@@ -484,6 +756,16 @@ export class A2ATaskProcessor {
         await this.taskService.addMessage(taskId, 'agent', [
           { text: `Agent endpoint error: ${rpcError.message || 'Unknown RPC error'}` },
         ]);
+
+        // Cancel settlement mandate on RPC error
+        const settlementMandateId = await getSettlementMandateId();
+        if (settlementMandateId) {
+          await this.resolveSettlementMandate(taskId, settlementMandateId, 'failed');
+          await this.taskService.addMessage(taskId, 'agent', [
+            { text: 'Pre-authorization cancelled — RPC error.' },
+          ]);
+        }
+
         await this.taskService.updateTaskState(taskId, 'failed', rpcError.message || 'RPC error');
       }
     } catch (err: any) {
@@ -491,6 +773,16 @@ export class A2ATaskProcessor {
       await this.taskService.addMessage(taskId, 'agent', [
         { text: `Failed to reach agent endpoint: ${err.message}` },
       ]);
+
+      // Cancel settlement mandate on forwarding failure
+      const settlementMandateId = await getSettlementMandateId();
+      if (settlementMandateId) {
+        await this.resolveSettlementMandate(taskId, settlementMandateId, 'failed');
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: 'Pre-authorization cancelled — could not reach agent.' },
+        ]);
+      }
+
       await this.taskService.updateTaskState(taskId, 'failed', `Forwarding failed: ${err.message}`);
     }
 

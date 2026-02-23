@@ -48,6 +48,7 @@ export class A2ATaskService {
     remoteTaskId?: string,
     callbackUrl?: string,
     callbackSecret?: string,
+    clientAgentId?: string,
   ): Promise<A2ATask> {
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
@@ -62,6 +63,7 @@ export class A2ATaskService {
         remote_task_id: remoteTaskId || null,
         callback_url: callbackUrl || null,
         callback_secret: callbackSecret || null,
+        client_agent_id: clientAgentId || null,
       })
       .select()
       .single();

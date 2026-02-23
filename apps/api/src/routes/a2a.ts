@@ -242,6 +242,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
   // ---- Auth: try Sly API key / agent token (prefix lookup + hash verification) ----
   const authHeader = c.req.header('Authorization');
   let tenantId: string | null = null;
+  let callerAgentId: string | undefined;
 
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
@@ -261,11 +262,12 @@ a2aPublicRouter.post('/:agentId', async (c) => {
       // Agent token auth — prefix lookup + hash verification
       const prefix = token.slice(0, 12);
       const { data: agentRow } = await (supabase.from('agents') as any)
-        .select('tenant_id, auth_token_hash')
+        .select('id, tenant_id, auth_token_hash')
         .eq('auth_token_prefix', prefix)
         .single();
       if (agentRow && agentRow.auth_token_hash && verifyApiKey(token, agentRow.auth_token_hash)) {
         tenantId = agentRow.tenant_id;
+        callerAgentId = agentRow.id;
       }
     }
   }
@@ -319,7 +321,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
   // Dispatch to JSON-RPC handler
   const supabase = createClient();
   const taskService = new A2ATaskService(supabase, tenantId);
-  const rpcResponse = await handleJsonRpc(rpcRequest, agentId, taskService, supabase, tenantId || undefined);
+  const rpcResponse = await handleJsonRpc(rpcRequest, agentId, taskService, supabase, tenantId || undefined, callerAgentId);
 
   return jsonRpc(rpcResponse as Record<string, unknown>);
 });
@@ -470,6 +472,24 @@ a2aPublicRouter.post('/:agentId/callback', async (c) => {
 
   // Transition task state
   await taskService.updateTaskState(taskId, newState, body.statusMessage || `Agent ${newState}`);
+
+  // Resolve settlement mandate if one exists for this task
+  const { data: taskWithMeta } = await supabase
+    .from('a2a_tasks')
+    .select('metadata')
+    .eq('id', taskId)
+    .eq('tenant_id', agent.tenant_id)
+    .single();
+  const taskMetadata = (taskWithMeta as any)?.metadata || {};
+  if (taskMetadata.settlementMandateId) {
+    const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+    const processor = new A2ATaskProcessor(supabase, agent.tenant_id);
+    await processor.resolveSettlementMandate(
+      taskId,
+      taskMetadata.settlementMandateId,
+      newState === 'completed' ? 'completed' : 'failed',
+    );
+  }
 
   // Trigger completion webhook to original caller if callback_url is set
   if ((task as any).callback_url) {

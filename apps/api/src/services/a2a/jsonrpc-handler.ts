@@ -23,11 +23,12 @@ export async function handleJsonRpc(
   taskService: A2ATaskService,
   supabase?: SupabaseClient,
   tenantId?: string,
+  callerAgentId?: string,
 ): Promise<A2AJsonRpcResponse> {
   try {
     switch (request.method) {
       case 'message/send':
-        return await handleMessageSend(request, agentId, taskService, supabase, tenantId);
+        return await handleMessageSend(request, agentId, taskService, supabase, tenantId, callerAgentId);
       case 'tasks/get':
         return await handleTasksGet(request, taskService);
       case 'tasks/cancel':
@@ -93,6 +94,7 @@ async function handleMessageSend(
   taskService: A2ATaskService,
   supabase?: SupabaseClient,
   tenantId?: string,
+  callerAgentId?: string,
 ): Promise<A2AJsonRpcResponse> {
   const params = request.params || {};
 
@@ -220,6 +222,7 @@ async function handleMessageSend(
     undefined,
     callbackUrl,
     callbackSecret,
+    callerAgentId,
   );
 
   return {
