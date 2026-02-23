@@ -56,7 +56,7 @@ export class A2ATaskService {
       .insert({
         tenant_id: this.tenantId,
         agent_id: agentId,
-        context_id: contextId || null,
+        context_id: contextId || crypto.randomUUID(),
         state: 'submitted',
         direction,
         remote_agent_url: remoteAgentUrl || null,
@@ -350,6 +350,26 @@ export class A2ATaskService {
 
     if (!taskRow) return null;
     return this.getTask(taskRow.id);
+  }
+
+  /**
+   * Find the most recent session (context_id) for a caller+agent pair within a time window.
+   * Used for session affinity — grouping tasks from the same caller to the same agent.
+   */
+  async findRecentSession(agentId: string, callerAgentId: string, windowMs = 3_600_000): Promise<string | null> {
+    const cutoff = new Date(Date.now() - windowMs).toISOString();
+    const { data } = await this.supabase
+      .from('a2a_tasks')
+      .select('context_id')
+      .eq('agent_id', agentId)
+      .eq('client_agent_id', callerAgentId)
+      .eq('tenant_id', this.tenantId)
+      .not('context_id', 'is', null)
+      .gte('updated_at', cutoff)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.context_id || null;
   }
 
   /**

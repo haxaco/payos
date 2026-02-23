@@ -210,13 +210,18 @@ async function handleMessageSend(
     }
   }
 
-  // Create new task
+  // Create new task — resolve contextId via session affinity if caller didn't provide one
+  let resolvedContextId = contextId;
+  if (!resolvedContextId && callerAgentId) {
+    resolvedContextId = await taskService.findRecentSession(agentId, callerAgentId) || undefined;
+  }
+
   const callbackUrl = configuration?.callbackUrl;
   const callbackSecret = configuration?.callbackSecret;
   const task = await taskService.createTask(
     agentId,
     { role, parts: message.parts, metadata: message.metadata },
-    contextId,
+    resolvedContextId,
     'inbound',
     undefined,
     undefined,

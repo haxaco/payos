@@ -1420,6 +1420,122 @@ a2aRouter.get('/stats', async (c) => {
 });
 
 /**
+ * GET /v1/a2a/sessions/:contextId
+ * Get the full conversation for a session — all tasks, messages, and artifacts chronologically.
+ */
+a2aRouter.get('/sessions/:contextId', async (c) => {
+  const ctx = c.get('ctx');
+  const contextId = c.req.param('contextId');
+  const supabase = createClient();
+
+  // 1. Fetch all tasks in this session, joined with agent names
+  const { data: taskRows, error: taskError } = await supabase
+    .from('a2a_tasks')
+    .select('id, state, direction, agent_id, transfer_id, client_agent_id, created_at, updated_at, agents!inner(name)')
+    .eq('tenant_id', ctx.tenantId)
+    .eq('context_id', contextId)
+    .order('created_at', { ascending: true });
+
+  if (taskError) {
+    return c.json({ error: `Failed to fetch session: ${taskError.message}` }, 500);
+  }
+
+  if (!taskRows?.length) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  const taskIds = taskRows.map((r: any) => r.id);
+
+  // 2. Batch-fetch messages, artifacts, and linked transfers in parallel
+  const [messagesResult, artifactsResult, transfersResult] = await Promise.all([
+    supabase
+      .from('a2a_messages')
+      .select('id, task_id, role, parts, created_at')
+      .in('task_id', taskIds)
+      .eq('tenant_id', ctx.tenantId)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('a2a_artifacts')
+      .select('id, task_id, label, mime_type, parts, created_at')
+      .in('task_id', taskIds)
+      .eq('tenant_id', ctx.tenantId)
+      .order('created_at', { ascending: true }),
+    (() => {
+      const transferIds = taskRows.map((r: any) => r.transfer_id).filter(Boolean) as string[];
+      if (transferIds.length === 0) return Promise.resolve({ data: [] });
+      return supabase
+        .from('transfers')
+        .select('id, amount')
+        .in('id', transferIds)
+        .eq('tenant_id', ctx.tenantId);
+    })(),
+  ]);
+
+  const messages = messagesResult.data || [];
+  const artifacts = artifactsResult.data || [];
+  const transfers = transfersResult.data || [];
+
+  // Build transfer amount map
+  const transferAmounts = new Map<string, number>();
+  for (const t of transfers) {
+    transferAmounts.set(t.id, Number(t.amount) || 0);
+  }
+
+  // 3. Build response
+  const tasks = taskRows.map((r: any) => ({
+    id: r.id,
+    state: r.state,
+    direction: r.direction,
+    agentId: r.agent_id,
+    agentName: r.agents?.name || null,
+    transferId: r.transfer_id || undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+
+  const messageList = messages.map((m: any) => ({
+    messageId: m.id,
+    taskId: m.task_id,
+    role: m.role,
+    parts: normalizeParts(m.parts),
+    createdAt: m.created_at,
+  }));
+
+  const artifactList = artifacts.map((a: any) => ({
+    artifactId: a.id,
+    taskId: a.task_id,
+    name: a.label || undefined,
+    parts: normalizeParts(a.parts),
+    createdAt: a.created_at,
+  }));
+
+  // 4. Compute summary
+  const totalCost = taskRows.reduce((sum: number, r: any) => {
+    return sum + (r.transfer_id ? (transferAmounts.get(r.transfer_id) || 0) : 0);
+  }, 0);
+
+  const allTimestamps = [
+    ...messages.map((m: any) => m.created_at),
+    ...artifacts.map((a: any) => a.created_at),
+    ...taskRows.map((r: any) => r.created_at),
+  ].filter(Boolean).sort();
+
+  return c.json({
+    contextId,
+    tasks,
+    messages: messageList,
+    artifacts: artifactList,
+    summary: {
+      taskCount: taskRows.length,
+      messageCount: messages.length,
+      totalCost,
+      firstActivity: allTimestamps[0] || null,
+      lastActivity: allTimestamps[allTimestamps.length - 1] || null,
+    },
+  });
+});
+
+/**
  * GET /v1/a2a/sessions
  * List A2A sessions grouped by context_id.
  */
