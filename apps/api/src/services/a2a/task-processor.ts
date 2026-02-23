@@ -429,6 +429,7 @@ export class A2ATaskProcessor {
         { parts: [{ text: messageText }], metadata: { ...callerMetadata, skillId: skill.skill_id, slyTaskId: taskId } },
         taskId, // Use Sly task ID as context ID for correlation
         agent.endpoint_secret || undefined,
+        60_000, // 60s timeout for agent forwarding (agents may run real AI work)
       );
 
       // Extract result from JSON-RPC response
@@ -952,7 +953,7 @@ export class A2ATaskProcessor {
           currency: intent.currency,
           rail,
           estimatedSettlement: settlement,
-          walletBalance: newBalance,
+          walletBalance: currentBalance - intent.amount,
         },
         metadata: { mimeType: 'application/json' },
       },

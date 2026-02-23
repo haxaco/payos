@@ -53,6 +53,7 @@ export class A2AClient {
     message: SendMessageInput,
     contextId?: string,
     auth?: string,
+    timeoutMs?: number,
   ): Promise<A2AJsonRpcResponse> {
     const rpcRequest: A2AJsonRpcRequest = {
       jsonrpc: '2.0',
@@ -64,7 +65,7 @@ export class A2AClient {
       id: crypto.randomUUID(),
     };
 
-    return this.sendRpc(remoteUrl, rpcRequest, auth);
+    return this.sendRpc(remoteUrl, rpcRequest, auth, timeoutMs);
   }
 
   /**
@@ -110,6 +111,7 @@ export class A2AClient {
     url: string,
     request: A2AJsonRpcRequest,
     auth?: string,
+    timeoutMs?: number,
   ): Promise<A2AJsonRpcResponse> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -124,7 +126,7 @@ export class A2AClient {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(this.defaultTimeout),
+      signal: AbortSignal.timeout(timeoutMs || this.defaultTimeout),
     });
 
     if (!response.ok) {
