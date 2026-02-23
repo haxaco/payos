@@ -272,6 +272,8 @@ function buildSkills(_agent: AgentRecord, dbSkills?: DbSkill[]): A2ASkill[] {
     outputModes: s.output_modes || ['text', 'data'],
     tags: s.tags || [],
     inputSchema: s.input_schema || undefined,
+    base_price: Number(s.base_price) || 0,
+    currency: s.currency || 'USDC',
   }));
 }
 

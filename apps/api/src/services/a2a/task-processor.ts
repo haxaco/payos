@@ -179,9 +179,28 @@ export class A2ATaskProcessor {
     if (!hasSlyNativeSkill) {
       const hasEndpoint = await this.agentHasEndpoint(agentCtx.agentId);
       if (hasEndpoint) {
-        return await this.forwardToAgent(taskId, text,
-          { skill_id: explicitSkillId || 'default', handler_type: 'agent_provided', base_price: 0, currency: 'USDC' },
-          agentCtx, msgMetadata);
+        // Look up skill pricing from DB
+        let skillRow: { skill_id: string; handler_type: string; base_price: number; currency: string } | null = null;
+
+        const targetSkillId = explicitSkillId || msgMetadata?.skill_id as string | undefined;
+        if (targetSkillId) {
+          const { data } = await this.supabase
+            .from('agent_skills')
+            .select('skill_id, handler_type, base_price, currency')
+            .eq('agent_id', agentCtx.agentId)
+            .eq('tenant_id', this.tenantId)
+            .eq('skill_id', targetSkillId)
+            .eq('status', 'active')
+            .maybeSingle();
+          if (data) skillRow = data;
+        }
+
+        const skill = skillRow
+          ? { skill_id: skillRow.skill_id, handler_type: skillRow.handler_type || 'agent_provided',
+              base_price: Number(skillRow.base_price), currency: skillRow.currency || 'USDC' }
+          : { skill_id: explicitSkillId || 'default', handler_type: 'agent_provided', base_price: 0, currency: 'USDC' };
+
+        return await this.forwardToAgent(taskId, text, skill, agentCtx, msgMetadata);
       }
     }
 

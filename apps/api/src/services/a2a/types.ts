@@ -50,6 +50,9 @@ export interface A2ASkill {
   inputModes?: string[];
   outputModes?: string[];
   tags?: string[];
+  // Pricing (Sly extension)
+  base_price?: number;
+  currency?: string;
 }
 
 export interface A2ASupportedInterface {
