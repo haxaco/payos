@@ -1873,7 +1873,7 @@ agents.delete('/:id/skills/:skillId', async (c) => {
 
 const endpointSchema = z.object({
   endpoint_url: z.string().url().max(1024),
-  endpoint_type: z.enum(['webhook', 'a2a']),
+  endpoint_type: z.enum(['webhook', 'a2a', 'x402']),
   endpoint_secret: z.string().max(255).optional(),
 });
 

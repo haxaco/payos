@@ -20,6 +20,9 @@ import type { AgentContext } from './tools/context-injector.js';
 import type { A2ATask } from './types.js';
 import { A2AClient } from './client.js';
 import { A2AWebhookHandler } from './webhook-handler.js';
+import { createPaymentProofJWT } from '../../routes/x402-payments.js';
+import { getCurrentNetwork, toUsdcUnits, fromUsdcUnits } from '../x402/facilitator.js';
+import { getChainConfig } from '../../config/blockchain.js';
 
 interface ProcessorConfig {
   /** Poll interval in ms (default: 5000) */
@@ -617,7 +620,7 @@ export class A2ATaskProcessor {
     const callerAgentId = taskRow?.client_agent_id;
     let settlementMandateId: string | undefined;
 
-    if (callerAgentId && Number(skill.base_price) > 0) {
+    if (callerAgentId && Number(skill.base_price) > 0 && agent.endpoint_type !== 'x402') {
       const mandateResult = await this.createSettlementMandate(
         taskId,
         callerAgentId,
@@ -664,6 +667,8 @@ export class A2ATaskProcessor {
       return await this.forwardViaA2A(taskId, messageText, agent, skill, callerMetadata);
     } else if (agent.endpoint_type === 'webhook') {
       return await this.forwardViaWebhook(taskId, messageText, agent, skill);
+    } else if (agent.endpoint_type === 'x402') {
+      return await this.forwardViaX402(taskId, messageText, agent, skill, callerMetadata);
     }
 
     await this.taskService.updateTaskState(taskId, 'failed', `Unknown endpoint type: ${agent.endpoint_type}`);
@@ -865,6 +870,336 @@ export class A2ATaskProcessor {
       await this.taskService.updateTaskState(taskId, 'failed', `Webhook dispatch failed: ${result.error}`);
     }
 
+    return this.taskService.getTask(taskId);
+  }
+
+  /**
+   * Forward task via x402 protocol (HTTP 402 challenge → payment → retry).
+   * The shim returns 402 with `accepts` array; Sly pays from caller wallet, retries with X-Payment header.
+   * Skips mandate settlement — the x402 payment IS the payment.
+   */
+  private async forwardViaX402(
+    taskId: string,
+    messageText: string,
+    agent: { id: string; endpoint_url: string; endpoint_secret?: string | null },
+    skill: { skill_id: string; base_price: number; currency: string },
+    callerMetadata?: Record<string, unknown>,
+  ): Promise<A2ATask | null> {
+    const taskPayload = {
+      jsonrpc: '2.0',
+      method: 'message/send',
+      params: {
+        message: { parts: [{ text: messageText }], metadata: { ...callerMetadata, skillId: skill.skill_id, slyTaskId: taskId } },
+        contextId: taskId,
+      },
+      id: taskId,
+    };
+
+    try {
+      // Step 1: POST to agent endpoint
+      const initialResponse = await fetch(agent.endpoint_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskPayload),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      // Step 2: Agent returned 200 on first try (free or pre-paid)
+      if (initialResponse.ok) {
+        return await this.handleX402AgentResponse(taskId, initialResponse, agent);
+      }
+
+      // Step 3: Not a 402 — unexpected error
+      if (initialResponse.status !== 402) {
+        const errorText = await initialResponse.text().catch(() => 'Unknown error');
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: `Agent endpoint returned HTTP ${initialResponse.status}: ${errorText.slice(0, 200)}` },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'failed', `HTTP ${initialResponse.status} from agent`);
+        return this.taskService.getTask(taskId);
+      }
+
+      // Step 4: Parse 402 response
+      let acceptsBody: any;
+      try {
+        acceptsBody = await initialResponse.json();
+      } catch {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: 'Agent returned 402 but response body is not valid JSON.' },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'failed', 'Invalid 402 response body');
+        return this.taskService.getTask(taskId);
+      }
+
+      const accepts = acceptsBody?.accepts;
+      if (!Array.isArray(accepts) || accepts.length === 0) {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: 'Agent returned 402 but missing `accepts` array in response.' },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'failed', 'Missing accepts in 402 response');
+        return this.taskService.getTask(taskId);
+      }
+
+      const offer = accepts[0];
+      if (offer.scheme !== 'exact-evm') {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: `Agent requires unsupported payment scheme: "${offer.scheme}". Only "exact-evm" is supported.` },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'failed', `Unsupported scheme: ${offer.scheme}`);
+        return this.taskService.getTask(taskId);
+      }
+
+      // Step 5: Extract amount and convert to human-readable
+      const requestedAmountUnits = offer.amount; // base units string
+      const humanAmount = Number(fromUsdcUnits(requestedAmountUnits));
+
+      // Step 6: Look up caller agent's wallet
+      const { data: taskRow } = await this.supabase
+        .from('a2a_tasks')
+        .select('client_agent_id')
+        .eq('id', taskId)
+        .single();
+
+      const callerAgentId = taskRow?.client_agent_id;
+      if (!callerAgentId) {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: `x402 payment required (${humanAmount} USDC) but no caller agent found on this task.` },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'input-required', 'Caller agent required for x402 payment');
+        return this.taskService.getTask(taskId);
+      }
+
+      const { data: callerWallet } = await this.supabase
+        .from('wallets')
+        .select('id, balance, evm_address, owner_account_id')
+        .eq('managed_by_agent_id', callerAgentId)
+        .eq('tenant_id', this.tenantId)
+        .maybeSingle();
+
+      if (!callerWallet) {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: `x402 payment required (${humanAmount} USDC) but caller agent has no wallet.` },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'input-required', 'Caller wallet required');
+        return this.taskService.getTask(taskId);
+      }
+
+      if (Number(callerWallet.balance) < humanAmount) {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: `x402 payment required: ${humanAmount} USDC. Wallet balance: ${callerWallet.balance} USDC. Insufficient funds.` },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'input-required', 'Insufficient funds for x402 payment');
+        return this.taskService.getTask(taskId);
+      }
+
+      // Step 7: Deduct wallet balance atomically
+      const { error: deductError } = await this.supabase
+        .from('wallets')
+        .update({ balance: Number(callerWallet.balance) - humanAmount })
+        .eq('id', callerWallet.id)
+        .eq('tenant_id', this.tenantId)
+        .gte('balance', humanAmount);
+
+      if (deductError) {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: 'Failed to deduct wallet balance for x402 payment.' },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'failed', 'Wallet deduction failed');
+        return this.taskService.getTask(taskId);
+      }
+
+      // Step 8: Create transfer record
+      const { data: transfer, error: transferError } = await this.supabase
+        .from('transfers')
+        .insert({
+          tenant_id: this.tenantId,
+          type: 'x402',
+          status: 'completed',
+          amount: humanAmount,
+          currency: 'USDC',
+          destination_amount: humanAmount,
+          destination_currency: 'USDC',
+          fx_rate: 1,
+          fee_amount: 0,
+          from_account_id: callerWallet.owner_account_id,
+          to_account_id: callerWallet.owner_account_id, // same tenant, provider credited out-of-band
+          description: `x402 agent forwarding: ${skill.skill_id} via ${agent.endpoint_url}`,
+          initiated_by_type: 'agent',
+          initiated_by_id: callerAgentId,
+          completed_at: new Date().toISOString(),
+          protocol_metadata: {
+            protocol: 'x402',
+            agentForwarding: true,
+            request_id: taskId,
+            endpoint_url: agent.endpoint_url,
+            agent_id: agent.id,
+            skill_id: skill.skill_id,
+            amount_units: requestedAmountUnits,
+          },
+        })
+        .select('id')
+        .single();
+
+      if (transferError || !transfer) {
+        // Rollback wallet deduction
+        const { data: currentWallet } = await this.supabase
+          .from('wallets')
+          .select('balance')
+          .eq('id', callerWallet.id)
+          .eq('tenant_id', this.tenantId)
+          .single();
+        if (currentWallet) {
+          await this.supabase
+            .from('wallets')
+            .update({ balance: Number(currentWallet.balance) + humanAmount })
+            .eq('id', callerWallet.id)
+            .eq('tenant_id', this.tenantId);
+        }
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: 'Failed to create transfer record for x402 payment.' },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'failed', 'Transfer creation failed');
+        return this.taskService.getTask(taskId);
+      }
+
+      // Step 9: Generate X-Payment header
+      const jwt = createPaymentProofJWT({
+        transferId: transfer.id,
+        requestId: taskId,
+        endpointId: agent.id,
+        amount: humanAmount,
+        currency: 'USDC',
+      });
+
+      let chainConfig: { contracts: { usdc: string }; chainId: number };
+      try {
+        chainConfig = getChainConfig();
+      } catch {
+        // Fallback for test/mock environments
+        chainConfig = { contracts: { usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' }, chainId: 84532 };
+      }
+
+      let network: string;
+      try {
+        network = getCurrentNetwork();
+      } catch {
+        network = `eip155:${chainConfig.chainId}`;
+      }
+
+      const xPayment = JSON.stringify({
+        scheme: 'exact-evm',
+        network,
+        amount: requestedAmountUnits,
+        token: chainConfig.contracts.usdc,
+        from: callerWallet.evm_address || callerWallet.id,
+        to: agent.id,
+        signature: jwt,
+      });
+
+      // Step 10: Retry POST with X-Payment header
+      console.log(`[A2A Processor] x402 retrying with X-Payment for task ${taskId.slice(0, 8)} (${humanAmount} USDC)`);
+
+      const retryResponse = await fetch(agent.endpoint_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Payment': xPayment,
+        },
+        body: JSON.stringify(taskPayload),
+        signal: AbortSignal.timeout(60_000),
+      });
+
+      if (retryResponse.ok) {
+        // Link transfer to task
+        await this.supabase
+          .from('a2a_tasks')
+          .update({ transfer_id: transfer.id })
+          .eq('id', taskId)
+          .eq('tenant_id', this.tenantId);
+
+        return await this.handleX402AgentResponse(taskId, retryResponse, agent);
+      }
+
+      // Retry failed — rollback
+      console.error(`[A2A Processor] x402 retry failed: HTTP ${retryResponse.status}`);
+      const retryErrorText = await retryResponse.text().catch(() => 'Unknown error');
+
+      // Reverse wallet deduction
+      const { data: walletAfter } = await this.supabase
+        .from('wallets')
+        .select('balance')
+        .eq('id', callerWallet.id)
+        .eq('tenant_id', this.tenantId)
+        .single();
+      if (walletAfter) {
+        await this.supabase
+          .from('wallets')
+          .update({ balance: Number(walletAfter.balance) + humanAmount })
+          .eq('id', callerWallet.id)
+          .eq('tenant_id', this.tenantId);
+      }
+
+      // Mark transfer cancelled
+      await this.supabase
+        .from('transfers')
+        .update({ status: 'cancelled' })
+        .eq('id', transfer.id)
+        .eq('tenant_id', this.tenantId);
+
+      await this.taskService.addMessage(taskId, 'agent', [
+        { text: `x402 payment sent but agent returned HTTP ${retryResponse.status} on retry: ${retryErrorText.slice(0, 200)}. Payment reversed.` },
+      ]);
+      await this.taskService.updateTaskState(taskId, 'failed', `x402 retry failed: HTTP ${retryResponse.status}`);
+      return this.taskService.getTask(taskId);
+
+    } catch (err: any) {
+      console.error(`[A2A Processor] x402 forward failed for task ${taskId.slice(0, 8)}:`, err.message);
+      await this.taskService.addMessage(taskId, 'agent', [
+        { text: `Failed to reach agent endpoint via x402: ${err.message}` },
+      ]);
+      await this.taskService.updateTaskState(taskId, 'failed', `x402 forwarding failed: ${err.message}`);
+      return this.taskService.getTask(taskId);
+    }
+  }
+
+  /**
+   * Handle a successful (200) response from an x402 shim.
+   * Extracts response text and artifacts from the plain JSON body.
+   */
+  private async handleX402AgentResponse(
+    taskId: string,
+    response: Response,
+    agent: { id: string; endpoint_url: string },
+  ): Promise<A2ATask | null> {
+    let body: any;
+    try {
+      body = await response.json();
+    } catch {
+      body = { response: 'Agent completed the task.' };
+    }
+
+    const responseText = body.response || body.result?.status?.message || 'Task completed by agent.';
+    await this.taskService.addMessage(taskId, 'agent', [
+      { text: responseText },
+    ]);
+
+    // Copy artifacts if present
+    if (Array.isArray(body.artifacts)) {
+      for (const artifact of body.artifacts) {
+        await this.taskService.addArtifact(taskId, artifact);
+      }
+    }
+
+    // Store forwarding metadata
+    await this.supabase
+      .from('a2a_tasks')
+      .update({
+        metadata: { forwarded_to: agent.endpoint_url, endpoint_type: 'x402', agent_id: agent.id },
+      })
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId);
+
+    await this.taskService.updateTaskState(taskId, 'completed', 'x402 forwarding completed');
     return this.taskService.getTask(taskId);
   }
 

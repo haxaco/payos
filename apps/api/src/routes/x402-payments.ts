@@ -61,7 +61,7 @@ function base64UrlEncode(str: string): string {
     .replace(/\//g, '_');
 }
 
-function createPaymentProofJWT(payload: Omit<PaymentProofPayload, 'iat' | 'exp'>): string {
+export function createPaymentProofJWT(payload: Omit<PaymentProofPayload, 'iat' | 'exp'>): string {
   const now = Math.floor(Date.now() / 1000);
   const fullPayload: PaymentProofPayload = {
     ...payload,
@@ -86,7 +86,7 @@ function createPaymentProofJWT(payload: Omit<PaymentProofPayload, 'iat' | 'exp'>
 }
 
 // Verify JWT and return payload (for /verify endpoint to support both modes)
-function verifyPaymentProofJWT(token: string): PaymentProofPayload | null {
+export function verifyPaymentProofJWT(token: string): PaymentProofPayload | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
