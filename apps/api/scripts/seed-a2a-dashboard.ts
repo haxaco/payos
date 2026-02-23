@@ -195,48 +195,57 @@ async function seed() {
   // =========================================================================
   // Standalone tasks (no session — various states)
   // =========================================================================
+  // Each standalone task gets its own context_id (auto-session)
   const standalone = [
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.payout.id,
+      context_id: randomUUID(),
       state: 'completed', status_message: 'Payroll batch processed: 12 transfers',
       direction: 'outbound', remote_agent_url: 'https://payroll.acme-hr.com/a2a',
       transfer_id: transfers[6].id, created_at: h(72), updated_at: h(70),
     },
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.procurement.id,
+      context_id: randomUUID(),
       state: 'failed', status_message: 'Remote agent timeout after 30s',
       direction: 'outbound', remote_agent_url: 'https://vendor-bot.example.com/a2a',
       created_at: h(24), updated_at: h(23),
     },
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.shopping.id,
+      context_id: randomUUID(),
       state: 'canceled', status_message: 'Canceled by user — duplicate request',
       direction: 'inbound', created_at: h(18), updated_at: h(17),
     },
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.payout.id,
+      context_id: randomUUID(),
       state: 'submitted', status_message: null,
       direction: 'inbound', created_at: h(0.1), updated_at: h(0.1),
     },
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.procurement.id,
+      context_id: randomUUID(),
       state: 'working', status_message: 'Negotiating terms with supplier agent',
       direction: 'outbound', remote_agent_url: 'https://supplier-v2.globex.io/a2a',
       created_at: h(2), updated_at: h(0.3),
     },
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.shopping.id,
+      context_id: randomUUID(),
       state: 'rejected', status_message: 'Payment rejected: insufficient KYA tier',
       direction: 'inbound', created_at: h(30), updated_at: h(29),
     },
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.remittance.id,
+      context_id: randomUUID(),
       state: 'completed', status_message: 'Cross-border transfer settled: 1,200 USDC → 6,144 BRL',
       direction: 'outbound', remote_agent_url: 'https://pix-bridge.latam.io/a2a',
       transfer_id: transfers[7].id, created_at: h(36), updated_at: h(34),
     },
     {
       id: randomUUID(), tenant_id: tenantId, agent_id: AGENTS.travel.id,
+      context_id: randomUUID(),
       state: 'working', status_message: 'Searching partner agents for best hotel rates in São Paulo',
       direction: 'outbound', remote_agent_url: 'https://hotel-concierge.travel-ai.com/a2a',
       created_at: h(1), updated_at: h(0.2),

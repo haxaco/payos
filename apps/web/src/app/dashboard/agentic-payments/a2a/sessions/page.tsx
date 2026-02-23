@@ -199,7 +199,7 @@ export default function A2ASessionsPage() {
                     <TableRow key={session.contextId} className="cursor-pointer hover:bg-muted/50">
                       <TableCell className="font-medium">
                         <Link
-                          href={`/dashboard/agentic-payments/a2a/tasks?context_id=${session.contextId}`}
+                          href={`/dashboard/agentic-payments/a2a/sessions/${session.contextId}`}
                           className="font-mono text-xs text-blue-600 hover:underline"
                         >
                           {session.contextId.slice(0, 12)}...

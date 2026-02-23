@@ -175,10 +175,10 @@ export default function A2ATaskDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </div>
               <Link
-                href={`/dashboard/agentic-payments/a2a/tasks?context_id=${contextId}`}
+                href={`/dashboard/agentic-payments/a2a/sessions/${contextId}`}
                 className="text-xs text-blue-600 hover:underline flex items-center gap-1"
               >
-                View all session tasks
+                View session conversation
                 <ExternalLink className="h-3 w-3" />
               </Link>
             </div>

@@ -1099,6 +1099,12 @@ export class SlyClient {
       this.get<{ data: any[] }>('/a2a/sessions').then(r => r.data),
 
     /**
+     * Get a session's full conversation (tasks, messages, artifacts)
+     */
+    getSession: (contextId: string) =>
+      this.get<any>(`/a2a/sessions/${contextId}`),
+
+    /**
      * Get agent processing configuration
      */
     getAgentConfig: (agentId: string) =>
