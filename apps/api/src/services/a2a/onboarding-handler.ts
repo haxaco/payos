@@ -248,12 +248,18 @@ export async function handleRegisterAgent(
     }
   }
 
-  // Store endpoint in agent metadata if provided
+  // Store endpoint in dedicated columns (used by task processor for forwarding)
+  // AND in metadata (used by agent card responses)
   const endpoint = payload.endpoint as Record<string, unknown> | undefined;
   if (endpoint?.url) {
+    const endpointType = String(endpoint.type || 'a2a');
     await supabase
       .from('agents')
       .update({
+        endpoint_url: String(endpoint.url),
+        endpoint_type: endpointType,
+        endpoint_secret: endpoint.secret ? String(endpoint.secret) : (endpoint.auth ? String(endpoint.auth) : null),
+        endpoint_enabled: true,
         metadata: {
           a2a_endpoint: String(endpoint.url),
           a2a_endpoint_auth: endpoint.auth || null,
@@ -330,15 +336,23 @@ export async function handleUpdateAgent(
     updates.description = payload.description || null;
   }
 
-  // Store endpoint in metadata if provided
+  // Store endpoint in dedicated columns (used by task processor for forwarding)
   const endpoint = payload.endpoint as Record<string, unknown> | undefined;
-  let endpointUrl: string | undefined;
   if (endpoint?.url) {
-    endpointUrl = String(endpoint.url);
+    const endpointType = String(endpoint.type || 'a2a');
+    updates.endpoint_url = String(endpoint.url);
+    updates.endpoint_type = endpointType;
+    updates.endpoint_secret = endpoint.secret ? String(endpoint.secret) : (endpoint.auth ? String(endpoint.auth) : null);
+    updates.endpoint_enabled = true;
+    // Also keep metadata in sync for agent card responses
+    updates.metadata = {
+      a2a_endpoint: String(endpoint.url),
+      a2a_endpoint_auth: endpoint.auth || null,
+    };
   }
 
   // Apply updates if any
-  if (Object.keys(updates).length > 0 || endpointUrl) {
+  if (Object.keys(updates).length > 0) {
     updates.updated_at = new Date().toISOString();
     const { error } = await supabase
       .from('agents')
@@ -348,20 +362,6 @@ export async function handleUpdateAgent(
 
     if (error) {
       return buildErrorResponse(requestId, JSON_RPC_ERRORS.INTERNAL_ERROR, 'Failed to update agent');
-    }
-
-    // Store endpoint in metadata separately (a2a_endpoint column doesn't exist)
-    if (endpointUrl) {
-      await supabase
-        .from('agents')
-        .update({
-          metadata: {
-            a2a_endpoint: endpointUrl,
-            a2a_endpoint_auth: endpoint!.auth || null,
-          },
-        })
-        .eq('id', agentId)
-        .eq('tenant_id', tenantId);
     }
   }
 
