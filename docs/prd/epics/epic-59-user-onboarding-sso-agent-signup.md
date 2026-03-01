@@ -1,6 +1,6 @@
 # Epic 59: User Onboarding, SSO & Agent Self-Registration
 
-**Status:** 📋 Planned
+**Status:** ✅ Complete
 **Phase:** 3.5 (Platform Readiness)
 **Priority:** P0 — Can't Onboard New Users Without This
 **Estimated Points:** 76
