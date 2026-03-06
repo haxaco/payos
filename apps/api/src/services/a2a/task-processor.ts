@@ -18,6 +18,7 @@ import { AgentToolRegistry } from './tools/registry.js';
 import { toolHandlers } from './tools/handlers.js';
 import type { AgentContext } from './tools/context-injector.js';
 import type { A2ATask } from './types.js';
+import { executeOnChainTransfer } from '../wallet-settlement.js';
 import { A2AClient } from './client.js';
 import { A2AWebhookHandler } from './webhook-handler.js';
 import { createPaymentProofJWT } from '../../routes/x402-payments.js';
@@ -575,53 +576,18 @@ export class A2ATaskProcessor {
       let txHash: string | undefined;
 
       if (callerWallet) {
-        // Check if both wallets support real settlement
-        const callerType = callerWallet.wallet_type || 'internal';
-        const providerType = providerWallet?.wallet_type || 'internal';
-        const isRealSettlement = (callerType === 'circle_custodial' || callerType === 'external')
-          && providerWallet
-          && (providerType === 'circle_custodial' || providerType === 'external');
-        const isSandboxEnv = process.env.PAYOS_ENVIRONMENT === 'sandbox';
+        // Attempt on-chain settlement
+        const destAddress = providerWallet?.wallet_address;
+        const onChainResult = await executeOnChainTransfer({
+          sourceWallet: callerWallet,
+          destinationAddress: destAddress || '',
+          amount,
+        });
 
-        // Attempt real on-chain settlement in sandbox
-        if (isRealSettlement && isSandboxEnv) {
-          try {
-            if (callerType === 'circle_custodial' && callerWallet.provider_wallet_id) {
-              const { getCircleClient } = await import('../../services/circle/client.js');
-              const circle = getCircleClient();
-              const usdcTokenId = process.env.CIRCLE_USDC_TOKEN_ID;
-
-              if (usdcTokenId && providerWallet.wallet_address && !providerWallet.wallet_address.startsWith('internal://')) {
-                const circleTx = await circle.transferTokens(
-                  callerWallet.provider_wallet_id,
-                  usdcTokenId,
-                  providerWallet.wallet_address,
-                  amount.toString(),
-                  'MEDIUM',
-                );
-
-                // Poll for completion (max 30s)
-                const deadline = Date.now() + 30_000;
-                let finalTx = circleTx;
-                while (finalTx.state !== 'COMPLETE' && finalTx.state !== 'FAILED' && Date.now() < deadline) {
-                  await new Promise(r => setTimeout(r, 2000));
-                  finalTx = await circle.getTransaction(circleTx.id);
-                }
-
-                if (finalTx.state === 'COMPLETE') {
-                  txHash = (finalTx as any).txHash || circleTx.id;
-                } else {
-                  this.log(taskId, 'warn', `Circle settlement ${finalTx.state}: ${circleTx.id}`);
-                }
-              }
-            } else if (callerType === 'external' && providerWallet.wallet_address && !providerWallet.wallet_address.startsWith('internal://')) {
-              const { transferUsdc } = await import('../../config/blockchain.js');
-              const result = await transferUsdc(providerWallet.wallet_address, amount);
-              txHash = result.txHash;
-            }
-          } catch (realErr: any) {
-            this.log(taskId, 'warn', `On-chain A2A settlement failed (falling back to ledger): ${realErr.message}`);
-          }
+        if (onChainResult.success && onChainResult.txHash) {
+          txHash = onChainResult.txHash;
+        } else if (onChainResult.path !== 'skipped' && onChainResult.error) {
+          this.log(taskId, 'warn', `On-chain A2A settlement failed (falling back to ledger): ${onChainResult.error}`);
         }
 
         // Always do ledger settlement (keeps DB balances in sync)

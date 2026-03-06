@@ -142,8 +142,10 @@ export class CircleMockService {
       // Solana addresses are base58 encoded
       return `${randomUUID().replace(/-/g, '').substring(0, 32)}`;
     }
-    // EVM addresses
-    return `0x${randomUUID().replace(/-/g, '').substring(0, 40)}`;
+    // EVM addresses need 40 hex chars (20 bytes). A single UUID only gives 32 hex chars,
+    // so concatenate two UUIDs to have enough.
+    const hex = (randomUUID() + randomUUID()).replace(/-/g, '').substring(0, 40);
+    return `0x${hex}`;
   }
 
   /**

@@ -118,7 +118,7 @@ export class CircleDirectProvider implements IFundingProvider {
       event_type: event.type || 'transfer.complete',
       provider_id: event.data?.walletId,
       provider_transaction_id: event.data?.id,
-      status: event.data?.state === 'COMPLETE' ? 'completed' :
+      status: (event.data?.state === 'COMPLETE' || event.data?.state === 'CONFIRMED') ? 'completed' :
               event.data?.state === 'FAILED' ? 'failed' : 'processing',
       metadata: {
         amount: event.data?.amounts,

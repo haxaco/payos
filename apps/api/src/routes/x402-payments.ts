@@ -29,6 +29,7 @@ import {
   createApprovalWorkflowService,
   type PaymentProtocol
 } from '../services/approval-workflow.js';
+import { executeOnChainTransfer } from '../services/wallet-settlement.js';
 import { createCheckoutTelemetryService } from '../services/telemetry/checkout-telemetry.js';
 
 const app = new Hono();
@@ -919,54 +920,24 @@ app.post('/pay', async (c) => {
 
       if (isRealWallet && isSandboxEnv && providerIsOnChain) {
         // ===== ON-CHAIN SETTLEMENT PATH =====
-        // Both consumer and provider wallets support on-chain transfers
-        let txHash: string | undefined;
+        const onChainResult = await executeOnChainTransfer({
+          sourceWallet: wallet,
+          destinationAddress: providerOnChainAddress,
+          amount: auth.amount,
+        });
 
-        if (consumerWalletType === 'circle_custodial' && wallet.provider_wallet_id) {
-          // Circle-to-address transfer
-          const { getCircleClient } = await import('../services/circle/client.js');
-          const circle = getCircleClient();
-          const usdcTokenId = process.env.CIRCLE_USDC_TOKEN_ID;
-
-          if (!usdcTokenId) {
-            throw new Error('CIRCLE_USDC_TOKEN_ID required for Circle settlement');
-          }
-
-          const circleTx = await circle.transferTokens(
-            wallet.provider_wallet_id,
-            usdcTokenId,
-            providerOnChainAddress,
-            auth.amount.toString(),
-            'MEDIUM',
-          );
-
-          // Poll for completion (max 30s)
-          const deadline = Date.now() + 30_000;
-          let txState = circleTx.state;
-          let finalTx = circleTx;
-          while (txState !== 'COMPLETE' && txState !== 'FAILED' && Date.now() < deadline) {
-            await new Promise(r => setTimeout(r, 2000));
-            finalTx = await circle.getTransaction(circleTx.id);
-            txState = finalTx.state;
-          }
-
-          if (txState !== 'COMPLETE') {
-            // Update transfer to failed
+        if (!onChainResult.success) {
+          // x402 hard-fails on on-chain errors (no silent fallback)
+          if (onChainResult.error) {
             await supabase
               .from('transfers')
-              .update({ status: 'failed', protocol_metadata: { ...transfer.protocol_metadata, circle_tx_state: txState } })
+              .update({ status: 'failed', protocol_metadata: { ...transfer.protocol_metadata, on_chain_error: onChainResult.error } })
               .eq('id', transfer.id);
-            throw new Error(`Circle transfer ${txState === 'FAILED' ? 'failed' : 'timed out'}: ${circleTx.id}`);
+            throw new Error(onChainResult.error);
           }
-
-          txHash = (finalTx as any).txHash || circleTx.id;
-        } else if (consumerWalletType === 'external') {
-          // External wallet: use viem on-chain transfer
-          const { transferUsdc } = await import('../config/blockchain.js');
-
-          const result = await transferUsdc(providerOnChainAddress, auth.amount);
-          txHash = result.txHash;
         }
+
+        const txHash = onChainResult.txHash;
 
         // Store tx_hash on transfer
         if (txHash) {
@@ -985,7 +956,7 @@ app.post('/pay', async (c) => {
             .eq('id', transfer.id);
         }
 
-        // Also update DB ledger balances for consistency
+        // Also update DB ledger balances for consistency (fee splitting via RPC)
         const { data: ledgerSettlement } = await supabase
           .rpc('settle_x402_payment', {
             p_consumer_wallet_id: wallet.id,

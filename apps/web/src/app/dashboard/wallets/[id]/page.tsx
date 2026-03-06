@@ -150,13 +150,12 @@ export default function WalletDetailPage() {
         }
     };
 
-    // Fetch transactions (using transfers filtered by wallet id)
+    // Fetch transactions for this wallet
     const { data: transactionsResponse, isLoading: txLoading } = useQuery({
         queryKey: ['wallet-transactions', id],
         queryFn: async () => {
             if (!api) throw new Error('API client not initialized');
-            // Fallback/Workaround: use transfers.list with x402_wallet_id
-            return api.transfers.list({ x402_wallet_id: id, limit: 20 });
+            return api.transfers.list({ walletId: id, limit: 20 });
         },
         enabled: !!api && !!id,
     });
@@ -301,7 +300,7 @@ export default function WalletDetailPage() {
                                 <div>
                                     <p className="text-blue-100 text-sm font-medium mb-1">Total Balance</p>
                                     <h3 className="text-4xl font-bold">
-                                        {formatCurrency(wallet.balance || 0, wallet.currency || 'USD')}
+                                        {formatCurrency(wallet.balance || 0, wallet.currency || 'USDC')}
                                     </h3>
                                 </div>
                                 <Activity className="w-6 h-6 text-blue-200" />
@@ -356,7 +355,7 @@ export default function WalletDetailPage() {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`font-medium ${tx.amount > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white'}`}>
-                                                        {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount || 0, tx.currency || 'USD')}
+                                                        {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount || 0, tx.currency || 'USDC')}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">

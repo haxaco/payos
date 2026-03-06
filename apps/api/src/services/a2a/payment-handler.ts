@@ -10,6 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { A2ATaskService } from './task-service.js';
 import type { InputRequiredContext } from './types.js';
+import { settleWalletTransfer, isOnChainCapable } from '../wallet-settlement.js';
 
 interface PaymentRequirement {
   amount: number;
@@ -75,11 +76,7 @@ export class A2APaymentHandler {
       return { success: false, error: `Insufficient balance: ${fromWallet.balance} < ${amount}` };
     }
 
-    const fromType = fromWallet.wallet_type || 'internal';
-    const toType = toWallet.wallet_type || 'internal';
-    const isRealSettlement = (fromType === 'circle_custodial' || fromType === 'external')
-      && (toType === 'circle_custodial' || toType === 'external');
-    const isSandboxEnv = process.env.PAYOS_ENVIRONMENT === 'sandbox';
+    const expectedSettlementType = isOnChainCapable(fromWallet, toWallet.wallet_address) ? 'on_chain' : 'ledger';
 
     // Create transfer record
     const { data: transfer, error: transferError } = await this.supabase
@@ -101,7 +98,7 @@ export class A2APaymentHandler {
           task_id: taskId,
           from_agent_id: fromAgentId,
           to_agent_id: toAgentId,
-          settlement_type: isRealSettlement && isSandboxEnv ? 'on_chain' : 'ledger',
+          settlement_type: expectedSettlementType,
         },
       })
       .select('id')
@@ -111,107 +108,30 @@ export class A2APaymentHandler {
       return { success: false, error: 'Failed to create transfer record' };
     }
 
-    let txHash: string | undefined;
+    // Settle: on-chain (if capable) + ledger + transfer update
+    const settlement = await settleWalletTransfer({
+      supabase: this.supabase,
+      tenantId: this.tenantId,
+      sourceWallet: fromWallet,
+      destinationWallet: toWallet,
+      amount,
+      transferId: transfer.id,
+      protocolMetadata: {
+        protocol: 'a2a',
+        task_id: taskId,
+        from_agent_id: fromAgentId,
+        to_agent_id: toAgentId,
+      },
+    });
 
-    if (isRealSettlement && isSandboxEnv) {
-      // Real on-chain settlement
-      try {
-        if (fromType === 'circle_custodial' && fromWallet.provider_wallet_id) {
-          const { getCircleClient } = await import('../../services/circle/client.js');
-          const circle = getCircleClient();
-          const usdcTokenId = process.env.CIRCLE_USDC_TOKEN_ID;
-
-          if (!usdcTokenId) {
-            throw new Error('CIRCLE_USDC_TOKEN_ID required');
-          }
-
-          const destAddress = toWallet.wallet_address;
-          if (!destAddress || destAddress.startsWith('internal://')) {
-            throw new Error('Destination wallet has no on-chain address');
-          }
-
-          const circleTx = await circle.transferTokens(
-            fromWallet.provider_wallet_id,
-            usdcTokenId,
-            destAddress,
-            amount.toString(),
-            'MEDIUM',
-          );
-
-          // Poll for completion (max 30s)
-          const deadline = Date.now() + 30_000;
-          let finalTx = circleTx;
-          while (finalTx.state !== 'COMPLETE' && finalTx.state !== 'FAILED' && Date.now() < deadline) {
-            await new Promise(r => setTimeout(r, 2000));
-            finalTx = await circle.getTransaction(circleTx.id);
-          }
-
-          if (finalTx.state !== 'COMPLETE') {
-            await this.supabase.from('transfers').update({ status: 'failed' }).eq('id', transfer.id);
-            return { success: false, transferId: transfer.id, error: `Circle transfer ${finalTx.state}` };
-          }
-
-          txHash = (finalTx as any).txHash || circleTx.id;
-        } else if (fromType === 'external') {
-          const { transferUsdc } = await import('../../config/blockchain.js');
-          const destAddress = toWallet.wallet_address;
-          if (!destAddress || destAddress.startsWith('internal://')) {
-            throw new Error('Destination wallet has no on-chain address');
-          }
-          const result = await transferUsdc(destAddress, amount);
-          txHash = result.txHash;
-        }
-      } catch (err: any) {
-        console.error('[A2A Payment] On-chain settlement failed:', err);
-        // Fall through to ledger settlement
-      }
+    if (!settlement.success) {
+      return { success: false, transferId: transfer.id, error: settlement.error || 'Settlement failed' };
     }
-
-    // Always do ledger settlement (keeps DB balances in sync)
-    const { error: debitError } = await this.supabase
-      .from('wallets')
-      .update({
-        balance: parseFloat(fromWallet.balance) - amount,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', fromWallet.id)
-      .eq('tenant_id', this.tenantId);
-
-    const { error: creditError } = await this.supabase
-      .from('wallets')
-      .update({
-        balance: parseFloat(toWallet.balance) + amount,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', toWallet.id)
-      .eq('tenant_id', this.tenantId);
-
-    if (debitError || creditError) {
-      return { success: false, transferId: transfer.id, error: 'Ledger settlement failed' };
-    }
-
-    // Mark transfer as completed
-    await this.supabase
-      .from('transfers')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        tx_hash: txHash || null,
-        protocol_metadata: {
-          protocol: 'a2a',
-          task_id: taskId,
-          from_agent_id: fromAgentId,
-          to_agent_id: toAgentId,
-          settlement_type: txHash ? 'on_chain' : 'ledger',
-          tx_hash: txHash,
-        },
-      })
-      .eq('id', transfer.id);
 
     // Link payment to task
     await this.taskService.linkPayment(taskId, transfer.id);
 
-    return { success: true, transferId: transfer.id, txHash };
+    return { success: true, transferId: transfer.id, txHash: settlement.txHash };
   }
 
   /**

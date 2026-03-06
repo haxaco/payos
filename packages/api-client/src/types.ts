@@ -360,6 +360,7 @@ export interface TransfersListParams extends PaginationParams {
   status?: TransferStatus;
   type?: TransferType;
   accountId?: string;
+  walletId?: string;
   endpointId?: string;
   initiated_by_id?: string;
   initiated_by_type?: 'agent' | 'user' | 'api_key';

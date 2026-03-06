@@ -52,6 +52,9 @@ transfers.get('/', async (c) => {
   const initiatedById = query.initiated_by_id;
   const initiatedByType = query.initiated_by_type;
 
+  // Wallet filter — find transfers involving a specific wallet's owner account
+  const walletId = query.walletId || query.x402_wallet_id;
+
   // x402-specific filters
   const endpointId = query.endpointId;
   const providerId = query.providerId; // Filter by provider account (endpoint owner)
@@ -107,7 +110,27 @@ transfers.get('/', async (c) => {
   if (consumerId && isValidUUID(consumerId)) {
     dbQuery = dbQuery.eq('from_account_id', consumerId);
   }
-  
+
+  // Wallet-based filter: find transfers linked to this wallet via protocol_metadata
+  if (walletId && isValidUUID(walletId)) {
+    // Verify wallet belongs to this tenant
+    const { data: wallet } = await supabase
+      .from('wallets')
+      .select('id')
+      .eq('id', walletId)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (!wallet) {
+      return c.json(paginationResponse([], 0, { page, limit }));
+    }
+
+    // Match transfers where this wallet is source or destination in protocol_metadata
+    dbQuery = dbQuery.or(
+      `protocol_metadata->>source_wallet_id.eq.${walletId},protocol_metadata->>destination_wallet_id.eq.${walletId},protocol_metadata->>x402_wallet_id.eq.${walletId}`
+    );
+  }
+
   const { data, count, error } = await dbQuery;
   
   if (error) {
