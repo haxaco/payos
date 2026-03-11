@@ -10,6 +10,7 @@ import {
   checkRateLimit,
   logSecurityEvent,
 } from '../utils/auth.js';
+import { sendApiKeyCreatedEmail, sendApiKeyRevokedEmail } from '../services/email.js';
 
 const apiKeys = new Hono();
 
@@ -148,6 +149,14 @@ apiKeys.post('/', async (c) => {
     ip,
     userAgent,
   });
+
+  // Send confirmation email (fire-and-forget)
+  sendApiKeyCreatedEmail({
+    to: result.user.email,
+    keyPrefix,
+    keyName: validated.name,
+    environment: validated.environment,
+  }).catch(err => console.error('[email] API key created email error:', err));
 
   return c.json(
     {
@@ -333,6 +342,14 @@ apiKeys.delete('/:id', async (c) => {
     ip,
     userAgent,
   });
+
+  // Send revocation email (fire-and-forget)
+  sendApiKeyRevokedEmail({
+    to: result.user.email,
+    keyPrefix: apiKey.key_prefix,
+    keyName: apiKey.name,
+    environment: apiKey.environment,
+  }).catch(err => console.error('[email] API key revoked email error:', err));
 
   return c.json({ success: true }, 200);
 });

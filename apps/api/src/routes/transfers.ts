@@ -17,6 +17,11 @@ import {
 import { storeIdempotencyResponse } from '../middleware/idempotency.js';
 import { ErrorCode } from '@sly/types';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
+import {
+  sendTransferCompletedEmail,
+  sendTransferFailedEmail,
+  getNotificationRecipients,
+} from '../services/email.js';
 
 const transfers = new Hono();
 
@@ -318,9 +323,36 @@ transfers.post('/', async (c) => {
           failure_reason: error.message,
         })
         .eq('id', transfer.id);
-      
+
+      // Notify tenant admins of failure (fire-and-forget)
+      getNotificationRecipients(ctx.tenantId).then(emails => {
+        for (const email of emails) {
+          sendTransferFailedEmail({
+            to: email,
+            amount: amount.toString(),
+            currency: 'USDC',
+            recipientName: toAccount.name,
+            transferId: transfer.id,
+            reason: error.message,
+          }).catch(err => console.error('[email] Transfer failed email error:', err));
+        }
+      }).catch(() => {});
+
       throw error;
     }
+
+    // Notify tenant admins of successful transfer (fire-and-forget)
+    getNotificationRecipients(ctx.tenantId).then(emails => {
+      for (const email of emails) {
+        sendTransferCompletedEmail({
+          to: email,
+          amount: amount.toString(),
+          currency: 'USDC',
+          recipientName: toAccount.name,
+          transferId: transfer.id,
+        }).catch(err => console.error('[email] Transfer completed email error:', err));
+      }
+    }).catch(() => {});
   }
   
   // Mark quote as used

@@ -65,7 +65,7 @@ Every story must meet these criteria before completion:
 ### Security & Onboarding
 - [Epic 24: Enhanced API Key Security](./epic-24-api-key-security.md) 🔐 - Agent-specific API keys
 - ~~[Epic 25: User Onboarding](./epic-25-user-onboarding.md)~~ → **Absorbed into Epic 51**
-- [Epic 59: User Onboarding, SSO & Agent Self-Registration](./epic-59-user-onboarding-sso-agent-signup.md) 🔐 - Fix signup, team invites, Google/GitHub SSO, autonomous agent registration
+- [Epic 59: User Onboarding, SSO & Agent Self-Registration](./epic-59-user-onboarding-sso-agent-signup.md) ✅ - Fix signup, team invites, Google/GitHub SSO, autonomous agent registration
 
 ### AI-Native Architecture
 - [Epic 28: Simulation API](./epic-28-simulation.md) 🔮 ✅ - Transaction simulation
@@ -114,7 +114,13 @@ Every story must meet these criteria before completion:
 - [Epic 64: OpenClaw Governance Skill](./epic-64-openclaw-governance-skill.md) 🧩 - Python skill for ClawHub routing contracting through Sly governance
 
 ### High-Frequency Payments
-- [Epic 38: High-Frequency Microtransaction Optimization](./epic-38-payment-optimized-chains.md) - Async settlement, multi-chain (Solana+Base), gasless txs, deferred batch settlement
+- [Epic 38: High-Frequency Microtransaction Optimization](./epic-38-payment-optimized-chains.md) ✅ - Async settlement, multi-chain (Solana+Base), gasless txs, deferred batch settlement
+
+### Operations & Observability
+- [Epic 65: Operations Observability](./epic-65-operations-observability.md) ✅ - Per-request event correlation, usage API, portal tokens, partition management
+
+### Notifications
+- [Epic 66: Email Notification System](./epic-66-email-notification-system.md) 🚧 - 10 email types (Tier 1 done), notification preferences, unsubscribe
 
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) - x402 facilitator for LATAM ecosystem
@@ -163,13 +169,15 @@ Strategic explorations before committing to implementation:
 | Epic 53: Card Networks | Jan 27, 2026 | 62 | Visa VIC + Mastercard Agent Pay |
 | Epic 54: Sly Rebranding | Jan 27, 2026 | 34 | PayOS → Sly rename |
 | Epic 57: Google A2A | Feb 21, 2026 | 89 | Agent discovery, communication, paid tasks |
-| **Total Completed** | | **~820** | |
+| Epic 38: HF Microtransactions | Mar 11, 2026 | 63 | Async settlement, multi-chain, batch settlement |
+| Epic 65: Operations Observability | Mar 11, 2026 | ~40 | Event correlation, usage API, portal tokens |
+| Epic 59: User Onboarding & SSO | Mar 11, 2026 | 69 | Fix signup, team invites, SSO, agent self-registration |
+| **Total Completed** | | **~992** | |
 
 ### Current Focus 🚧
 
 | Epic | Priority | Points | Notes |
 |------|----------|--------|-------|
-| Epic 59: User Onboarding & SSO | P0 | 69 | Fix signup, team invites, SSO, agent self-registration |
 | Epic 58: A2A Task Processor | P0 | 119 | Background worker, LLM handlers, payment gating |
 | Epic 55: Demo Readiness | P0 | 89 | Seed data + demo UI for 8 scenarios |
 | Epic 29: Workflow Engine | P0 | 52 | Multi-step workflows (expanded for contracting) |
@@ -178,7 +186,7 @@ Strategic explorations before committing to implementation:
 | Epic 62: Escrow Orchestration | P0 | 38 | Agent contract escrow with governance |
 | Epic 63: External Reputation Bridge | P0 | 25 | Unified trust score aggregation |
 | Epic 64: OpenClaw Governance Skill | P1 | 10 | ClawHub skill for governed contracting |
-| Epic 38: HF Microtransactions | P1 | 63 | Async settlement, multi-chain, batch settlement |
+| Epic 66: Email Notification System | P1 | 35 | Tier 1 done (10 emails), preferences + unsubscribe remaining |
 
 ### Planned (P0/P1) 📋
 
@@ -206,23 +214,41 @@ Strategic explorations before committing to implementation:
 |------|----------|--------|-------|
 | Epic 21: Code Coverage | P3 | 112 | |
 | Epic 37: Facilitator | P3 | TBD | Decision pending |
-| Epic 38: HF Microtransactions | P1 | 63 | Async settlement, multi-chain, batch |
 | Epic 39: Open Issuance | P3 | ~47 | Post-PMF |
 | Epic 46: DR | P3 | ~60 | |
-| **Subtotal P3** | | **~268** | |
+| **Subtotal P3** | | **~205** | |
 
 ### Points Summary
 
-- **Completed:** ~820 points
-- **Current Focus:** ~370 points (58, 55, 29, 41)
+- **Completed:** ~992 points
+- **Current Focus:** ~307 points (58, 55, 29, 41)
 - **P0/P1 Planned:** ~36 points
 - **P2 Planned:** ~153 points
-- **P3 Future:** ~268 points
-- **Total Defined:** ~1,647 points
+- **P3 Future:** ~205 points
+- **Total Defined:** ~1,584 points
 
 ---
 
 ## Recent Changes
+
+### March 11, 2026
+- **Epic 66: Email Notification System** — NEW (35 points, P1)
+  - Tier 1 complete: 10 email types (welcome, transfer completed/failed, account locked, API key created/revoked, role changed, member removed, team invite, invite accepted)
+  - Shared HTML layout, fire-and-forget sends, recipient resolution helpers
+  - 8 stories (SLY-405 through SLY-412): Tier 1 done, Tier 2/3 + preferences + unsubscribe in backlog
+- **Epic 59: User Onboarding & SSO** — Marked COMPLETE ✅ (69 points)
+  - All 4 phases shipped: fix signup, team invite UI, Google/GitHub SSO, agent self-registration
+  - Was already implemented but missing from completed table
+- **Epic 65: Operations Observability** — COMPLETE ✅ (~40 points)
+  - 3-layer observability: request counters, operation events (CloudEvents 1.0), cost tracking
+  - 48+ OpTypes across all protocols (x402, AP2, ACP, UCP, A2A)
+  - Per-request correlation ID linking all operations within a single API call
+  - Portal token authentication (4th auth method) for customer-facing usage API
+  - Usage API: 4 endpoints (summary, operations, requests, costs)
+  - Partition manager worker for monthly table rotation with RLS enforcement
+  - Materialized view for hourly usage summaries
+- **Epic 38: HF Microtransactions** — COMPLETE ✅ (63 points)
+  - Async settlement, Solana chain, Gas Station, deferred batch settlement, CCTP cross-chain
 
 ### March 7, 2026
 - **Epic 38: High-Frequency Microtransaction Optimization** — REVISED (63 points, P1)
@@ -426,4 +452,4 @@ Sly supports **FIVE** agentic payment and communication protocols:
 
 ---
 
-*Last updated: March 1, 2026*
+*Last updated: March 11, 2026*

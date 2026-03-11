@@ -16,6 +16,7 @@ import {
 import { provisionTenant, TenantProvisioningError } from '../services/tenant-provisioning.js';
 import { generateAgentToken } from '../utils/crypto.js';
 import { logAudit } from '../utils/helpers.js';
+import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail } from '../services/email.js';
 
 const auth = new Hono();
 
@@ -216,6 +217,13 @@ auth.post('/signup', async (c) => {
       userAgent,
     });
 
+    // Send welcome email (fire-and-forget)
+    sendWelcomeEmail({
+      to: validated.email,
+      userName: validated.userName || validated.email.split('@')[0],
+      organizationName: validated.organizationName,
+    }).catch(err => console.error('[email] Welcome email error:', err));
+
     // Return response (keys shown only once)
     return c.json(
       {
@@ -405,6 +413,21 @@ auth.post('/login', async (c) => {
             userAgent,
             userId,
           });
+
+          // Send account locked email (fire-and-forget)
+          getUserEmail(userId).then(email => {
+            if (email) {
+              const { data: profile } = (supabase.from('user_profiles') as any)
+                .select('name')
+                .eq('id', userId)
+                .single();
+              // Use email as fallback name
+              sendAccountLockedEmail({
+                to: email,
+                userName: email.split('@')[0],
+              }).catch(err => console.error('[email] Account locked email error:', err));
+            }
+          }).catch(() => {});
         }
       }
 
@@ -959,6 +982,17 @@ auth.post('/accept-invite', async (c) => {
       ip,
       userAgent,
     });
+
+    // Send welcome email (fire-and-forget)
+    const userName = validated.name || invite.name || invite.email.split('@')[0];
+    const dashboardUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard`;
+    sendInviteAcceptedEmail({
+      to: invite.email,
+      userName,
+      organizationName: tenant?.name || 'your organization',
+      role: invite.role,
+      dashboardUrl,
+    }).catch(() => {});
 
     return c.json(
       {

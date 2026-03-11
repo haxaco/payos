@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { randomBytes } from 'crypto';
 import { createClient } from '../db/client.js';
 import { logSecurityEvent } from '../utils/auth.js';
+import { sendTeamInviteEmail, sendRoleChangedEmail, sendMemberRemovedEmail, getUserEmail } from '../services/email.js';
 
 const organizationTeam = new Hono();
 
@@ -159,7 +160,23 @@ organizationTeam.post('/invite', async (c) => {
     invitedBy: result.user.id,
   });
 
-  // TODO: Send email with invite link containing token
+  const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/accept-invite?token=${token}`;
+
+  // Send invite email
+  const { data: tenantRow } = await (supabase
+    .from('tenants') as any)
+    .select('name')
+    .eq('id', tenantId)
+    .single();
+
+  const emailResult = await sendTeamInviteEmail({
+    to: validated.email.toLowerCase(),
+    inviterName: userProfile.name || 'A team member',
+    organizationName: tenantRow?.name || 'your organization',
+    role: validated.role,
+    inviteUrl,
+    expiresAt: expiresAt.toISOString(),
+  });
 
   return c.json({
     invite: {
@@ -168,7 +185,8 @@ organizationTeam.post('/invite', async (c) => {
       role: invite.role,
       name: invite.name,
       expiresAt: invite.expires_at,
-      inviteUrl: `${process.env.APP_URL || 'http://localhost:3000'}/accept-invite?token=${token}`,
+      inviteUrl,
+      emailSent: emailResult.sent,
     },
   }, 201);
 });
@@ -215,6 +233,147 @@ organizationTeam.get('/invites', async (c) => {
   }));
 
   return c.json({ invites }, 200);
+});
+
+// ============================================
+// DELETE /v1/organization/team/invites/:inviteId - Revoke invite
+// ============================================
+organizationTeam.delete('/invites/:inviteId', async (c) => {
+  const result: any = await getCurrentUserAndTenant(c);
+  if (result.error) {
+    return c.json(result.error.body, result.error.status as any);
+  }
+
+  const { tenantId, userProfile } = result;
+  const actorRole = userProfile.role as 'owner' | 'admin' | 'member' | 'viewer';
+
+  if (actorRole !== 'owner' && actorRole !== 'admin') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const inviteId = c.req.param('inviteId');
+  const supabase = createClient();
+
+  const { data: invite, error: fetchError } = await (supabase
+    .from('team_invites') as any)
+    .select('id, accepted_at')
+    .eq('id', inviteId)
+    .eq('tenant_id', tenantId)
+    .single();
+
+  if (fetchError || !invite) {
+    return c.json({ error: 'Invite not found' }, 404);
+  }
+
+  if (invite.accepted_at) {
+    return c.json({ error: 'Cannot revoke an already accepted invite' }, 400);
+  }
+
+  const { error: deleteError } = await (supabase
+    .from('team_invites') as any)
+    .delete()
+    .eq('id', inviteId);
+
+  if (deleteError) {
+    return c.json({ error: 'Failed to revoke invite' }, 500);
+  }
+
+  await logSecurityEvent('team_invite_revoked', 'info', {
+    tenantId,
+    inviteId,
+    revokedBy: result.user.id,
+  });
+
+  return c.json({ success: true }, 200);
+});
+
+// ============================================
+// POST /v1/organization/team/invites/:inviteId/resend - Resend invite
+// ============================================
+organizationTeam.post('/invites/:inviteId/resend', async (c) => {
+  const result: any = await getCurrentUserAndTenant(c);
+  if (result.error) {
+    return c.json(result.error.body, result.error.status as any);
+  }
+
+  const { tenantId, userProfile } = result;
+  const actorRole = userProfile.role as 'owner' | 'admin' | 'member' | 'viewer';
+
+  if (actorRole !== 'owner' && actorRole !== 'admin') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const inviteId = c.req.param('inviteId');
+  const supabase = createClient();
+
+  const { data: invite, error: fetchError } = await (supabase
+    .from('team_invites') as any)
+    .select('id, email, role, name, accepted_at')
+    .eq('id', inviteId)
+    .eq('tenant_id', tenantId)
+    .single();
+
+  if (fetchError || !invite) {
+    return c.json({ error: 'Invite not found' }, 404);
+  }
+
+  if (invite.accepted_at) {
+    return c.json({ error: 'Cannot resend an already accepted invite' }, 400);
+  }
+
+  // Generate new token and extend expiry
+  const newToken = randomBytes(32).toString('hex');
+  const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const { data: updated, error: updateError } = await (supabase
+    .from('team_invites') as any)
+    .update({
+      token: newToken,
+      expires_at: newExpiresAt.toISOString(),
+    })
+    .eq('id', inviteId)
+    .select('id, email, role, name, expires_at')
+    .single();
+
+  if (updateError || !updated) {
+    return c.json({ error: 'Failed to resend invite' }, 500);
+  }
+
+  const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/accept-invite?token=${newToken}`;
+
+  // Fetch tenant name and send email
+  const { data: tenantRow } = await (supabase
+    .from('tenants') as any)
+    .select('name')
+    .eq('id', tenantId)
+    .single();
+
+  const emailResult = await sendTeamInviteEmail({
+    to: invite.email,
+    inviterName: userProfile.name || 'A team member',
+    organizationName: tenantRow?.name || 'your organization',
+    role: invite.role,
+    inviteUrl,
+    expiresAt: newExpiresAt.toISOString(),
+  });
+
+  await logSecurityEvent('team_invite_resent', 'info', {
+    tenantId,
+    inviteId,
+    resentBy: result.user.id,
+  });
+
+  return c.json({
+    invite: {
+      id: updated.id,
+      email: updated.email,
+      role: updated.role,
+      name: updated.name,
+      expiresAt: updated.expires_at,
+      inviteUrl,
+      emailSent: emailResult.sent,
+    },
+  }, 200);
 });
 
 // ============================================
@@ -290,6 +449,23 @@ organizationTeam.patch('/:userId', async (c) => {
     newRole: validated.role,
     tenantId,
   });
+
+  // Notify affected user via email (fire-and-forget)
+  const { data: tenantRow } = await (supabase.from('tenants') as any)
+    .select('name')
+    .eq('id', tenantId)
+    .single();
+
+  getUserEmail(userId).then(email => {
+    if (email) {
+      sendRoleChangedEmail({
+        to: email,
+        userName: updated.name || email.split('@')[0],
+        organizationName: tenantRow?.name || 'your organization',
+        newRole: validated.role,
+      }).catch(err => console.error('[email] Role changed email error:', err));
+    }
+  }).catch(() => {});
 
   return c.json(
     {
@@ -374,6 +550,23 @@ organizationTeam.delete('/:userId', async (c) => {
     targetUserId: userId,
     tenantId,
   });
+
+  // Notify removed user via email (fire-and-forget)
+  // Look up tenant name and user email before responding
+  const { data: tenantRow } = await (supabase.from('tenants') as any)
+    .select('name')
+    .eq('id', tenantId)
+    .single();
+
+  getUserEmail(userId).then(email => {
+    if (email) {
+      sendMemberRemovedEmail({
+        to: email,
+        userName: email.split('@')[0],
+        organizationName: tenantRow?.name || 'your organization',
+      }).catch(err => console.error('[email] Member removed email error:', err));
+    }
+  }).catch(() => {});
 
   return c.json({ success: true }, 200);
 });
