@@ -175,6 +175,16 @@ export async function transferSolanaUsdc(
   const { Transaction, sendAndConfirmTransaction } = await import('@solana/web3.js');
   const tx = new Transaction();
 
+  // Add priority fee instructions (Story 38.18)
+  try {
+    const budgetIxs = await createComputeBudgetInstructions({ computeUnits: 200_000 });
+    for (const ix of budgetIxs) {
+      tx.add(ix);
+    }
+  } catch {
+    // Priority fee is optional — proceed without it
+  }
+
   // Ensure destination ATA exists
   try {
     await getAccount(connection, destAta);
@@ -212,6 +222,90 @@ export async function transferSolanaUsdc(
     from: sender.toBase58(),
     to: destinationAddress,
   };
+}
+
+// ============================================
+// Priority Fees (Epic 38, Story 38.18)
+// ============================================
+
+/**
+ * Estimate optimal priority fee based on recent network conditions.
+ * Uses getRecentPrioritizationFees() to determine the fee that would
+ * land a transaction in the next few slots.
+ *
+ * Returns fee in micro-lamports per compute unit.
+ */
+export async function estimatePriorityFee(opts?: {
+  percentile?: number;  // 0-100, default 75 (median-high)
+}): Promise<{
+  fee: number;           // micro-lamports per CU
+  level: 'low' | 'medium' | 'high';
+  recentFees: number[];
+}> {
+  const connection = getSolanaConnection();
+  const percentile = opts?.percentile ?? 75;
+
+  try {
+    const recentFees = await connection.getRecentPrioritizationFees();
+
+    if (!recentFees || recentFees.length === 0) {
+      return { fee: 1000, level: 'low', recentFees: [] };
+    }
+
+    // Extract non-zero fees and sort
+    const fees = recentFees
+      .map(f => f.prioritizationFee)
+      .filter(f => f > 0)
+      .sort((a, b) => a - b);
+
+    if (fees.length === 0) {
+      return { fee: 1000, level: 'low', recentFees: [] };
+    }
+
+    // Select fee at percentile
+    const idx = Math.min(Math.floor(fees.length * percentile / 100), fees.length - 1);
+    const fee = fees[idx];
+
+    // Classify level
+    const median = fees[Math.floor(fees.length / 2)];
+    const level = fee <= median * 0.5 ? 'low' : fee <= median * 2 ? 'medium' : 'high';
+
+    return {
+      fee: Math.max(fee, 1000), // minimum 1000 micro-lamports
+      level,
+      recentFees: fees.slice(-10),
+    };
+  } catch {
+    // Fallback to safe default
+    return { fee: 5000, level: 'medium', recentFees: [] };
+  }
+}
+
+/**
+ * Create compute budget instructions for a Solana transaction.
+ * Adds both SetComputeUnitLimit and SetComputeUnitPrice.
+ *
+ * @param computeUnits - max compute units (default 200_000)
+ * @param priorityFee - micro-lamports per CU (auto-estimated if not provided)
+ */
+export async function createComputeBudgetInstructions(opts?: {
+  computeUnits?: number;
+  priorityFee?: number;
+}): Promise<import('@solana/web3.js').TransactionInstruction[]> {
+  const { ComputeBudgetProgram } = await import('@solana/web3.js');
+
+  const computeUnits = opts?.computeUnits ?? 200_000;
+  let priorityFee = opts?.priorityFee;
+
+  if (priorityFee === undefined) {
+    const estimate = await estimatePriorityFee();
+    priorityFee = estimate.fee;
+  }
+
+  return [
+    ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityFee }),
+  ];
 }
 
 // ============================================

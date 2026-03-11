@@ -10,6 +10,62 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '../db/client.js';
+
+// ---------------------------------------------------------------------------
+// Chain Performance Metrics (Epic 38, Story 38.17)
+// ---------------------------------------------------------------------------
+
+export interface ChainMetric {
+  tenantId?: string;
+  blockchain: string;
+  settlementPath: string;
+  transferId?: string;
+  totalDurationMs: number;
+  submissionTimeMs?: number;
+  confirmationTimeMs?: number;
+  attestationTimeMs?: number;
+  gasUsed?: number;
+  gasPriceGwei?: number;
+  feeAmountUsd?: number;
+  amountUsd: number;
+  success: boolean;
+  txHash?: string;
+  error?: string;
+  settlementType?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Record a chain performance metric. Fire-and-forget (non-blocking).
+ */
+export function recordChainMetric(metric: ChainMetric): void {
+  const supabase = createClient();
+  supabase
+    .from('chain_performance_metrics')
+    .insert({
+      tenant_id: metric.tenantId || '00000000-0000-0000-0000-000000000000',
+      blockchain: metric.blockchain,
+      settlement_path: metric.settlementPath,
+      transfer_id: metric.transferId || null,
+      total_duration_ms: metric.totalDurationMs,
+      submission_time_ms: metric.submissionTimeMs || null,
+      confirmation_time_ms: metric.confirmationTimeMs || null,
+      attestation_time_ms: metric.attestationTimeMs || null,
+      gas_used: metric.gasUsed || null,
+      gas_price_gwei: metric.gasPriceGwei || null,
+      fee_amount_usd: metric.feeAmountUsd || null,
+      amount_usd: metric.amountUsd,
+      success: metric.success,
+      tx_hash: metric.txHash || null,
+      error: metric.error || null,
+      settlement_type: metric.settlementType || null,
+      metadata: metric.metadata || {},
+    })
+    .then(({ error }) => {
+      if (error) console.warn('[ChainMetrics] Failed to record metric:', error.message);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,7 +91,7 @@ export interface OnChainTransferResult {
   success: boolean;
   txHash?: string;
   error?: string;
-  path: 'circle' | 'viem' | 'solana' | 'skipped';
+  path: 'circle' | 'viem' | 'solana' | 'cctp' | 'skipped';
 }
 
 export interface SettleWalletTransferParams {
@@ -82,6 +138,33 @@ export function isOnChainCapable(
   return false;
 }
 
+/**
+ * Detect the blockchain of an address by format.
+ * Returns 'sol' for Solana addresses, 'evm' for 0x addresses.
+ */
+export function detectAddressChain(address: string): 'sol' | 'evm' | 'unknown' {
+  if (!address || address.startsWith('internal://')) return 'unknown';
+  if (address.startsWith('0x')) return 'evm';
+  // Solana addresses are base58, typically 32-44 chars, no 0x prefix
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return 'sol';
+  return 'unknown';
+}
+
+/**
+ * Check if a transfer is cross-chain (e.g., Base wallet → Solana wallet).
+ * Cross-chain transfers need CCTP bridge instead of direct on-chain transfer.
+ */
+export function isCrossChain(
+  sourceAddress: string | null | undefined,
+  destinationAddress: string | null | undefined,
+): boolean {
+  if (!sourceAddress || !destinationAddress) return false;
+  const srcChain = detectAddressChain(sourceAddress);
+  const dstChain = detectAddressChain(destinationAddress);
+  if (srcChain === 'unknown' || dstChain === 'unknown') return false;
+  return srcChain !== dstChain;
+}
+
 // ---------------------------------------------------------------------------
 // Layer 1: Pure on-chain transfer (no DB)
 // ---------------------------------------------------------------------------
@@ -97,6 +180,7 @@ export async function executeOnChainTransfer(
   const { sourceWallet, destinationAddress, amount } = params;
   const srcType = sourceWallet.wallet_type || 'internal';
   const isSandbox = process.env.PAYOS_ENVIRONMENT === 'sandbox';
+  const startTime = Date.now();
 
   if (!isSandbox) {
     return { success: false, path: 'skipped' };
@@ -106,7 +190,65 @@ export async function executeOnChainTransfer(
     return { success: false, path: 'skipped', error: 'Destination has no on-chain address' };
   }
 
+  // Helper to record metric on any exit path
+  const withMetric = (result: OnChainTransferResult): OnChainTransferResult => {
+    if (result.path !== 'skipped') {
+      const dstChain = detectAddressChain(destinationAddress);
+      recordChainMetric({
+        blockchain: dstChain === 'sol' ? 'solana' : 'base',
+        settlementPath: result.path,
+        totalDurationMs: Date.now() - startTime,
+        amountUsd: amount,
+        success: result.success,
+        txHash: result.txHash,
+        error: result.error,
+        settlementType: 'direct',
+      });
+    }
+    return result;
+  };
+
   try {
+    // Cross-chain detection: if source and destination are on different chains,
+    // route through CCTP bridge (Epic 38, Story 38.16)
+    if (isCrossChain(sourceWallet.wallet_address, destinationAddress)) {
+      const srcChain = detectAddressChain(sourceWallet.wallet_address || '');
+      const dstChain = detectAddressChain(destinationAddress);
+      console.log(`[Settlement] Cross-chain detected: ${srcChain} → ${dstChain}, routing through CCTP bridge`);
+
+      try {
+        const { getCCTPBridge } = await import('./cctp/bridge.js');
+        const bridge = getCCTPBridge();
+
+        const sourceChain = srcChain === 'sol' ? 'solana' : 'base';
+        const destChain = dstChain === 'sol' ? 'solana' : 'base';
+
+        if (!bridge.isRouteSupported(sourceChain, destChain)) {
+          return withMetric({ success: false, path: 'cctp', error: `CCTP route ${sourceChain} → ${destChain} not supported` });
+        }
+
+        const result = await bridge.transfer({
+          sourceChain,
+          destinationChain: destChain,
+          amount,
+          destinationAddress,
+        });
+
+        if (result.success) {
+          return withMetric({
+            success: true,
+            txHash: result.burnResult?.txHash,
+            path: 'cctp',
+          });
+        }
+
+        return withMetric({ success: false, path: 'cctp', error: result.error || 'CCTP transfer failed' });
+      } catch (cctpErr: any) {
+        console.warn(`[Settlement] CCTP bridge failed: ${cctpErr.message}`);
+        return withMetric({ success: false, path: 'cctp', error: cctpErr.message });
+      }
+    }
+
     // Circle custodial path
     if (srcType === 'circle_custodial' && sourceWallet.provider_wallet_id) {
       const { getCircleClient } = await import('./circle/client.js');
@@ -126,7 +268,7 @@ export async function executeOnChainTransfer(
       }
 
       if (!usdcTokenId) {
-        return { success: false, path: 'circle', error: 'Could not resolve USDC token ID for wallet' };
+        return withMetric({ success: false, path: 'circle', error: 'Could not resolve USDC token ID for wallet' });
       }
 
       const circleTx = await circle.transferTokens(
@@ -151,11 +293,11 @@ export async function executeOnChainTransfer(
 
       if (!isSuccess(finalTx.state)) {
         const reason = finalTx.state === 'FAILED' ? 'failed' : isTerminal(finalTx.state) ? finalTx.state.toLowerCase() : 'timed out';
-        return { success: false, path: 'circle', error: `Circle transfer ${reason}: ${circleTx.id}` };
+        return withMetric({ success: false, path: 'circle', error: `Circle transfer ${reason}: ${circleTx.id}` });
       }
 
       const txHash = (finalTx as any).txHash || circleTx.id;
-      return { success: true, txHash, path: 'circle' };
+      return withMetric({ success: true, txHash, path: 'circle' });
     }
 
     // External wallet path — detect chain from destination address format
@@ -166,20 +308,20 @@ export async function executeOnChainTransfer(
         // Solana external wallet path (Story 38.3)
         const { transferSolanaUsdc } = await import('../config/solana.js');
         const result = await transferSolanaUsdc(destinationAddress, amount);
-        return { success: true, txHash: result.txHash, path: 'solana' };
+        return withMetric({ success: true, txHash: result.txHash, path: 'solana' });
       }
 
       // EVM external wallet path (Base)
       const { transferUsdc } = await import('../config/blockchain.js');
       const result = await transferUsdc(destinationAddress, amount);
-      return { success: true, txHash: result.txHash, path: 'viem' };
+      return withMetric({ success: true, txHash: result.txHash, path: 'viem' });
     }
 
     // Wallet type doesn't support on-chain
     return { success: false, path: 'skipped' };
   } catch (err: any) {
     const path = srcType === 'circle_custodial' ? 'circle' : srcType === 'external' ? 'viem' : 'skipped';
-    return { success: false, path: path as OnChainTransferResult['path'], error: err.message };
+    return withMetric({ success: false, path: path as OnChainTransferResult['path'], error: err.message });
   }
 }
 

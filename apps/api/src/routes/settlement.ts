@@ -803,5 +803,117 @@ app.get('/payout/:id', async (c) => {
   }
 });
 
+// ============================================
+// Chain Performance Metrics (Epic 38, Story 38.17)
+// ============================================
+
+/**
+ * GET /v1/settlement/chain-metrics
+ * Returns aggregated chain performance metrics for the tenant.
+ * Query params: blockchain, path, days (default 7)
+ */
+app.get('/chain-metrics', async (c) => {
+  try {
+    const ctx = c.get('ctx');
+    const supabase = createClient();
+
+    const blockchain = c.req.query('blockchain');
+    const path = c.req.query('path');
+    const days = parseInt(c.req.query('days') || '7');
+    const since = new Date(Date.now() - days * 86400_000).toISOString();
+
+    // Aggregated stats
+    let query = supabase
+      .from('chain_performance_metrics')
+      .select('blockchain, settlement_path, total_duration_ms, amount_usd, success, created_at')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+
+    if (blockchain) query = query.eq('blockchain', blockchain);
+    if (path) query = query.eq('settlement_path', path);
+
+    const { data: metrics, error } = await query;
+
+    if (error) {
+      return c.json({ error: error.message }, 500);
+    }
+
+    // Compute aggregates per blockchain+path
+    const aggregates = new Map<string, {
+      blockchain: string;
+      path: string;
+      count: number;
+      successCount: number;
+      totalDurationMs: number;
+      totalAmountUsd: number;
+      minDurationMs: number;
+      maxDurationMs: number;
+    }>();
+
+    for (const m of (metrics || [])) {
+      const key = `${m.blockchain}:${m.settlement_path}`;
+      let agg = aggregates.get(key);
+      if (!agg) {
+        agg = {
+          blockchain: m.blockchain,
+          path: m.settlement_path,
+          count: 0,
+          successCount: 0,
+          totalDurationMs: 0,
+          totalAmountUsd: 0,
+          minDurationMs: Infinity,
+          maxDurationMs: 0,
+        };
+        aggregates.set(key, agg);
+      }
+      agg.count++;
+      if (m.success) agg.successCount++;
+      agg.totalDurationMs += m.total_duration_ms;
+      agg.totalAmountUsd += parseFloat(m.amount_usd || '0');
+      agg.minDurationMs = Math.min(agg.minDurationMs, m.total_duration_ms);
+      agg.maxDurationMs = Math.max(agg.maxDurationMs, m.total_duration_ms);
+    }
+
+    const summary = Array.from(aggregates.values()).map(agg => ({
+      blockchain: agg.blockchain,
+      settlementPath: agg.path,
+      count: agg.count,
+      successRate: agg.count > 0 ? (agg.successCount / agg.count * 100).toFixed(1) + '%' : '0%',
+      avgDurationMs: agg.count > 0 ? Math.round(agg.totalDurationMs / agg.count) : 0,
+      minDurationMs: agg.minDurationMs === Infinity ? 0 : agg.minDurationMs,
+      maxDurationMs: agg.maxDurationMs,
+      totalVolumeUsd: parseFloat(agg.totalAmountUsd.toFixed(2)),
+    }));
+
+    return c.json({
+      data: {
+        period: { days, since },
+        metrics: summary,
+        totalSettlements: (metrics || []).length,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error in GET /v1/settlement/chain-metrics:', error);
+    return c.json({ error: error.message || 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * GET /v1/settlement/cctp/routes
+ * Returns available CCTP cross-chain routes.
+ */
+app.get('/cctp/routes', async (c) => {
+  try {
+    const { getCCTPBridge } = await import('../services/cctp/bridge.js');
+    const bridge = getCCTPBridge();
+    const routes = bridge.getSupportedRoutes();
+
+    return c.json({ data: routes });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 export default app;
 

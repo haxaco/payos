@@ -37,6 +37,7 @@ export type SettlementRail =
   | 'circle_usdc'     // Circle Programmable Wallets (USDC)
   | 'base_chain'      // Base L2 for on-chain settlements
   | 'solana_chain'    // Solana for on-chain settlements (Epic 38)
+  | 'cctp_bridge'     // CCTP cross-chain USDC transfer (Epic 38, Story 38.15)
   | 'pix'             // Brazil instant payment
   | 'spei'            // Mexico instant payment
   | 'internal'        // Internal ledger transfer
@@ -190,6 +191,15 @@ const RAIL_CONFIG: Record<SettlementRail, Omit<SettlementRoute, 'supported'>> = 
     feeFixed: 0.30,
     minAmount: 0.50,
     maxAmount: 999999.99,
+  },
+  cctp_bridge: {
+    rail: 'cctp_bridge',
+    priority: 4,               // Used for cross-chain, slightly lower priority than same-chain
+    estimatedTime: 120,        // ~2 minutes (burn + attestation + mint)
+    feePercentage: 0.005,      // 0.5% (Circle CCTP is free, gas costs on both chains)
+    feeFixed: 0.50,
+    minAmount: 1,
+    maxAmount: 500000,
   },
   mock: {
     rail: 'mock',
@@ -386,6 +396,9 @@ export class SettlementRouter {
       case 'solana_chain':
         return this.executeSolanaChainSettlement(request, feeAmount, netAmount);
 
+      case 'cctp_bridge':
+        return this.executeCCTPBridgeSettlement(request, feeAmount, netAmount);
+
       case 'pix':
         return this.executePixSettlement(request, feeAmount, netAmount);
 
@@ -540,6 +553,93 @@ export class SettlementRouter {
         error: {
           code: 'SOLANA_SETTLEMENT_ERROR',
           message: error.message || 'Failed to execute Solana on-chain transfer',
+          retryable: this.isRetryableError(error),
+        },
+      };
+    }
+  }
+
+  private async executeCCTPBridgeSettlement(
+    request: SettlementRequest,
+    feeAmount: number,
+    netAmount: number
+  ): Promise<SettlementResponse> {
+    console.log(`[Settlement Router] CCTP bridge settlement for ${request.amount} ${request.currency}`);
+
+    try {
+      const { getCCTPBridge } = await import('./cctp/bridge.js');
+      const bridge = getCCTPBridge();
+
+      const sourceChain = request.protocolMetadata?.sourceChain || 'base';
+      const destinationChain = request.protocolMetadata?.destinationChain || 'solana';
+      const destinationAddress = request.protocolMetadata?.destinationAddress;
+
+      if (!destinationAddress) {
+        return {
+          success: false,
+          transferId: request.transferId,
+          status: 'failed',
+          rail: 'cctp_bridge',
+          grossAmount: request.amount,
+          feeAmount,
+          netAmount,
+          error: {
+            code: 'MISSING_DESTINATION',
+            message: 'Destination address required for CCTP bridge transfer',
+            retryable: false,
+          },
+        };
+      }
+
+      const result = await bridge.transfer({
+        sourceChain,
+        destinationChain,
+        amount: netAmount,
+        destinationAddress,
+      });
+
+      if (!result.success) {
+        return {
+          success: false,
+          transferId: request.transferId,
+          status: 'failed',
+          rail: 'cctp_bridge',
+          grossAmount: request.amount,
+          feeAmount,
+          netAmount,
+          error: {
+            code: 'CCTP_BRIDGE_ERROR',
+            message: result.error || 'CCTP bridge transfer failed',
+            retryable: true,
+          },
+        };
+      }
+
+      return {
+        success: true,
+        transferId: request.transferId,
+        status: 'completed',
+        rail: 'cctp_bridge',
+        settlementId: result.burnResult?.txHash || result.transferId,
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        settledAt: new Date().toISOString(),
+        estimatedCompletion: new Date(Date.now() + 120_000).toISOString(),
+      };
+    } catch (error: any) {
+      console.error('[Settlement Router] CCTP bridge settlement error:', error);
+      return {
+        success: false,
+        transferId: request.transferId,
+        status: 'failed',
+        rail: 'cctp_bridge',
+        grossAmount: request.amount,
+        feeAmount,
+        netAmount,
+        error: {
+          code: 'CCTP_BRIDGE_ERROR',
+          message: error.message || 'Failed to execute CCTP bridge transfer',
           retryable: this.isRetryableError(error),
         },
       };
