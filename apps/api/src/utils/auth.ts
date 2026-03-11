@@ -211,6 +211,8 @@ export type SecurityEventType =
   | 'user_role_changed'
   | 'user_removed'
   | 'team_invite_sent'
+  | 'team_invite_revoked'
+  | 'team_invite_resent'
   | 'accept_invite_rate_limited'
   | 'accept_invite_failure'
   | 'accept_invite_success';
