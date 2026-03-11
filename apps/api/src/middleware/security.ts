@@ -51,7 +51,12 @@ export async function logAuthAttempt(
  * Request ID middleware for tracing
  */
 export async function requestId(c: Context, next: Next) {
-  const id = c.req.header('X-Request-ID') || crypto.randomUUID();
+  const clientId = c.req.header('X-Request-ID');
+  // Validate client-supplied request IDs: max 128 chars, alphanumeric + hyphens/underscores only
+  const id =
+    clientId && clientId.length <= 128 && /^[a-zA-Z0-9_-]+$/.test(clientId)
+      ? clientId
+      : crypto.randomUUID();
   c.set('requestId', id);
   c.header('X-Request-ID', id);
   return next();

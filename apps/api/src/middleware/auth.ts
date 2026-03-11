@@ -5,7 +5,7 @@ import { logSecurityEvent } from '../utils/auth.js';
 
 export interface RequestContext {
   tenantId: string;
-  actorType: 'api_key' | 'user' | 'agent';
+  actorType: 'api_key' | 'user' | 'agent' | 'portal';
   // For user (JWT) auth
   userId?: string;
   userRole?: 'owner' | 'admin' | 'member' | 'viewer';
@@ -17,6 +17,9 @@ export interface RequestContext {
   actorId?: string;
   actorName?: string;
   kyaTier?: number;
+  // For portal token auth (Epic 65)
+  portalTokenId?: string;
+  portalScopes?: string[];
 }
 
 declare module 'hono' {
@@ -432,6 +435,59 @@ export async function authMiddleware(c: Context, next: Next) {
       actorId: agent.id,
       actorName: agent.name,
       kyaTier: agent.kya_tier,
+    });
+
+    return next();
+  }
+
+  // ============================================
+  // 4. Portal Token Auth (portal_xxx) — Epic 65
+  // ============================================
+  if (token.startsWith('portal_')) {
+    const tokenPrefix = getKeyPrefix(token);
+
+    const { data: portalToken, error } = await (supabase
+      .from('portal_tokens') as any)
+      .select('id, tenant_id, name, token_hash, scopes, status, expires_at')
+      .eq('token_prefix', tokenPrefix)
+      .single();
+
+    if (error || !portalToken) {
+      await logAuthAttempt(false, 'portal', null, null, ip, userAgent, 'Invalid portal token');
+      return c.json({ error: 'Invalid portal token' }, 401);
+    }
+
+    if (!verifyApiKey(token, portalToken.token_hash)) {
+      await logAuthAttempt(false, 'portal', null, null, ip, userAgent, 'Hash mismatch');
+      return c.json({ error: 'Invalid portal token' }, 401);
+    }
+
+    if (portalToken.status !== 'active') {
+      await logAuthAttempt(false, 'portal', portalToken.tenant_id, null, ip, userAgent, `Portal token status: ${portalToken.status}`);
+      return c.json({ error: 'Portal token is not active' }, 401);
+    }
+
+    if (portalToken.expires_at && new Date(portalToken.expires_at) < new Date()) {
+      await logAuthAttempt(false, 'portal', portalToken.tenant_id, null, ip, userAgent, 'Portal token expired');
+      return c.json({ error: 'Portal token has expired' }, 401);
+    }
+
+    // Update last_used_at (async)
+    (supabase.from('portal_tokens') as any)
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('id', portalToken.id)
+      .then(() => {})
+      .catch((err: any) => console.error('Failed to update portal token last_used:', err));
+
+    await logAuthAttempt(true, 'portal', portalToken.tenant_id, portalToken.id, ip, userAgent);
+
+    c.set('ctx', {
+      tenantId: portalToken.tenant_id,
+      actorType: 'portal',
+      actorId: portalToken.id,
+      actorName: portalToken.name || 'Portal Token',
+      portalTokenId: portalToken.id,
+      portalScopes: portalToken.scopes || ['usage:read'],
     });
 
     return next();

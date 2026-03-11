@@ -8,8 +8,11 @@
  * reducing x402/A2A response latency from 2-30s to <200ms.
  */
 
+import { randomUUID } from 'crypto';
 import { createClient } from '../db/client.js';
 import { executeOnChainTransfer, isOnChainCapable } from '../services/wallet-settlement.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const MAX_RETRIES = 3;
@@ -236,6 +239,17 @@ export class AsyncSettlementWorker {
           },
         })
         .eq('id', transfer.id);
+
+      trackOp({
+        tenantId: transfer.tenant_id,
+        operation: OpType.SETTLEMENT_ASYNC,
+        subject: `transfer/${transfer.id}`,
+        actorType: 'system',
+        actorId: 'async-settlement-worker',
+        correlationId: randomUUID(),
+        success: true,
+        data: { txHash: onChainResult.txHash, settlementType: 'on_chain' },
+      });
 
       console.log(`[AsyncSettlement] Settled transfer ${transfer.id} on-chain: tx=${onChainResult.txHash}`);
     } else {

@@ -8,6 +8,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { trackOp } from './ops/track-op.js';
+import { OpType } from './ops/operation-types.js';
 
 // ============================================
 // Types
@@ -140,11 +142,20 @@ export class SpendingPolicyService {
   async checkPolicy(
     walletId: string,
     amount: number,
-    context: PolicyContext
+    context: PolicyContext,
+    correlationId?: string
   ): Promise<PolicyCheckResult> {
     // Fetch wallet with policy
     const wallet = await this.getWalletWithPolicy(walletId);
     if (!wallet) {
+      trackOp({
+        tenantId: 'unknown',
+        operation: OpType.GOVERNANCE_POLICY_EVAL,
+        subject: `wallet/${walletId}`,
+        correlationId,
+        success: false,
+        data: { amount, reason: 'Wallet not found', protocol: context.protocol },
+      });
       return {
         allowed: false,
         requiresApproval: false,
@@ -153,9 +164,17 @@ export class SpendingPolicyService {
     }
 
     const policy = wallet.spending_policy;
-    
+
     // No policy = no restrictions
     if (!policy) {
+      trackOp({
+        tenantId: wallet.tenant_id,
+        operation: OpType.GOVERNANCE_POLICY_EVAL,
+        subject: `wallet/${walletId}`,
+        correlationId,
+        success: true,
+        data: { amount, protocol: context.protocol, policyPresent: false },
+      });
       return { allowed: true, requiresApproval: false };
     }
 
@@ -168,6 +187,14 @@ export class SpendingPolicyService {
     if (normalizedPolicy.dailySpendLimit) {
       const dailySpent = normalizedPolicy.dailySpent || 0;
       if (dailySpent + amount > normalizedPolicy.dailySpendLimit) {
+        trackOp({
+          tenantId: wallet.tenant_id,
+          operation: OpType.GOVERNANCE_POLICY_EVAL,
+          subject: `wallet/${walletId}`,
+          success: false,
+          correlationId,
+          data: { amount, protocol: context.protocol, violationType: 'daily_limit', dailySpent, dailyLimit: normalizedPolicy.dailySpendLimit },
+        });
         return {
           allowed: false,
           requiresApproval: false,
@@ -183,6 +210,14 @@ export class SpendingPolicyService {
     if (normalizedPolicy.monthlySpendLimit) {
       const monthlySpent = normalizedPolicy.monthlySpent || 0;
       if (monthlySpent + amount > normalizedPolicy.monthlySpendLimit) {
+        trackOp({
+          tenantId: wallet.tenant_id,
+          operation: OpType.GOVERNANCE_POLICY_EVAL,
+          subject: `wallet/${walletId}`,
+          success: false,
+          correlationId,
+          data: { amount, protocol: context.protocol, violationType: 'monthly_limit', monthlySpent, monthlyLimit: normalizedPolicy.monthlySpendLimit },
+        });
         return {
           allowed: false,
           requiresApproval: false,
@@ -199,6 +234,14 @@ export class SpendingPolicyService {
     // Check approved endpoints (x402-specific)
     if (context.endpointId && normalizedPolicy.approvedEndpoints?.length) {
       if (!normalizedPolicy.approvedEndpoints.includes(context.endpointId)) {
+        trackOp({
+          tenantId: wallet.tenant_id,
+          operation: OpType.GOVERNANCE_POLICY_EVAL,
+          subject: `wallet/${walletId}`,
+          success: false,
+          correlationId,
+          data: { amount, protocol: context.protocol, violationType: 'endpoint_not_approved', endpointId: context.endpointId },
+        });
         return {
           allowed: false,
           requiresApproval: false,
@@ -214,6 +257,14 @@ export class SpendingPolicyService {
         (vendor: string) => context.vendor!.toLowerCase().includes(vendor.toLowerCase())
       );
       if (!isApproved) {
+        trackOp({
+          tenantId: wallet.tenant_id,
+          operation: OpType.GOVERNANCE_POLICY_EVAL,
+          subject: `wallet/${walletId}`,
+          success: false,
+          correlationId,
+          data: { amount, protocol: context.protocol, violationType: 'vendor_not_approved', vendor: context.vendor },
+        });
         return {
           allowed: false,
           requiresApproval: false,
@@ -226,6 +277,14 @@ export class SpendingPolicyService {
     // Check approved categories
     if (context.category && normalizedPolicy.approvedCategories?.length) {
       if (!normalizedPolicy.approvedCategories.includes(context.category)) {
+        trackOp({
+          tenantId: wallet.tenant_id,
+          operation: OpType.GOVERNANCE_POLICY_EVAL,
+          subject: `wallet/${walletId}`,
+          success: false,
+          correlationId,
+          data: { amount, protocol: context.protocol, violationType: 'category_not_approved', category: context.category },
+        });
         return {
           allowed: false,
           requiresApproval: false,
@@ -238,26 +297,42 @@ export class SpendingPolicyService {
     // 3. Check approval threshold (can be bypassed with human approval)
     const approvalThreshold = normalizedPolicy.approvalThreshold || normalizedPolicy.requiresApprovalAbove;
     if (approvalThreshold && amount > approvalThreshold) {
+      trackOp({
+        tenantId: wallet.tenant_id,
+        operation: OpType.GOVERNANCE_POLICY_EVAL,
+        subject: `wallet/${walletId}`,
+        success: false,
+        correlationId,
+        data: { amount, protocol: context.protocol, violationType: 'approval_threshold', approvalThreshold, requiresApproval: true },
+      });
       return {
         allowed: false,
         requiresApproval: true,  // KEY DIFFERENCE: This can be approved by human
         reason: `Amount ${amount.toFixed(2)} exceeds approval threshold ${approvalThreshold}`,
         violationType: 'approval_threshold',
-        currentSpending: { 
-          daily: normalizedPolicy.dailySpent || 0, 
-          monthly: normalizedPolicy.monthlySpent || 0 
+        currentSpending: {
+          daily: normalizedPolicy.dailySpent || 0,
+          monthly: normalizedPolicy.monthlySpent || 0
         },
-        limits: { 
-          daily: normalizedPolicy.dailySpendLimit, 
+        limits: {
+          daily: normalizedPolicy.dailySpendLimit,
           monthly: normalizedPolicy.monthlySpendLimit,
-          approvalThreshold 
+          approvalThreshold
         }
       };
     }
 
     // All checks passed
-    return { 
-      allowed: true, 
+    trackOp({
+      tenantId: wallet.tenant_id,
+      operation: OpType.GOVERNANCE_POLICY_EVAL,
+      subject: `wallet/${walletId}`,
+      correlationId,
+      success: true,
+      data: { amount, protocol: context.protocol },
+    });
+    return {
+      allowed: true,
       requiresApproval: false,
       currentSpending: {
         daily: normalizedPolicy.dailySpent || 0,

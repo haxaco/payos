@@ -22,6 +22,8 @@ import {
 } from '../services/approval-workflow.js';
 import { createLimitService } from '../services/limits.js';
 import { createCheckoutTelemetryService, extractMerchantDomain } from '../services/telemetry/checkout-telemetry.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const app = new Hono();
 
@@ -209,6 +211,16 @@ app.post('/checkouts', async (c) => {
       return c.json({ error: 'Failed to create checkout items' }, 500);
     }
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.ACP_CHECKOUT_CREATED,
+      subject: `acp/checkout/${checkout.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json({
       data: {
         id: checkout.id,
@@ -390,6 +402,16 @@ app.post('/checkouts/batch', async (c) => {
         });
       }
     }
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.ACP_BATCH_INITIATED,
+      subject: `acp/batch/${validated.checkouts.length}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
 
     return c.json({
       total: validated.checkouts.length,
@@ -661,7 +683,8 @@ app.post('/checkouts/:id/complete', async (c) => {
       const policyCheck = await spendingPolicyService.checkPolicy(
         walletId,
         checkoutAmount,
-        policyContext
+        policyContext,
+        c.get('requestId')
       );
 
       if (!policyCheck.allowed) {
@@ -694,6 +717,7 @@ app.post('/checkouts/:id/complete', async (c) => {
             requestedByType: ctx.actorType,
             requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
             requestedByName: ctx.userName || ctx.actorName || undefined,
+            correlationId: c.get('requestId'),
           });
 
           return c.json({
@@ -908,6 +932,16 @@ app.post('/checkouts/:id/complete', async (c) => {
       currency: checkout.currency,
     });
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.ACP_CHECKOUT_COMPLETED,
+      subject: `acp/checkout/${id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json({
       data: {
         checkout_id: updatedCheckout.id,
@@ -953,6 +987,16 @@ app.patch('/checkouts/:id/cancel', async (c) => {
     if (error || !checkout) {
       return c.json({ error: 'Checkout not found or already completed' }, 404);
     }
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.ACP_CHECKOUT_CANCELLED,
+      subject: `acp/checkout/${id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
 
     return c.json({
       data: checkout,

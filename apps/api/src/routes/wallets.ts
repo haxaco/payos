@@ -22,6 +22,8 @@ import { settleWalletTransfer, isOnChainCapable } from '../services/wallet-settl
 import { getWalletVerificationService } from '../services/wallet/index.js';
 import { normalizeFields, buildDeprecationHeader } from '../utils/helpers.js';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 // Derive correct network name per blockchain (Solana uses solana-devnet/mainnet, others use {chain}-mainnet)
 function getNetworkName(blockchain: string): string {
@@ -399,6 +401,17 @@ app.post('/', async (c) => {
       id: wallet.id, name: wallet.name, network: wallet.network,
       address: wallet.wallet_address, currency: wallet.currency,
     }).catch(console.error);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.WALLET_CREATED,
+      subject: `wallet/${wallet.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { blockchain, currency: validated.currency },
+    });
 
     return c.json({
       data: mapWalletFromDb(wallet)
@@ -1077,6 +1090,17 @@ app.post('/:id/deposit', async (c) => {
       balance: newBalance, operation: 'deposit',
     }).catch(console.error);
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.WALLET_DEPOSIT,
+      subject: `wallet/${wallet.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { amount: validated.amount, currency: wallet.currency, newBalance },
+    });
+
     return c.json({
       data: {
         walletId: wallet.id,
@@ -1211,6 +1235,17 @@ app.post('/:id/withdraw', async (c) => {
       address: wallet.wallet_address, amount: validated.amount,
       balance: newBalance, operation: 'withdrawal',
     }).catch(console.error);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.WALLET_WITHDRAWAL,
+      subject: `wallet/${wallet.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { amount: validated.amount, currency: wallet.currency, newBalance },
+    });
 
     return c.json({
       data: {
@@ -1738,6 +1773,17 @@ app.post('/:id/fund', async (c) => {
         source: 'circle_faucet',
       },
       metadata: { environment: 'sandbox', source: 'faucet_fund_endpoint' },
+    });
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.WALLET_DEPOSIT,
+      subject: `wallet/${id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { currency: validated.currency, source: 'circle_faucet', walletType },
     });
 
     return c.json({

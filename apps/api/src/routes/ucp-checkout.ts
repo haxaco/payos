@@ -37,6 +37,8 @@ import {
 import { createClient } from '../db/client.js';
 import { getCircleFXService } from '../services/circle/fx.js';
 import { createCheckoutTelemetryService } from '../services/telemetry/checkout-telemetry.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 // =============================================================================
 // Validation Schemas
@@ -152,6 +154,16 @@ router.post('/', async (c) => {
   try {
     const supabase = createClient();
     const checkout = await createCheckout(ctx.tenantId, body as CreateCheckoutRequest, supabase);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_CHECKOUT_CREATED,
+      subject: `ucp/checkout/${checkout.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
 
     return c.json(checkout, 201);
   } catch (error: any) {
@@ -490,6 +502,16 @@ router.put('/:id', async (c) => {
     const supabase = createClient();
     const checkout = await updateCheckout(ctx.tenantId, checkoutId, body as UpdateCheckoutRequest, supabase);
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_CHECKOUT_UPDATED,
+      subject: `ucp/checkout/${checkoutId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json(checkout);
   } catch (error: any) {
     if (error.message === 'Checkout not found') {
@@ -524,6 +546,16 @@ router.post('/:id/complete', async (c) => {
       agent_id: checkout.agent_id,
       currency: checkout.currency,
       protocol_metadata: { checkout_id: checkoutId },
+    });
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_CHECKOUT_COMPLETED,
+      subject: `ucp/checkout/${checkoutId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
     });
 
     return c.json(checkout);
@@ -573,6 +605,16 @@ router.post('/:id/cancel', async (c) => {
   try {
     const supabase = createClient();
     const checkout = await cancelCheckout(ctx.tenantId, checkoutId, supabase);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_CHECKOUT_CANCELLED,
+      subject: `ucp/checkout/${checkoutId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
 
     return c.json(checkout);
   } catch (error: any) {
@@ -695,6 +737,16 @@ router.post('/:id/instruments', async (c) => {
   try {
     const supabase = createClient();
     const checkout = await addPaymentInstrument(ctx.tenantId, checkoutId, body, supabase);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_INSTRUMENT_ADDED,
+      subject: `ucp/checkout/${checkoutId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
 
     return c.json(checkout);
   } catch (error: any) {

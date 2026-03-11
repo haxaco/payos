@@ -31,6 +31,8 @@ import {
 } from '../services/approval-workflow.js';
 // executeOnChainTransfer moved to async-settlement-worker (Epic 38, Story 38.1)
 import { createCheckoutTelemetryService } from '../services/telemetry/checkout-telemetry.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const app = new Hono();
 
@@ -692,7 +694,8 @@ app.post('/pay', async (c) => {
     const policyCheck = await spendingPolicyService.checkPolicy(
       wallet.id,
       auth.amount,
-      policyContext
+      policyContext,
+      c.get('requestId')
     );
 
     timings['6_spending_policy_check'] = Date.now() - t1;
@@ -724,6 +727,7 @@ app.post('/pay', async (c) => {
           requestedByType: ctx.actorType,
           requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
           requestedByName: ctx.userName || ctx.actorName || undefined,
+          correlationId: c.get('requestId'),
         });
 
         return c.json({
@@ -915,6 +919,19 @@ app.post('/pay', async (c) => {
         markRequestProcessed(auth.requestId);
         timings['total'] = Date.now() - startTotal;
         console.log(`⚡ [x402/pay DEFERRED] ${auth.amount} USDC in ${timings['total']}ms (intent: ${timings['9.5_deferred_intent']}ms)`);
+
+        trackOp({
+          tenantId: ctx.tenantId,
+          operation: OpType.X402_PAYMENT_SENT,
+          subject: `x402-payment/${intentResult.intent!.id}`,
+          actorType: ctx.actorType,
+          actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+          correlationId: c.get('requestId'),
+          success: true,
+          amountUsd: auth.amount,
+          currency: auth.currency,
+          data: { settlementMode: 'deferred', endpointId: endpoint.id, path: endpoint.path },
+        });
 
         return c.json({
           success: true,
@@ -1187,6 +1204,16 @@ app.post('/pay', async (c) => {
     // Use balance from settlement result (already have it!)
     const newWalletBalance = settlementResult.consumerNewBalance;
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.X402_PAYMENT_SENT,
+      subject: `x402-payment/${transfer.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json({
       success: true,
       message: 'Payment processed and settled successfully',
@@ -1279,6 +1306,16 @@ app.post('/verify', async (c) => {
         }, 401);
       }
       
+      trackOp({
+        tenantId: ctx.tenantId,
+        operation: OpType.X402_PAYMENT_VERIFIED,
+        subject: `x402-payment/${payload.transferId}`,
+        actorType: ctx.actorType,
+        actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+        correlationId: c.get('requestId'),
+        success: true,
+      });
+
       return c.json({
         verified: true,
         data: {
@@ -1323,6 +1360,18 @@ app.post('/verify', async (c) => {
     }
 
     const verified = transfer.status === 'completed';
+
+    if (verified) {
+      trackOp({
+        tenantId: ctx.tenantId,
+        operation: OpType.X402_PAYMENT_VERIFIED,
+        subject: `x402-payment/${transfer.id}`,
+        actorType: ctx.actorType,
+        actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+        correlationId: c.get('requestId'),
+        success: true,
+      });
+    }
 
     return c.json({
       verified,

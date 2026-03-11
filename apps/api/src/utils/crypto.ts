@@ -72,3 +72,13 @@ export function generateRotationToken(): string {
   return randomBytes(32).toString('hex');
 }
 
+/**
+ * Generate a secure random portal token
+ * Format: portal_<32 random chars>
+ * Used for customer-facing usage API access (Epic 65)
+ */
+export function generatePortalToken(): string {
+  const randomPart = randomBytes(24).toString('base64url');
+  return `portal_${randomPart}`;
+}
+

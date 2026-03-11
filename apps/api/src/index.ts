@@ -12,6 +12,9 @@ import { getBatchSettlementWorker } from './workers/batch-settlement-worker.js';
 import { environmentManager } from './config/environment.js';
 import { loadHandlersFromDB } from './services/ucp/payment-handlers/index.js';
 import { createClient } from './db/client.js';
+import { startOpTracker, stopOpTracker } from './services/ops/track-op.js';
+import { startRequestCounter, stopRequestCounter } from './services/ops/request-counter.js';
+import { startPartitionManager, stopPartitionManager } from './workers/partition-manager.js';
 
 // Railway uses PORT, fallback to API_PORT for local dev
 const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
@@ -43,11 +46,17 @@ console.log(`
 ║  🤖 A2A Task Worker: ${(enableA2AWorker ? 'ON' : 'OFF').padEnd(25)}║
 ║  ⚡ Async Settlement: ${(enableAsyncSettlement ? 'ON' : 'OFF').padEnd(24)}║
 ║  📦 Batch Settlement: ${(enableBatchSettlement ? 'ON' : 'OFF').padEnd(23)}║
+║  📊 Ops Tracker: ON                             ║
 ╚══════════════════════════════════════════════════╝
 `);
 
 // Log environment configuration (Story 40.28)
 environmentManager.logStartupInfo();
+
+// Start operation tracker, request counter, & partition manager (Epic 65)
+startOpTracker();
+startRequestCounter();
+startPartitionManager();
 
 // Load DB-driven payment handlers
 loadHandlersFromDB(createClient()).catch((err) => {
@@ -140,6 +149,10 @@ const shutdown = async (signal: string) => {
   if (batchSettlementWorker) {
     batchSettlementWorker.stop();
   }
+  // Drain ops buffers before exit (Epic 65)
+  await stopOpTracker();
+  await stopRequestCounter();
+  stopPartitionManager();
   process.exit(0);
 };
 

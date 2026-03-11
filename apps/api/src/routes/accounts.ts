@@ -16,6 +16,8 @@ import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { ErrorCode } from '@sly/types';
 import { onboardEntity, type OnboardingInput } from '../services/entity-onboarding.js';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const accounts = new Hono();
 
@@ -183,6 +185,17 @@ accounts.post('/', async (c) => {
   }).catch(console.error);
 
   const account = mapAccountFromDb(data);
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.ENTITY_ACCOUNT_CREATED,
+    subject: `account/${data.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return c.json({
     data: account,
     links: {
@@ -353,6 +366,16 @@ accounts.patch('/:id', async (c) => {
   triggerWorkflows(supabase, ctx.tenantId, 'account', 'update', {
     id: data.id, name: data.name, email: data.email, type: data.type,
   }).catch(console.error);
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.ENTITY_ACCOUNT_UPDATED,
+    subject: `account/${id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
 
   return c.json({
     data: mapAccountFromDb(data),

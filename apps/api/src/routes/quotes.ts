@@ -5,6 +5,8 @@ import { ValidationError } from '../middleware/error.js';
 import { getExchangeRate, MOCK_FX_RATES } from '@sly/utils';
 import { getCircleFXService } from '../services/circle/fx.js';
 import { getMultiCurrencyService, SUPPORTED_CORRIDORS, type SupportedCurrency } from '../services/fx/index.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const quotes = new Hono();
 
@@ -151,6 +153,17 @@ quotes.post('/', async (c) => {
     estimatedSettlement = 'Instant';
   }
   
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.FX_QUOTE,
+    subject: `quote/${quote.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { fromCurrency, toCurrency, amount },
+  });
+
   return c.json({
     data: {
       id: quote.id,
@@ -275,6 +288,17 @@ quotes.post('/fx', async (c) => {
       console.error('Error storing quote:', error);
     }
     
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.FX_QUOTE,
+      subject: `quote/${storedQuote?.id || 'circle'}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { fromCurrency: source_currency, toCurrency: destination_currency, amount: source_amount || destination_amount },
+    });
+
     return c.json({
       data: {
         ...quote,
@@ -290,24 +314,37 @@ quotes.post('/fx', async (c) => {
 // POST /v1/quotes/fx/lock - Lock a quote
 // ============================================
 quotes.post('/fx/lock', async (c) => {
+  const ctx = c.get('ctx');
+
   let body;
   try {
     body = await c.req.json();
   } catch {
     throw new ValidationError('Invalid JSON body');
   }
-  
+
   const { quote_id } = body;
-  
+
   if (!quote_id) {
     throw new ValidationError('quote_id is required');
   }
-  
+
   const fxService = getCircleFXService();
-  
+
   try {
     const lockedQuote = await fxService.lockQuote(quote_id);
-    
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.FX_QUOTE,
+      subject: `quote/${quote_id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { action: 'lock', quoteId: quote_id },
+    });
+
     return c.json({ data: lockedQuote });
   } catch (error: any) {
     return c.json({ error: error.message }, 400);
@@ -435,6 +472,17 @@ quotes.post('/multi', async (c) => {
       console.error('Error storing multi-currency quote:', error);
     }
     
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.FX_QUOTE,
+      subject: `quote/${storedQuote?.id || 'multi'}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { fromCurrency: source_currency, toCurrency: destination_currency, amount: source_amount || destination_amount, multi: true },
+    });
+
     return c.json({
       data: {
         ...quote,

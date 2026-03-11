@@ -22,6 +22,8 @@ import {
 } from '../services/approval-workflow.js';
 import { getLiveFXService } from '../services/fx/live-rates.js';
 import { createCheckoutTelemetryService, extractMerchantDomain } from '../services/telemetry/checkout-telemetry.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const ap2 = new Hono();
 
@@ -144,6 +146,16 @@ ap2.post('/mandates', async (c) => {
     throw new ValidationError(`Failed to create mandate: ${error.message}`);
   }
 
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.AP2_MANDATE_CREATED,
+    subject: `ap2/mandate/${mandate.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return c.json({ data: mandate }, 201);
 });
 
@@ -259,6 +271,16 @@ ap2.patch('/mandates/:id', async (c) => {
     return c.json({ error: error?.message || 'Mandate not found' }, 404);
   }
 
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.AP2_MANDATE_UPDATED,
+    subject: `ap2/mandate/${mandate.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return c.json({ data: mandate });
 });
 
@@ -285,6 +307,16 @@ ap2.patch('/mandates/:id/cancel', async (c) => {
   if (error || !mandate) {
     return c.json({ error: error?.message || 'Mandate not found or not active' }, 404);
   }
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.AP2_MANDATE_CANCELLED,
+    subject: `ap2/mandate/${mandate.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
 
   return c.json({ data: mandate });
 });
@@ -852,6 +884,16 @@ ap2.post('/mandates/:id/execute', async (c) => {
     responseData.to_account_name = crossBorderInfo.to_account_name;
   }
 
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.AP2_MANDATE_EXECUTED,
+    subject: `ap2/mandate/${mandate.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return c.json({ data: responseData }, 201);
 });
 
@@ -926,7 +968,8 @@ ap2.post('/payments', async (c) => {
     const policyCheck = await spendingPolicyService.checkPolicy(
       walletId,
       amount,
-      policyContext
+      policyContext,
+      c.get('requestId')
     );
 
     if (!policyCheck.allowed) {
@@ -960,6 +1003,7 @@ ap2.post('/payments', async (c) => {
           requestedByType: ctx.actorType,
           requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
           requestedByName: ctx.userName || ctx.actorName || undefined,
+          correlationId: c.get('requestId'),
         });
 
         return c.json({

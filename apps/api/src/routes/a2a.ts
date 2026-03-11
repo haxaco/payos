@@ -21,6 +21,8 @@ import { taskEventBus } from '../services/a2a/task-event-bus.js';
 import type { A2AJsonRpcRequest, A2APart, A2ATaskState, A2AConfiguration } from '../services/a2a/types.js';
 import { normalizeParts } from '../services/a2a/types.js';
 import { verifyApiKey } from '../utils/crypto.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -125,6 +127,17 @@ a2aPublicRouter.get('/agents/:agentId/card', async (c) => {
 
   const result = await fetchAgentCard(agentId, undefined, getBaseUrl(c));
   if ('error' in result) return c.json({ error: result.error }, result.status);
+
+  trackOp({
+    tenantId: 'public',
+    operation: OpType.A2A_AGENT_DISCOVERED,
+    subject: `a2a/agent/${agentId}/card`,
+    actorType: 'system',
+    actorId: 'public',
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return agentCardResponse(result.card);
 });
 
@@ -144,6 +157,17 @@ a2aPublicRouter.get('/:agentId/.well-known/agent.json', async (c) => {
 
   const result = await fetchAgentCard(agentId, undefined, getBaseUrl(c));
   if ('error' in result) return c.json({ error: result.error }, result.status);
+
+  trackOp({
+    tenantId: 'public',
+    operation: OpType.A2A_AGENT_DISCOVERED,
+    subject: `a2a/agent/${agentId}/.well-known/agent.json`,
+    actorType: 'system',
+    actorId: 'public',
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return agentCardResponse(result.card);
 });
 
@@ -369,6 +393,21 @@ a2aPublicRouter.post('/:agentId', async (c) => {
   const taskService = new A2ATaskService(supabase, tenantId);
   const rpcResponse = await handleJsonRpc(rpcRequest, agentId, taskService, supabase, tenantId || undefined, callerAgentId);
 
+  // Track A2A task operations
+  if (tenantId && (rpcRequest.method === 'message/send' || rpcRequest.method === 'message/stream')) {
+    const rpcResult = rpcResponse as any;
+    const resultTaskId = rpcResult?.result?.id || rpcResult?.result?.taskId;
+    trackOp({
+      tenantId,
+      operation: OpType.A2A_TASK_SENT,
+      subject: `a2a/task/${resultTaskId || agentId}`,
+      actorType: callerAgentId ? 'agent' : 'api_key',
+      actorId: callerAgentId || 'external',
+      correlationId: c.get('requestId'),
+      success: !rpcResult?.error,
+    });
+  }
+
   return jsonRpc(rpcResponse as Record<string, unknown>);
 });
 
@@ -556,6 +595,17 @@ a2aPublicRouter.post('/:agentId/callback', async (c) => {
   }
 
   console.log(`[A2A Callback] Agent ${agentId.slice(0, 8)} reported task ${taskId.slice(0, 8)} as ${newState}`);
+
+  trackOp({
+    tenantId: agent.tenant_id,
+    operation: OpType.A2A_TASK_STATE_CHANGED,
+    subject: `a2a/task/${taskId}`,
+    actorType: 'agent',
+    actorId: agentId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { toState: newState, source: 'callback' },
+  });
 
   return c.json({ data: { taskId, state: newState, received: true } });
 });
@@ -794,6 +844,17 @@ a2aRouter.get('/agents/:agentId/card', async (c) => {
 
   const result = await fetchAgentCard(agentId, ctx.tenantId, getBaseUrl(c));
   if ('error' in result) return c.json({ error: result.error }, result.status);
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.A2A_AGENT_DISCOVERED,
+    subject: `a2a/agent/${agentId}/card`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return c.json({ data: result.card });
 });
 
@@ -948,12 +1009,36 @@ a2aRouter.post('/discover', async (c) => {
     return c.json({ error: 'url is required' }, 400);
   }
 
+  const ctx = c.get('ctx');
   try {
     const { A2AClient } = await import('../services/a2a/client.js');
     const client = new A2AClient();
     const card = await client.discover(body.url);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.A2A_AGENT_DISCOVERED,
+      subject: `a2a/discover/${encodeURIComponent(body.url)}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: { remoteUrl: body.url },
+    });
+
     return c.json({ data: card });
   } catch (error: any) {
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.A2A_AGENT_DISCOVERED,
+      subject: `a2a/discover/${encodeURIComponent(body.url)}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: false,
+      data: { remoteUrl: body.url, error: error.message },
+    });
+
     return c.json({ error: `Discovery failed: ${error.message}` }, 502);
   }
 });
@@ -1006,6 +1091,17 @@ a2aRouter.post('/tasks', async (c) => {
         result?.result?.id,
       );
 
+      trackOp({
+        tenantId: ctx.tenantId,
+        operation: OpType.A2A_TASK_SENT,
+        subject: `a2a/task/${task.id}`,
+        actorType: ctx.actorType,
+        actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+        correlationId: c.get('requestId'),
+        success: true,
+        data: { direction: 'outbound', remoteUrl: body.remoteUrl },
+      });
+
       return c.json({ data: task });
     } catch (error: any) {
       return c.json({ error: `Failed to send task: ${error.message}` }, 502);
@@ -1027,6 +1123,17 @@ a2aRouter.post('/tasks', async (c) => {
     body.callbackUrl,
     body.callbackSecret,
   );
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.A2A_TASK_SENT,
+    subject: `a2a/task/${task.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { direction: 'inbound', agentId: body.agentId },
+  });
 
   return c.json({ data: task });
 });
@@ -1197,6 +1304,17 @@ a2aRouter.patch('/tasks/:taskId', async (c) => {
     return c.json({ error: 'Failed to update task state' }, 500);
   }
 
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.A2A_TASK_STATE_CHANGED,
+    subject: `a2a/task/${taskId}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { fromState: currentState, toState: newState },
+  });
+
   return c.json({ data: updated });
 });
 
@@ -1338,6 +1456,17 @@ a2aRouter.post('/tasks/:taskId/cancel', async (c) => {
   if (!task) {
     return c.json({ error: 'Task not found' }, 404);
   }
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.A2A_TASK_STATE_CHANGED,
+    subject: `a2a/task/${taskId}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { toState: 'canceled' },
+  });
 
   return c.json({ data: task });
 });

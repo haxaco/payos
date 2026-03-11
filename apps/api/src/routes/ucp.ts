@@ -29,9 +29,11 @@ import {
   createSpendingPolicyService,
   type PolicyContext 
 } from '../services/spending-policy.js';
-import { 
-  createApprovalWorkflowService 
+import {
+  createApprovalWorkflowService
 } from '../services/approval-workflow.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const router = new Hono();
 
@@ -132,6 +134,16 @@ router.post('/tokens', async (c) => {
       };
     }
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_TOKEN_ACQUIRED,
+      subject: `ucp/token/${token.token || token.id || 'unknown'}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json(response, 201);
   } catch (error: any) {
     throw new ValidationError(error.message);
@@ -186,7 +198,8 @@ router.post('/settle', async (c) => {
       const policyCheck = await spendingPolicyService.checkPolicy(
         walletId,
         tokenData.amount,
-        policyContext
+        policyContext,
+        c.get('requestId')
       );
 
       if (!policyCheck.allowed) {
@@ -213,6 +226,7 @@ router.post('/settle', async (c) => {
             requestedByType: ctx.actorType,
             requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
             requestedByName: ctx.userName || ctx.actorName || undefined,
+            correlationId: c.get('requestId'),
           });
 
           return c.json({
@@ -244,14 +258,24 @@ router.post('/settle', async (c) => {
 
   try {
     const settlement = await executeSettlement(ctx.tenantId, request, supabase);
-    
+
     // Record spending if we have a wallet (Story 18.R3)
     const walletId = (body as any).wallet_id;
     if (walletId && tokenData) {
       const spendingPolicyService = createSpendingPolicyService(supabase);
       await spendingPolicyService.recordSpending(walletId, tokenData.amount);
     }
-    
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_SETTLEMENT_EXECUTED,
+      subject: `ucp/settlement/${settlement.id || settlement.settlement_id || 'unknown'}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json(settlement);
   } catch (error: any) {
     // Handle specific error cases
@@ -334,7 +358,8 @@ router.post('/settle/mandate', async (c) => {
     const policyCheck = await spendingPolicyService.checkPolicy(
       walletId,
       parsed.data.amount,
-      policyContext
+      policyContext,
+      c.get('requestId')
     );
 
     if (!policyCheck.allowed) {
@@ -359,6 +384,7 @@ router.post('/settle/mandate', async (c) => {
           requestedByType: ctx.actorType,
           requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
           requestedByName: ctx.userName || ctx.actorName || undefined,
+          correlationId: c.get('requestId'),
         });
 
         return c.json({
@@ -389,13 +415,23 @@ router.post('/settle/mandate', async (c) => {
 
   try {
     const settlement = await executeSettlementWithMandate(ctx.tenantId, request, supabase);
-    
+
     // Record spending if we have a wallet (Story 18.R3)
     if (walletId) {
       const spendingPolicyService = createSpendingPolicyService(supabase);
       await spendingPolicyService.recordSpending(walletId, parsed.data.amount);
     }
-    
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_SETTLEMENT_EXECUTED,
+      subject: `ucp/settlement/${settlement.id || settlement.settlement_id || 'unknown'}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json(settlement);
   } catch (error: any) {
     // Handle specific error cases

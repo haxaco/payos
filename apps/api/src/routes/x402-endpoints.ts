@@ -9,6 +9,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const app = new Hono();
 
@@ -152,12 +154,22 @@ app.post('/', async (c) => {
     
     if (createError) {
       console.error('Error creating x402 endpoint:', createError);
-      return c.json({ 
+      return c.json({
         error: 'Failed to create endpoint',
-        details: createError.message 
+        details: createError.message
       }, 500);
     }
-    
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.X402_ENDPOINT_CREATED,
+      subject: `x402-endpoint/${endpoint.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json({
       data: mapEndpointFromDb(endpoint)
     }, 201);
@@ -358,7 +370,17 @@ app.patch('/:id', async (c) => {
       console.error('Error updating x402 endpoint:', updateError);
       return c.json({ error: 'Failed to update endpoint' }, 500);
     }
-    
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.X402_ENDPOINT_UPDATED,
+      subject: `x402-endpoint/${id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json({
       data: mapEndpointFromDb(updated)
     });

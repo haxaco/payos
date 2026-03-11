@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { LimitExceededError } from '../middleware/error.js';
+import { trackOp } from './ops/track-op.js';
+import { OpType } from './ops/operation-types.js';
 
 export interface LimitCheckResult {
   allowed: boolean;
@@ -33,7 +35,7 @@ export class LimitService {
     const { data: agent, error: agentError } = await this.supabase
       .from('agents')
       .select(`
-        id, name, status, kya_tier, parent_account_id,
+        id, name, status, kya_tier, parent_account_id, tenant_id,
         limit_per_transaction, limit_daily, limit_monthly,
         effective_limit_per_tx, effective_limit_daily, effective_limit_monthly,
         effective_limits_capped,
@@ -103,17 +105,27 @@ export class LimitService {
    */
   async checkTransactionLimit(
     agentId: string,
-    amount: number
+    amount: number,
+    correlationId?: string
   ): Promise<LimitCheckResult> {
     const agent = await this.getAgent(agentId);
 
     // Check agent is active
     if (agent.status !== 'active') {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'agent_not_active',
         limitType: 'status',
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}`,
+        correlationId,
+        success: false,
+        data: { amount, reason: result.reason, limitType: result.limitType },
+      });
+      return result;
     }
 
     const effectiveLimits: AgentLimits = {
@@ -124,28 +136,46 @@ export class LimitService {
 
     // Check KYA tier (tier 0 cannot transact)
     if (agent.kya_tier === 0) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'kya_verification_required',
         limitType: 'kya_tier',
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}`,
+        correlationId,
+        success: false,
+        data: { amount, reason: result.reason, limitType: result.limitType },
+      });
+      return result;
     }
 
     // Per-transaction check
     if (amount > effectiveLimits.perTransaction) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'exceeds_per_transaction',
         limitType: 'per_transaction',
         limit: effectiveLimits.perTransaction,
         requested: amount,
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}`,
+        correlationId,
+        success: false,
+        data: { amount, reason: result.reason, limitType: result.limitType, limit: effectiveLimits.perTransaction },
+      });
+      return result;
     }
 
     // Daily usage check
     const dailyUsage = await this.getDailyUsage(agentId);
     if (dailyUsage + amount > effectiveLimits.daily) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'exceeds_daily',
         limitType: 'daily',
@@ -153,12 +183,21 @@ export class LimitService {
         used: dailyUsage,
         requested: amount,
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}`,
+        correlationId,
+        success: false,
+        data: { amount, reason: result.reason, limitType: result.limitType, limit: effectiveLimits.daily, used: dailyUsage },
+      });
+      return result;
     }
 
     // Monthly usage check
     const monthlyUsage = await this.getMonthlyUsage(agentId);
     if (monthlyUsage + amount > effectiveLimits.monthly) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'exceeds_monthly',
         limitType: 'monthly',
@@ -166,8 +205,25 @@ export class LimitService {
         used: monthlyUsage,
         requested: amount,
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}`,
+        correlationId,
+        success: false,
+        data: { amount, reason: result.reason, limitType: result.limitType, limit: effectiveLimits.monthly, used: monthlyUsage },
+      });
+      return result;
     }
 
+    trackOp({
+      tenantId: agent.tenant_id,
+      operation: OpType.GOVERNANCE_LIMIT_CHECK,
+      subject: `agent/${agentId}`,
+      correlationId,
+      success: true,
+      data: { amount },
+    });
     return { allowed: true };
   }
 
@@ -176,26 +232,45 @@ export class LimitService {
    */
   async checkStreamLimit(
     agentId: string,
-    flowRatePerMonth: number
+    flowRatePerMonth: number,
+    correlationId?: string
   ): Promise<LimitCheckResult> {
     const agent = await this.getAgent(agentId);
 
     // Check agent is active
     if (agent.status !== 'active') {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'agent_not_active',
         limitType: 'status',
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}/stream`,
+        correlationId,
+        success: false,
+        data: { flowRatePerMonth, reason: result.reason, limitType: result.limitType },
+      });
+      return result;
     }
 
     // Check KYA tier
     if (agent.kya_tier === 0) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'kya_verification_required',
         limitType: 'kya_tier',
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}/stream`,
+        correlationId,
+        success: false,
+        data: { flowRatePerMonth, reason: result.reason, limitType: result.limitType },
+      });
+      return result;
     }
 
     const streamLimits: StreamLimits = {
@@ -207,31 +282,49 @@ export class LimitService {
     // Stream count check
     const currentStreams = agent.active_streams_count || 0;
     if (currentStreams >= streamLimits.maxActiveStreams) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'max_streams_reached',
         limitType: 'stream_count',
         limit: streamLimits.maxActiveStreams,
         used: currentStreams,
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}/stream`,
+        correlationId,
+        success: false,
+        data: { flowRatePerMonth, reason: result.reason, limitType: result.limitType },
+      });
+      return result;
     }
 
     // Per-stream flow rate check
     if (flowRatePerMonth > streamLimits.maxFlowRatePerStream) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'exceeds_max_flow_rate',
         limitType: 'flow_rate',
         limit: streamLimits.maxFlowRatePerStream,
         requested: flowRatePerMonth,
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}/stream`,
+        correlationId,
+        success: false,
+        data: { flowRatePerMonth, reason: result.reason, limitType: result.limitType },
+      });
+      return result;
     }
 
     // Total outflow check
     const currentOutflow = parseFloat(agent.total_stream_outflow) || 0;
     const newTotalOutflow = currentOutflow + flowRatePerMonth;
     if (newTotalOutflow > streamLimits.maxTotalOutflow) {
-      return {
+      const result: LimitCheckResult = {
         allowed: false,
         reason: 'exceeds_total_outflow',
         limitType: 'total_outflow',
@@ -239,8 +332,25 @@ export class LimitService {
         used: currentOutflow,
         requested: flowRatePerMonth,
       };
+      trackOp({
+        tenantId: agent.tenant_id,
+        operation: OpType.GOVERNANCE_LIMIT_CHECK,
+        subject: `agent/${agentId}/stream`,
+        correlationId,
+        success: false,
+        data: { flowRatePerMonth, reason: result.reason, limitType: result.limitType },
+      });
+      return result;
     }
 
+    trackOp({
+      tenantId: agent.tenant_id,
+      operation: OpType.GOVERNANCE_LIMIT_CHECK,
+      subject: `agent/${agentId}/stream`,
+      correlationId,
+      success: true,
+      data: { flowRatePerMonth },
+    });
     return { allowed: true };
   }
 

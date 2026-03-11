@@ -13,6 +13,8 @@ import { createSettlementService } from '../services/settlement.js';
 import { createSettlementRouter, Protocol, SettlementRail } from '../services/settlement-router.js';
 import { getCirclePayoutsClient, validatePixKey, validateClabe, PixKeyType } from '../services/circle/payouts.js';
 import { getEnvironment, isServiceEnabled } from '../config/environment.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const app = new Hono();
 
@@ -268,6 +270,25 @@ app.post('/route', async (c) => {
       destinationCountry: request.destinationCountry,
     });
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.SETTLEMENT_DOMESTIC,
+      subject: `settlement/${decision.transferId || request.transferId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      amountUsd: request.amount,
+      currency: request.currency,
+      data: {
+        transferId: request.transferId,
+        protocol: decision.protocol,
+        selectedRail: decision.selectedRail,
+        decisionTimeMs: decision.decisionTime,
+        destinationCountry: request.destinationCountry,
+      },
+    });
+
     return c.json({
       data: {
         transferId: decision.transferId,
@@ -332,6 +353,24 @@ app.post('/execute', async (c) => {
       }, result.error?.retryable ? 503 : 400);
     }
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: request.destinationCountry ? OpType.SETTLEMENT_CROSS_BORDER : OpType.SETTLEMENT_DOMESTIC,
+      subject: `settlement/${result.transferId || request.transferId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      amountUsd: request.amount,
+      currency: request.currency,
+      data: {
+        transferId: request.transferId,
+        protocol: request.protocol || 'internal',
+        destinationCountry: request.destinationCountry,
+        destinationCurrency: request.destinationCurrency,
+      },
+    });
+
     return c.json({ data: result });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
@@ -382,6 +421,21 @@ app.post('/batch', async (c) => {
 
     const succeeded = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.SETTLEMENT_BATCH_NET,
+      subject: `settlement/batch`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      data: {
+        total: results.length,
+        succeeded: succeeded.length,
+        failed: failed.length,
+      },
+    });
 
     return c.json({
       data: {
@@ -591,6 +645,25 @@ app.post('/pix', async (c) => {
       provider_response: payout,
     });
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.SETTLEMENT_CROSS_BORDER,
+      subject: `settlement/${payout.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      amountUsd: parseFloat(request.amount),
+      currency: 'BRL',
+      data: {
+        rail: 'pix',
+        payoutId: payout.id,
+        pixKeyType: request.pixKeyType,
+        transferId: request.transferId,
+        destinationCountry: 'BR',
+      },
+    });
+
     return c.json({
       data: {
         id: payout.id,
@@ -708,6 +781,25 @@ app.post('/spei', async (c) => {
         name: request.recipientName,
       },
       provider_response: payout,
+    });
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.SETTLEMENT_CROSS_BORDER,
+      subject: `settlement/${payout.id}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+      amountUsd: parseFloat(request.amount),
+      currency: 'MXN',
+      data: {
+        rail: 'spei',
+        payoutId: payout.id,
+        clabe: request.clabe,
+        transferId: request.transferId,
+        destinationCountry: 'MX',
+      },
     });
 
     return c.json({

@@ -17,6 +17,8 @@ import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { generateAgentToken, hashApiKey, getKeyPrefix } from '../utils/crypto.js';
 import { ErrorCode } from '@sly/types';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const agents = new Hono();
 
@@ -455,6 +457,16 @@ agents.post('/', async (c) => {
     id: data.id, name, account_id: accountId, kya_tier: 0, status: 'active',
   }).catch(console.error);
 
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.ENTITY_AGENT_CREATED,
+    subject: `agent/${data.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   // Include auth credentials in response (only on creation)
   // WARNING: This is the ONLY time the plaintext token is available!
   return c.json({
@@ -742,7 +754,17 @@ agents.delete('/:id', async (c) => {
     actorName: ctx.actorName,
     metadata: { name: existing.name },
   });
-  
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.ENTITY_AGENT_DELETED,
+    subject: `agent/${id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+  });
+
   return c.json({ data: { id, deleted: true } });
 });
 

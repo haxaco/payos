@@ -11,6 +11,8 @@
 import { Hono } from 'hono';
 import { createClient } from '../db/client.js';
 import { NotFoundError } from '../middleware/error.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const router = new Hono();
 
@@ -112,6 +114,17 @@ router.get('/:id', async (c) => {
     if (!categories[cat]) categories[cat] = [];
     categories[cat].push(product);
   }
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.UCP_MERCHANT_DISCOVERED,
+    subject: `merchant/${account.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { merchantId: meta.invu_merchant_id, name: account.name, type: meta.merchant_type },
+  });
 
   return c.json({
     id: account.id,

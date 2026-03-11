@@ -11,6 +11,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import type { PolicyContext } from './spending-policy.js';
+import { trackOp } from './ops/track-op.js';
+import { OpType } from './ops/operation-types.js';
 
 // ============================================
 // Types
@@ -75,19 +77,21 @@ export interface CreateApprovalRequest {
   tenantId: string;
   walletId: string;
   agentId?: string;
-  
+
   protocol: PaymentProtocol;
   amount: number;
   currency: string;
-  
+
   recipient?: ApprovalRecipient;
   paymentContext: Record<string, unknown>;
-  
+
   expiresInMinutes?: number; // Default: 24 hours (1440 minutes)
-  
+
   requestedByType?: string;
   requestedById?: string;
   requestedByName?: string;
+
+  correlationId?: string;
 }
 
 export interface ApprovalDecision {
@@ -147,6 +151,17 @@ export class ApprovalWorkflowService {
     }
 
     const approval = this.mapFromDb(data);
+
+    trackOp({
+      tenantId: request.tenantId,
+      operation: OpType.GOVERNANCE_APPROVAL,
+      subject: `approval/${approval.id}`,
+      correlationId: request.correlationId,
+      success: true,
+      amountUsd: request.amount,
+      currency: request.currency,
+      data: { action: 'created', protocol: request.protocol, walletId: request.walletId, agentId: request.agentId },
+    });
 
     // Send webhook notification (fire and forget)
     this.sendApprovalWebhook(approval, 'payment.approval_required').catch(err => {
@@ -282,9 +297,26 @@ export class ApprovalWorkflowService {
 
     const approval = this.mapFromDb(data);
 
+    trackOp({
+      tenantId: approval.tenantId,
+      operation: OpType.GOVERNANCE_APPROVAL,
+      subject: `approval/${approval.id}`,
+      success: true,
+      amountUsd: approval.amount,
+      currency: approval.currency,
+      data: {
+        action: decision.decision === 'approve' ? 'approved' : 'rejected',
+        decidedBy: decision.decidedBy,
+        reason: decision.reason,
+        protocol: approval.protocol,
+        walletId: approval.walletId,
+        agentId: approval.agentId,
+      },
+    });
+
     // Send webhook notification
-    const eventType = decision.decision === 'approve' 
-      ? 'payment.approval_approved' 
+    const eventType = decision.decision === 'approve'
+      ? 'payment.approval_approved'
       : 'payment.approval_rejected';
     this.sendApprovalWebhook(approval, eventType).catch(err => {
       console.error('[ApprovalWorkflow] Failed to send webhook:', err);

@@ -34,6 +34,8 @@ import {
   type OrderStatus,
 } from '../services/ucp/index.js';
 import { createClient } from '../db/client.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 // =============================================================================
 // Validation Schemas
@@ -157,6 +159,16 @@ router.put('/:id/status', async (c) => {
     const supabase = createClient();
     const order = await updateOrderStatus(ctx.tenantId, orderId, body.status, supabase);
 
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_ORDER_UPDATED,
+      subject: `ucp/order/${orderId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
+
     return c.json(order);
   } catch (error: any) {
     if (error.message === 'Order not found') {
@@ -191,6 +203,16 @@ router.post('/:id/cancel', async (c) => {
   try {
     const supabase = createClient();
     const order = await cancelOrder(ctx.tenantId, orderId, reason, supabase);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_ORDER_CANCELLED,
+      subject: `ucp/order/${orderId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
 
     return c.json(order);
   } catch (error: any) {
@@ -291,6 +313,16 @@ router.post('/:id/events', async (c) => {
   try {
     const supabase = createClient();
     const order = await addFulfillmentEvent(ctx.tenantId, orderId, body, supabase);
+
+    trackOp({
+      tenantId: ctx.tenantId,
+      operation: OpType.UCP_FULFILLMENT_EVENT,
+      subject: `ucp/order/${orderId}`,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+      correlationId: c.get('requestId'),
+      success: true,
+    });
 
     return c.json(order);
   } catch (error: any) {

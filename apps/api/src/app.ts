@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/error.js';
 import { rateLimiter, authRateLimiter } from './middleware/rate-limit.js';
 import { requestId, securityHeaders } from './middleware/security.js';
 import { idempotencyMiddleware } from './middleware/idempotency.js';
+import { requestCounterMiddleware } from './middleware/request-counter.js';
 import { 
   timingMiddleware, 
   responseWrapperMiddleware, 
@@ -83,6 +84,8 @@ import workflowsRouter from './routes/workflows.js';
 import fundingRouter from './routes/funding.js';
 import searchRouter from './routes/search.js';
 import paymentHandlersListRouter from './routes/payment-handlers-list.js';
+import portalTokensRouter from './routes/portal-tokens.js';
+import usageRouter from './routes/usage.js';
 
 const app = new Hono();
 
@@ -263,6 +266,9 @@ v1.use('*', authRateLimiter);
 // Authentication
 v1.use('*', authMiddleware);
 
+// Request counter (after auth to have tenant context) — Epic 65
+v1.use('*', requestCounterMiddleware);
+
 // Idempotency (after auth to have tenant context)
 v1.use('*', idempotencyMiddleware);
 
@@ -320,6 +326,8 @@ v1.route('/workflows', workflowsRouter); // Workflow engine (Epic 29)
 v1.route('/funding', fundingRouter); // On-ramp integrations (Epic 41)
 v1.route('/search', searchRouter); // Unified global search
 v1.route('/payment-handlers', paymentHandlersListRouter); // DB-driven handler registry
+v1.route('/portal-tokens', portalTokensRouter); // Portal token CRUD (Epic 65)
+v1.route('/usage', usageRouter); // Usage API (Epic 65)
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods
 // Account-specific payment methods handled via accounts router

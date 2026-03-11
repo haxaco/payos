@@ -158,6 +158,7 @@ export function Sidebar() {
     { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark },
     { href: '/dashboard/developers', label: 'Developers', icon: Terminal },
     { href: '/dashboard/reports', label: 'Reports', icon: FileText },
+    { href: '/dashboard/operations', label: 'Operations', icon: Activity },
   ];
 
   const isActive = (href: string, exact?: boolean) => {

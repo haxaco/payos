@@ -11,8 +11,11 @@
  * This turns 1000 micro-payments into ~1-5 net on-chain transfers.
  */
 
+import { randomUUID } from 'crypto';
 import { createClient } from '../db/client.js';
 import { createBatch, executeBatch, type BatchResult } from '../services/settlement-batcher.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const DEFAULT_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -100,7 +103,22 @@ export class BatchSettlementWorker {
     if (!batchResult) return null;
 
     // Execute batch (on-chain transfers for net amounts)
-    return executeBatch(supabase, batchResult.batchId, tenantId, batchResult.summary);
+    const result = await executeBatch(supabase, batchResult.batchId, tenantId, batchResult.summary);
+
+    if (result) {
+      trackOp({
+        tenantId,
+        operation: OpType.SETTLEMENT_BATCH_NET,
+        subject: `batch/${batchResult.batchId}`,
+        actorType: 'system',
+        actorId: 'batch-settlement-worker',
+        correlationId: randomUUID(),
+        success: true,
+        data: { intentCount: result.intentCount, netTransferCount: result.netTransferCount },
+      });
+    }
+
+    return result;
   }
 }
 

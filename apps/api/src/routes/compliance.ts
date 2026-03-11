@@ -4,6 +4,8 @@ import { authMiddleware } from '../middleware/auth.js';
 import { NotFoundError, ValidationError } from '../middleware/error.js';
 import { logAudit, isValidUUID } from '../utils/helpers.js';
 import { getComplianceProvider } from '../services/compliance/index.js';
+import { trackOp } from '../services/ops/track-op.js';
+import { OpType } from '../services/ops/operation-types.js';
 
 const compliance = new Hono();
 
@@ -546,6 +548,17 @@ compliance.post('/screen/wallet', async (c) => {
     },
   });
 
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.COMPLIANCE_SANCTIONS,
+    subject: `compliance/wallet/${address?.slice(0, 10)}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { chain, riskLevel: result.result.risk_level },
+  });
+
   return c.json({ data: result });
 });
 
@@ -624,6 +637,17 @@ compliance.post('/screen/entity', async (c) => {
     },
   });
 
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: type === 'company' ? OpType.COMPLIANCE_KYB : OpType.COMPLIANCE_KYC,
+    subject: `compliance/entity/${result.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { entityType: type, riskLevel: result.result.risk_level },
+  });
+
   return c.json({ data: result });
 });
 
@@ -697,6 +721,17 @@ compliance.post('/screen/bank', async (c) => {
       risk_level: result.result.risk_level,
       status: result.result.account_status,
     },
+  });
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.COMPLIANCE_SANCTIONS,
+    subject: `compliance/bank/${result.id}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { accountType: account_type, country, riskLevel: result.result.risk_level },
   });
 
   return c.json({ data: result });
