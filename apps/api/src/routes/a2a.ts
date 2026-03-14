@@ -1782,4 +1782,159 @@ a2aRouter.get('/sessions', async (c) => {
   return c.json({ data: sessions });
 });
 
+// =============================================================================
+// Custom Tools CRUD (Story 58.15)
+// =============================================================================
+
+/**
+ * POST /v1/a2a/agents/:agentId/tools — Create a custom tool for an agent.
+ */
+a2aRouter.post('/agents/:agentId/tools', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agentId' }, 400);
+
+  let body: Record<string, any>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+
+  const toolName = body.toolName || body.tool_name;
+  const description = body.description || '';
+  const inputSchema = body.inputSchema || body.input_schema || { type: 'object', properties: {} };
+  const handlerType = body.handlerType || body.handler_type || 'webhook';
+  const handlerUrl = body.handlerUrl || body.handler_url;
+  const handlerSecret = body.handlerSecret || body.handler_secret;
+  const handlerMethod = body.handlerMethod || body.handler_method || 'POST';
+  const handlerTimeoutMs = body.handlerTimeoutMs || body.handler_timeout_ms || 30000;
+
+  if (!toolName || typeof toolName !== 'string') {
+    return c.json({ error: 'toolName is required' }, 400);
+  }
+  if (!['webhook', 'http', 'noop'].includes(handlerType)) {
+    return c.json({ error: 'handlerType must be one of: webhook, http, noop' }, 400);
+  }
+  if (handlerType !== 'noop' && !handlerUrl) {
+    return c.json({ error: 'handlerUrl is required for webhook/http handler types' }, 400);
+  }
+
+  const supabase = createClient();
+
+  // Verify agent belongs to tenant
+  const { data: agent, error: agentErr } = await supabase
+    .from('agents')
+    .select('id')
+    .eq('id', agentId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (agentErr || !agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const { data: tool, error: insertErr } = await supabase
+    .from('agent_custom_tools')
+    .insert({
+      tenant_id: ctx.tenantId,
+      agent_id: agentId,
+      tool_name: toolName,
+      description,
+      input_schema: inputSchema,
+      handler_type: handlerType,
+      handler_url: handlerUrl,
+      handler_secret: handlerSecret,
+      handler_method: handlerMethod,
+      handler_timeout_ms: handlerTimeoutMs,
+      status: 'active',
+    })
+    .select()
+    .single();
+
+  if (insertErr) {
+    if (insertErr.code === '23505') {
+      return c.json({ error: `Tool '${toolName}' already exists for this agent` }, 409);
+    }
+    return c.json({ error: insertErr.message }, 500);
+  }
+
+  return c.json({
+    data: {
+      id: tool.id,
+      toolName: tool.tool_name,
+      description: tool.description,
+      inputSchema: tool.input_schema,
+      handlerType: tool.handler_type,
+      handlerUrl: tool.handler_url,
+      handlerMethod: tool.handler_method,
+      handlerTimeoutMs: tool.handler_timeout_ms,
+      status: tool.status,
+      metadata: tool.metadata,
+      createdAt: tool.created_at,
+      updatedAt: tool.updated_at,
+    },
+  }, 201);
+});
+
+/**
+ * GET /v1/a2a/agents/:agentId/tools — List custom tools for an agent.
+ */
+a2aRouter.get('/agents/:agentId/tools', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agentId' }, 400);
+
+  const supabase = createClient();
+
+  const { data: tools, error } = await supabase
+    .from('agent_custom_tools')
+    .select('*')
+    .eq('agent_id', agentId)
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false });
+
+  if (error) return c.json({ error: error.message }, 500);
+
+  return c.json({
+    data: (tools || []).map((t: any) => ({
+      id: t.id,
+      toolName: t.tool_name,
+      description: t.description,
+      inputSchema: t.input_schema,
+      handlerType: t.handler_type,
+      handlerUrl: t.handler_url,
+      handlerMethod: t.handler_method,
+      handlerTimeoutMs: t.handler_timeout_ms,
+      status: t.status,
+      metadata: t.metadata,
+      createdAt: t.created_at,
+      updatedAt: t.updated_at,
+    })),
+  });
+});
+
+/**
+ * DELETE /v1/a2a/agents/:agentId/tools/:toolId — Delete a custom tool.
+ */
+a2aRouter.delete('/agents/:agentId/tools/:toolId', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const agentId = c.req.param('agentId');
+  const toolId = c.req.param('toolId');
+  if (!UUID_RE.test(agentId) || !UUID_RE.test(toolId)) {
+    return c.json({ error: 'Invalid agentId or toolId' }, 400);
+  }
+
+  const supabase = createClient();
+
+  const { error } = await supabase
+    .from('agent_custom_tools')
+    .delete()
+    .eq('id', toolId)
+    .eq('agent_id', agentId)
+    .eq('tenant_id', ctx.tenantId);
+
+  if (error) return c.json({ error: error.message }, 500);
+
+  return c.body(null, 204);
+});
+
 export default a2aRouter;

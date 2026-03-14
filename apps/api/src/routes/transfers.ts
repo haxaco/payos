@@ -16,6 +16,7 @@ import {
 } from '../middleware/error.js';
 import { storeIdempotencyResponse } from '../middleware/idempotency.js';
 import { ErrorCode } from '@sly/types';
+import { trackFirstEvent } from '../services/beta-access.js';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
 import {
   sendTransferCompletedEmail,
@@ -383,6 +384,9 @@ transfers.post('/', async (c) => {
     },
   });
   
+  // Track first transaction for beta funnel (fire-and-forget)
+  trackFirstEvent(ctx.tenantId, 'first_transaction').catch(() => {});
+
   // Fire workflow auto-triggers (fire-and-forget)
   triggerWorkflows(supabase, ctx.tenantId, 'transfer', 'insert', {
     id: transfer.id,

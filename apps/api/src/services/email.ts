@@ -309,3 +309,91 @@ export async function sendMemberRemovedEmail(params: {
     'member-removed',
   );
 }
+
+// ============================================
+// Beta Access emails
+// ============================================
+
+export async function sendBetaApplicationReceivedEmail(params: {
+  to: string;
+  organizationName?: string;
+}): Promise<SendResult> {
+  const html = emailLayout(`
+  <h2 style="font-size: 20px; font-weight: 600;">We received your application</h2>
+  <p>Thanks for applying to the Sly beta${params.organizationName ? ` for <strong>${params.organizationName}</strong>` : ''}!</p>
+  <p>We're reviewing applications on a rolling basis and will get back to you soon. In the meantime, you can learn more about what we're building.</p>
+  <p style="font-size: 14px; color: #666;">If you have questions, reply to this email — we read every response.</p>`);
+
+  return sendEmail(
+    params.to,
+    'We received your Sly beta application',
+    html,
+    'beta-application-received',
+  );
+}
+
+export async function sendBetaApprovedEmail(params: {
+  to: string;
+  code: string;
+  organizationName?: string;
+}): Promise<SendResult> {
+  const signupUrl = `${dashboardUrl()}/auth/signup/code?code=${encodeURIComponent(params.code)}`;
+  const html = emailLayout(`
+  <h2 style="font-size: 20px; font-weight: 600;">You're in!</h2>
+  <p>Great news — your Sly beta application${params.organizationName ? ` for <strong>${params.organizationName}</strong>` : ''} has been approved.</p>
+  <p>Use the button below to create your account. Your invite code is:</p>
+  <div style="text-align: center; margin: 16px 0;">
+    <code style="display: inline-block; padding: 8px 16px; background-color: #f4f4f5; border-radius: 6px; font-size: 16px; font-weight: 600; letter-spacing: 1px;">${params.code}</code>
+  </div>
+  ${ctaButton(signupUrl, 'Create Your Account')}
+  <p style="font-size: 14px; color: #666;">This code is single-use and tied to your application. Don't share it.</p>`);
+
+  return sendEmail(
+    params.to,
+    "You're in! Your Sly beta access is ready",
+    html,
+    'beta-approved',
+  );
+}
+
+export async function sendBetaRejectedEmail(params: {
+  to: string;
+  organizationName?: string;
+}): Promise<SendResult> {
+  const html = emailLayout(`
+  <h2 style="font-size: 20px; font-weight: 600;">Update on your application</h2>
+  <p>Thanks for your interest in Sly${params.organizationName ? ` for <strong>${params.organizationName}</strong>` : ''}.</p>
+  <p>After review, we're unable to offer beta access at this time. We're onboarding in waves and may revisit your application in the future.</p>
+  <p style="font-size: 14px; color: #666;">If you have questions, feel free to reply to this email.</p>`);
+
+  return sendEmail(
+    params.to,
+    'Update on your Sly beta application',
+    html,
+    'beta-rejected',
+  );
+}
+
+export async function sendBetaNewApplicationNotification(params: {
+  to: string;
+  applicantEmail: string;
+  organizationName?: string;
+  applicantType: string;
+}): Promise<SendResult> {
+  const html = emailLayout(`
+  <h2 style="font-size: 20px; font-weight: 600;">New beta application</h2>
+  <p>A new ${params.applicantType} application has been submitted:</p>
+  <ul style="font-size: 14px; color: #333; padding-left: 20px;">
+    <li><strong>Email:</strong> ${params.applicantEmail}</li>
+    ${params.organizationName ? `<li><strong>Organization:</strong> ${params.organizationName}</li>` : ''}
+    <li><strong>Type:</strong> ${params.applicantType}</li>
+  </ul>
+  ${ctaButton(`${dashboardUrl()}/admin/beta`, 'Review Applications')}`);
+
+  return sendEmail(
+    params.to,
+    `New beta application from ${params.applicantEmail}`,
+    html,
+    'beta-new-application',
+  );
+}

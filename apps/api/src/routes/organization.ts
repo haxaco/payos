@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
+import { getTenantResourceUsage } from '../services/tenant-limits.js';
 
 const organization = new Hono();
 
@@ -47,7 +48,7 @@ async function getCurrentUserAndTenant(c: any) {
 
   const { data: tenant, error: tenantError } = await (supabase
     .from('tenants') as any)
-    .select('id, name, status, created_at, updated_at')
+    .select('id, name, status, max_team_members, max_agents, created_at, updated_at')
     .eq('id', profile.tenant_id)
     .single();
 
@@ -73,6 +74,12 @@ organization.get('/', async (c) => {
 
   const { tenant } = result;
 
+  // Fetch resource usage if tenant has limits set
+  let resourceUsage;
+  if (tenant.max_team_members || tenant.max_agents) {
+    resourceUsage = await getTenantResourceUsage(tenant.id).catch(() => null);
+  }
+
   return c.json(
     {
       organization: {
@@ -82,6 +89,13 @@ organization.get('/', async (c) => {
         createdAt: tenant.created_at,
         updatedAt: tenant.updated_at,
       },
+      ...(tenant.max_team_members ? { maxTeamMembers: tenant.max_team_members } : {}),
+      ...(tenant.max_agents ? { maxAgents: tenant.max_agents } : {}),
+      ...(resourceUsage ? {
+        teamMemberCount: resourceUsage.teamMembers.current,
+        agentCount: resourceUsage.agents.current,
+        resourceUsage,
+      } : {}),
     },
     200
   );

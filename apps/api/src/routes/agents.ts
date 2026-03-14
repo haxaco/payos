@@ -19,6 +19,7 @@ import { ErrorCode } from '@sly/types';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
+import { checkAgentLimit } from '../services/tenant-limits.js';
 
 const agents = new Hono();
 
@@ -257,6 +258,16 @@ agents.post('/', async (c) => {
       throw error;
     }
     parentAccount = pa;
+  }
+
+  // Check agent limit
+  try {
+    await checkAgentLimit(ctx.tenantId);
+  } catch (err: any) {
+    if (err.code === 'AGENT_LIMIT_REACHED') {
+      return c.json({ error: err.message, code: err.code, details: err.details }, 403);
+    }
+    throw err;
   }
 
   // Generate auth credentials (plaintext token - only returned once!)

@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe } from 'lucide-react';
+import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe, Users, Bot } from 'lucide-react';
 import { useLocale, type Locale } from '@/lib/locale';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, formatCurrency, formatDate } = useLocale();
   const [mounted, setMounted] = useState(false);
+  const [resourceUsage, setResourceUsage] = useState<{
+    teamMembers: { current: number; limit: number | null };
+    agents: { current: number; limit: number | null };
+  } | null>(null);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -19,6 +23,34 @@ export default function SettingsPage() {
   // Prevent hydration mismatch by only showing theme-dependent content after mount
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // Fetch resource usage
+  useEffect(() => {
+    async function fetchUsage() {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+        const { createSupabaseBrowserClient } = await import('@/lib/supabase/client');
+        const supabase = createSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+
+        const res = await fetch(`${apiUrl}/v1/organization`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.maxTeamMembers || data.maxAgents) {
+          setResourceUsage({
+            teamMembers: { current: data.teamMemberCount || 0, limit: data.maxTeamMembers || null },
+            agents: { current: data.agentCount || 0, limit: data.maxAgents || null },
+          });
+        }
+      } catch {
+        // Non-critical — just don't show usage
+      }
+    }
+    fetchUsage();
   }, []);
 
   const localeOptions: Array<{ value: Locale; label: string; description: string; example: string }> = [
@@ -93,6 +125,77 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* Resource Usage Section (shown when limits are set) */}
+        {resourceUsage && (resourceUsage.teamMembers.limit || resourceUsage.agents.limit) && (
+          <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-950 rounded-xl flex items-center justify-center">
+                <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Resource Usage</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Your current plan limits</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {resourceUsage.teamMembers.limit && (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" /> Team Members
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {resourceUsage.teamMembers.current} / {resourceUsage.teamMembers.limit}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        resourceUsage.teamMembers.current >= resourceUsage.teamMembers.limit
+                          ? 'bg-red-500'
+                          : resourceUsage.teamMembers.current >= resourceUsage.teamMembers.limit * 0.8
+                          ? 'bg-yellow-500'
+                          : 'bg-indigo-500'
+                      }`}
+                      style={{ width: `${Math.min(100, (resourceUsage.teamMembers.current / resourceUsage.teamMembers.limit) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {resourceUsage.agents.limit && (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                      <Bot className="h-3.5 w-3.5" /> Agents
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {resourceUsage.agents.current} / {resourceUsage.agents.limit}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        resourceUsage.agents.current >= resourceUsage.agents.limit
+                          ? 'bg-red-500'
+                          : resourceUsage.agents.current >= resourceUsage.agents.limit * 0.8
+                          ? 'bg-yellow-500'
+                          : 'bg-indigo-500'
+                      }`}
+                      style={{ width: `${Math.min(100, (resourceUsage.agents.current / resourceUsage.agents.limit) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Need higher limits? Contact us at support@getsly.ai
+              </p>
+            </div>
+          </section>
+        )}
 
         {/* Localization Section */}
         <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">

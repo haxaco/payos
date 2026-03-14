@@ -2,6 +2,7 @@ import { Context, Next } from 'hono';
 import { createClient } from '../db/client.js';
 import { hashApiKey, getKeyPrefix, verifyApiKey } from '../utils/crypto.js';
 import { logSecurityEvent } from '../utils/auth.js';
+import { trackFirstEvent } from '../services/beta-access.js';
 
 export interface RequestContext {
   tenantId: string;
@@ -243,6 +244,9 @@ export async function authMiddleware(c: Context, next: Next) {
         apiKeyEnvironment: apiKey.environment,
       });
 
+      // Track first API call for beta funnel (fire-and-forget)
+      trackFirstEvent(tenant.id, 'first_api_call').catch(() => {});
+
       return next();
     }
 
@@ -297,6 +301,9 @@ export async function authMiddleware(c: Context, next: Next) {
       apiKeyEnvironment: token.startsWith('pk_live_') ? 'live' : 'test',
     });
 
+    // Track first API call for beta funnel (fire-and-forget)
+    trackFirstEvent(tenant.id, 'first_api_call').catch(() => {});
+
     return next();
   }
 
@@ -309,6 +316,8 @@ export async function authMiddleware(c: Context, next: Next) {
     const cachedCtx = getCachedJWT(token);
     if (cachedCtx) {
       c.set('ctx', cachedCtx);
+      // Track first API call for beta funnel (fire-and-forget)
+      trackFirstEvent(cachedCtx.tenantId, 'first_api_call').catch(() => {});
       return next();
     }
 
@@ -378,6 +387,9 @@ export async function authMiddleware(c: Context, next: Next) {
       
       c.set('ctx', ctx);
 
+      // Track first API call for beta funnel (fire-and-forget)
+      trackFirstEvent(ctx.tenantId, 'first_api_call').catch(() => {});
+
       return next();
     } catch (error) {
       await logAuthAttempt(false, 'jwt', null, null, ip, userAgent, 'JWT verification failed');
@@ -437,6 +449,9 @@ export async function authMiddleware(c: Context, next: Next) {
       kyaTier: agent.kya_tier,
     });
 
+    // Track first API call for beta funnel (fire-and-forget)
+    trackFirstEvent(agent.tenant_id, 'first_api_call').catch(() => {});
+
     return next();
   }
 
@@ -489,6 +504,9 @@ export async function authMiddleware(c: Context, next: Next) {
       portalTokenId: portalToken.id,
       portalScopes: portalToken.scopes || ['usage:read'],
     });
+
+    // Track first API call for beta funnel (fire-and-forget)
+    trackFirstEvent(portalToken.tenant_id, 'first_api_call').catch(() => {});
 
     return next();
   }

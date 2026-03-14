@@ -87,6 +87,7 @@ import paymentHandlersListRouter from './routes/payment-handlers-list.js';
 import portalTokensRouter from './routes/portal-tokens.js';
 import usageRouter from './routes/usage.js';
 import agentWalletsRouter from './routes/agent-wallets.js';
+import betaAdminRouter from './routes/beta-admin.js';
 
 const app = new Hono();
 
@@ -249,6 +250,9 @@ app.route('/webhooks/ucp', ucpWebhooksRouter);
 // Protocol Discovery API (public - for discovering available protocols)
 // Epic 49: Protocol Discovery & Management
 app.route('/v1/protocols', protocolsRouter);
+
+// Beta admin routes (platform admin auth, NOT tenant auth)
+app.route('/admin/beta', betaAdminRouter);
 
 // NOTE: UCP Identity routes moved to v1 router for auth middleware
 

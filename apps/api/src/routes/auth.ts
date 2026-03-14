@@ -16,7 +16,9 @@ import {
 import { provisionTenant, TenantProvisioningError } from '../services/tenant-provisioning.js';
 import { generateAgentToken } from '../utils/crypto.js';
 import { logAudit } from '../utils/helpers.js';
-import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail } from '../services/email.js';
+import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail, sendBetaApplicationReceivedEmail, sendBetaNewApplicationNotification } from '../services/email.js';
+import { isFeatureEnabled } from '../config/environment.js';
+import { validateBetaCode, redeemBetaCode, submitApplication, trackFunnelEvent } from '../services/beta-access.js';
 
 const auth = new Hono();
 
@@ -84,6 +86,22 @@ auth.post('/signup', async (c) => {
         },
         400
       );
+    }
+
+    // Beta access gate
+    if (isFeatureEnabled('closedBeta')) {
+      const inviteCode = body.inviteCode;
+      if (!inviteCode) {
+        return c.json(
+          { error: 'An invite code is required during the closed beta. Apply at /auth/signup to request access.' },
+          403
+        );
+      }
+
+      const validation = await validateBetaCode(inviteCode, 'human');
+      if (!validation.valid) {
+        return c.json({ error: validation.error }, 403);
+      }
     }
 
     const supabase = createClient();
@@ -188,6 +206,21 @@ auth.post('/signup', async (c) => {
         },
         500
       );
+    }
+
+    // Redeem beta code if closed beta is enabled
+    if (isFeatureEnabled('closedBeta') && body.inviteCode) {
+      try {
+        const redeemResult = await redeemBetaCode(body.inviteCode, result.tenant.id);
+        trackFunnelEvent('signup_completed', {
+          accessCodeId: redeemResult.code.id,
+          tenantId: result.tenant.id,
+          actorType: 'human',
+          metadata: { email: validated.email },
+        }).catch(() => {});
+      } catch (err) {
+        console.error('[signup] Beta code redemption failed (non-fatal):', err);
+      }
     }
 
     // Generate session tokens
@@ -750,12 +783,42 @@ auth.post('/provision', async (c) => {
       userMetadata.full_name ||
       userEmail?.split('@')[0];
 
+    // Beta access gate for OAuth provision flow
+    if (isFeatureEnabled('closedBeta')) {
+      const inviteCode = (body as any).inviteCode;
+      if (!inviteCode) {
+        return c.json(
+          { error: 'An invite code is required during the closed beta.' },
+          403
+        );
+      }
+
+      const validation = await validateBetaCode(inviteCode, 'human');
+      if (!validation.valid) {
+        return c.json({ error: validation.error }, 403);
+      }
+    }
+
     const result = await provisionTenant(supabase, {
       userId,
       email: userEmail || '',
       organizationName,
       userName,
     });
+
+    // Redeem beta code and track funnel event
+    if (isFeatureEnabled('closedBeta') && (body as any).inviteCode && !result.alreadyProvisioned) {
+      try {
+        const redeemResult = await redeemBetaCode((body as any).inviteCode, result.tenant.id);
+        trackFunnelEvent('tenant_provisioned', {
+          accessCodeId: redeemResult.code.id,
+          tenantId: result.tenant.id,
+          actorType: 'human',
+        }).catch(() => {});
+      } catch (err) {
+        console.error('[provision] Beta code redemption failed (non-fatal):', err);
+      }
+    }
 
     await logSecurityEvent(
       result.alreadyProvisioned ? 'provision_idempotent' : 'provision_success',
@@ -1228,6 +1291,7 @@ const agentSignupSchema = z.object({
   capabilities: z.array(z.string().max(100)).max(20).optional(),
   model: z.string().max(255).optional(),
   callbackUrl: z.string().url().max(1024).optional(),
+  inviteCode: z.string().optional(),
 });
 
 auth.post('/agent-signup', async (c) => {
@@ -1257,6 +1321,23 @@ auth.post('/agent-signup', async (c) => {
     }
 
     const { name, purpose, capabilities, model, callbackUrl } = parsed.data;
+
+    // Beta access gate for agent signup
+    if (isFeatureEnabled('closedBeta')) {
+      const inviteCode = parsed.data.inviteCode || body.inviteCode;
+      if (!inviteCode) {
+        return c.json(
+          { error: 'An invite code is required for agent registration during the closed beta.' },
+          403
+        );
+      }
+
+      const validation = await validateBetaCode(inviteCode, 'agent');
+      if (!validation.valid) {
+        return c.json({ error: validation.error }, 403);
+      }
+    }
+
     const supabase = createClient();
 
     // 1. Create agent tenant
@@ -1412,6 +1493,21 @@ auth.post('/agent-signup', async (c) => {
       tenantId: tenant.id,
       name,
     });
+
+    // Redeem beta code if closed beta is enabled
+    if (isFeatureEnabled('closedBeta') && (parsed.data.inviteCode || body.inviteCode)) {
+      try {
+        const redeemResult = await redeemBetaCode(parsed.data.inviteCode || body.inviteCode, tenant.id);
+        trackFunnelEvent('signup_completed', {
+          accessCodeId: redeemResult.code.id,
+          tenantId: tenant.id,
+          agentId: agent.id,
+          actorType: 'agent',
+        }).catch(() => {});
+      } catch (err) {
+        console.error('[agent-signup] Beta code redemption failed (non-fatal):', err);
+      }
+    }
 
     return c.json({
       agent: {
@@ -1605,6 +1701,95 @@ auth.post('/agent-claim/:agentId', async (c) => {
   } catch (error) {
     console.error('[agent-claim] Unexpected error:', error);
     return c.json({ error: 'Failed to claim agent' }, 500);
+  }
+});
+
+// ============================================
+// POST /v1/auth/beta/apply - Submit beta application
+// ============================================
+auth.post('/beta/apply', async (c) => {
+  try {
+    const { ip } = getClientInfo(c);
+
+    // Rate limiting: 3 applications per hour per IP
+    const rateLimit = await checkRateLimit(`beta_apply:${ip}`, 60 * 60 * 1000, 3);
+    if (!rateLimit.allowed) {
+      return c.json(
+        { error: 'Too many applications. Please try again later.', retryAfter: rateLimit.retryAfter },
+        429
+      );
+    }
+
+    const body = await c.req.json();
+    const schema = z.object({
+      email: z.string().email().max(255),
+      organizationName: z.string().max(255).optional(),
+      useCase: z.string().max(2000).optional(),
+      referralSource: z.string().max(255).optional(),
+    });
+
+    const validated = schema.parse(body);
+
+    const application = await submitApplication({
+      email: validated.email,
+      organizationName: validated.organizationName,
+      useCase: validated.useCase,
+      referralSource: validated.referralSource,
+      ipAddress: ip,
+    });
+
+    // Send confirmation email (fire-and-forget)
+    sendBetaApplicationReceivedEmail({
+      to: validated.email,
+      organizationName: validated.organizationName,
+    }).catch(err => console.error('[email] Beta application received email error:', err));
+
+    // Notify platform admins (fire-and-forget)
+    const adminEmail = process.env.BETA_ADMIN_EMAIL;
+    if (adminEmail) {
+      sendBetaNewApplicationNotification({
+        to: adminEmail,
+        applicantEmail: validated.email,
+        organizationName: validated.organizationName,
+        applicantType: 'human',
+      }).catch(err => console.error('[email] Beta admin notification error:', err));
+    }
+
+    return c.json({
+      message: 'Application submitted successfully. We will review it and get back to you.',
+      applicationId: application.id,
+    }, 201);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation failed', details: error.errors }, 400);
+    }
+    throw error;
+  }
+});
+
+// ============================================
+// POST /v1/auth/beta/validate - Validate an invite code
+// ============================================
+auth.post('/beta/validate', async (c) => {
+  try {
+    const body = await c.req.json();
+    const schema = z.object({
+      code: z.string().min(1).max(100),
+      actorType: z.enum(['human', 'agent']).optional(),
+    });
+
+    const validated = schema.parse(body);
+    const result = await validateBetaCode(validated.code, validated.actorType || 'human');
+
+    return c.json({
+      valid: result.valid,
+      error: result.valid ? undefined : result.error,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation failed', details: error.errors }, 400);
+    }
+    throw error;
   }
 });
 

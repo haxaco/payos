@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto';
 import { createClient } from '../db/client.js';
 import { logSecurityEvent } from '../utils/auth.js';
 import { sendTeamInviteEmail, sendRoleChangedEmail, sendMemberRemovedEmail, getUserEmail } from '../services/email.js';
+import { checkTeamMemberLimit } from '../services/tenant-limits.js';
 
 const organizationTeam = new Hono();
 
@@ -103,6 +104,16 @@ organizationTeam.post('/invite', async (c) => {
   // Only owner/admin can invite
   if (actorRole !== 'owner' && actorRole !== 'admin') {
     return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  // Check team member limit
+  try {
+    await checkTeamMemberLimit(tenantId);
+  } catch (err: any) {
+    if (err.code === 'TEAM_MEMBER_LIMIT_REACHED') {
+      return c.json({ error: err.message, code: err.code, details: err.details }, 403);
+    }
+    throw err;
   }
 
   const body = await c.req.json();

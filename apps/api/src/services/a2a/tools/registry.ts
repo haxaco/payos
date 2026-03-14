@@ -140,7 +140,13 @@ export class AgentToolRegistry {
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<ToolResult> {
-    // Permission check
+    // Story 58.15: Custom tools bypass TOOL_PERMISSION_MAP (they're tenant-defined)
+    if (toolName.startsWith('custom:')) {
+      const enrichedArgs = injectContext(ctx, toolName, args);
+      return this.executeCustomTool(ctx, toolName, enrichedArgs);
+    }
+
+    // Permission check for built-in tools
     const required = TOOL_PERMISSION_MAP[toolName];
     if (required === undefined) {
       return {
@@ -176,11 +182,6 @@ export class AgentToolRegistry {
           error: { code: 'TOOL_ERROR', message: err.message },
         };
       }
-    }
-
-    // Story 58.15: If this is a custom tool, execute via webhook
-    if (toolName.startsWith('custom:')) {
-      return this.executeCustomTool(ctx, toolName, enrichedArgs);
     }
 
     // No in-process handler — return error suggesting the tool exists

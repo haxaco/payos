@@ -23,8 +23,11 @@ export default function SetupPage() {
   const [apiKeys, setApiKeys] = useState<ApiKeys | null>(null);
   const [showOrgForm, setShowOrgForm] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState('');
 
-  const provision = useCallback(async (orgName: string) => {
+  const isClosedBeta = process.env.NEXT_PUBLIC_CLOSED_BETA === 'true';
+
+  const provision = useCallback(async (orgName: string, inviteCodeParam?: string) => {
     setProvisioning(true);
     setError(null);
 
@@ -44,7 +47,10 @@ export default function SetupPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ organizationName: orgName }),
+        body: JSON.stringify({
+          organizationName: orgName,
+          ...(inviteCodeParam ? { inviteCode: inviteCodeParam } : {}),
+        }),
       });
 
       const data = await response.json();
@@ -86,7 +92,8 @@ export default function SetupPage() {
 
       if (orgName) {
         // Auto-provision with the org name from signup
-        await provision(orgName);
+        const metaInviteCode = session.user.user_metadata?.invite_code;
+        await provision(orgName, metaInviteCode);
       } else {
         // OAuth flow — need to ask for org name
         setShowOrgForm(true);
@@ -109,7 +116,7 @@ export default function SetupPage() {
       setError('Organization name is required');
       return;
     }
-    await provision(organizationName.trim());
+    await provision(organizationName.trim(), isClosedBeta ? inviteCode : undefined);
   }
 
   // Loading state
@@ -219,6 +226,19 @@ export default function SetupPage() {
               {error && (
                 <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-md">
                   {error}
+                </div>
+              )}
+              {isClosedBeta && (
+                <div className="space-y-2">
+                  <Label htmlFor="inviteCode">Invite Code</Label>
+                  <Input
+                    id="inviteCode"
+                    type="text"
+                    placeholder="beta_..."
+                    value={inviteCode}
+                    onChange={(e) => setInviteCode(e.target.value)}
+                    required
+                  />
                 </div>
               )}
               <div className="space-y-2">
