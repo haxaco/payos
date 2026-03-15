@@ -315,8 +315,9 @@ export class A2ATaskWorker {
   }
 
   /**
-   * Managed handler placeholder.
-   * Uses the existing regex-based processor until Story 58.4 adds LLM.
+   * Managed handler: Sly handles payment intents directly via regex processor.
+   * Unmatched intents are forwarded to agent's webhook if registered,
+   * otherwise task is set to input-required with webhook registration guidance.
    */
   private async handleManaged(
     supabase: SupabaseClient,
@@ -324,16 +325,9 @@ export class A2ATaskWorker {
     agent: AgentRow,
     config: Record<string, unknown>,
   ): Promise<void> {
-    // Import existing processor for backward compatibility
     const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
     const processor = new A2ATaskProcessor(supabase, task.tenant_id);
-
-    // The existing processTask transitions from submitted→working→completed
-    // But we already set state to 'working' during claim, so we need to
-    // call it with the task ID. The existing processor will re-fetch and handle.
-    // It transitions submitted→working internally, but since it's already working,
-    // it will just process the intent.
-    await processor.processTask(task.id);
+    await processor.processTask(task.id, { slyFirst: true });
   }
 
   /**

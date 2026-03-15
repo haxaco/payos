@@ -150,7 +150,7 @@ export class A2ATaskProcessor {
   /**
    * Process a single task through the full lifecycle.
    */
-  async processTask(taskId: string): Promise<A2ATask | null> {
+  async processTask(taskId: string, opts?: { slyFirst?: boolean }): Promise<A2ATask | null> {
     const task = await this.taskService.getTask(taskId);
     if (!task) return null;
 
@@ -250,7 +250,14 @@ export class A2ATaskProcessor {
     // --- Routing: Sly-native vs agent forwarding ---
     const msgMetadata = lastUserMsg.metadata;
     const explicitSkillId = msgMetadata?.skillId as string | undefined;
+    const slyFirst = opts?.slyFirst === true;
 
+    if (slyFirst) {
+      // Managed mode: Sly handles payment intents directly, forwards unmatched to webhook
+      return await this.routeSlyFirst(taskId, text, intent, agentCtx, msgMetadata, explicitSkillId);
+    }
+
+    // Default routing: check endpoint first → forward all, then fall back to switch
     // Check if this intent maps to a Sly-native skill the agent registered
     const slySkillId = A2ATaskProcessor.INTENT_TO_SKILL[intent.action];
     let hasSlyNativeSkill = false;
@@ -298,6 +305,87 @@ export class A2ATaskProcessor {
       }
     }
 
+    return await this.executeIntentSwitch(taskId, text, intent, agentCtx);
+  }
+
+  // --- Managed mode routing (slyFirst) ---
+
+  /**
+   * Managed mode routing: Sly handles payment intents directly.
+   * Unmatched (generic) intents → forward to agent's webhook if registered.
+   * No webhook → input-required with guidance to register one.
+   */
+  private async routeSlyFirst(
+    taskId: string,
+    text: string,
+    intent: { action: string; amount: number; currency: string; recipient: string },
+    agentCtx: AgentContext,
+    msgMetadata?: Record<string, unknown>,
+    explicitSkillId?: string,
+  ): Promise<A2ATask | null> {
+    // If it's a recognized payment action, Sly handles it directly
+    if (intent.action !== 'generic') {
+      return await this.executeIntentSwitch(taskId, text, intent, agentCtx);
+    }
+
+    // Generic/unmatched intent — try forwarding to agent's webhook
+    const hasEndpoint = await this.agentHasEndpoint(agentCtx.agentId);
+    if (hasEndpoint) {
+      // Look up skill pricing from DB
+      let skillRow: { skill_id: string; handler_type: string; base_price: number; currency: string } | null = null;
+
+      const targetSkillId = explicitSkillId || msgMetadata?.skill_id as string | undefined;
+      if (targetSkillId) {
+        const { data } = await this.supabase
+          .from('agent_skills')
+          .select('skill_id, handler_type, base_price, currency')
+          .eq('agent_id', agentCtx.agentId)
+          .eq('tenant_id', this.tenantId)
+          .eq('skill_id', targetSkillId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (data) skillRow = data;
+      }
+
+      const skill = skillRow
+        ? { skill_id: skillRow.skill_id, handler_type: skillRow.handler_type || 'agent_provided',
+            base_price: Number(skillRow.base_price), currency: skillRow.currency || 'USDC' }
+        : { skill_id: explicitSkillId || 'default', handler_type: 'agent_provided', base_price: 0, currency: 'USDC' };
+
+      this.log(taskId, 'info', 'Managed mode: unmatched intent, forwarding to agent webhook');
+      return await this.forwardToAgent(taskId, text, skill, agentCtx, msgMetadata);
+    }
+
+    // No webhook registered — set input-required with guidance
+    this.log(taskId, 'info', 'Managed mode: unmatched intent, no webhook — requesting input');
+    await this.taskService.addMessage(taskId, 'agent', [
+      {
+        text: "This task doesn't match a built-in payment action. To handle custom tasks, register a webhook endpoint: `PUT /v1/a2a/agents/:id/endpoint`",
+      },
+    ]);
+    await this.taskService.setInputRequired(
+      taskId,
+      'No matching payment action and no webhook endpoint registered',
+      {
+        reason_code: 'no_handler',
+        next_action: 'register_webhook',
+        resolve_endpoint: 'PUT /v1/a2a/agents/:id/endpoint',
+        required_auth: 'api_key',
+      },
+    );
+    return this.taskService.getTask(taskId);
+  }
+
+  /**
+   * Execute the intent switch for Sly-native payment handlers.
+   * Shared between default routing and slyFirst routing.
+   */
+  private async executeIntentSwitch(
+    taskId: string,
+    text: string,
+    intent: { action: string; amount: number; currency: string; recipient: string },
+    agentCtx: AgentContext,
+  ): Promise<A2ATask | null> {
     try {
       switch (intent.action) {
         case 'payment':
