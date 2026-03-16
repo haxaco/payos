@@ -574,7 +574,15 @@ agents.get('/:id', async (c) => {
   const baseUrl = c.req.url.split('/v1/')[0];
   const a2aCardUrl = `${baseUrl}/a2a/agents/${id}/card`;
 
-  return c.json({ data: { ...agent, skills: skills || [], a2aCardUrl } });
+  // Include endpoint configuration
+  const endpoint = {
+    url: data.endpoint_url || null,
+    type: data.endpoint_type || 'none',
+    enabled: data.endpoint_enabled || false,
+    hasSecret: !!data.endpoint_secret,
+  };
+
+  return c.json({ data: { ...agent, skills: skills || [], a2aCardUrl, endpoint } });
 });
 
 // ============================================
