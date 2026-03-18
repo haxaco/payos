@@ -48,7 +48,6 @@ import { AgentQuickActions } from '@/components/agents/agent-quick-actions';
 import { ConfigureAgentDialog } from '@/components/agents/configure-agent-dialog';
 import { KyaTierBadge } from '@/components/agents/kya-tier-badge';
 import { WalletTab } from '@/components/agents/wallet-tab';
-import { TrustBreakdown } from '@/components/reputation/trust-breakdown';
 import type { AgentAction } from '@/lib/mock-data/agent-activity';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -1002,8 +1001,6 @@ function RatingsTab({ agentId }: { agentId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Trust Score Breakdown (Epic 63) */}
-      <TrustBreakdown agentId={agentId} />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
