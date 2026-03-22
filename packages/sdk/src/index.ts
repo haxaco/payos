@@ -8,18 +8,16 @@
  * - Direct settlement API
  * - Pix/SPEI local rails
  *
- * @example Sandbox mode (no blockchain)
+ * @example Auto-routing (environment inferred from key prefix)
  * ```ts
- * const sly = new Sly({
- *   apiKey: 'sly_...',
- *   environment: 'sandbox',
- * });
+ * const sly = new Sly({ apiKey: 'pk_test_...' });  // → sandbox.getsly.ai
+ * const sly = new Sly({ apiKey: 'pk_live_...' });   // → api.getsly.ai
  * ```
  *
- * @example Production mode
+ * @example Explicit environment
  * ```ts
  * const sly = new Sly({
- *   apiKey: 'sly_...',
+ *   apiKey: 'pk_live_...',
  *   environment: 'production',
  *   evmPrivateKey: '0x...',
  * });
@@ -28,6 +26,7 @@
 
 import type { SlyConfig } from './types';
 import { SlyClient } from './client';
+import { inferEnvironmentFromKey } from './config';
 import { SlyX402Client } from './protocols/x402/client';
 import { SlyX402Provider } from './protocols/x402/provider';
 import { AP2Client } from './protocols/ap2/client';
@@ -127,20 +126,26 @@ export class Sly extends SlyClient {
       throw new Error('API key is required');
     }
 
-    super(config);
+    // Resolve environment: explicit > inferred from key > default to sandbox
+    const resolvedEnvironment = config.environment
+      ?? inferEnvironmentFromKey(config.apiKey)
+      ?? 'sandbox';
+    const resolvedConfig = { ...config, environment: resolvedEnvironment };
+
+    super(resolvedConfig);
 
     // Initialize x402 protocol helpers
     this.x402 = {
       createClient: (overrides?: Partial<SlyConfig>) => {
         return new SlyX402Client({
-          ...config,
+          ...resolvedConfig,
           ...overrides,
         });
       },
       createProvider: (routes) => {
         return new SlyX402Provider({
           apiKey: config.apiKey,
-          environment: config.environment,
+          environment: resolvedEnvironment,
           routes,
           facilitatorUrl: config.facilitatorUrl,
         });

@@ -13,7 +13,7 @@ function extractUcpTotal(totals: unknown): number {
   return Number(entry?.amount || 0) / 100;
 }
 
-export type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
+export type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp' | 'mpp';
 export type TimeRange = '24h' | '7d' | '30d';
 
 export interface ProtocolDistribution {
@@ -29,6 +29,7 @@ export interface ProtocolActivityPoint {
   ap2: number;
   acp: number;
   ucp: number;
+  mpp: number;
 }
 
 export interface ProtocolStats {
@@ -124,6 +125,14 @@ export async function getProtocolDistribution(
     .eq('status', 'completed')
     .gte('created_at', startTime.toISOString());
 
+  // Query MPP transfers
+  const { data: mppData } = await supabase
+    .from('transfers')
+    .select('amount, currency')
+    .eq('tenant_id', tenantId)
+    .eq('type', 'mpp')
+    .gte('created_at', startTime.toISOString());
+
   // Calculate FX-normalized volumes and counts
   const x402Volume = x402Data?.reduce((sum, p) => {
     const amt = Number(p.amount || 0);
@@ -153,8 +162,15 @@ export async function getProtocolDistribution(
   }, 0) || 0;
   const ucpCount = ucpData?.length || 0;
 
-  const totalVolume = x402Volume + ap2Volume + acpVolume + ucpVolume;
-  const totalCount = x402Count + ap2Count + acpCount + ucpCount;
+  const mppVolume = mppData?.reduce((sum, p) => {
+    const amt = Number(p.amount || 0);
+    const ccy = (p.currency || 'USDC').toUpperCase();
+    return sum + fxService.toUSD(amt, ccy);
+  }, 0) || 0;
+  const mppCount = mppData?.length || 0;
+
+  const totalVolume = x402Volume + ap2Volume + acpVolume + ucpVolume + mppVolume;
+  const totalCount = x402Count + ap2Count + acpCount + ucpCount + mppCount;
 
   // Build distribution array
   const distribution: ProtocolDistribution[] = [
@@ -181,6 +197,12 @@ export async function getProtocolDistribution(
       volume_usd: ucpVolume,
       transaction_count: ucpCount,
       percentage: totalVolume > 0 ? Math.round((ucpVolume / totalVolume) * 100) : 0,
+    },
+    {
+      protocol: 'mpp',
+      volume_usd: mppVolume,
+      transaction_count: mppCount,
+      percentage: totalVolume > 0 ? Math.round((mppVolume / totalVolume) * 100) : 0,
     },
   ];
 
@@ -230,7 +252,7 @@ export async function getProtocolActivity(
   const fxService = getCircleFXService();
 
   // Query all protocol data
-  const [x402Result, ap2Result, acpResult, ucpResult] = await Promise.all([
+  const [x402Result, ap2Result, acpResult, ucpResult, mppResult] = await Promise.all([
     supabase
       .from('transfers')
       .select('amount, currency, created_at')
@@ -254,6 +276,12 @@ export async function getProtocolActivity(
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
       .gte('created_at', startTime.toISOString()),
+    supabase
+      .from('transfers')
+      .select('amount, currency, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'mpp')
+      .gte('created_at', startTime.toISOString()),
   ]);
 
   // Build time buckets
@@ -272,6 +300,7 @@ export async function getProtocolActivity(
     const ap2InBucket = ap2Result.data?.filter((e) => inBucket(e.created_at)) || [];
     const acpInBucket = acpResult.data?.filter((c) => inBucket(c.created_at)) || [];
     const ucpInBucket = ucpResult.data?.filter((c) => inBucket(c.created_at)) || [];
+    const mppInBucket = mppResult.data?.filter((p) => inBucket(p.created_at)) || [];
 
     if (metric === 'volume') {
       activity.push({
@@ -280,6 +309,7 @@ export async function getProtocolActivity(
         ap2: ap2InBucket.reduce((sum, e) => sum + fxService.toUSD(Number(e.amount || 0), (e.currency || 'USDC').toUpperCase()), 0),
         acp: acpInBucket.reduce((sum, c) => sum + fxService.toUSD(Number(c.total_amount || 0), (c.currency || 'USD').toUpperCase()), 0),
         ucp: ucpInBucket.reduce((sum, c) => sum + fxService.toUSD(extractUcpTotal(c.totals), (c.currency || 'USD').toUpperCase()), 0),
+        mpp: mppInBucket.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0),
       });
     } else {
       activity.push({
@@ -288,6 +318,7 @@ export async function getProtocolActivity(
         ap2: ap2InBucket.length,
         acp: acpInBucket.length,
         ucp: ucpInBucket.length,
+        mpp: mppInBucket.length,
       });
     }
   }
@@ -315,8 +346,9 @@ export async function getProtocolStats(
 
   // enabled_protocols is stored as an object: { x402: { enabled_at: '...' }, ... }
   const enabledProtocols = tenant?.settings?.enabled_protocols || {};
-  const isProtocolEnabled = (protocol: string): boolean => {
-    return !!enabledProtocols[protocol];
+  // Auto-detect: protocol is enabled if explicitly set OR has volume activity
+  const isProtocolEnabled = (protocol: string, volume30d: number = 0): boolean => {
+    return !!enabledProtocols[protocol] || volume30d > 0;
   };
 
   const stats: ProtocolStats[] = [];
@@ -354,7 +386,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'x402',
     protocol_name: 'x402 Micropayments',
-    enabled: isProtocolEnabled('x402'),
+    enabled: isProtocolEnabled('x402', x402TodayVolume),
     primary_metric: {
       label: 'Active Endpoints',
       value: x402Endpoints.data?.length || 0,
@@ -399,7 +431,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'ap2',
     protocol_name: 'AP2 Mandates',
-    enabled: isProtocolEnabled('ap2'),
+    enabled: isProtocolEnabled('ap2', ap2TodayVolume),
     primary_metric: {
       label: 'Active Mandates',
       value: ap2Mandates.data?.length || 0,
@@ -440,7 +472,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'acp',
     protocol_name: 'ACP Commerce',
-    enabled: isProtocolEnabled('acp'),
+    enabled: isProtocolEnabled('acp', acpTodayVolume),
     primary_metric: {
       label: 'Checkouts (30d)',
       value: acpToday.data?.length || 0,
@@ -481,7 +513,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'ucp',
     protocol_name: 'UCP Checkouts',
-    enabled: isProtocolEnabled('ucp'),
+    enabled: isProtocolEnabled('ucp', ucpTodayVolume),
     primary_metric: {
       label: 'Checkouts (30d)',
       value: ucpToday.data?.length || 0,
@@ -493,6 +525,52 @@ export async function getProtocolStats(
     trend: {
       value: Math.abs(ucpTrend),
       direction: ucpTrend > 0 ? 'up' : ucpTrend < 0 ? 'down' : 'flat',
+    },
+  });
+
+  // MPP Stats
+  const [mppSessions, mppToday, mppYesterday] = await Promise.all([
+    supabase
+      .from('mpp_sessions')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .in('status', ['open', 'active']),
+    supabase
+      .from('transfers')
+      .select('amount, currency')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'mpp')
+      .gte('created_at', thirtyDaysAgo.toISOString()),
+    supabase
+      .from('transfers')
+      .select('amount, currency')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'mpp')
+      .gte('created_at', sixtyDaysAgo.toISOString())
+      .lt('created_at', thirtyDaysAgo.toISOString()),
+  ]);
+
+  const mppTodayVolume = mppToday.data?.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0) || 0;
+  const mppYesterdayVolume = mppYesterday.data?.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0) || 0;
+  const mppTrend = mppYesterdayVolume > 0
+    ? Math.round(((mppTodayVolume - mppYesterdayVolume) / mppYesterdayVolume) * 100)
+    : 0;
+
+  stats.push({
+    protocol: 'mpp',
+    protocol_name: 'MPP Payments',
+    enabled: isProtocolEnabled('mpp', mppTodayVolume),
+    primary_metric: {
+      label: 'Active Sessions',
+      value: mppSessions.data?.length || 0,
+    },
+    secondary_metric: {
+      label: '30d Volume',
+      value: mppTodayVolume,
+    },
+    trend: {
+      value: Math.abs(mppTrend),
+      direction: mppTrend > 0 ? 'up' : mppTrend < 0 ? 'down' : 'flat',
     },
   });
 
@@ -589,6 +667,27 @@ export async function getRecentActivity(
       currency: c.currency || 'USDC',
       description: 'UCP checkout',
       timestamp: c.created_at,
+    });
+  });
+
+  // Query recent MPP payments
+  const { data: mpp } = await supabase
+    .from('transfers')
+    .select('id, amount, currency, description, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('type', 'mpp')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  mpp?.forEach((p: any) => {
+    activities.push({
+      id: p.id,
+      protocol: 'mpp',
+      type: 'payment',
+      amount: Number(p.amount),
+      currency: p.currency || 'USDC',
+      description: p.description || 'MPP payment',
+      timestamp: p.created_at,
     });
   });
 

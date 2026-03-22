@@ -253,9 +253,15 @@ export class CircleFXService {
    */
   toUSD(amount: number, currency: string): number {
     const src = currency.toUpperCase();
-    if (src === 'USD' || src === 'USDC') return amount;
-    const rate = this.getRate(src, 'USD');
-    return parseFloat((amount * rate).toFixed(2));
+    // Stablecoins pegged to USD — treat as 1:1
+    if (src === 'USD' || src === 'USDC' || src === 'USDT' || src === 'DAI' || src === 'BUSD' || src === 'PATHUSD') return amount;
+    try {
+      const rate = this.getRate(src, 'USD');
+      return parseFloat((amount * rate).toFixed(2));
+    } catch {
+      // Unknown currency — return amount as-is rather than crashing analytics
+      return amount;
+    }
   }
 
   /**

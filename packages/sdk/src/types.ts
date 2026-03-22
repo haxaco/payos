@@ -28,12 +28,14 @@ export interface SlyConfig {
   apiKey: string;
 
   /**
-   * Environment to connect to
-   * - sandbox: Local development with mock blockchain
-   * - testnet: Base Sepolia testnet with x402.org
-   * - production: Base mainnet with Coinbase CDP
+   * Environment to connect to (optional — auto-inferred from API key prefix)
+   * - sandbox: Base Sepolia testnet (pk_test_* / pk_sandbox_*)
+   * - testnet: Alias for sandbox
+   * - production: Base mainnet (pk_live_*)
+   *
+   * If omitted, inferred from apiKey prefix. Explicit value overrides inference.
    */
-  environment: SlyEnvironment;
+  environment?: SlyEnvironment;
 
   /**
    * EVM private key (required for testnet/production x402)

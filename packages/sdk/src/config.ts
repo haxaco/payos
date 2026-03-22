@@ -5,18 +5,33 @@ import type { PayOSEnvironment, EnvironmentConfig } from './types';
  */
 export const ENVIRONMENT_CONFIGS: Record<PayOSEnvironment, EnvironmentConfig> = {
   sandbox: {
-    apiUrl: 'http://localhost:4000',
-    facilitatorUrl: 'http://localhost:4000/v1/x402/facilitator',
+    apiUrl: 'https://sandbox.getsly.ai',
+    facilitatorUrl: 'https://facilitator.x402.org', // x402.org Base Sepolia
   },
   testnet: {
-    apiUrl: 'https://api.sandbox.payos.ai',
+    apiUrl: 'https://sandbox.getsly.ai',
     facilitatorUrl: 'https://facilitator.x402.org', // x402.org Base Sepolia
   },
   production: {
-    apiUrl: 'https://api.payos.ai',
+    apiUrl: 'https://api.getsly.ai',
     facilitatorUrl: 'https://facilitator.coinbase.com', // Coinbase CDP Base mainnet
   },
 };
+
+/**
+ * Infer environment from API key prefix
+ * - pk_test_* or pk_sandbox_* → sandbox
+ * - pk_live_* → production
+ */
+export function inferEnvironmentFromKey(apiKey: string): PayOSEnvironment | undefined {
+  if (apiKey.startsWith('pk_test_') || apiKey.startsWith('pk_sandbox_')) {
+    return 'sandbox';
+  }
+  if (apiKey.startsWith('pk_live_')) {
+    return 'production';
+  }
+  return undefined;
+}
 
 /**
  * Get configuration for an environment

@@ -109,18 +109,20 @@ export function getChainConfig(): BlockchainConfig {
  * Get the RPC URL for current environment
  */
 export function getRpcUrl(): string {
-  // Environment variable override always takes precedence
-  if (process.env.BASE_SEPOLIA_RPC_URL) {
-    return process.env.BASE_SEPOLIA_RPC_URL;
-  }
-  
   const env = getEnvironment();
+
+  if (env === 'production') {
+    // Production uses Base Mainnet
+    return process.env.BASE_MAINNET_RPC_URL || 'https://mainnet.base.org';
+  }
+
   if (env === 'mock') {
     // In mock mode, still use real RPC for reading (no writes)
-    // This allows balance checking etc. without running local node
     return 'https://sepolia.base.org';
   }
-  return getChainConfig().rpcUrl;
+
+  // Sandbox/testnet uses Base Sepolia
+  return process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
 }
 
 // ============================================

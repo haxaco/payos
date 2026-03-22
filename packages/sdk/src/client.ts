@@ -8,7 +8,7 @@ import type {
   ComplianceCheckResponse,
   CapabilitiesResponse,
 } from './types';
-import { getEnvironmentConfig } from './config';
+import { getEnvironmentConfig, inferEnvironmentFromKey } from './config';
 
 /**
  * Base API client for Sly
@@ -25,8 +25,13 @@ export class SlyClient {
   constructor(config: SlyConfig) {
     this.apiKey = config.apiKey;
 
+    // Resolve environment: explicit > inferred from key > default to sandbox
+    const environment = config.environment
+      ?? inferEnvironmentFromKey(config.apiKey)
+      ?? 'sandbox';
+
     // Use custom API URL if provided, otherwise use environment default
-    const envConfig = getEnvironmentConfig(config.environment);
+    const envConfig = getEnvironmentConfig(environment);
     this.apiUrl = config.apiUrl || envConfig.apiUrl;
   }
 
