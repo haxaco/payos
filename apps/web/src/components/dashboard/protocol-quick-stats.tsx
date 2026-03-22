@@ -197,6 +197,7 @@ interface ProtocolCardProps {
 
 function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps) {
   const ui = PROTOCOL_UI[stats.protocol];
+  if (!ui) return null;
   const Icon = ui.icon;
 
   const isEnabled = status?.enabled ?? false;
@@ -306,14 +307,14 @@ function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps
 }
 
 export function ProtocolQuickStats() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment } = useApiConfig();
   const apiFetch = useApiFetch();
   const queryClient = useQueryClient();
   const [togglingProtocol, setTogglingProtocol] = useState<ProtocolId | null>(null);
 
   // Fetch protocol stats
   const { data: statsData, isLoading: statsLoading } = useQuery({
-    queryKey: ['protocol-stats'],
+    queryKey: ['protocol-stats', apiEnvironment],
     queryFn: () => fetchProtocolStats(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
@@ -321,7 +322,7 @@ export function ProtocolQuickStats() {
 
   // Fetch protocol status
   const { data: statusData, isLoading: statusLoading } = useQuery({
-    queryKey: ['protocol-status'],
+    queryKey: ['protocol-status', apiEnvironment],
     queryFn: () => fetchProtocolStatus(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,

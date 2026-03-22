@@ -32,12 +32,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 export default function DashboardPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: configLoading, authToken } = useApiConfig();
+  const { isConfigured, isLoading: configLoading, authToken, apiEnvironment } = useApiConfig();
   const apiFetch = useApiFetch();
 
   // Fetch agents count
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
-    queryKey: ['dashboard', 'agents-count'],
+    queryKey: ['dashboard', 'agents-count', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.agents.list({ limit: 1 });
@@ -48,7 +48,7 @@ export default function DashboardPage() {
 
   // Fetch transfers count
   const { data: transfersData, isLoading: transfersLoading } = useQuery({
-    queryKey: ['dashboard', 'transfers-count'],
+    queryKey: ['dashboard', 'transfers-count', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.transfers.list({ limit: 1 });
@@ -59,7 +59,7 @@ export default function DashboardPage() {
 
   // Fetch total volume from protocol distribution
   const { data: totalVolume, isLoading: volumeLoading } = useQuery({
-    queryKey: ['dashboard', 'total-volume'],
+    queryKey: ['dashboard', 'total-volume', apiEnvironment],
     queryFn: async () => {
       const response = await apiFetch(
         `${API_URL}/v1/analytics/protocol-distribution?timeRange=30d&metric=volume`,
@@ -76,7 +76,7 @@ export default function DashboardPage() {
 
   // Fetch compliance flags count
   const { data: complianceCount, isLoading: complianceLoading } = useQuery({
-    queryKey: ['dashboard', 'compliance-count'],
+    queryKey: ['dashboard', 'compliance-count', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.compliance.getOpenFlagsCount();
@@ -87,7 +87,7 @@ export default function DashboardPage() {
 
   // Fetch A2A stats
   const { data: a2aStats, isLoading: a2aLoading } = useQuery({
-    queryKey: ['dashboard', 'a2a-stats'],
+    queryKey: ['dashboard', 'a2a-stats', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.a2a.getStats();

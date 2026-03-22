@@ -14,13 +14,13 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AccountsPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, apiEnvironment } = useApiConfig();
   const [search, setSearch] = useState('');
   const { formatCurrency } = useLocale();
 
   // Use React Query for data fetching with caching
   const { data: accountsData, isLoading: loading } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['accounts', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.accounts.list({ limit: 1 }); // Just to get total count
@@ -39,7 +39,7 @@ export default function AccountsPage() {
   // Fetch accounts for current page
   // Note: We fetch even if totalItems is 0 to handle cases where initial count query didn't return data correctly
   const { data: accountsPageData, isLoading: pageLoading } = useQuery({
-    queryKey: ['accounts', 'page', pagination.page, pagination.pageSize, search],
+    queryKey: ['accounts', 'page', pagination.page, pagination.pageSize, search, apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.accounts.list({

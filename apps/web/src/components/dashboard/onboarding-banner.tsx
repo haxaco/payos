@@ -42,7 +42,7 @@ interface OnboardingStep {
 }
 
 export function OnboardingBanner() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment } = useApiConfig();
   const apiFetch = useApiFetch();
   const [dismissed, setDismissed] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -60,7 +60,7 @@ export function OnboardingBanner() {
   }, []);
 
   const { data: onboardingState, isLoading } = useQuery({
-    queryKey: ['onboarding-state-banner'],
+    queryKey: ['onboarding-state-banner', apiEnvironment],
     queryFn: () => fetchOnboardingState(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,

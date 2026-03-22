@@ -42,6 +42,7 @@ app.get('/protocol-distribution', async (c) => {
     const distribution = await getProtocolDistribution(supabase, ctx.tenantId, {
       timeRange,
       metric,
+      environment: getEnv(ctx),
     });
 
     return c.json({ data: distribution });
@@ -77,6 +78,7 @@ app.get('/protocol-activity', async (c) => {
     const activity = await getProtocolActivity(supabase, ctx.tenantId, {
       timeRange,
       metric,
+      environment: getEnv(ctx),
     });
 
     return c.json({ data: activity });
@@ -98,7 +100,7 @@ app.get('/protocol-stats', async (c) => {
 
   try {
     const supabase = createClient();
-    const stats = await getProtocolStats(supabase, ctx.tenantId);
+    const stats = await getProtocolStats(supabase, ctx.tenantId, getEnv(ctx));
 
     return c.json({ data: stats });
   } catch (error) {
@@ -126,7 +128,7 @@ app.get('/recent-activity', async (c) => {
 
   try {
     const supabase = createClient();
-    const activities = await getRecentActivity(supabase, ctx.tenantId, limit);
+    const activities = await getRecentActivity(supabase, ctx.tenantId, limit, getEnv(ctx));
 
     return c.json({ data: activities });
   } catch (error) {

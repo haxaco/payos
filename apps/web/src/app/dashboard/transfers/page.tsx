@@ -38,7 +38,7 @@ import { useRealtime } from '@/providers/realtime-provider';
 export default function TransfersPage() {
   const router = useRouter();
   const api = useApiClient();
-  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, apiEnvironment } = useApiConfig();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -54,7 +54,7 @@ export default function TransfersPage() {
 
   // Fetch total count for pagination
   const { data: countData } = useQuery({
-    queryKey: ['transfers', 'count'],
+    queryKey: ['transfers', 'count', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.transfers.list({ limit: 1 });
@@ -79,6 +79,7 @@ export default function TransfersPage() {
       statusFilter,
       typeFilter,
       initiatedByFilter,
+      apiEnvironment,
     ],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');

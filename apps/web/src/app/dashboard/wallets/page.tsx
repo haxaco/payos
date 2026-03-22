@@ -40,9 +40,9 @@ function getSpendingStatus(policy: SpendingPolicy | undefined) {
   return { dailyPercent, monthlyPercent, isNearLimit, hasPolicies };
 }
 
-const useWalletBalance = (walletId: string | undefined, authToken: string | null) => {
+const useWalletBalance = (walletId: string | undefined, authToken: string | null, apiEnvironment?: string) => {
   return useQuery({
-    queryKey: ['wallet-balance', walletId],
+    queryKey: ['wallet-balance', walletId, apiEnvironment],
     queryFn: async () => {
       if (!authToken) return null;
       const response = await fetch(
@@ -65,12 +65,13 @@ const useWalletBalance = (walletId: string | undefined, authToken: string | null
 interface WalletBalanceCardProps {
   wallet: Wallet;
   authToken: string | null;
+  apiEnvironment?: string;
   onDelete?: (id: string) => void;
   isDeleting?: boolean;
 }
 
-function WalletBalanceCard({ wallet, authToken, onDelete, isDeleting }: WalletBalanceCardProps) {
-  const { data: balanceData, isLoading: balanceLoading } = useWalletBalance(wallet.id, authToken);
+function WalletBalanceCard({ wallet, authToken, apiEnvironment, onDelete, isDeleting }: WalletBalanceCardProps) {
+  const { data: balanceData, isLoading: balanceLoading } = useWalletBalance(wallet.id, authToken, apiEnvironment);
   const onChain = balanceData?.data?.onChain;
   const syncStatus = balanceData?.data?.syncStatus || 'stale';
   const queryClient = useQueryClient();
@@ -485,7 +486,7 @@ function WalletBalanceCard({ wallet, authToken, onDelete, isDeleting }: WalletBa
 
 export default function WalletsPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: isAuthLoading, authToken } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, authToken, apiEnvironment } = useApiConfig();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -544,7 +545,7 @@ export default function WalletsPage() {
 
   // Fetch total count
   const { data: countData } = useQuery({
-    queryKey: ['wallets', 'count'],
+    queryKey: ['wallets', 'count', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.wallets.list({ limit: 1 });
@@ -561,7 +562,7 @@ export default function WalletsPage() {
 
   // Fetch wallets for current page
   const { data: walletsData, isLoading: loading } = useQuery({
-    queryKey: ['wallets', 'page', pagination.page, pagination.pageSize],
+    queryKey: ['wallets', 'page', pagination.page, pagination.pageSize, apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.wallets.list({
@@ -950,6 +951,7 @@ export default function WalletsPage() {
               key={wallet.id}
               wallet={wallet}
               authToken={authToken}
+              apiEnvironment={apiEnvironment}
               onDelete={(id) => deleteMutation.mutate(id)}
               isDeleting={deletingId === wallet.id}
             />

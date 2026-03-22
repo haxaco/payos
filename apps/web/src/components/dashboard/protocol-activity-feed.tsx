@@ -134,11 +134,11 @@ function ActivityItem({ activity }: { activity: RecentActivity }) {
 }
 
 export function ProtocolActivityFeed() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment } = useApiConfig();
   const apiFetch = useApiFetch();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['recent-activity'],
+    queryKey: ['recent-activity', apiEnvironment],
     queryFn: () => fetchRecentActivity(apiFetch, 8),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,

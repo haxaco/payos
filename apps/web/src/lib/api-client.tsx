@@ -152,12 +152,14 @@ export function useApiClient() {
 
 export function useApiConfig() {
   const context = useContext(ApiClientContext);
+  const { apiEnvironment } = useEnvironment();
   return {
     apiKey: context.apiKey,
     setApiKey: context.setApiKey,
     isConfigured: context.isConfigured,
     isLoading: context.isLoading,
     authToken: context.authToken,
+    apiEnvironment,
   };
 }
 

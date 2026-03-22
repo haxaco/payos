@@ -49,14 +49,14 @@ async function fetchProtocolActivity(
 }
 
 export function ProtocolActivityChart() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment } = useApiConfig();
   const apiFetch = useApiFetch();
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [metric, setMetric] = useState<Metric>('volume');
   const [selectedProtocols, setSelectedProtocols] = useState<ProtocolId[]>(['x402', 'ap2', 'acp', 'ucp']);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['protocol-activity', timeRange, metric],
+    queryKey: ['protocol-activity', timeRange, metric, apiEnvironment],
     queryFn: () => fetchProtocolActivity(apiFetch, timeRange, metric),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,

@@ -73,9 +73,11 @@ export async function getProtocolDistribution(
   options: {
     timeRange: TimeRange;
     metric: 'volume' | 'count';
+    environment?: 'test' | 'live';
   }
 ): Promise<ProtocolDistribution[]> {
-  const { timeRange } = options;
+  const { timeRange, environment } = options;
+  const env = environment || 'test';
 
   // Calculate time boundary
   const now = new Date();
@@ -100,6 +102,7 @@ export async function getProtocolDistribution(
     .select('amount, currency')
     .eq('tenant_id', tenantId)
     .eq('type', 'x402')
+    .eq('environment', env)
     .gte('created_at', startTime.toISOString());
 
   // Query AP2 mandate executions
@@ -115,6 +118,7 @@ export async function getProtocolDistribution(
     .select('total_amount, currency')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', env)
     .gte('created_at', startTime.toISOString());
 
   // Query UCP checkouts (completed) — total is inside JSONB `totals` array
@@ -123,6 +127,7 @@ export async function getProtocolDistribution(
     .select('totals, currency')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', env)
     .gte('created_at', startTime.toISOString());
 
   // Query MPP transfers
@@ -131,6 +136,7 @@ export async function getProtocolDistribution(
     .select('amount, currency')
     .eq('tenant_id', tenantId)
     .eq('type', 'mpp')
+    .eq('environment', env)
     .gte('created_at', startTime.toISOString());
 
   // Calculate FX-normalized volumes and counts
@@ -221,9 +227,11 @@ export async function getProtocolActivity(
   options: {
     timeRange: TimeRange;
     metric: 'volume' | 'count';
+    environment?: 'test' | 'live';
   }
 ): Promise<ProtocolActivityPoint[]> {
-  const { timeRange, metric } = options;
+  const { timeRange, metric, environment } = options;
+  const env = environment || 'test';
 
   // Calculate time boundary and interval
   const now = new Date();
@@ -258,6 +266,7 @@ export async function getProtocolActivity(
       .select('amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('ap2_mandate_executions')
@@ -269,18 +278,21 @@ export async function getProtocolActivity(
       .select('total_amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('ucp_checkout_sessions')
       .select('totals, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('transfers')
       .select('amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('type', 'mpp')
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
   ]);
 
@@ -331,7 +343,8 @@ export async function getProtocolActivity(
  */
 export async function getProtocolStats(
   supabase: SupabaseClient,
-  tenantId: string
+  tenantId: string,
+  environment: 'test' | 'live' = 'test'
 ): Promise<ProtocolStats[]> {
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -361,18 +374,21 @@ export async function getProtocolStats(
       .from('x402_endpoints')
       .select('id')
       .eq('tenant_id', tenantId)
-      .eq('status', 'active'),
+      .eq('status', 'active')
+      .eq('environment', environment),
     supabase
       .from('transfers')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('transfers')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -407,7 +423,8 @@ export async function getProtocolStats(
       .from('ap2_mandates')
       .select('id, authorized_amount, currency')
       .eq('tenant_id', tenantId)
-      .eq('status', 'active'),
+      .eq('status', 'active')
+      .eq('environment', environment),
     supabase
       .from('ap2_mandate_executions')
       .select('amount, currency')
@@ -453,12 +470,14 @@ export async function getProtocolStats(
       .select('total_amount, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('acp_checkouts')
       .select('total_amount, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -494,12 +513,14 @@ export async function getProtocolStats(
       .select('totals, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('ucp_checkout_sessions')
       .select('totals, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -534,18 +555,21 @@ export async function getProtocolStats(
       .from('mpp_sessions')
       .select('id')
       .eq('tenant_id', tenantId)
-      .in('status', ['open', 'active']),
+      .in('status', ['open', 'active'])
+      .eq('environment', environment),
     supabase
       .from('transfers')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'mpp')
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('transfers')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'mpp')
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -583,7 +607,8 @@ export async function getProtocolStats(
 export async function getRecentActivity(
   supabase: SupabaseClient,
   tenantId: string,
-  limit: number = 10
+  limit: number = 10,
+  environment: 'test' | 'live' = 'test'
 ): Promise<RecentActivity[]> {
   const activities: RecentActivity[] = [];
 
@@ -593,6 +618,7 @@ export async function getRecentActivity(
     .select('id, amount, currency, description, created_at')
     .eq('tenant_id', tenantId)
     .eq('type', 'x402')
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -634,6 +660,7 @@ export async function getRecentActivity(
     .select('id, total_amount, currency, created_at')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -655,6 +682,7 @@ export async function getRecentActivity(
     .select('id, totals, currency, created_at')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -676,6 +704,7 @@ export async function getRecentActivity(
     .select('id, amount, currency, description, created_at')
     .eq('tenant_id', tenantId)
     .eq('type', 'mpp')
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 

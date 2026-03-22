@@ -88,13 +88,13 @@ function formatCount(value: number): string {
 }
 
 export function ProtocolStats() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment } = useApiConfig();
   const apiFetch = useApiFetch();
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [metric, setMetric] = useState<Metric>('volume');
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['protocol-distribution', timeRange, metric],
+    queryKey: ['protocol-distribution', timeRange, metric, apiEnvironment],
     queryFn: () => fetchProtocolDistribution(apiFetch, timeRange, metric),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
@@ -215,6 +215,7 @@ export function ProtocolStats() {
       <div className="space-y-3">
         {distribution.map((protocol) => {
           const ui = PROTOCOL_UI[protocol.protocol];
+          if (!ui) return null;
           const Icon = ui.icon;
           const value = metric === 'volume' ? protocol.volume_usd : protocol.transaction_count;
           const displayValue = metric === 'volume' ? formatCurrency(value) : formatCount(value);

@@ -29,12 +29,12 @@ function getAgentIcon(agentName: string) {
 
 export default function AgentsPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, apiEnvironment } = useApiConfig();
   const [search, setSearch] = useState('');
 
   // Fetch total count
   const { data: countData } = useQuery({
-    queryKey: ['agents', 'count'],
+    queryKey: ['agents', 'count', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.agents.list({ limit: 1 });
@@ -51,7 +51,7 @@ export default function AgentsPage() {
 
   // Fetch agents for current page
   const { data: agentsData, isLoading: loading } = useQuery({
-    queryKey: ['agents', 'page', pagination.page, pagination.pageSize],
+    queryKey: ['agents', 'page', pagination.page, pagination.pageSize, apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.agents.list({

@@ -115,13 +115,13 @@ function getPrerequisiteLabel(prereq: string): string {
 }
 
 export function ProtocolStatusWidget() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment } = useApiConfig();
   const apiFetch = useApiFetch();
   const queryClient = useQueryClient();
   const [togglingProtocol, setTogglingProtocol] = useState<ProtocolId | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['protocol-status'],
+    queryKey: ['protocol-status', apiEnvironment],
     queryFn: () => fetchProtocolStatus(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,
