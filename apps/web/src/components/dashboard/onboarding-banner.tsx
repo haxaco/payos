@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Rocket, CheckCircle, ChevronRight, X, Sparkles, PartyPopper } from 'lucide-react';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import { cn } from '@sly/ui';
 import Link from 'next/link';
 
@@ -20,15 +20,9 @@ interface TenantOnboardingState {
   sandbox_mode: boolean;
 }
 
-async function fetchOnboardingState(authToken: string): Promise<TenantOnboardingState> {
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/onboarding`,
-    {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
+async function fetchOnboardingState(apiFetch: ApiFetchFn): Promise<TenantOnboardingState> {
+  const response = await apiFetch(
+    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/onboarding`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch onboarding state');
@@ -49,6 +43,7 @@ interface OnboardingStep {
 
 export function OnboardingBanner() {
   const { authToken, isConfigured } = useApiConfig();
+  const apiFetch = useApiFetch();
   const [dismissed, setDismissed] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationComplete, setCelebrationComplete] = useState(false);
@@ -66,7 +61,7 @@ export function OnboardingBanner() {
 
   const { data: onboardingState, isLoading } = useQuery({
     queryKey: ['onboarding-state-banner'],
-    queryFn: () => fetchOnboardingState(authToken!),
+    queryFn: () => fetchOnboardingState(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
   });

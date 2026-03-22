@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Zap, Shield, ShoppingCart, Globe, Bot, User, Clock, Loader2, ArrowRight } from 'lucide-react';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import { cn } from '@sly/ui';
 import Link from 'next/link';
 
@@ -49,15 +49,9 @@ const PROTOCOL_UI: Record<ProtocolId, { icon: typeof Zap; color: string; bgColor
   },
 };
 
-async function fetchRecentActivity(authToken: string, limit: number = 10): Promise<{ data: RecentActivity[] }> {
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/analytics/recent-activity?limit=${limit}`,
-    {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
+async function fetchRecentActivity(apiFetch: ApiFetchFn, limit: number = 10): Promise<{ data: RecentActivity[] }> {
+  const response = await apiFetch(
+    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/analytics/recent-activity?limit=${limit}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch recent activity');
@@ -141,10 +135,11 @@ function ActivityItem({ activity }: { activity: RecentActivity }) {
 
 export function ProtocolActivityFeed() {
   const { authToken, isConfigured } = useApiConfig();
+  const apiFetch = useApiFetch();
 
   const { data, isLoading } = useQuery({
     queryKey: ['recent-activity'],
-    queryFn: () => fetchRecentActivity(authToken!, 8),
+    queryFn: () => fetchRecentActivity(apiFetch, 8),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000, // Auto-refresh every minute

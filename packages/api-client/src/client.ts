@@ -110,6 +110,7 @@ import type {
 export interface SlyClientConfig {
   baseUrl: string;
   apiKey: string;
+  defaultHeaders?: Record<string, string>;
   onError?: (error: SlyError) => void;
 }
 
@@ -181,6 +182,7 @@ export class SlyClient {
     const requestHeaders: Record<string, string> = {
       'Authorization': `Bearer ${this.config.apiKey}`,
       'Content-Type': 'application/json',
+      ...(this.config.defaultHeaders || {}),
       ...headers,
     };
 

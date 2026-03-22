@@ -7,6 +7,8 @@ import { trackFirstEvent } from '../services/beta-access.js';
 export interface RequestContext {
   tenantId: string;
   actorType: 'api_key' | 'user' | 'agent' | 'portal';
+  // Environment scoping (test = sandbox, live = production)
+  environment?: 'test' | 'live';
   // For user (JWT) auth
   userId?: string;
   userRole?: 'owner' | 'admin' | 'member' | 'viewer';
@@ -238,7 +240,8 @@ export async function authMiddleware(c: Context, next: Next) {
       c.set('ctx', {
         tenantId: tenant.id,
         actorType: 'api_key',
-        actorId: apiKey.id, // Use API key ID as actor ID
+        environment: apiKey.environment || 'test',
+        actorId: apiKey.id,
         actorName: apiKey.name || 'API Key',
         apiKeyId: apiKey.id,
         apiKeyEnvironment: apiKey.environment,
@@ -293,12 +296,14 @@ export async function authMiddleware(c: Context, next: Next) {
 
     await logAuthAttempt(true, 'api_key', tenant.id, 'legacy_api_key', ip, userAgent);
 
+    const legacyEnv: 'test' | 'live' = token.startsWith('pk_live_') ? 'live' : 'test';
     c.set('ctx', {
       tenantId: tenant.id,
       actorType: 'api_key',
-      actorId: 'legacy_api_key', // Placeholder for legacy keys
+      environment: legacyEnv,
+      actorId: 'legacy_api_key',
       actorName: tenant.name || 'Legacy API Key',
-      apiKeyEnvironment: token.startsWith('pk_live_') ? 'live' : 'test',
+      apiKeyEnvironment: legacyEnv,
     });
 
     // Track first API call for beta funnel (fire-and-forget)
@@ -312,10 +317,15 @@ export async function authMiddleware(c: Context, next: Next) {
   // ============================================
   // JWTs typically start with "eyJ" (base64 encoded JSON header)
   if (token.startsWith('eyJ')) {
+    // Read environment header (may change per request even with same JWT)
+    const envHeader = c.req.header('X-Environment');
+    const requestEnv: 'test' | 'live' = envHeader === 'live' ? 'live' : 'test';
+
     // Check cache first for performance
     const cachedCtx = getCachedJWT(token);
     if (cachedCtx) {
-      c.set('ctx', cachedCtx);
+      // Override environment from header (it can change per request)
+      c.set('ctx', { ...cachedCtx, environment: requestEnv, apiKeyEnvironment: requestEnv });
       // Track first API call for beta funnel (fire-and-forget)
       trackFirstEvent(cachedCtx.tenantId, 'first_api_call').catch(() => {});
       return next();
@@ -380,6 +390,8 @@ export async function authMiddleware(c: Context, next: Next) {
         userId: userId,
         userRole: profile.role,
         userName: profile.name || userData.user.email?.split('@')[0] || 'Unknown',
+        environment: requestEnv,
+        apiKeyEnvironment: requestEnv,
       };
 
       // Cache the result for subsequent requests
@@ -444,9 +456,11 @@ export async function authMiddleware(c: Context, next: Next) {
     c.set('ctx', {
       tenantId: agent.tenant_id,
       actorType: 'agent',
+      environment: agent.environment || 'test',
       actorId: agent.id,
       actorName: agent.name,
       kyaTier: agent.kya_tier,
+      apiKeyEnvironment: agent.environment || 'test',
     });
 
     // Track first API call for beta funnel (fire-and-forget)

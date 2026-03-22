@@ -11,8 +11,8 @@ import { GlobalSearch, useGlobalSearch } from '@/components/search/global-search
 import { NotificationsCenter } from '@/components/notifications/notifications-center';
 import { useDemoMode } from '@/components/demo/demo-mode-context';
 import { ScenarioSelector } from '@/components/demo/scenario-selector';
-
-type Environment = 'sandbox' | 'production';
+import { useEnvironment, type Environment } from '@/lib/environment-context';
+import { toast } from 'sonner';
 
 interface HeaderProps {
   user: SupabaseUser | null;
@@ -23,7 +23,7 @@ export function Header({ user }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvMenu, setShowEnvMenu] = useState(false);
   const [showScenarioSelector, setShowScenarioSelector] = useState(false);
-  const [environment, setEnvironment] = useState<Environment>('sandbox');
+  const { environment, setEnvironment } = useEnvironment();
   const globalSearch = useGlobalSearch();
   const demoMode = useDemoMode();
   const queryClient = useQueryClient();
@@ -39,7 +39,13 @@ export function Header({ user }: HeaderProps) {
   const handleEnvironmentChange = (env: Environment) => {
     setEnvironment(env);
     setShowEnvMenu(false);
-    // TODO: In the future, this would switch API endpoints
+    // Invalidate all cached queries so pages refetch with the new environment
+    queryClient.invalidateQueries();
+    toast.success(`Switched to ${env === 'production' ? 'Production' : 'Sandbox'}`, {
+      description: env === 'production'
+        ? 'Showing live data. Transactions are real.'
+        : 'Showing test data. Safe to experiment.',
+    });
   };
 
   const initials = user?.email

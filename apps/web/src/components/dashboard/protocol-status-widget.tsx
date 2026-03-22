@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import {
   Zap,
   Shield,
@@ -77,13 +77,8 @@ interface ProtocolStatusResponse {
   protocols: Record<ProtocolId, ProtocolEnablementStatus>;
 }
 
-async function fetchProtocolStatus(authToken: string): Promise<ProtocolStatusResponse> {
-  const response = await fetch(`${API_URL}/v1/organization/protocol-status`, {
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+async function fetchProtocolStatus(apiFetch: ApiFetchFn): Promise<ProtocolStatusResponse> {
+  const response = await apiFetch(`${API_URL}/v1/organization/protocol-status`);
   if (!response.ok) {
     throw new Error('Failed to fetch protocol status');
   }
@@ -91,19 +86,15 @@ async function fetchProtocolStatus(authToken: string): Promise<ProtocolStatusRes
 }
 
 async function toggleProtocol(
-  authToken: string,
+  apiFetch: ApiFetchFn,
   protocolId: ProtocolId,
   enable: boolean
 ): Promise<void> {
   const action = enable ? 'enable' : 'disable';
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/v1/organization/protocols/${protocolId}/${action}`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
     }
   );
   if (!response.ok) {
@@ -125,19 +116,20 @@ function getPrerequisiteLabel(prereq: string): string {
 
 export function ProtocolStatusWidget() {
   const { authToken, isConfigured } = useApiConfig();
+  const apiFetch = useApiFetch();
   const queryClient = useQueryClient();
   const [togglingProtocol, setTogglingProtocol] = useState<ProtocolId | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['protocol-status'],
-    queryFn: () => fetchProtocolStatus(authToken!),
+    queryFn: () => fetchProtocolStatus(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ protocolId, enable }: { protocolId: ProtocolId; enable: boolean }) =>
-      toggleProtocol(authToken!, protocolId, enable),
+      toggleProtocol(apiFetch, protocolId, enable),
     onMutate: ({ protocolId }) => {
       setTogglingProtocol(protocolId);
     },

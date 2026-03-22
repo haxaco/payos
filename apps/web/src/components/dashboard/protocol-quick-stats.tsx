@@ -16,7 +16,7 @@ import {
   CreditCard,
   Loader2,
 } from 'lucide-react';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import { cn } from '@sly/ui';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -104,13 +104,8 @@ const PROTOCOL_UI: Record<
   },
 };
 
-async function fetchProtocolStats(authToken: string): Promise<ProtocolStats[]> {
-  const response = await fetch(`${API_URL}/v1/analytics/protocol-stats`, {
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+async function fetchProtocolStats(apiFetch: ApiFetchFn): Promise<ProtocolStats[]> {
+  const response = await apiFetch(`${API_URL}/v1/analytics/protocol-stats`);
   if (!response.ok) {
     throw new Error('Failed to fetch protocol stats');
   }
@@ -119,13 +114,8 @@ async function fetchProtocolStats(authToken: string): Promise<ProtocolStats[]> {
   return Array.isArray(data) ? data : [];
 }
 
-async function fetchProtocolStatus(authToken: string): Promise<ProtocolStatusResponse> {
-  const response = await fetch(`${API_URL}/v1/organization/protocol-status`, {
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+async function fetchProtocolStatus(apiFetch: ApiFetchFn): Promise<ProtocolStatusResponse> {
+  const response = await apiFetch(`${API_URL}/v1/organization/protocol-status`);
   if (!response.ok) {
     throw new Error('Failed to fetch protocol status');
   }
@@ -135,17 +125,13 @@ async function fetchProtocolStatus(authToken: string): Promise<ProtocolStatusRes
 }
 
 async function toggleProtocol(
-  authToken: string,
+  apiFetch: ApiFetchFn,
   protocolId: ProtocolId,
   enable: boolean
 ): Promise<void> {
   const action = enable ? 'enable' : 'disable';
-  const response = await fetch(`${API_URL}/v1/organization/protocols/${protocolId}/${action}`, {
+  const response = await apiFetch(`${API_URL}/v1/organization/protocols/${protocolId}/${action}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    },
   });
   if (!response.ok) {
     const data = await response.json();
@@ -321,13 +307,14 @@ function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps
 
 export function ProtocolQuickStats() {
   const { authToken, isConfigured } = useApiConfig();
+  const apiFetch = useApiFetch();
   const queryClient = useQueryClient();
   const [togglingProtocol, setTogglingProtocol] = useState<ProtocolId | null>(null);
 
   // Fetch protocol stats
   const { data: statsData, isLoading: statsLoading } = useQuery({
     queryKey: ['protocol-stats'],
-    queryFn: () => fetchProtocolStats(authToken!),
+    queryFn: () => fetchProtocolStats(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
   });
@@ -335,7 +322,7 @@ export function ProtocolQuickStats() {
   // Fetch protocol status
   const { data: statusData, isLoading: statusLoading } = useQuery({
     queryKey: ['protocol-status'],
-    queryFn: () => fetchProtocolStatus(authToken!),
+    queryFn: () => fetchProtocolStatus(apiFetch),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,
   });
@@ -343,7 +330,7 @@ export function ProtocolQuickStats() {
   // Toggle mutation
   const toggleMutation = useMutation({
     mutationFn: ({ protocolId, enable }: { protocolId: ProtocolId; enable: boolean }) =>
-      toggleProtocol(authToken!, protocolId, enable),
+      toggleProtocol(apiFetch, protocolId, enable),
     onMutate: ({ protocolId }) => {
       setTogglingProtocol(protocolId);
     },

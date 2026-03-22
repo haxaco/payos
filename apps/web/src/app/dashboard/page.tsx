@@ -9,7 +9,7 @@ import {
   ChevronRight,
   Network,
 } from 'lucide-react';
-import { useApiClient, useApiConfig } from '@/lib/api-client';
+import { useApiClient, useApiConfig, useApiFetch } from '@/lib/api-client';
 import Link from 'next/link';
 
 // Import dashboard components
@@ -33,6 +33,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 export default function DashboardPage() {
   const api = useApiClient();
   const { isConfigured, isLoading: configLoading, authToken } = useApiConfig();
+  const apiFetch = useApiFetch();
 
   // Fetch agents count
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
@@ -60,14 +61,8 @@ export default function DashboardPage() {
   const { data: totalVolume, isLoading: volumeLoading } = useQuery({
     queryKey: ['dashboard', 'total-volume'],
     queryFn: async () => {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_URL}/v1/analytics/protocol-distribution?timeRange=30d&metric=volume`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
       );
       if (!response.ok) return 0;
       const json = await response.json();

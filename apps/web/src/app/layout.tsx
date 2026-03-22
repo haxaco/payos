@@ -6,6 +6,7 @@ import { ApiClientProvider } from '@/lib/api-client';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { Web3Provider } from '@/components/providers/web3-provider';
+import { EnvironmentProvider } from '@/lib/environment-context';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -27,9 +28,11 @@ export default function RootLayout({
         <ThemeProvider>
           <Web3Provider>
             <QueryProvider>
-              <ApiClientProvider>
-                {children}
-              </ApiClientProvider>
+              <EnvironmentProvider>
+                <ApiClientProvider>
+                  {children}
+                </ApiClientProvider>
+              </EnvironmentProvider>
             </QueryProvider>
           </Web3Provider>
           <Toaster position="top-right" richColors />
