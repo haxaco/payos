@@ -17,7 +17,7 @@ import { MppTransferRecorder } from '../services/mpp/transfer-recorder.js';
 import { MppWalletProvisioning } from '../services/mpp/wallet-provisioning.js';
 import { MppServiceDiscovery } from '../services/mpp/service-discovery.js';
 import { MppReceiptReconciler } from '../services/mpp/receipt-reconciler.js';
-import { mapTransferFromDb } from '../utils/helpers.js';
+import { mapTransferFromDb, getEnv } from '../utils/helpers.js';
 
 const mppRouter = new Hono();
 
@@ -139,6 +139,7 @@ mppRouter.post('/sessions', async (c) => {
     maxBudget: parsed.data.max_budget,
     currency: parsed.data.currency,
     correlationId: c.get('requestId'),
+    environment: getEnv(ctx) as 'test' | 'live',
   });
 
   if (!result.success) {
@@ -171,6 +172,7 @@ mppRouter.get('/sessions', async (c) => {
     status: status as any || undefined,
     limit,
     offset,
+    environment: getEnv(ctx) as 'test' | 'live',
   });
 
   return c.json({
@@ -190,7 +192,7 @@ mppRouter.get('/sessions/:sessionId', async (c) => {
   const supabase = createClient();
   const sessionManager = new MppSessionManager(supabase);
 
-  const session = await sessionManager.getSession(sessionId, ctx.tenantId);
+  const session = await sessionManager.getSession(sessionId, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
   if (!session) {
     return c.json({ error: 'Session not found' }, 404);
   }
@@ -232,6 +234,7 @@ mppRouter.post('/sessions/:sessionId/voucher', async (c) => {
     tenantId: ctx.tenantId,
     amount: parsed.data.amount,
     correlationId: c.get('requestId'),
+    environment: getEnv(ctx) as 'test' | 'live',
   });
 
   if (!result.success) {
@@ -263,7 +266,7 @@ mppRouter.post('/sessions/:sessionId/close', async (c) => {
   const sessionManager = new MppSessionManager(supabase);
 
   const result = await sessionManager.closeSession(
-    sessionId, ctx.tenantId, c.get('requestId')
+    sessionId, ctx.tenantId, c.get('requestId'), getEnv(ctx) as 'test' | 'live'
   );
 
   if (!result.success) {
@@ -339,6 +342,7 @@ mppRouter.get('/transfers', async (c) => {
     .from('transfers')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('type', 'mpp')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
@@ -467,6 +471,7 @@ mppRouter.get('/analytics', async (c) => {
     .from('transfers')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('type', 'mpp')
     .gte('created_at', startDate)
     .lte('created_at', endDate);
@@ -494,7 +499,7 @@ mppRouter.get('/analytics', async (c) => {
 
   // Fetch MPP sessions
   const sessionManager = new MppSessionManager(supabase);
-  const allSessions = await sessionManager.listSessions(ctx.tenantId, { limit: 10000, offset: 0 });
+  const allSessions = await sessionManager.listSessions(ctx.tenantId, { limit: 10000, offset: 0, environment: getEnv(ctx) as 'test' | 'live' });
   const sessionList = allSessions.data || [];
 
   const sessionsByStatus = {

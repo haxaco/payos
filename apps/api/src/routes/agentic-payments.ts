@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getEnv } from '../utils/helpers.js';
 
 const app = new Hono();
 
@@ -68,7 +69,8 @@ function getPeriodDates(period: string): { start: Date; end: Date } {
 async function countActiveIntegrations(
   supabase: any,
   tenantId: string,
-  protocol: 'x402' | 'ap2' | 'acp'
+  protocol: 'x402' | 'ap2' | 'acp',
+  environment: 'test' | 'live' = 'test',
 ): Promise<number> {
   switch (protocol) {
     case 'x402': {
@@ -76,6 +78,7 @@ async function countActiveIntegrations(
         .from('x402_endpoints')
         .select('id', { count: 'exact', head: true })
         .eq('tenant_id', tenantId)
+        .eq('environment', environment)
         .eq('status', 'active');
       return count || 0;
     }
@@ -84,6 +87,7 @@ async function countActiveIntegrations(
         .from('ap2_mandates')
         .select('id', { count: 'exact', head: true })
         .eq('tenant_id', tenantId)
+        .eq('environment', environment)
         .eq('status', 'active');
       return count || 0;
     }
@@ -92,6 +96,7 @@ async function countActiveIntegrations(
         .from('acp_checkouts')
         .select('id', { count: 'exact', head: true })
         .eq('tenant_id', tenantId)
+        .eq('environment', environment)
         .eq('status', 'pending');
       return count || 0;
     }
@@ -122,6 +127,7 @@ app.get('/summary', async (c) => {
         .from('transfers')
         .select('id, amount, fee_amount, from_account_id, created_at, protocol_metadata')
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .eq('type', 'x402')
         .eq('status', 'completed')
         .gte('created_at', start.toISOString())
@@ -131,6 +137,7 @@ app.get('/summary', async (c) => {
         .from('transfers')
         .select('id, amount, fee_amount, from_account_id, created_at, protocol_metadata')
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .eq('type', 'ap2')
         .eq('status', 'completed')
         .gte('created_at', start.toISOString())
@@ -140,6 +147,7 @@ app.get('/summary', async (c) => {
         .from('transfers')
         .select('id, amount, fee_amount, from_account_id, created_at, protocol_metadata')
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .eq('type', 'acp')
         .eq('status', 'completed')
         .gte('created_at', start.toISOString())
@@ -166,9 +174,9 @@ app.get('/summary', async (c) => {
 
     // Count active integrations
     const [x402Integrations, ap2Integrations, acpIntegrations] = await Promise.all([
-      countActiveIntegrations(supabase, ctx.tenantId, 'x402'),
-      countActiveIntegrations(supabase, ctx.tenantId, 'ap2'),
-      countActiveIntegrations(supabase, ctx.tenantId, 'acp'),
+      countActiveIntegrations(supabase, ctx.tenantId, 'x402', getEnv(ctx) as 'test' | 'live'),
+      countActiveIntegrations(supabase, ctx.tenantId, 'ap2', getEnv(ctx) as 'test' | 'live'),
+      countActiveIntegrations(supabase, ctx.tenantId, 'acp', getEnv(ctx) as 'test' | 'live'),
     ]);
 
     // Fetch recent activity (last 10 transfers across all protocols)
@@ -176,6 +184,7 @@ app.get('/summary', async (c) => {
       .from('transfers')
       .select('id, type, amount, from_account_id, to_account_id, protocol_metadata, created_at')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .in('type', ['x402', 'ap2', 'acp'])
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
@@ -280,6 +289,7 @@ app.get('/analytics', async (c) => {
       .from('transfers')
       .select('id, type, amount, fee_amount, from_account_id, created_at, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .in('type', ['x402', 'ap2', 'acp'])
       .eq('status', 'completed')
       .gte('created_at', start.toISOString())

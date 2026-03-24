@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { createHmac } from 'crypto';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getEnv } from '../utils/helpers.js';
 import { createSettlementService } from '../services/settlement.js';
 import { 
   createSpendingPolicyService, 
@@ -468,6 +469,7 @@ app.post('/pay', async (c) => {
         .select('id, status, amount, currency')
         .eq('protocol_metadata->>request_id', auth.requestId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
       existingTransfer = data;
       timings['1_idempotency_check'] = Date.now() - t1;
@@ -517,6 +519,7 @@ app.post('/pay', async (c) => {
         .select('*')
         .eq('id', auth.walletId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
       consumerWallet = data;
       consumerWalletError = error;
@@ -529,12 +532,14 @@ app.post('/pay', async (c) => {
           .select('*')
           .eq('id', auth.endpointId)
           .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
           .single(),
         supabase
           .from('wallets')
           .select('*')
           .eq('id', auth.walletId)
           .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
           .single()
       ]);
       endpoint = endpointResult.data;
@@ -809,6 +814,7 @@ app.post('/pay', async (c) => {
         .select('id, wallet_type, wallet_address, blockchain')
         .eq('wallet_address', endpoint.payment_address)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .eq('status', 'active')
         .limit(1)
         .maybeSingle();
@@ -824,6 +830,7 @@ app.post('/pay', async (c) => {
         .select('id, wallet_type, wallet_address, blockchain')
         .eq('owner_account_id', endpoint.account_id)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .eq('currency', auth.currency)
         .eq('status', 'active')
         .neq('id', wallet.id)
@@ -899,7 +906,8 @@ app.post('/pay', async (c) => {
             updated_at: new Date().toISOString(),
           })
           .eq('id', endpoint.id)
-          .eq('tenant_id', ctx.tenantId);
+          .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx));
 
         // Record telemetry
         {
@@ -974,6 +982,7 @@ app.post('/pay', async (c) => {
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         from_account_id: wallet.owner_account_id,
         to_account_id: endpoint.account_id,
         amount: auth.amount,
@@ -1134,7 +1143,8 @@ app.post('/pay', async (c) => {
         updated_at: new Date().toISOString()
       })
       .eq('id', endpoint.id)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
 
     // ============================================
     // 13. TRIGGER WEBHOOK (if configured)
@@ -1361,6 +1371,7 @@ app.post('/verify', async (c) => {
       .eq('id', transferId)
       .eq('protocol_metadata->>request_id', requestId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('type', 'x402')
       .single();
     const queryTime = Date.now() - queryStart;
@@ -1439,6 +1450,7 @@ app.get('/quote/:endpointId', async (c) => {
       .select('id, name, path, method, base_price, currency, volume_discounts, status, total_calls')
       .eq('id', endpointId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (error || !endpoint) {

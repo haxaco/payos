@@ -21,6 +21,7 @@ import { taskEventBus } from '../services/a2a/task-event-bus.js';
 import type { A2AJsonRpcRequest, A2APart, A2ATaskState, A2AConfiguration } from '../services/a2a/types.js';
 import { normalizeParts } from '../services/a2a/types.js';
 import { verifyApiKey } from '../utils/crypto.js';
+import { getEnv } from '../utils/helpers.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
 import { validateProcessingConfig } from '../utils/processing-config-validation.js';
@@ -875,6 +876,7 @@ a2aRouter.get('/agents/:agentId/config', async (c) => {
     .select('processing_mode, processing_config')
     .eq('id', agentId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (error || !agent) {
@@ -924,6 +926,7 @@ a2aRouter.put('/agents/:agentId/config', async (c) => {
     .select('id')
     .eq('id', agentId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (fetchError || !existing) {
@@ -938,7 +941,8 @@ a2aRouter.put('/agents/:agentId/config', async (c) => {
       processing_config: processingConfig,
     })
     .eq('id', agentId)
-    .eq('tenant_id', ctx.tenantId);
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx));
 
   if (updateError) {
     return c.json({ error: `Failed to update config: ${updateError.message}` }, 500);
@@ -1140,6 +1144,7 @@ a2aRouter.get('/tasks/dlq', async (c) => {
     .from('a2a_tasks')
     .select('id, agent_id, webhook_attempts, webhook_dlq_at, webhook_dlq_reason, webhook_last_response_code, created_at, agents!inner(name)', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('webhook_status', 'dlq')
     .order('webhook_dlq_at', { ascending: false })
     .range(offset, offset + limit - 1);
@@ -1203,6 +1208,7 @@ a2aRouter.patch('/tasks/:taskId', async (c) => {
     .select('id, state, tenant_id')
     .eq('id', taskId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (fetchError || !task) {
@@ -1352,6 +1358,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     .select('id, state, tenant_id, metadata, agent_id, client_agent_id')
     .eq('id', taskId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (fetchError || !task) {
@@ -1406,6 +1413,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
         .select('authorized_amount, metadata')
         .eq('mandate_id', mandateId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
 
       if (!mandate) {
@@ -1450,6 +1458,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     if (satisfaction || score !== undefined || comment) {
       await supabase.from('a2a_task_feedback').insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         task_id: taskId,
         caller_agent_id: (task as any).client_agent_id,
         provider_agent_id: (task as any).agent_id,
@@ -1620,6 +1629,7 @@ a2aRouter.post('/process', async (c) => {
     .from('a2a_tasks')
     .select('id')
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('state', 'submitted')
     .eq('direction', 'inbound')
     .order('created_at', { ascending: true })
@@ -1636,6 +1646,7 @@ a2aRouter.post('/process', async (c) => {
         .from('a2a_tasks')
         .select('agent_id')
         .eq('id', row.id)
+        .eq('environment', getEnv(ctx))
         .single();
       if (task?.agent_id !== agentId) continue;
     }
@@ -1658,7 +1669,8 @@ a2aRouter.get('/stats', async (c) => {
   const { data: tasks, error } = await supabase
     .from('a2a_tasks')
     .select('id, state, direction, transfer_id')
-    .eq('tenant_id', ctx.tenantId);
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx));
 
   if (error) {
     return c.json({ error: `Failed to fetch stats: ${error.message}` }, 500);
@@ -1677,7 +1689,8 @@ a2aRouter.get('/stats', async (c) => {
       .from('transfers')
       .select('amount, currency')
       .in('id', transferIds)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
     totalCost = (transfers || []).reduce((sum: number, t: any) => sum + (Number(t.amount) || 0), 0);
     for (const t of transfers || []) {
       if (t.currency) curCounts.set(t.currency, (curCounts.get(t.currency) || 0) + 1);
@@ -1692,6 +1705,7 @@ a2aRouter.get('/stats', async (c) => {
       .select('task_id, data')
       .in('task_id', tasksWithoutTransfer.slice(0, 500))
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('event_type', 'payment')
       .limit(10000);
     for (const e of paymentEvents || []) {
@@ -1735,6 +1749,7 @@ a2aRouter.get('/sessions/:contextId', async (c) => {
     .from('a2a_tasks')
     .select('id, state, direction, agent_id, transfer_id, client_agent_id, created_at, updated_at, agents!inner(name)')
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('context_id', contextId)
     .order('created_at', { ascending: true });
 
@@ -1755,6 +1770,7 @@ a2aRouter.get('/sessions/:contextId', async (c) => {
       .select('id, task_id, role, parts, created_at')
       .in('task_id', taskIds)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .order('created_at', { ascending: true })
       .limit(10000),
     supabase
@@ -1762,6 +1778,7 @@ a2aRouter.get('/sessions/:contextId', async (c) => {
       .select('id, task_id, label, mime_type, parts, created_at')
       .in('task_id', taskIds)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .order('created_at', { ascending: true })
       .limit(10000),
     (() => {
@@ -1771,13 +1788,15 @@ a2aRouter.get('/sessions/:contextId', async (c) => {
         .from('transfers')
         .select('id, amount, currency')
         .in('id', transferIds)
-        .eq('tenant_id', ctx.tenantId);
+        .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx));
     })(),
     supabase
       .from('a2a_audit_events')
       .select('id, task_id, event_type, from_state, to_state, actor_type, actor_id, data, duration_ms, created_at')
       .in('task_id', taskIds)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .order('created_at', { ascending: true })
       .limit(10000),
   ]);
@@ -1805,7 +1824,8 @@ a2aRouter.get('/sessions/:contextId', async (c) => {
       .from('agents')
       .select('id, name')
       .in('id', callerAgentIds)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
     for (const a of callerAgents || []) {
       callerNameMap.set(a.id, a.name);
     }
@@ -1939,6 +1959,7 @@ a2aRouter.get('/sessions', async (c) => {
     .from('a2a_tasks')
     .select('id, context_id, state, direction, agent_id, client_agent_id, transfer_id, created_at, updated_at, agents!inner(name)')
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .not('context_id', 'is', null)
     .order('created_at', { ascending: false })
     .limit(10000);
@@ -1977,6 +1998,7 @@ a2aRouter.get('/sessions', async (c) => {
           .select('id, amount, currency')
           .in('id', chunk)
           .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
       )
     );
     for (const { data: transfers } of tResults) {
@@ -2005,6 +2027,7 @@ a2aRouter.get('/sessions', async (c) => {
           .select('task_id')
           .in('task_id', chunk)
           .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
           .limit(10000)
       )
     );
@@ -2031,6 +2054,7 @@ a2aRouter.get('/sessions', async (c) => {
           .select('task_id, data')
           .in('task_id', chunk)
           .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
           .eq('event_type', 'payment')
           .limit(10000)
       )
@@ -2059,7 +2083,8 @@ a2aRouter.get('/sessions', async (c) => {
       .from('agents')
       .select('id, name')
       .in('id', allCallerIds)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
     for (const a of callerAgents || []) {
       callerNameMap.set(a.id, a.name);
     }
@@ -2172,6 +2197,7 @@ a2aRouter.post('/agents/:agentId/tools', async (c) => {
     .select('id')
     .eq('id', agentId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (agentErr || !agent) return c.json({ error: 'Agent not found' }, 404);
