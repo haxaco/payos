@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@sly/ui';
@@ -15,6 +15,14 @@ interface ApiKeys {
 }
 
 export default function SetupPage() {
+  return (
+    <Suspense>
+      <SetupPageInner />
+    </Suspense>
+  );
+}
+
+function SetupPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlInviteCode = searchParams.get('invite_code') || '';
