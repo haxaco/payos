@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@sly/ui';
 import { Input } from '@sly/ui';
@@ -16,6 +16,8 @@ interface ApiKeys {
 
 export default function SetupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlInviteCode = searchParams.get('invite_code') || '';
   const [organizationName, setOrganizationName] = useState('');
   const [loading, setLoading] = useState(true);
   const [provisioning, setProvisioning] = useState(false);
@@ -23,7 +25,7 @@ export default function SetupPage() {
   const [apiKeys, setApiKeys] = useState<ApiKeys | null>(null);
   const [showOrgForm, setShowOrgForm] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(urlInviteCode);
 
   const isClosedBeta = process.env.NEXT_PUBLIC_CLOSED_BETA === 'true';
 
@@ -90,10 +92,25 @@ export default function SetupPage() {
       // Check user_metadata for organization name (from email signup)
       const orgName = session.user.user_metadata?.organization_name;
 
+      // Check for invite code from URL (Google SSO beta signup) or localStorage
+      const betaInviteCode = new URLSearchParams(window.location.search).get('invite_code')
+        || localStorage.getItem('sly_beta_invite_code') || '';
+      const betaOrgName = localStorage.getItem('sly_beta_org_name') || '';
+
       if (orgName) {
         // Auto-provision with the org name from signup
-        const metaInviteCode = session.user.user_metadata?.invite_code;
+        const metaInviteCode = session.user.user_metadata?.invite_code || betaInviteCode;
         await provision(orgName, metaInviteCode);
+      } else if (betaInviteCode && betaOrgName) {
+        // Google SSO from beta signup — we have both code and org from localStorage
+        localStorage.removeItem('sly_beta_invite_code');
+        localStorage.removeItem('sly_beta_org_name');
+        await provision(betaOrgName, betaInviteCode);
+      } else if (betaInviteCode) {
+        // Have code but need org name
+        setInviteCode(betaInviteCode);
+        localStorage.removeItem('sly_beta_invite_code');
+        setShowOrgForm(true);
       } else {
         // OAuth flow — need to ask for org name
         setShowOrgForm(true);

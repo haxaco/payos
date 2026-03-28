@@ -272,11 +272,14 @@ function CodeSignUpPageInner() {
                 disabled={loading}
                 onClick={async () => {
                   setLoading(true);
+                  // Store invite code so the callback can provision the tenant
+                  localStorage.setItem('sly_beta_invite_code', inviteCode);
+                  localStorage.setItem('sly_beta_org_name', organizationName || '');
                   const supabase = createSupabaseBrowserClient();
                   await supabase.auth.signInWithOAuth({
                     provider: 'google',
                     options: {
-                      redirectTo: `${window.location.origin}/auth/callback?next=/auth/setup`,
+                      redirectTo: `${window.location.origin}/auth/callback?next=/auth/setup&invite_code=${encodeURIComponent(inviteCode)}`,
                       queryParams: {
                         access_type: 'offline',
                         prompt: 'consent',
