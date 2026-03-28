@@ -24,28 +24,20 @@ export async function GET(request: Request) {
           // Response may be wrapped as { data: { user, tenant } }
           const me = meData.data || meData;
           if (!me.tenant) {
-            // No tenant — check if user has a beta invite code
+            // No tenant — redirect to setup (invite code will be read from localStorage if available)
             const inviteCode = searchParams.get('invite_code');
             if (inviteCode) {
-              // User came from beta signup with invite code — redirect to setup with code
               return NextResponse.redirect(`${origin}/auth/setup?invite_code=${encodeURIComponent(inviteCode)}`);
-            }
-            // No invite code — during closed beta, block new OAuth users
-            const isClosedBeta = process.env.NEXT_PUBLIC_CLOSED_BETA === 'true';
-            if (isClosedBeta) {
-              return NextResponse.redirect(`${origin}/auth/no-access`);
             }
             return NextResponse.redirect(`${origin}/auth/setup`);
           }
         } else {
-          // API error — redirect to no-access during beta, setup otherwise
-          const isClosedBeta = process.env.NEXT_PUBLIC_CLOSED_BETA === 'true';
-          return NextResponse.redirect(`${origin}/auth/${isClosedBeta ? 'no-access' : 'setup'}`);
+          // API error — redirect to setup to let user provide invite code
+          return NextResponse.redirect(`${origin}/auth/setup`);
         }
       } catch {
-        // API unreachable — redirect to no-access during beta, setup otherwise
-        const isClosedBeta = process.env.NEXT_PUBLIC_CLOSED_BETA === 'true';
-        return NextResponse.redirect(`${origin}/auth/${isClosedBeta ? 'no-access' : 'setup'}`);
+        // API unreachable — redirect to setup
+        return NextResponse.redirect(`${origin}/auth/setup`);
       }
 
       // User has tenant — proceed to requested page

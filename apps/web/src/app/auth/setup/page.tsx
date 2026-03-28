@@ -93,6 +93,10 @@ function SetupPageInner() {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session) {
+        // Preserve invite code for after login
+        if (urlInviteCode) {
+          localStorage.setItem('sly_beta_invite_code', urlInviteCode);
+        }
         router.push('/auth/login');
         return;
       }
