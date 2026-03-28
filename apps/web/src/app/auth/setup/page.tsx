@@ -518,20 +518,20 @@ function SetupWizard() {
         )}
 
         {/* ============================================================ */}
-        {/* STEP 3: Agent */}
+        {/* STEP 3: Connect Your Agent */}
         {/* ============================================================ */}
-        {step === 3 && !agentData && (
+        {step === 3 && (
           <Card>
             <CardHeader className="text-center">
               <div className="flex justify-center mb-2">
                 <div className="rounded-full bg-purple-100 dark:bg-purple-900/20 p-3"><Bot className="h-6 w-6 text-purple-600" /></div>
               </div>
-              <CardTitle>Register Your First Agent</CardTitle>
-              <CardDescription>How will your agent connect to Sly?</CardDescription>
+              <CardTitle>Connect Your Agent</CardTitle>
+              <CardDescription>Pick a method to connect your AI agent. It will self-register on first use.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Integration method picker */}
-              {!integrationMethod && (
+              {!integrationMethod ? (
                 <div className="space-y-2">
                   {([
                     { id: 'mcp' as const, icon: Terminal, label: 'MCP Server', desc: 'Claude Desktop, Cursor, Windsurf' },
@@ -551,64 +551,16 @@ function SetupWizard() {
                     </button>
                   ))}
                 </div>
-              )}
-
-              {/* Agent form (after picking method) */}
-              {integrationMethod && (
-                <div className="space-y-3">
+              ) : (
+                /* Quickstart instructions for selected method */
+                <div className="space-y-4">
                   <button onClick={() => setIntegrationMethod(null)} className="text-sm text-muted-foreground hover:text-foreground">← Back to methods</button>
-                  <div className="space-y-2">
-                    <Label>Agent Name</Label>
-                    <Input placeholder="My AI Agent" value={agentName} onChange={(e) => setAgentName(e.target.value)} autoFocus />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Description <span className="text-muted-foreground">(optional)</span></Label>
-                    <Input placeholder="What does this agent do?" value={agentDesc} onChange={(e) => setAgentDesc(e.target.value)} />
-                  </div>
-                  <Button className="w-full" disabled={!agentName.trim() || agentLoading} onClick={createAgent}>
-                    {agentLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                    Create Agent
-                  </Button>
-                </div>
-              )}
 
-              <button onClick={() => router.push('/dashboard')} className="w-full text-center text-sm text-muted-foreground hover:text-foreground py-2">
-                Skip — I&apos;ll add agents later →
-              </button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Agent created card with quickstart */}
-        {step === 3 && agentData && (
-          <Card>
-            <CardHeader className="text-center">
-              <div className="flex justify-center mb-2">
-                <div className="rounded-full bg-green-100 dark:bg-green-900/20 p-3"><Check className="h-6 w-6 text-green-600" /></div>
-              </div>
-              <CardTitle>Agent Created</CardTitle>
-              <CardDescription>{agentData.name} is ready to go.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {agentData.token && (
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Agent Token (save this!)</Label>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 p-2.5 bg-muted rounded-md text-xs font-mono break-all">{agentData.token}</code>
-                    <Button variant="ghost" size="sm" onClick={() => handleCopy(agentData.token!, 'agent')}>
-                      {copiedKey === 'agent' ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Quickstart snippet based on integration method */}
-              {integrationMethod && (
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Quick Start</Label>
-                  <pre className="p-3 bg-muted rounded-md text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-                    {integrationMethod === 'mcp' && `// Add to .mcp.json
-{
+                  {integrationMethod === 'mcp' && (
+                    <div className="space-y-3">
+                      <div className="text-sm text-muted-foreground">Add this to your <code className="bg-muted px-1 rounded">.mcp.json</code> or Claude Desktop config:</div>
+                      <div className="relative">
+                        <pre className="p-4 bg-muted rounded-lg text-xs font-mono overflow-x-auto">{`{
   "mcpServers": {
     "sly": {
       "command": "npx",
@@ -618,26 +570,103 @@ function SetupWizard() {
       }
     }
   }
-}`}
-                    {integrationMethod === 'sdk' && `npm install @sly/sdk
+}`}</pre>
+                        <Button variant="ghost" size="sm" className="absolute top-2 right-2" onClick={() => handleCopy(`{"mcpServers":{"sly":{"command":"npx","args":["@sly/mcp-server"],"env":{"SLY_API_KEY":"${apiKeys?.test.key || ''}"}}}}`, 'mcp')}>
+                          {copiedKey === 'mcp' ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                      <div className="text-xs text-muted-foreground">Your agent will auto-register when it first connects. Works with Claude Desktop, Cursor, Windsurf, and any MCP-compatible client.</div>
+                    </div>
+                  )}
+
+                  {integrationMethod === 'a2a' && (
+                    <div className="space-y-3">
+                      <div className="text-sm text-muted-foreground">Register your agent via the A2A protocol:</div>
+                      <pre className="p-4 bg-muted rounded-lg text-xs font-mono overflow-x-auto">{`# Register agent
+curl -X POST https://api.getsly.ai/v1/agents \\
+  -H "Authorization: Bearer ${apiKeys?.test.key || 'pk_test_...'}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "My Agent", "accountId": "${accountId || '<account_id>'}"}'
+
+# Your agent's A2A endpoint will be:
+# https://api.getsly.ai/a2a/<agent_id>
+
+# Other agents discover you at:
+# https://api.getsly.ai/a2a/<agent_id>/.well-known/agent.json`}</pre>
+                      <div className="text-xs text-muted-foreground">Agents communicate via JSON-RPC. Supports task delegation, payments, and skill discovery between agents.</div>
+                    </div>
+                  )}
+
+                  {integrationMethod === 'sdk' && (
+                    <div className="space-y-3">
+                      <div className="text-sm text-muted-foreground">Install the SDK and connect:</div>
+                      <pre className="p-4 bg-muted rounded-lg text-xs font-mono overflow-x-auto">{`npm install @sly/sdk
 
 import { Sly } from '@sly/sdk';
-const sly = new Sly({ apiKey: '${apiKeys?.test.key || 'pk_test_...'}' });
-const quote = await sly.getSettlementQuote({ ... });`}
-                    {integrationMethod === 'api' && `curl https://api.getsly.ai/v1/accounts \\
-  -H "Authorization: Bearer ${apiKeys?.test.key || 'pk_test_...'}"`}
-                    {integrationMethod === 'a2a' && `// Your agent's A2A endpoint
-POST https://api.getsly.ai/a2a/${agentData.id}
 
-// Discover other agents
-GET https://api.getsly.ai/a2a/${agentData.id}/.well-known/agent.json`}
-                    {integrationMethod === 'skills' && `// skills.md — drop in your repo root
-# ${agentData.name}
+const sly = new Sly({
+  apiKey: '${apiKeys?.test.key || 'pk_test_...'}',
+});
+
+// Create an agent
+const agent = await sly.request('/v1/agents', {
+  method: 'POST',
+  body: JSON.stringify({
+    name: 'My Agent',
+    accountId: '${accountId || '<account_id>'}',
+  }),
+});
+
+// Get a settlement quote
+const quote = await sly.getSettlementQuote({
+  fromCurrency: 'USD',
+  toCurrency: 'BRL',
+  amount: '100',
+});`}</pre>
+                      <div className="text-xs text-muted-foreground">Full TypeScript SDK with typed methods for all protocols — x402, AP2, ACP, UCP, MPP.</div>
+                    </div>
+                  )}
+
+                  {integrationMethod === 'api' && (
+                    <div className="space-y-3">
+                      <div className="text-sm text-muted-foreground">Use the REST API directly from any language:</div>
+                      <pre className="p-4 bg-muted rounded-lg text-xs font-mono overflow-x-auto">{`# Register an agent
+curl -X POST https://api.getsly.ai/v1/agents \\
+  -H "Authorization: Bearer ${apiKeys?.test.key || 'pk_test_...'}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "My Agent", "accountId": "${accountId || '<account_id>'}"}'
+
+# List accounts
+curl https://api.getsly.ai/v1/accounts \\
+  -H "Authorization: Bearer ${apiKeys?.test.key || 'pk_test_...'}"
+
+# API docs: https://docs.getsly.ai`}</pre>
+                      <div className="text-xs text-muted-foreground">Works with any language or platform. Base URL: <code className="bg-muted px-1 rounded">https://api.getsly.ai</code></div>
+                    </div>
+                  )}
+
+                  {integrationMethod === 'skills' && (
+                    <div className="space-y-3">
+                      <div className="text-sm text-muted-foreground">Create a <code className="bg-muted px-1 rounded">skills.md</code> file in your repo:</div>
+                      <pre className="p-4 bg-muted rounded-lg text-xs font-mono overflow-x-auto">{`# My Agent
 
 ## Skills
-- check_balance: Check account balance (free)
-- settlement_quote: Get FX quote (0.05 USDC)`}
-                  </pre>
+
+### check_balance
+- Price: free
+- Input: account_id (string)
+- Description: Check USDC balance for an account
+
+### settlement_quote
+- Price: 0.05 USDC
+- Input: from_currency, to_currency, amount
+- Description: Get real-time FX settlement quote
+
+## Auth
+api_key: ${apiKeys?.test.key || 'pk_test_...'}`}</pre>
+                      <div className="text-xs text-muted-foreground">Other agents discover your skills automatically. Paid skills are billed via x402 micropayments.</div>
+                    </div>
+                  )}
                 </div>
               )}
 
