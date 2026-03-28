@@ -728,6 +728,7 @@ auth.get('/me', async (c) => {
 const provisionSchema = z.object({
   organizationName: z.string().min(1).max(255).optional(),
   userName: z.string().min(1).max(255).optional(),
+  inviteCode: z.string().max(100).optional(),
 });
 
 auth.post('/provision', async (c) => {
@@ -785,7 +786,7 @@ auth.post('/provision', async (c) => {
 
     // Beta access gate for OAuth provision flow
     if (isFeatureEnabled('closedBeta')) {
-      const inviteCode = (body as any).inviteCode;
+      const inviteCode = body.inviteCode;
       if (!inviteCode) {
         return c.json(
           { error: 'An invite code is required during the closed beta.' },
