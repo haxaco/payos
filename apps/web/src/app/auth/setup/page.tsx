@@ -145,7 +145,12 @@ function SetupPageInner() {
       setError('Organization name is required');
       return;
     }
-    await provision(organizationName.trim(), inviteCode || undefined);
+    // Read invite code from state, URL, or localStorage as fallback
+    const code = inviteCode
+      || new URLSearchParams(window.location.search).get('invite_code')
+      || localStorage.getItem('sly_beta_invite_code')
+      || '';
+    await provision(organizationName.trim(), code || undefined);
   }
 
   // Loading state
