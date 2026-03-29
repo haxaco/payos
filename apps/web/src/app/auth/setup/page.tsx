@@ -353,14 +353,14 @@ function SetupWizard() {
         currency: 'USDC',
       });
       const w = json.data || json;
-      setWalletData({
+      setCreatedWallets([{
         id: w.id,
         walletAddress: w.walletAddress || w.wallet_address || externalAddress,
         network: w.network || 'unknown',
         walletType: 'external',
         balance: 0,
         currency: 'USDC',
-      });
+      }]);
     } catch (e: any) {
       setError(e.message || 'Failed to link wallet');
     }
