@@ -24,7 +24,7 @@ export default function LoginPage() {
     setError(null);
 
     const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error, data } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -32,6 +32,29 @@ export default function LoginPage() {
     if (error) {
       setError(error.message);
       setLoading(false);
+      return;
+    }
+
+    // Check if user has a tenant — if not, redirect to setup/onboarding
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const meRes = await fetch(`${apiUrl}/v1/auth/me`, {
+        headers: { 'Authorization': `Bearer ${data.session.access_token}` },
+      });
+      if (meRes.ok) {
+        const meJson = await meRes.json();
+        const me = meJson.data || meJson;
+        if (!me.tenant) {
+          router.push('/auth/setup');
+          return;
+        }
+      } else {
+        router.push('/auth/setup');
+        return;
+      }
+    } catch {
+      // API unreachable — try setup
+      router.push('/auth/setup');
       return;
     }
 
