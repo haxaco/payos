@@ -101,9 +101,12 @@ function SetupWizard() {
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   // Step 2 state
-  const [walletData, setWalletData] = useState<WalletData | null>(null);
-  const [walletLoading, setWalletLoading] = useState<string | false>(false);
+  const [walletSelections, setWalletSelections] = useState<Set<string>>(new Set(['base'])); // default: Base selected
+  const [createdWallets, setCreatedWallets] = useState<WalletData[]>([]);
+  const [walletLoading, setWalletLoading] = useState(false);
   const [externalAddress, setExternalAddress] = useState('');
+  // Keep walletData for backward compat with step transition
+  const walletData = createdWallets.length > 0 ? createdWallets[0] : null;
 
   // Step 3 state
   const [agentData, setAgentData] = useState<AgentData | null>(null);
@@ -259,47 +262,75 @@ function SetupWizard() {
     } catch { return null; }
   }
 
-  // ---- Create wallet ----
-  async function createWallet(network: 'base' | 'tempo' | 'sandbox') {
-    setWalletLoading(network);
+  // ---- Toggle wallet selection ----
+  function toggleWalletSelection(id: string) {
+    setWalletSelections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  // ---- Create all selected wallets ----
+  async function createSelectedWallets() {
+    if (walletSelections.size === 0) { setError('Select at least one network'); return; }
+    setWalletLoading(true);
     setError(null);
+    const results: WalletData[] = [];
+
     try {
-      // Base & Tempo = production (mainnet, live key), Sandbox = test (testnet, test key)
-      const isSandbox = network === 'sandbox';
-      const env: 'test' | 'live' = isSandbox ? 'test' : 'live';
+      // Define what each selection creates
+      const walletDefs: { id: string; name: string; env: 'test' | 'live'; walletType: string; fund?: number }[] = [];
 
-      // Ensure account exists in the target environment
-      const acctId = await ensureAccount(env);
-      if (!acctId) { setError('Failed to create account'); setWalletLoading(false); return; }
+      if (walletSelections.has('base')) {
+        walletDefs.push({ id: 'base-live', name: `${orgName} Base Wallet`, env: 'live', walletType: 'circle_custodial' });
+        walletDefs.push({ id: 'base-sandbox', name: `${orgName} Base Sandbox Wallet`, env: 'test', walletType: 'circle_custodial', fund: 10 });
+      }
+      if (walletSelections.has('tempo')) {
+        walletDefs.push({ id: 'tempo-live', name: `${orgName} Tempo Wallet`, env: 'live', walletType: 'circle_custodial' });
+        walletDefs.push({ id: 'tempo-sandbox', name: `${orgName} Tempo Sandbox Wallet`, env: 'test', walletType: 'internal' });
+      }
 
-      const blockchain = 'base';
-      const names: Record<string, string> = {
-        base: 'Base Mainnet',
-        tempo: 'Tempo',
-        sandbox: 'Sandbox',
-      };
-      const json = await apiCall('POST', '/v1/wallets', {
-        accountId: acctId,
-        name: `${orgName} ${names[network]} Wallet`,
-        currency: 'USDC',
-        walletType: 'circle_custodial',
-        blockchain,
-        purpose: isSandbox ? 'Sandbox wallet for testing' : `Production wallet on ${names[network]}`,
-      }, env);
-      const w = json.data || json;
-      setWalletData({
-        id: w.id,
-        walletAddress: w.walletAddress || w.wallet_address,
-        network: w.network,
-        walletType: w.walletType || w.wallet_type,
-        balance: w.balance || 0,
-        currency: w.currency || 'USDC',
-      });
+      for (const def of walletDefs) {
+        try {
+          const acctId = await ensureAccount(def.env);
+          if (!acctId) continue;
 
-      // Auto-fund if sandbox
-      if (isSandbox && w.id) {
-        await apiCall('POST', `/v1/wallets/${w.id}/test-fund`, { amount: 10, currency: 'USDC' }, 'test');
-        setWalletData(prev => prev ? { ...prev, balance: 10 } : prev);
+          const json = await apiCall('POST', '/v1/wallets', {
+            accountId: acctId,
+            name: def.name,
+            currency: 'USDC',
+            walletType: def.walletType,
+            blockchain: 'base',
+            purpose: def.env === 'live' ? `Production wallet` : 'Sandbox wallet for testing',
+          }, def.env);
+          const w = json.data || json;
+          const wallet: WalletData = {
+            id: w.id,
+            walletAddress: w.walletAddress || w.wallet_address || '',
+            network: w.network || (def.env === 'live' ? 'base-mainnet' : 'base-sepolia'),
+            walletType: w.walletType || w.wallet_type || def.walletType,
+            balance: 0,
+            currency: 'USDC',
+          };
+
+          // Auto-fund sandbox wallets
+          if (def.fund && w.id) {
+            try {
+              await apiCall('POST', `/v1/wallets/${w.id}/test-fund`, { amount: def.fund, currency: 'USDC' }, 'test');
+              wallet.balance = def.fund;
+            } catch { /* non-fatal */ }
+          }
+          results.push(wallet);
+        } catch (e: any) {
+          console.warn(`Failed to create ${def.name}:`, e.message);
+        }
+      }
+
+      if (results.length === 0) {
+        setError('Failed to create wallets. Please try again.');
+      } else {
+        setCreatedWallets(results);
       }
     } catch (e: any) {
       setError(e.message || 'Failed to create wallet');
@@ -489,78 +520,89 @@ function SetupWizard() {
         {/* ============================================================ */}
         {/* STEP 2: Wallet */}
         {/* ============================================================ */}
-        {step === 2 && !walletData && (
+        {step === 2 && createdWallets.length === 0 && (
           <Card>
             <CardHeader className="text-center">
               <div className="flex justify-center mb-2">
                 <div className="rounded-full bg-blue-100 dark:bg-blue-900/20 p-3"><Wallet className="h-6 w-6 text-blue-600" /></div>
               </div>
-              <CardTitle>Connect a Wallet</CardTitle>
-              <CardDescription>Wallets hold USDC for your agents to transact on-chain.</CardDescription>
+              <CardTitle>Create Wallets</CardTitle>
+              <CardDescription>Select which networks to create wallets on. Each creates a production + sandbox wallet pair.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Create new */}
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="flex items-center gap-2 font-medium"><Plus className="h-4 w-4" /> Create New Wallet</div>
-                <div className="grid grid-cols-3 gap-2">
-                  <Button variant="outline" className="flex-1" disabled={!!walletLoading} onClick={() => createWallet('base')}>
-                    {walletLoading === 'base' ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Globe className="mr-1 h-4 w-4" />}
-                    Base
-                  </Button>
-                  <Button variant="outline" className="flex-1" disabled={!!walletLoading} onClick={() => createWallet('tempo')}>
-                    {walletLoading === 'tempo' ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Zap className="mr-1 h-4 w-4" />}
-                    Tempo
-                  </Button>
-                  <Button variant="outline" className="flex-1" disabled={!!walletLoading} onClick={() => createWallet('sandbox')}>
-                    {walletLoading === 'sandbox' ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Shield className="mr-1 h-4 w-4" />}
-                    Sandbox
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">Base and Tempo create real mainnet wallets. Sandbox creates a testnet wallet with free test USDC.</p>
+            <CardContent className="space-y-4">
+              {/* Network checkboxes */}
+              <div className="space-y-2">
+                {[
+                  { id: 'base', icon: Globe, label: 'Base', desc: 'USDC on Base L2 — production + sandbox wallets' },
+                  { id: 'tempo', icon: Zap, label: 'Tempo', desc: 'USDC on Tempo L2 — production + sandbox (ledger) wallets' },
+                ].map(({ id, icon: Icon, label, desc }) => (
+                  <button key={id} onClick={() => toggleWalletSelection(id)} disabled={walletLoading}
+                    className={`w-full flex items-center gap-3 p-3 border rounded-lg transition-colors text-left ${
+                      walletSelections.has(id) ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                    }`}>
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
+                      walletSelections.has(id) ? 'border-primary bg-primary' : 'border-muted-foreground'
+                    }`}>
+                      {walletSelections.has(id) && <Check className="h-3 w-3 text-white" />}
+                    </div>
+                    <Icon className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{label}</div>
+                      <div className="text-xs text-muted-foreground">{desc}</div>
+                    </div>
+                  </button>
+                ))}
               </div>
+
+              <Button className="w-full" disabled={walletLoading || walletSelections.size === 0} onClick={createSelectedWallets}>
+                {walletLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                {walletLoading ? 'Creating wallets...' : `Create ${walletSelections.size * 2} Wallets`}
+              </Button>
 
               {/* Link existing */}
               <div className="border rounded-lg p-4 space-y-3">
-                <div className="flex items-center gap-2 font-medium"><Link2 className="h-4 w-4" /> Link Existing Wallet</div>
+                <div className="flex items-center gap-2 font-medium text-sm"><Link2 className="h-4 w-4" /> Or link an existing wallet</div>
                 <div className="flex gap-2">
-                  <Input placeholder="0x... or base58 address" value={externalAddress} onChange={(e) => setExternalAddress(e.target.value)} />
-                  <Button variant="outline" disabled={!externalAddress.trim() || !!walletLoading} onClick={linkExternalWallet}>
-                    {walletLoading === 'external' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Link'}
-                  </Button>
+                  <Input placeholder="0x... or base58 address" value={externalAddress} onChange={(e) => setExternalAddress(e.target.value)} className="text-sm" />
+                  <Button variant="outline" size="sm" disabled={!externalAddress.trim() || walletLoading} onClick={linkExternalWallet}>Link</Button>
                 </div>
               </div>
 
               <button onClick={() => { setError(null); setStep(3); }} className="w-full text-center text-sm text-muted-foreground hover:text-foreground py-2">
-                I&apos;ll connect a wallet later →
+                I&apos;ll connect wallets later →
               </button>
             </CardContent>
           </Card>
         )}
 
-        {/* Wallet created card */}
-        {step === 2 && walletData && (
+        {/* Wallets created card */}
+        {step === 2 && createdWallets.length > 0 && (
           <Card>
             <CardHeader className="text-center">
               <div className="flex justify-center mb-2">
                 <div className="rounded-full bg-green-100 dark:bg-green-900/20 p-3"><Check className="h-6 w-6 text-green-600" /></div>
               </div>
-              <CardTitle>Wallet Connected</CardTitle>
+              <CardTitle>{createdWallets.length} Wallet{createdWallets.length > 1 ? 's' : ''} Created</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="border rounded-lg p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Address</span>
-                  <code className="font-mono text-xs">{walletData.walletAddress ? `${walletData.walletAddress.substring(0, 8)}...${walletData.walletAddress.slice(-6)}` : 'Pending...'}</code>
+              {createdWallets.map((w, i) => (
+                <div key={i} className="border rounded-lg p-3 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Network</span>
+                    <span>{w.network}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Address</span>
+                    <code className="font-mono text-xs">{w.walletAddress ? `${w.walletAddress.substring(0, 8)}...${w.walletAddress.slice(-6)}` : 'Internal'}</code>
+                  </div>
+                  {w.balance > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Balance</span>
+                      <span>{w.balance} {w.currency}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Network</span>
-                  <span>{walletData.network}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Balance</span>
-                  <span>{walletData.balance} {walletData.currency}</span>
-                </div>
-              </div>
+              ))}
               <Button className="w-full" onClick={() => { setError(null); setStep(3); }}>
                 Next <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
