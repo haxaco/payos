@@ -235,7 +235,7 @@ function SetupWizard() {
   async function apiCall(method: string, path: string, body?: any) {
     const res = await fetch(`${apiUrl}${path}`, {
       method,
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}`, 'X-Environment': 'test' },
       body: body ? JSON.stringify(body) : undefined,
     });
     const json = await res.json();
@@ -478,11 +478,11 @@ function SetupWizard() {
                 <div className="flex gap-2">
                   <Button variant="outline" className="flex-1" disabled={walletLoading} onClick={() => createWallet('base')}>
                     {walletLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Globe className="mr-2 h-4 w-4" />}
-                    Base (Mainnet)
+                    Base
                   </Button>
                   <Button variant="outline" className="flex-1" disabled={walletLoading} onClick={() => createWallet('tempo')}>
                     {walletLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                    Tempo (Testnet)
+                    Tempo
                   </Button>
                 </div>
               </div>

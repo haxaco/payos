@@ -118,8 +118,26 @@ function CodeSignUpPageInner() {
       return;
     }
 
-    setSuccess(true);
-    setLoading(false);
+    // Auto-login immediately — skip email confirmation for beta invites
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      // If auto-login fails (email confirmation required), show check email
+      setSuccess(true);
+      setLoading(false);
+      return;
+    }
+
+    // Store invite code for the setup wizard
+    localStorage.setItem('sly_beta_invite_code', inviteCode);
+    localStorage.setItem('sly_beta_org_name', organizationName.trim());
+
+    // Go straight to onboarding wizard
+    window.location.href = '/auth/setup';
+    return;
   }
 
   if (success) {
