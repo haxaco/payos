@@ -612,6 +612,12 @@ export function getCircleLiveClient(): CircleClient {
     const apiKey = process.env.CIRCLE_LIVE_API_KEY;
 
     if (!apiKey) {
+      // Fall back to default CIRCLE_API_KEY — in production (Railway),
+      // CIRCLE_API_KEY is already the live key
+      const fallbackKey = process.env.CIRCLE_API_KEY;
+      if (fallbackKey?.startsWith('LIVE_API_KEY:')) {
+        return getCircleClient();
+      }
       throw new Error(
         'CIRCLE_LIVE_API_KEY environment variable is required for production wallet operations.'
       );
