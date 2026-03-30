@@ -14,6 +14,10 @@ import {
   createConversionService,
   createFundingFeeService,
 } from '../services/funding/index.js';
+import {
+  createOnrampToken,
+  BLOCKCHAIN_TO_COINBASE,
+} from '../services/funding/stripe-payment-intent.js';
 import type {
   FundingSourceType,
   FundingProvider,
@@ -48,8 +52,15 @@ const initiateFundingSchema = z.object({
   source_id: z.string().uuid(),
   amount_cents: z.number().int().positive().max(100_000_000), // Max $1M
   currency: z.string().min(3).max(4),
+  wallet_id: z.string().uuid().optional(),
   idempotency_key: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
+});
+
+const onrampSessionSchema = z.object({
+  wallet_id: z.string().uuid(),
+  source_amount: z.string().optional(),
+  source_currency: z.string().optional(),
 });
 
 const estimateFeesSchema = z.object({
@@ -399,6 +410,72 @@ app.get('/conversion-rates', async (c) => {
 });
 
 // ============================================
+// Crypto Onramp (Stripe Crypto Onramp)
+// ============================================
+
+/**
+ * POST /v1/funding/onramp-session - Create Coinbase Onramp Session Token
+ *
+ * Returns a session token and wallet details for embedding the Coinbase onramp widget.
+ * Coinbase handles fiat payment, USDC purchase, and delivery to the wallet address.
+ * Sly never holds money.
+ */
+app.post('/onramp-session', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json();
+  const parsed = onrampSessionSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const supabase = createClient();
+
+    // Get wallet with on-chain address info
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, owner_account_id, status, wallet_address, blockchain, wallet_type')
+      .eq('id', parsed.data.wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+
+    if (wallet.status !== 'active') {
+      return c.json({ error: `Wallet is ${wallet.status}, must be active` }, 400);
+    }
+
+    // Check wallet has a real on-chain address
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({
+        error: 'no_onchain_address',
+        message: 'This wallet does not have an on-chain address. Create a Circle wallet to deposit real USDC.',
+      }, 400);
+    }
+
+    // Create Coinbase Onramp session token
+    const tokenResult = await createOnrampToken({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+    });
+
+    const network = BLOCKCHAIN_TO_COINBASE[wallet.blockchain || 'base'] || 'base';
+
+    return c.json({
+      session_token: tokenResult.token,
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain,
+      network,
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ============================================
 // Response Mappers
 // ============================================
 
@@ -443,6 +520,7 @@ function mapTransactionResponse(tx: any) {
     id: tx.id,
     source_id: tx.funding_source_id,
     account_id: tx.account_id,
+    wallet_id: tx.wallet_id,
     amount_cents: tx.amount_cents,
     currency: tx.currency,
     converted_amount_cents: tx.converted_amount_cents,

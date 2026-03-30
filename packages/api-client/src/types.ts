@@ -876,6 +876,18 @@ export interface FundingSourceSummary {
   status: string;
 }
 
+// Crypto Onramp Types (Coinbase Onramp)
+export interface OnrampSessionInput {
+  walletId: string;
+}
+
+export interface OnrampSessionResponse {
+  session_token: string;
+  wallet_address: string;
+  blockchain: string;
+  network: string;
+}
+
 export interface Mandate {
   id: string;
   tenantId: string;

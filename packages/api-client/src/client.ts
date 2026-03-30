@@ -48,6 +48,8 @@ import type {
   ExecuteMandatePaymentInput,
   MandatesListParams,
   FundingSourceSummary,
+  OnrampSessionInput,
+  OnrampSessionResponse,
   // x402 types
   X402Endpoint,
   CreateX402EndpointInput,
@@ -924,6 +926,14 @@ export class SlyClient {
      */
     get: (id: string) =>
       this.get<{ data: FundingSourceSummary }>(`/funding/sources/${id}`).then(r => r.data),
+
+    /**
+     * Create a Coinbase Onramp session token for wallet funding
+     */
+    createOnrampSession: (input: OnrampSessionInput) =>
+      this.post<{ data: OnrampSessionResponse }>('/funding/onramp-session', {
+        wallet_id: input.walletId,
+      }).then(r => (r as any).data || r),
   };
 
   // ============================================

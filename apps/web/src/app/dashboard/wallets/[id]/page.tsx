@@ -30,6 +30,7 @@ import { useState } from 'react';
 import { formatCurrency } from '@sly/ui';
 import { formatDistanceToNow } from 'date-fns';
 import { SpendingPolicyEditor } from '@/components/wallets/spending-policy-editor';
+import { DepositModal } from '@/components/wallets/deposit-modal';
 
 const useWalletBalance = (walletId: string | undefined, authToken: string | null, apiUrl?: string) => {
     return useQuery({
@@ -77,6 +78,7 @@ export default function WalletDetailPage() {
     const [timeRange, setTimeRange] = useState('30d');
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState('');
+    const [showDepositModal, setShowDepositModal] = useState(false);
 
     // Fetch wallet details
     const { data: walletResponse, isLoading, error } = useQuery({
@@ -210,7 +212,7 @@ export default function WalletDetailPage() {
                         <Shield className="w-4 h-4 mr-2" />
                         Freeze
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => toast.info('Deposit feature coming soon')}>
+                    <Button variant="outline" size="sm" onClick={() => setShowDepositModal(true)}>
                         <ArrowDownLeft className="w-4 h-4 mr-2" />
                         Deposit
                     </Button>
@@ -573,6 +575,18 @@ export default function WalletDetailPage() {
                 </div>
 
             </div>
+
+            {/* Deposit Modal */}
+            {showDepositModal && id && (
+                <DepositModal
+                    walletId={id}
+                    walletName={wallet?.name || wallet?.wallet_address}
+                    walletAddress={wallet?.walletAddress || wallet?.wallet_address}
+                    blockchain={wallet?.blockchain}
+                    walletType={wallet?.walletType || wallet?.wallet_type}
+                    onClose={() => setShowDepositModal(false)}
+                />
+            )}
         </div>
     );
 }

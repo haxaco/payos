@@ -10,12 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@coinbase/cbpay-js": "^2.4.0",
     "@hookform/resolvers": "^5.2.2",
     "@sly/api-client": "workspace:*",
     "@sly/types": "workspace:*",
     "@sly/ui": "workspace:*",
-    "@stripe/react-stripe-js": "^6.0.0",
-    "@stripe/stripe-js": "^9.0.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
     "@tanstack/react-query": "^5.90.12",
