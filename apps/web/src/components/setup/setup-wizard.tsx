@@ -176,13 +176,24 @@ export default function SetupWizard() {
   }, [router, provision, urlInviteCode]);
 
   // ---------- API helper ----------
+  // Gets a fresh token from Supabase if state is stale (avoids race conditions after provision)
   const apiCall = useCallback(
     async (method: string, path: string, body?: any, env: 'test' | 'live' = 'test') => {
+      let token = authToken;
+      if (!token) {
+        // Fallback: get fresh token from Supabase session
+        const supabase = createSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token || null;
+        if (token) setAuthToken(token);
+      }
+      if (!token) throw new Error('Not authenticated');
+
       const res = await fetch(`${apiUrl}${path}`, {
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
+          Authorization: `Bearer ${token}`,
           'X-Environment': env,
         },
         body: body ? JSON.stringify(body) : undefined,

@@ -38,9 +38,9 @@ const methods: MethodDef[] = [
     id: 'mcp',
     icon: Terminal,
     label: 'MCP Server',
-    desc: 'One-click config for AI coding tools',
+    desc: 'Connect Claude, ChatGPT, or Gemini',
     accent: 'purple',
-    logos: ['Claude', 'Cursor', 'Windsurf'],
+    logos: ['Claude', 'ChatGPT', 'Gemini'],
   },
   {
     id: 'a2a',
@@ -48,7 +48,7 @@ const methods: MethodDef[] = [
     label: 'A2A Protocol',
     desc: 'Agent-to-agent communication',
     accent: 'indigo',
-    logos: ['Claude', 'OpenAI', 'OpenClaw'],
+    logos: ['Any Agent'],
   },
   {
     id: 'sdk',
@@ -70,9 +70,9 @@ const methods: MethodDef[] = [
     id: 'skills',
     icon: FileCode,
     label: 'Skills.md',
-    desc: 'Discoverable skill manifest',
+    desc: 'Discoverable agent card',
     accent: 'amber',
-    logos: ['Claude', 'OpenAI', 'Gemini'],
+    logos: ['Claude', 'ChatGPT', 'Gemini'],
   },
 ];
 
@@ -98,9 +98,54 @@ function getCodeContent(
   method: IntegrationMethod,
   apiKey: string,
   accountId: string,
+  subMethod?: string,
 ): { code: string; language: string } {
   switch (method) {
     case 'mcp':
+      if (subMethod === 'chatgpt') {
+        return {
+          language: 'json',
+          code: `// In ChatGPT → Create a GPT → Actions → Import URL:
+// https://api.getsly.ai/v1/openapi.json
+
+// Or add this action schema:
+{
+  "openapi": "3.0.0",
+  "info": { "title": "Sly", "version": "1.0" },
+  "servers": [{ "url": "https://api.getsly.ai" }],
+  "paths": {
+    "/v1/accounts": {
+      "get": {
+        "summary": "List accounts",
+        "operationId": "listAccounts"
+      }
+    }
+  }
+}
+
+// Authentication: API Key → Bearer ${apiKey}`,
+        };
+      }
+      if (subMethod === 'gemini') {
+        return {
+          language: 'json',
+          code: `// Gemini supports MCP — add to your config:
+{
+  "mcpServers": {
+    "sly": {
+      "command": "npx",
+      "args": ["@sly/mcp-server"],
+      "env": {
+        "SLY_API_KEY": "${apiKey}"
+      }
+    }
+  }
+}
+
+// Or use the REST API directly with Gemini function calling`,
+        };
+      }
+      // Default: Claude
       return {
         language: 'json',
         code: `{
@@ -118,17 +163,21 @@ function getCodeContent(
     case 'a2a':
       return {
         language: 'bash',
-        code: `# Register agent
+        code: `# Register agent with skills for a rich agent card
 curl -X POST https://api.getsly.ai/v1/agents \\
   -H "Authorization: Bearer ${apiKey}" \\
   -H "Content-Type: application/json" \\
-  -d '{"name": "My Agent", "accountId": "${accountId}"}'
+  -d '{
+    "name": "My Agent",
+    "accountId": "${accountId}",
+    "description": "An AI agent on the Sly network"
+  }'
 
-# Your agent's A2A endpoint will be:
-# https://api.getsly.ai/a2a/<agent_id>
-
-# Other agents discover you at:
-# https://api.getsly.ai/a2a/<agent_id>/.well-known/agent.json`,
+# Your agent card is auto-published at:
+# https://api.getsly.ai/a2a/<agent_id>/.well-known/agent.json
+#
+# Other agents discover and interact with you at:
+# https://api.getsly.ai/a2a/<agent_id>`,
       };
     case 'sdk':
       return {
@@ -137,25 +186,17 @@ curl -X POST https://api.getsly.ai/v1/agents \\
 
 import { Sly } from '@sly/sdk';
 
-const sly = new Sly({
-  apiKey: '${apiKey}',
+const sly = new Sly({ apiKey: '${apiKey}' });
+
+// Register an agent
+const agent = await sly.createAgent({
+  name: 'My Agent',
+  accountId: '${accountId}',
+  description: 'An AI agent on the Sly network',
 });
 
-// Create an agent
-const agent = await sly.request('/v1/agents', {
-  method: 'POST',
-  body: JSON.stringify({
-    name: 'My Agent',
-    accountId: '${accountId}',
-  }),
-});
-
-// Get a settlement quote
-const quote = await sly.getSettlementQuote({
-  fromCurrency: 'USD',
-  toCurrency: 'BRL',
-  amount: '100',
-});`,
+// List wallets
+const wallets = await sly.listWallets();`,
       };
     case 'api':
       return {
@@ -166,45 +207,53 @@ curl -X POST https://api.getsly.ai/v1/agents \\
   -H "Content-Type: application/json" \\
   -d '{"name": "My Agent", "accountId": "${accountId}"}'
 
-# List accounts
-curl https://api.getsly.ai/v1/accounts \\
+# List wallets
+curl https://api.getsly.ai/v1/wallets \\
   -H "Authorization: Bearer ${apiKey}"
 
-# API docs: https://docs.getsly.ai`,
+# Docs: https://docs.getsly.ai`,
       };
     case 'skills':
       return {
         language: 'markdown',
         code: `# My Agent
 
+A brief description of what your agent does.
+
 ## Skills
+
+### process_payment
+- Price: 0.01 USDC
+- Input: { "to": "string", "amount": "number" }
+- Description: Send a USDC payment to another agent
 
 ### check_balance
 - Price: free
-- Input: account_id (string)
-- Description: Check USDC balance for an account
+- Input: { "wallet_id": "string" }
+- Description: Check wallet balance
 
-### settlement_quote
-- Price: 0.05 USDC
-- Input: from_currency, to_currency, amount
-- Description: Get real-time FX settlement quote
+## Capabilities
+- streaming: true
+- multiTurn: true
 
 ## Auth
-api_key: ${apiKey}`,
+api_key: ${apiKey}
+endpoint: https://api.getsly.ai/a2a/<agent_id>`,
       };
   }
 }
 
 const methodHints: Record<IntegrationMethod, string> = {
-  mcp: 'Works with Claude Desktop, Cursor, Windsurf, and any MCP-compatible client. Agent auto-registers on first connection.',
-  a2a: 'Agents communicate via JSON-RPC. Supports task delegation, payments, and skill discovery between agents.',
-  sdk: 'Full TypeScript SDK with typed methods for all protocols \u2014 x402, AP2, ACP, UCP, MPP.',
+  mcp: 'Agent auto-registers on first connection. All payment tools become available instantly.',
+  a2a: 'Your agent card is auto-published at /.well-known/agent.json for other agents to discover.',
+  sdk: 'Full TypeScript SDK with typed methods for agent registration, wallets, and payments.',
   api: 'Works with any language or platform. Base URL: https://api.getsly.ai',
-  skills: 'Other agents discover your skills automatically. Paid skills are billed via x402 micropayments.',
+  skills: 'Add this to your repo. Other agents discover your skills and pay via x402 micropayments.',
 };
 
 export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationStepProps) {
   const [selected, setSelected] = useState<IntegrationMethod | null>(null);
+  const [mcpTab, setMcpTab] = useState<'claude' | 'chatgpt' | 'gemini'>('claude');
   const [showCelebration, setShowCelebration] = useState(false);
 
   const apiKey = apiKeys?.test.key || 'pk_test_...';
@@ -333,8 +382,31 @@ export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationS
                 Back to methods
               </button>
 
+              {/* MCP sub-tabs for Claude/ChatGPT/Gemini */}
+              {selected === 'mcp' && (
+                <div className="flex gap-1 p-1 bg-white/[0.04] rounded-lg mb-3">
+                  {([
+                    { id: 'claude' as const, label: 'Claude' },
+                    { id: 'chatgpt' as const, label: 'ChatGPT' },
+                    { id: 'gemini' as const, label: 'Gemini' },
+                  ]).map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setMcpTab(tab.id)}
+                      className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-colors ${
+                        mcpTab === tab.id
+                          ? 'bg-white/[0.1] text-white'
+                          : 'text-white/40 hover:text-white/60'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="text-sm text-white/50 mb-2">
-                {selected === 'mcp' && (
+                {selected === 'mcp' && mcpTab === 'claude' && (
                   <>
                     Add to your{' '}
                     <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-white/70">
@@ -343,21 +415,30 @@ export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationS
                     or Claude Desktop config:
                   </>
                 )}
-                {selected === 'a2a' && 'Register your agent via the A2A protocol:'}
-                {selected === 'sdk' && 'Install the SDK and connect:'}
-                {selected === 'api' && 'Use the REST API directly from any language:'}
+                {selected === 'mcp' && mcpTab === 'chatgpt' && 'Create a Custom GPT with Sly actions:'}
+                {selected === 'mcp' && mcpTab === 'gemini' && 'Connect Gemini via MCP:'}
+                {selected === 'a2a' && 'Register your agent for A2A discovery:'}
+                {selected === 'sdk' && 'Install the SDK and register your agent:'}
+                {selected === 'api' && 'Use the REST API from any language:'}
                 {selected === 'skills' && (
                   <>
                     Create a{' '}
                     <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-white/70">
                       skills.md
                     </code>{' '}
-                    in your repo:
+                    for your agent card:
                   </>
                 )}
               </div>
 
-              <CodeBlock {...getCodeContent(selected, apiKey, acctId)} />
+              <CodeBlock
+                {...getCodeContent(
+                  selected,
+                  apiKey,
+                  acctId,
+                  selected === 'mcp' ? mcpTab : undefined,
+                )}
+              />
 
               <p className="text-xs text-white/30">{methodHints[selected]}</p>
             </motion.div>
