@@ -298,7 +298,7 @@ app.post('/', async (c) => {
     } else {
       // Circle wallet — uses real Circle API when CIRCLE_API_KEY is configured,
       // otherwise falls back to mock service.
-      const circleService = getCircleServiceForTenant(ctx.tenantId);
+      const circleService = getCircleServiceForTenant(ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
       try {
         // Auto-select SCA for EVM chains when Gas Station is enabled (gasless txns)
@@ -312,11 +312,13 @@ app.post('/', async (c) => {
           } catch { /* feature check is optional */ }
         }
 
+        const isLive = getEnv(ctx) === 'live';
         const circleWallet = await circleService.createWallet({
           blockchain: blockchain as any,
           name: validated.name || `PayOS Wallet`,
           refId: accountId,
           accountType,
+          testnet: !isLive,
         });
 
         walletAddress = circleWallet.address;
