@@ -285,7 +285,7 @@ function SetupWizard() {
 
       if (walletSelections.has('base')) {
         walletDefs.push({ id: 'base-live', name: `${orgName} Base Wallet`, env: 'live', walletType: 'circle_custodial' });
-        walletDefs.push({ id: 'base-sandbox', name: `${orgName} Base Sandbox Wallet`, env: 'test', walletType: 'circle_custodial', fund: 10 });
+        walletDefs.push({ id: 'base-sandbox', name: `${orgName} Base Sandbox Wallet`, env: 'test', walletType: 'internal', fund: 10 });
       }
       if (walletSelections.has('tempo')) {
         walletDefs.push({ id: 'tempo-live', name: `${orgName} Tempo Wallet`, env: 'live', walletType: 'circle_custodial' });
