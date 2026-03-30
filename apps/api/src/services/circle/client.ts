@@ -603,6 +603,36 @@ export function getCircleClient(): CircleClient {
 }
 
 /**
+ * Get the Circle TEST client for sandbox/testnet operations.
+ * Uses CIRCLE_API_KEY_TEST env var. Falls back to default if it's already a test key.
+ */
+let testClient: CircleClient | null = null;
+export function getCircleTestClient(): CircleClient {
+  if (!testClient) {
+    const apiKey = process.env.CIRCLE_API_KEY_TEST;
+
+    if (!apiKey) {
+      // Fall back to default CIRCLE_API_KEY if it's already a test key
+      const fallbackKey = process.env.CIRCLE_API_KEY;
+      if (fallbackKey?.startsWith('TEST_API_KEY:')) {
+        return getCircleClient();
+      }
+      throw new Error(
+        'CIRCLE_API_KEY_TEST environment variable is required for sandbox wallet operations when CIRCLE_API_KEY is a live key.'
+      );
+    }
+
+    testClient = new CircleClient({
+      apiKey,
+      entitySecret: process.env.CIRCLE_TEST_ENTITY_SECRET || process.env.CIRCLE_ENTITY_SECRET,
+      baseUrl: CIRCLE_W3S_URL,
+    });
+  }
+
+  return testClient;
+}
+
+/**
  * Get the Circle LIVE client for production/mainnet operations.
  * Uses CIRCLE_LIVE_API_KEY and CIRCLE_LIVE_ENTITY_SECRET env vars.
  */

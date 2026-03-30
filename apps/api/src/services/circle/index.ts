@@ -7,7 +7,7 @@
  */
 
 import { getEnvironment, isServiceEnabled, getServiceConfig } from '../../config/environment.js';
-import { CircleClient, getCircleClient, getCircleLiveClient, createCircleClient, CircleApiClientError } from './client.js';
+import { CircleClient, getCircleClient, getCircleLiveClient, getCircleTestClient, createCircleClient, CircleApiClientError } from './client.js';
 import { CircleMockService, getCircleService as getMockCircleService } from '../circle-mock.js';
 import type {
   CircleWallet,
@@ -270,13 +270,23 @@ export function getCircleServiceForTenant(
 
   let service: CircleServiceInterface;
 
-  // Live API keys use real Circle with the LIVE key, even if global env is mock/sandbox
-  const useLive = apiKeyEnvironment === 'live' && !!process.env.CIRCLE_LIVE_API_KEY;
-
-  if (useLive) {
+  // Route to the correct Circle client based on the API key environment
+  if (apiKeyEnvironment === 'live') {
+    // Live/production — use live Circle key (mainnet)
     console.log(`[Circle] Using REAL service (LIVE key, mainnet) for tenant ${tenantId}`);
     const client = getCircleLiveClient();
     service = new RealCircleService(client);
+  } else if (apiKeyEnvironment === 'test') {
+    // Test/sandbox — use test Circle key (testnet)
+    try {
+      console.log(`[Circle] Using REAL service (TEST key, testnet) for tenant ${tenantId}`);
+      const client = getCircleTestClient();
+      service = new RealCircleService(client);
+    } catch {
+      // No test key available — fall back to mock
+      console.log(`[Circle] No test key, falling back to MOCK for tenant ${tenantId}`);
+      service = new MockCircleServiceAdapter(tenantId);
+    }
   } else if (env === 'mock' || !isServiceEnabled('circle')) {
     console.log(`[Circle] Using MOCK service for tenant ${tenantId}`);
     service = new MockCircleServiceAdapter(tenantId);
