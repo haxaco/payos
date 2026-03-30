@@ -12,6 +12,7 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Download,
 } from 'lucide-react';
 import { GlowButton } from '../shared/glow-button';
 import { Celebration } from '../shared/celebration';
@@ -60,23 +61,7 @@ const cards: IntegrationCard[] = [
     description: 'For Claude, Gemini, Cursor & Windsurf',
     accent: 'purple',
     docsUrl: 'https://docs.getsly.ai/guides/mcp',
-    getContent: (testKey, liveKey) =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            sly: {
-              command: 'npx',
-              args: ['@sly/mcp-server'],
-              env: {
-                SLY_API_KEY: testKey,
-                SLY_API_KEY_LIVE: liveKey,
-              },
-            },
-          },
-        },
-        null,
-        2,
-      ),
+    getContent: () => 'npx @sly/mcp-server',
   },
   {
     id: 'cli',
@@ -170,6 +155,33 @@ export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationS
   const liveKey = apiKeys?.live.key || 'pk_live_...';
   const acctId = accountId || '<account_id>';
 
+  const downloadMcpJson = useCallback(() => {
+    const config = JSON.stringify(
+      {
+        mcpServers: {
+          sly: {
+            command: 'npx',
+            args: ['@sly/mcp-server'],
+            env: {
+              SLY_API_KEY: testKey,
+              SLY_API_KEY_LIVE: liveKey,
+            },
+          },
+        },
+      },
+      null,
+      2,
+    );
+    const blob = new Blob([config], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '.mcp.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Downloaded .mcp.json');
+  }, [testKey, liveKey]);
+
   const handleComplete = useCallback(() => {
     setShowCelebration(true);
   }, []);
@@ -185,7 +197,7 @@ export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationS
         variants={stagger}
         initial="hidden"
         animate="show"
-        className="w-full max-w-lg mx-auto space-y-6"
+        className="w-full mx-auto space-y-6"
       >
         {/* Bot icon with ring-draw animation */}
         <motion.div variants={fadeUp} className="flex justify-center">
@@ -266,14 +278,26 @@ export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationS
 
                 {/* Code/content area */}
                 <div className="mt-3 flex items-start gap-2">
-                  <div
-                    className={`flex-1 bg-muted rounded-lg p-3 font-mono text-xs text-foreground overflow-x-auto ${
-                      isMultiline ? 'whitespace-pre' : ''
-                    }`}
-                  >
-                    {content}
-                  </div>
-                  <CopyButton text={content} />
+                  {card.id === 'mcp' ? (
+                    <button
+                      onClick={downloadMcpJson}
+                      className="flex-1 flex items-center justify-center gap-2 bg-muted rounded-lg p-3 text-xs font-medium text-foreground hover:bg-muted/80 transition-colors"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download .mcp.json
+                    </button>
+                  ) : (
+                    <>
+                      <div
+                        className={`flex-1 bg-muted rounded-lg p-3 font-mono text-xs text-foreground overflow-x-auto ${
+                          isMultiline ? 'whitespace-pre' : ''
+                        }`}
+                      >
+                        {content}
+                      </div>
+                      <CopyButton text={content} />
+                    </>
+                  )}
                 </div>
               </motion.div>
             );
