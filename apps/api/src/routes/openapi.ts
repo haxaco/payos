@@ -911,7 +911,16 @@ router.get('/openapi.json', (c) => {
     ],
   };
 
-  return c.json(spec);
+  // Use new Response() to bypass responseWrapperMiddleware
+  return new Response(JSON.stringify(spec, null, 2), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
 });
 
 // ============================================
@@ -1395,8 +1404,15 @@ The agentic economy platform for AI agents. Stablecoin payments, wallets, and mu
 - Description: Switch between sandbox and production environments.
 `;
 
-  c.header('Content-Type', 'text/markdown; charset=utf-8');
-  return c.body(skills);
+  // Use new Response() to bypass responseWrapperMiddleware
+  return new Response(skills, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
 });
 
 export { router as openapiRouter };
