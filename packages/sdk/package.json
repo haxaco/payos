@@ -1,6 +1,6 @@
 {
   "name": "@sly_ai/sdk",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Unified PayOS SDK for multi-protocol settlement in LATAM",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
