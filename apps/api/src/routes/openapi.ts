@@ -924,6 +924,113 @@ router.get('/openapi.json', (c) => {
 });
 
 // ============================================
+// GET /v1/openapi-actions.json — Trimmed spec for ChatGPT Actions (≤30 ops)
+// ============================================
+router.get('/openapi-actions.json', (c) => {
+  const baseUrl = process.env.API_BASE_URL || 'https://api.getsly.ai';
+
+  const spec = {
+    openapi: '3.0.3',
+    info: {
+      title: 'Sly',
+      description: 'Agentic Economy Platform — payments, wallets, and agent management for AI agents.',
+      version: '1.0.0',
+    },
+    servers: [
+      { url: `${baseUrl}/v1`, description: 'Production' },
+      { url: 'https://sandbox.getsly.ai/v1', description: 'Sandbox' },
+    ],
+    security: [{ bearerAuth: [] }],
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: 'http', scheme: 'bearer', description: 'API key (pk_test_* or pk_live_*)' },
+      },
+    },
+    paths: {
+      '/accounts': {
+        get: { summary: 'List accounts', operationId: 'listAccounts', tags: ['Accounts'], responses: { '200': { description: 'OK' } } },
+        post: { summary: 'Create account', operationId: 'createAccount', tags: ['Accounts'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['type', 'name'], properties: { type: { type: 'string', enum: ['person', 'business'] }, name: { type: 'string' }, email: { type: 'string' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/agents': {
+        post: { summary: 'Create agent', operationId: 'createAgent', tags: ['Agents'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['accountId', 'name'], properties: { accountId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/agents/{id}': {
+        get: { summary: 'Get agent', operationId: 'getAgent', tags: ['Agents'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'OK' } } },
+      },
+      '/wallets': {
+        get: { summary: 'List wallets', operationId: 'listWallets', tags: ['Wallets'], responses: { '200': { description: 'OK' } } },
+        post: { summary: 'Create wallet', operationId: 'createWallet', tags: ['Wallets'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['accountId'], properties: { accountId: { type: 'string' }, blockchain: { type: 'string', enum: ['base', 'tempo'] }, walletType: { type: 'string', enum: ['internal', 'circle_custodial'] }, currency: { type: 'string', default: 'USDC' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/wallets/{id}/balance': {
+        get: { summary: 'Get wallet balance', operationId: 'getWalletBalance', tags: ['Wallets'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'OK' } } },
+      },
+      '/transfers': {
+        post: { summary: 'Create transfer', operationId: 'createTransfer', tags: ['Transfers'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['sourceWalletId', 'destinationWalletId', 'amount'], properties: { sourceWalletId: { type: 'string' }, destinationWalletId: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string', default: 'USDC' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/settlements/quote': {
+        post: { summary: 'Get settlement quote', operationId: 'getSettlementQuote', tags: ['Settlements'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['fromCurrency', 'toCurrency', 'amount'], properties: { fromCurrency: { type: 'string' }, toCurrency: { type: 'string' }, amount: { type: 'string' } } } } } }, responses: { '200': { description: 'OK' } } },
+      },
+      '/settlements': {
+        post: { summary: 'Create settlement', operationId: 'createSettlement', tags: ['Settlements'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['quoteId', 'destinationAccountId'], properties: { quoteId: { type: 'string' }, destinationAccountId: { type: 'string' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/x402/pay': {
+        post: { summary: 'Pay x402 endpoint', operationId: 'x402Pay', tags: ['x402'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['endpointId'], properties: { endpointId: { type: 'string' }, walletId: { type: 'string' } } } } } }, responses: { '200': { description: 'OK' } } },
+      },
+      '/ap2/mandates': {
+        post: { summary: 'Create AP2 mandate', operationId: 'createAP2Mandate', tags: ['AP2'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['payerAccountId', 'amount'], properties: { payerAccountId: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string' }, description: { type: 'string' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/ap2/mandates/{id}/execute': {
+        post: { summary: 'Execute AP2 mandate', operationId: 'executeAP2Mandate', tags: ['AP2'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'OK' } } },
+      },
+      '/acp/checkouts': {
+        post: { summary: 'Create ACP checkout', operationId: 'createACPCheckout', tags: ['ACP'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['items'], properties: { items: { type: 'array', items: { type: 'object' } }, merchantName: { type: 'string' }, currency: { type: 'string' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/acp/checkouts/{id}/complete': {
+        post: { summary: 'Complete ACP checkout', operationId: 'completeACPCheckout', tags: ['ACP'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['walletId'], properties: { walletId: { type: 'string' } } } } } }, responses: { '200': { description: 'OK' } } },
+      },
+      '/mpp/sessions': {
+        post: { summary: 'Open MPP session', operationId: 'openMPPSession', tags: ['MPP'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['payerWalletId', 'payeeWalletId'], properties: { payerWalletId: { type: 'string' }, payeeWalletId: { type: 'string' }, maxAmount: { type: 'number' }, ratePerSecond: { type: 'string' } } } } } }, responses: { '201': { description: 'Created' } } },
+      },
+      '/mpp/sessions/{id}/pay': {
+        post: { summary: 'MPP payment', operationId: 'mppPay', tags: ['MPP'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' } } } } } }, responses: { '200': { description: 'OK' } } },
+      },
+      '/mpp/sessions/{id}/close': {
+        post: { summary: 'Close MPP session', operationId: 'closeMPPSession', tags: ['MPP'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'OK' } } },
+      },
+      '/merchants': {
+        get: { summary: 'List merchants', operationId: 'listMerchants', tags: ['Discovery'], responses: { '200': { description: 'OK' } } },
+      },
+      '/tenant/info': {
+        get: { summary: 'Get tenant info', operationId: 'getTenantInfo', tags: ['Tenant'], responses: { '200': { description: 'OK' } } },
+      },
+    },
+    tags: [
+      { name: 'Accounts', description: 'Entity management' },
+      { name: 'Agents', description: 'AI agent registration' },
+      { name: 'Wallets', description: 'Wallet management' },
+      { name: 'Transfers', description: 'Fund transfers' },
+      { name: 'Settlements', description: 'Cross-border settlement' },
+      { name: 'x402', description: 'Micropayments' },
+      { name: 'AP2', description: 'Mandate-based payments' },
+      { name: 'ACP', description: 'Commerce checkouts' },
+      { name: 'MPP', description: 'Streaming payments' },
+      { name: 'Discovery', description: 'Merchant discovery' },
+      { name: 'Tenant', description: 'Tenant info' },
+    ],
+  };
+
+  return new Response(JSON.stringify(spec, null, 2), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+});
+
+// ============================================
 // GET /v1/skills.md — Platform Skill Manifest
 // ============================================
 router.get('/skills.md', (c) => {

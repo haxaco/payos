@@ -269,31 +269,6 @@ app.route('/v1/protocols', protocolsRouter);
 import { openapiRouter } from './routes/openapi.js';
 app.route('/v1', openapiRouter);
 
-// Package tarballs (public - for SDK/CLI installation)
-app.get('/packages/:name', async (c) => {
-  const name = c.req.param('name');
-  const allowed = ['sdk.tgz', 'cli.tgz'];
-  if (!allowed.includes(name)) return c.json({ error: 'Not found' }, 404);
-
-  try {
-    const path = await import('path');
-    const fs = await import('fs');
-    const filePath = path.join(process.cwd(), 'public', 'packages', name);
-    const fileBuffer = fs.readFileSync(filePath);
-    return new Response(fileBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/gzip',
-        'Content-Disposition': `attachment; filename="${name}"`,
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=3600',
-      },
-    });
-  } catch {
-    return c.json({ error: 'Package not yet available', alternative: 'git clone https://github.com/haxaco/payos' }, 404);
-  }
-});
-
 // Swagger UI redirect
 app.get('/docs', (c) => {
   const specUrl = encodeURIComponent(`${process.env.API_BASE_URL || 'https://api.getsly.ai'}/v1/openapi.json`);

@@ -75,7 +75,7 @@ const cards: IntegrationCard[] = [
     accent: 'blue',
     docsUrl: 'https://docs.getsly.ai/guides/cli',
     logos: ['ChatGPT', 'Devin', 'Any Agent'],
-    getContent: () => 'npm install https://api.getsly.ai/packages/cli.tgz',
+    getContent: () => 'npx @sly/cli',
   },
   {
     id: 'sdk',
@@ -85,7 +85,7 @@ const cards: IntegrationCard[] = [
     accent: 'blue',
     docsUrl: 'https://docs.getsly.ai/sdk',
     logos: ['Node.js', 'TypeScript'],
-    getContent: () => 'npm install https://api.getsly.ai/packages/sdk.tgz',
+    getContent: () => 'npm install @sly/sdk',
   },
   {
     id: 'chatgpt',
@@ -95,7 +95,7 @@ const cards: IntegrationCard[] = [
     accent: 'emerald',
     docsUrl: 'https://docs.getsly.ai/guides/chatgpt',
     logos: ['ChatGPT'],
-    getContent: () => 'https://api.getsly.ai/v1/openapi.json',
+    getContent: () => 'https://api.getsly.ai/v1/openapi-actions.json',
   },
   {
     id: 'api',
