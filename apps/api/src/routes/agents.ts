@@ -554,6 +554,24 @@ agents.post('/', async (c) => {
 });
 
 // ============================================
+// GET /v1/agents/stats/skills-count — Count all active skills
+// ============================================
+agents.get('/stats/skills-count', async (c) => {
+  const ctx = c.get('ctx');
+  const supabase = createClient();
+
+  const { count, error } = await supabase
+    .from('agent_skills')
+    .select('*', { count: 'exact', head: true })
+    .eq('tenant_id', ctx.tenantId)
+    .eq('status', 'active');
+
+  if (error) throw new Error(error.message);
+
+  return c.json({ data: { count: count || 0 } });
+});
+
+// ============================================
 // GET /v1/agents/:id - Get single agent
 // ============================================
 agents.get('/:id', async (c) => {
