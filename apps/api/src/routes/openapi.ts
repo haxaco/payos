@@ -930,18 +930,18 @@ router.get('/openapi-actions.json', (c) => {
   const baseUrl = process.env.API_BASE_URL || 'https://api.getsly.ai';
 
   const spec = {
-    openapi: '3.0.3',
+    openapi: '3.1.0',
     info: {
       title: 'Sly',
       description: 'Agentic Economy Platform — payments, wallets, and agent management for AI agents.',
       version: '1.0.0',
     },
     servers: [
-      { url: `${baseUrl}/v1`, description: 'Production' },
-      { url: 'https://sandbox.getsly.ai/v1', description: 'Sandbox' },
+      { url: `${baseUrl}/v1` },
     ],
     security: [{ bearerAuth: [] }],
     components: {
+      schemas: {},
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', description: 'API key (pk_test_* or pk_live_*)' },
       },
