@@ -122,7 +122,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
       walletDefs.push({ id: 'base-sandbox', name: `${orgName} Base Sandbox Wallet`, env: 'test', walletType: 'circle_custodial', blockchain: 'base', fund: 10 });
     }
     if (selections.has('tempo')) {
-      walletDefs.push({ id: 'tempo-live', name: `${orgName} Tempo Wallet`, env: 'live', walletType: 'circle_custodial', blockchain: 'tempo' });
+      walletDefs.push({ id: 'tempo-live', name: `${orgName} Tempo Wallet`, env: 'live', walletType: 'internal', blockchain: 'tempo' });
       walletDefs.push({ id: 'tempo-sandbox', name: `${orgName} Tempo Sandbox Wallet`, env: 'test', walletType: 'internal', blockchain: 'tempo' });
     }
 

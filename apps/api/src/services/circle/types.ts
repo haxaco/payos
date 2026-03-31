@@ -36,7 +36,8 @@ export function toCircleBlockchain(blockchain: PayOSBlockchain, testnet: boolean
     avax: { mainnet: 'AVAX', testnet: 'AVAX-FUJI' },
     sol: { mainnet: 'SOL', testnet: 'SOL-DEVNET' },
     arb: { mainnet: 'ARB', testnet: 'ARB-SEPOLIA' },
-    tempo: { mainnet: 'BASE' as CircleBlockchain, testnet: 'BASE-SEPOLIA' as CircleBlockchain }, // Tempo settles on Base
+    // Tempo uses internal wallets (no Circle chain support yet)
+    tempo: { mainnet: 'BASE' as CircleBlockchain, testnet: 'BASE-SEPOLIA' as CircleBlockchain },
   };
   return testnet ? map[blockchain].testnet : map[blockchain].mainnet;
 }
