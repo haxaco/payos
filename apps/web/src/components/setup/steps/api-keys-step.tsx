@@ -103,8 +103,8 @@ export function ApiKeysStep({ apiKeys, orgName, onNext }: ApiKeysStepProps) {
 
       {/* Title + subtitle */}
       <motion.div variants={fadeUp} className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-white">Your API Keys</h2>
-        <p className="text-sm text-white/50">
+        <h2 className="text-2xl font-bold text-foreground">Your API Keys</h2>
+        <p className="text-sm text-muted-foreground">
           Save these keys — they won&apos;t be shown again.
         </p>
       </motion.div>
@@ -123,15 +123,15 @@ export function ApiKeysStep({ apiKeys, orgName, onNext }: ApiKeysStepProps) {
         <motion.div
           key={id}
           variants={fadeUp}
-          className="bg-white/[0.05] border border-white/10 backdrop-blur-sm rounded-xl p-4 space-y-2"
+          className="bg-muted border border-border backdrop-blur-sm rounded-xl p-4 space-y-2"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-white/40 uppercase tracking-wider">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               {label}
             </span>
             <button
               onClick={() => handleCopy(key, id)}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-white/40 transition-all hover:bg-white/10 hover:text-white/70"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
             >
               {copiedKey === id ? (
                 <motion.span

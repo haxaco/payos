@@ -263,7 +263,7 @@ export default function SetupWizard() {
         <SetupBackground />
         <div className="relative z-10 text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-400" />
-          <p className="text-white/50 text-sm">Setting up your organization...</p>
+          <p className="text-muted-foreground text-sm">Setting up your organization...</p>
         </div>
       </div>
     );
@@ -301,7 +301,7 @@ export default function SetupWizard() {
                   maskPosition: 'center',
                 }}
               />
-              <span className="text-2xl font-bold text-white">Sly</span>
+              <span className="text-2xl font-bold text-foreground">Sly</span>
             </motion.div>
 
             {/* Title */}
@@ -311,8 +311,8 @@ export default function SetupWizard() {
               transition={{ delay: 0.2 }}
               className="text-center space-y-2"
             >
-              <h1 className="text-3xl font-bold text-white">Welcome to Sly</h1>
-              <p className="text-white/50 text-sm">
+              <h1 className="text-3xl font-bold text-foreground">Welcome to Sly</h1>
+              <p className="text-muted-foreground text-sm">
                 Set up your organization to get started
               </p>
             </motion.div>
@@ -348,7 +348,7 @@ export default function SetupWizard() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="inviteCode" className="text-white/60 text-sm">
+                <Label htmlFor="inviteCode" className="text-muted-foreground text-sm">
                   Invite Code
                 </Label>
                 <Input
@@ -357,12 +357,12 @@ export default function SetupWizard() {
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
                   required
-                  className="bg-white/[0.05] border-white/[0.08] text-white placeholder:text-white/20"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="orgName" className="text-white/60 text-sm">
+                <Label htmlFor="orgName" className="text-muted-foreground text-sm">
                   Organization Name
                 </Label>
                 <Input
@@ -372,7 +372,7 @@ export default function SetupWizard() {
                   onChange={(e) => setOrgName(e.target.value)}
                   required
                   autoFocus
-                  className="bg-white/[0.05] border-white/[0.08] text-white placeholder:text-white/20"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
               </div>
 
@@ -409,7 +409,7 @@ export default function SetupWizard() {
                 maskPosition: 'center',
               }}
             />
-            <span className="text-lg font-bold text-white">Sly</span>
+            <span className="text-lg font-bold text-foreground">Sly</span>
           </div>
           {/* Progress */}
           <div className="flex-1 max-w-xs ml-8">
@@ -461,7 +461,7 @@ export default function SetupWizard() {
 
       {/* Footer */}
       <div className="relative z-10 text-center py-4">
-        <span className="text-xs text-white/20">Step {step} of 3</span>
+        <span className="text-xs text-muted-foreground/50">Step {step} of 3</span>
       </div>
     </div>
   );

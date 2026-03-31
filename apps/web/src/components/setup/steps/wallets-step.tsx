@@ -257,8 +257,8 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
 
       {/* Title */}
       <motion.div variants={fadeUp} className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-white">Create Wallets</h2>
-        <p className="text-sm text-white/50">
+        <h2 className="text-2xl font-bold text-foreground">Create Wallets</h2>
+        <p className="text-sm text-muted-foreground">
           Select networks to create production + sandbox wallet pairs.
         </p>
       </motion.div>
@@ -274,7 +274,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
                 ? net.accent === 'blue'
                   ? 'border-blue-500/50 bg-blue-500/[0.05]'
                   : 'border-purple-500/50 bg-purple-500/[0.05]'
-                : 'bg-white/[0.03] border-white/[0.06] hover:border-white/[0.12]';
+                : 'bg-muted/50 border-border hover:border-border';
 
               return (
                 <motion.button
@@ -298,7 +298,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm text-white">{net.label}</span>
+                      <span className="font-medium text-sm text-foreground">{net.label}</span>
                       {net.recommended && (
                         <span className="relative text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
                           <span className="absolute inset-0 rounded-full animate-pulse bg-emerald-500/10" />
@@ -306,7 +306,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-white/40 mt-0.5">{net.desc}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{net.desc}</p>
                   </div>
                   {/* Selection indicator */}
                   <div
@@ -315,7 +315,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
                         ? net.accent === 'blue'
                           ? 'border-blue-500 bg-blue-500'
                           : 'border-purple-500 bg-purple-500'
-                        : 'border-white/20'
+                        : 'border-border'
                     }`}
                   >
                     {isSelected && (
@@ -358,9 +358,9 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
           {/* External wallet section */}
           <motion.div
             variants={fadeUp}
-            className="bg-white/[0.03] border border-white/[0.06] backdrop-blur-sm rounded-2xl p-4 space-y-3"
+            className="bg-muted/50 border border-border backdrop-blur-sm rounded-2xl p-4 space-y-3"
           >
-            <div className="flex items-center gap-2 text-sm font-medium text-white/60">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <Link2 className="h-4 w-4" />
               Or link an existing wallet
             </div>
@@ -369,7 +369,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
                 placeholder="0x... or base58 address"
                 value={externalAddress}
                 onChange={(e) => setExternalAddress(e.target.value)}
-                className="text-sm bg-white/[0.03] border-white/[0.08]"
+                className="text-sm bg-muted/50 border-border"
               />
               <GlowButton
                 variant="secondary"
@@ -386,7 +386,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
           <motion.div variants={fadeUp}>
             <button
               onClick={onSkip}
-              className="w-full text-center text-sm text-white/30 hover:text-white/60 transition-colors py-2"
+              className="w-full text-center text-sm text-muted-foreground/60 hover:text-foreground transition-colors py-2"
             >
               I&apos;ll connect wallets later &rarr;
             </button>
@@ -408,13 +408,13 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.1 }}
-                className="bg-white/[0.05] border border-white/10 backdrop-blur-sm rounded-xl p-4"
+                className="bg-muted border border-border backdrop-blur-sm rounded-xl p-4"
               >
                 <div className="flex items-center gap-3">
                   {/* Status indicator */}
                   <div className="w-6 h-6 flex items-center justify-center shrink-0">
                     {p.status === 'pending' && (
-                      <div className="w-2 h-2 rounded-full bg-white/20" />
+                      <div className="w-2 h-2 rounded-full bg-muted-foreground/50" />
                     )}
                     {p.status === 'creating' && (
                       <Loader2 className="h-4 w-4 text-blue-400 animate-spin" />
@@ -428,7 +428,7 @@ export function WalletsStep({ orgName, apiCall, ensureAccount, onNext, onSkip }:
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-white">{p.name}</div>
+                    <div className="text-sm font-medium text-foreground">{p.name}</div>
                     {p.status === 'done' && p.walletAddress && (
                       <div className="mt-1">
                         <KeyReveal

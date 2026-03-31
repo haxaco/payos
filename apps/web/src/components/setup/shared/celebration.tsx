@@ -103,7 +103,7 @@ export function Celebration({ onComplete }: CelebrationProps) {
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-background/80"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -164,7 +164,7 @@ export function Celebration({ onComplete }: CelebrationProps) {
             ease: 'easeInOut',
           }}
         >
-          <h2 className="text-4xl font-bold text-white drop-shadow-lg">
+          <h2 className="text-4xl font-bold text-foreground drop-shadow-lg">
             You&apos;re all set!
           </h2>
         </motion.div>

@@ -1044,6 +1044,38 @@ router.get('/skills.md', (c) => {
 
 The agentic economy platform for AI agents. Stablecoin payments, wallets, and multi-protocol commerce.
 
+## Getting Started — Day 1 Agent Setup
+
+New to Sly? These 5 skills are all you need to get started:
+
+### 1. register
+- Endpoint: POST /v1/auth/agent-signup (no auth required)
+- Input: { "name": "My Agent", "email": "agent@example.com" }
+- Description: Register your agent and receive API key + agent token + wallet in one call
+- Returns: { apiKey, agentToken, walletId, walletAddress }
+
+### 2. list_agents
+- Endpoint: GET /.well-known/agent.json
+- Input: none (public discovery)
+- Description: Discover all agents and skills available on the Sly platform
+
+### 3. create_wallet
+- Price: free
+- Input: { "accountId": "uuid", "blockchain": "base" | "tempo" }
+- Description: Claim a stablecoin wallet with your own on-chain address
+
+### 4. get_wallet_balance
+- Price: free
+- Input: { "walletId": "uuid" }
+- Description: Check your wallet balance to confirm setup worked
+
+### 5. wallet_test_fund
+- Price: free (sandbox only)
+- Input: { "walletId": "uuid", "amount": 10 }
+- Description: Add test USDC to your sandbox wallet for development
+
+---
+
 ## Platform Endpoints
 
 - A2A: \`${baseUrl}/a2a\`
