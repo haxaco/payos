@@ -93,7 +93,7 @@ const createWalletSchema = z.object({
 
   // New Phase 2 fields
   walletType: z.enum(['internal', 'circle_custodial', 'circle_mpc']).default('internal'),
-  blockchain: z.enum(['base', 'eth', 'polygon', 'avax', 'sol']).default('base'),
+  blockchain: z.enum(['base', 'eth', 'polygon', 'avax', 'sol', 'tempo']).default('base'),
   accountType: z.enum(['SCA', 'EOA']).optional(), // SCA required for Gas Station on EVM chains
 
   // Optional metadata
