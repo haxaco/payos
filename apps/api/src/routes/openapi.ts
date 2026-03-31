@@ -1193,13 +1193,31 @@ curl -X POST ${baseUrl}/v1/transfers \\
 
 ## Integration Options
 
-| Method | Best For | Install |
-|--------|----------|---------|
-| **MCP Server** | Claude, Gemini, Cursor | \`npx @sly_ai/mcp-server\` |
+| Method | Best For | Setup |
+|--------|----------|-------|
+| **MCP Server** | Claude, Gemini, Cursor | Add config to \`.mcp.json\` (see below) |
 | **CLI** | Shell scripts, ChatGPT | \`npx @sly_ai/cli\` |
 | **SDK** | Node.js/TypeScript apps | \`npm install @sly_ai/sdk\` |
 | **REST API** | Any language | \`${baseUrl}/v1/openapi.json\` |
 | **A2A Protocol** | Agent-to-agent | \`${baseUrl}/.well-known/agent.json\` |
+
+### MCP Server Configuration
+
+Add this to your \`.mcp.json\` or Claude Desktop config. The AI host runs the server automatically — no manual install needed.
+
+\`\`\`json
+{
+  "mcpServers": {
+    "sly": {
+      "command": "npx",
+      "args": ["@sly_ai/mcp-server"],
+      "env": {
+        "SLY_API_KEY": "<your_api_key>"
+      }
+    }
+  }
+}
+\`\`\`
 
 ## Key URLs
 
