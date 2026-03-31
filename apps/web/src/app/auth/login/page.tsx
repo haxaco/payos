@@ -6,8 +6,8 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@sly/ui';
 import { Input } from '@sly/ui';
 import { Label } from '@sly/ui';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@sly/ui';
-import { Loader2, Zap } from 'lucide-react';
+import { Card, CardContent } from '@sly/ui';
+import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { OAuthButtons } from '@/components/auth/oauth-buttons';
 
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,7 +54,6 @@ export default function LoginPage() {
         return;
       }
     } catch {
-      // API unreachable — try setup
       router.push('/auth/setup');
       return;
     }
@@ -64,8 +64,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
+      <div className="w-full max-w-md space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-2">
           <div className="flex justify-center mb-4">
             <div className="flex items-center gap-2.5">
               <div
@@ -84,80 +85,83 @@ export default function LoginPage() {
               <span className="text-2xl font-bold text-foreground">Sly</span>
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
-          <CardDescription>
-            Sign in to the Agentic Economy Platform
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-md">
-                {error}
+          <h1 className="text-3xl font-bold text-foreground">Welcome Back</h1>
+          <p className="text-sm text-muted-foreground">Sign in to the Agentic Economy Platform</p>
+        </div>
+
+        <Card>
+          <CardContent className="pt-6 pb-6 space-y-5">
+            {/* SSO buttons — primary action */}
+            <OAuthButtons mode="login" />
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
               </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or use email</span>
+              </div>
+            </div>
+
+            {!showEmailForm ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowEmailForm(true)}
+              >
+                Sign in with email
+              </Button>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {error && (
+                  <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-md">
+                    {error}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Sign In
+                </Button>
+              </form>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <div className="flex justify-end">
-              <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
-                Forgot password?
+
+            {/* Footer */}
+            <div className="text-center text-sm text-muted-foreground">
+              Don&apos;t have an account?{' '}
+              <Link href="/auth/signup" className="text-primary hover:underline">
+                Sign up
               </Link>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sign In
-            </Button>
-          </form>
-
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">or</span>
-            </div>
-          </div>
-
-          <OAuthButtons mode="login" />
-
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            {process.env.NEXT_PUBLIC_CLOSED_BETA === 'true' ? (
-              <>
-                Don't have access yet?{' '}
-                <Link href="/auth/signup" className="text-primary hover:underline">
-                  Apply for the beta
-                </Link>
-              </>
-            ) : (
-              <>
-                Don't have an account?{' '}
-                <Link href="/auth/signup" className="text-primary hover:underline">
-                  Sign up
-                </Link>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
