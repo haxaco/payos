@@ -67,13 +67,26 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="rounded-full bg-primary/10 p-3">
-              <Zap className="h-8 w-8 text-primary" />
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-9 h-9 bg-primary"
+                style={{
+                  WebkitMaskImage: 'url(/sly-logo.png)',
+                  WebkitMaskSize: 'contain',
+                  WebkitMaskRepeat: 'no-repeat',
+                  WebkitMaskPosition: 'center',
+                  maskImage: 'url(/sly-logo.png)',
+                  maskSize: 'contain',
+                  maskRepeat: 'no-repeat',
+                  maskPosition: 'center',
+                }}
+              />
+              <span className="text-2xl font-bold text-foreground">Sly</span>
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Welcome to Sly</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
           <CardDescription>
-            Sign in to your dashboard account
+            Sign in to the Agentic Economy Platform
           </CardDescription>
         </CardHeader>
         <CardContent>
