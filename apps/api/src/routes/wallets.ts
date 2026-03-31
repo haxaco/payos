@@ -290,8 +290,28 @@ app.post('/', async (c) => {
     const blockchain = validated.blockchain || 'base';
     const tokenContract = getTokenContract(validated.currency, blockchain);
 
-    if (validated.walletType === 'internal') {
-      // Internal PayOS wallet (Phase 1)
+    if (validated.walletType === 'internal' && blockchain === 'tempo') {
+      // Tempo on-chain wallet — generate keypair eagerly so wallet has an address for funding
+      const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts');
+      const privateKey = generatePrivateKey();
+      const account = privateKeyToAccount(privateKey);
+      walletAddress = account.address;
+
+      const isLive = getEnv(ctx) === 'live';
+      const tempoToken = isLive
+        ? { currency: 'USDC', contract: '0x20C000000000000000000000b9537d11c60E8b50' }
+        : { currency: 'pathUSD', contract: '0x20c0000000000000000000000000000000000000' };
+
+      providerMetadata = {
+        encrypted_private_key: privateKey,  // TODO: encrypt with KMS in production
+        key_derivation: 'viem/generatePrivateKey',
+        chain_id: isLive ? 4217 : 42431,
+        rpc_url: isLive ? 'https://rpc.tempo.xyz' : 'https://rpc.moderato.tempo.xyz',
+        token_decimals: 6,
+        token_contract: tempoToken.contract,
+      };
+    } else if (validated.walletType === 'internal') {
+      // Internal PayOS ledger wallet
       walletAddress = validated.managedByAgentId
         ? `internal://payos/${ctx.tenantId}/${accountId}/agent/${validated.managedByAgentId}`
         : `internal://payos/${ctx.tenantId}/${accountId}/${Date.now()}`;
@@ -356,7 +376,7 @@ app.post('/', async (c) => {
         // Phase 2 fields
         wallet_type: validated.walletType,
         custody_type: validated.walletType === 'circle_mpc' ? 'mpc' : 'custodial',
-        provider: validated.walletType === 'internal' ? 'payos' : 'circle',
+        provider: blockchain === 'tempo' ? 'tempo' : (validated.walletType === 'internal' ? 'payos' : 'circle'),
         provider_wallet_id: providerWalletId,
         provider_wallet_set_id: providerWalletSetId,
         provider_entity_id: providerEntityId,

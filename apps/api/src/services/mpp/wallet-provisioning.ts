@@ -28,7 +28,7 @@ export interface TempoWallet {
 }
 
 /** Tempo token addresses per network */
-const TEMPO_TOKENS = {
+export const TEMPO_TOKENS = {
   testnet: {
     currency: 'pathUSD',
     tokenContract: '0x20c0000000000000000000000000000000000000',
