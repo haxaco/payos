@@ -65,7 +65,7 @@ const cards: IntegrationCard[] = [
     accent: 'purple',
     docsUrl: 'https://docs.getsly.ai/guides/mcp',
     logos: ['Claude', 'Gemini', 'Cursor', 'Windsurf'],
-    getContent: () => 'npx @sly/mcp-server',
+    getContent: () => 'npx @sly_ai/mcp-server',
   },
   {
     id: 'cli',
@@ -75,7 +75,7 @@ const cards: IntegrationCard[] = [
     accent: 'blue',
     docsUrl: 'https://docs.getsly.ai/guides/cli',
     logos: ['ChatGPT', 'Devin', 'Any Agent'],
-    getContent: () => 'npx @sly/cli',
+    getContent: () => 'npx @sly_ai/cli',
   },
   {
     id: 'sdk',
@@ -85,7 +85,7 @@ const cards: IntegrationCard[] = [
     accent: 'blue',
     docsUrl: 'https://docs.getsly.ai/sdk',
     logos: ['Node.js', 'TypeScript'],
-    getContent: () => 'npm install @sly/sdk',
+    getContent: () => 'npm install @sly_ai/sdk',
   },
   {
     id: 'chatgpt',
@@ -169,7 +169,7 @@ export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationS
         mcpServers: {
           sly: {
             command: 'npx',
-            args: ['@sly/mcp-server'],
+            args: ['@sly_ai/mcp-server'],
             env: {
               SLY_API_KEY: testKey,
               SLY_API_KEY_LIVE: liveKey,

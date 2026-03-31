@@ -1,5 +1,5 @@
 {
-  "name": "@sly/cli",
+  "name": "@sly_ai/cli",
   "version": "0.1.0",
   "description": "Sly CLI — command-line interface for the Sly agentic economy platform",
   "type": "module",
