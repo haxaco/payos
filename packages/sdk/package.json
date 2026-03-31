@@ -1,6 +1,6 @@
 {
   "name": "@sly_ai/sdk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Unified PayOS SDK for multi-protocol settlement in LATAM",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -81,7 +81,6 @@
     "agentic-commerce"
   ],
   "dependencies": {
-    "@sly/types": "workspace:*",
     "@x402/core": "^2.1.0",
     "@x402/evm": "^2.1.0",
     "@x402/express": "^2.1.0",
