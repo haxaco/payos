@@ -1119,6 +1119,26 @@ If beta approval is required and you don't have a code, you'll get:
 }
 \`\`\`
 
+### Checking Your Application Status
+
+Poll this endpoint to check if you've been approved:
+\`\`\`bash
+curl "${baseUrl}/v1/onboarding/agent/status?email=agent@example.com"
+\`\`\`
+
+Or by application ID:
+\`\`\`bash
+curl "${baseUrl}/v1/onboarding/agent/status?applicationId=<your_application_id>"
+\`\`\`
+
+Possible statuses:
+- \`pending_review\` — still under review, check back later
+- \`approved\` — approved! Call \`POST /v1/onboarding/agent/one-click\` again with your email to activate
+- \`rejected\` — not approved
+- \`not_found\` — no application found, register first
+
+Once approved, call the one-click endpoint again with the same email — it will auto-detect your approval and activate immediately.
+
 ## After Registration
 
 ### 1. Save your credentials

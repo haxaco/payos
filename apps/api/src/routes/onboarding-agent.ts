@@ -362,4 +362,70 @@ router.post('/one-click', async (c) => {
   }
 });
 
+// ============================================
+// GET /v1/onboarding/agent/status?email=...
+// Check application status (public, no auth)
+// ============================================
+router.get('/status', async (c) => {
+  const email = c.req.query('email');
+  const applicationId = c.req.query('applicationId');
+
+  if (!email && !applicationId) {
+    return c.json({ error: 'Provide email or applicationId query parameter' }, 400);
+  }
+
+  const supabase = createClient();
+
+  // Look up application
+  let query = (supabase.from('beta_applications') as any)
+    .select('id, email, status, agent_name, created_at, access_code_id');
+
+  if (applicationId) {
+    query = query.eq('id', applicationId);
+  } else {
+    query = query.eq('email', email);
+  }
+
+  const { data: app } = await query.order('created_at', { ascending: false }).limit(1).single();
+
+  if (!app) {
+    return c.json({
+      status: 'not_found',
+      message: 'No application found. Register at POST /v1/onboarding/agent/one-click',
+    }, 404);
+  }
+
+  // If approved and has access code, check if it's been redeemed (agent created)
+  if (app.status === 'approved' && app.access_code_id) {
+    return c.json({
+      status: 'approved',
+      applicationId: app.id,
+      message: 'Your application is approved! Call POST /v1/onboarding/agent/one-click with your email to activate.',
+    });
+  }
+
+  if (app.status === 'approved') {
+    return c.json({
+      status: 'approved',
+      applicationId: app.id,
+      message: 'Your application is approved. An invite code is being generated.',
+    });
+  }
+
+  if (app.status === 'rejected') {
+    return c.json({
+      status: 'rejected',
+      applicationId: app.id,
+      message: 'Your application was not approved.',
+    });
+  }
+
+  return c.json({
+    status: 'pending_review',
+    applicationId: app.id,
+    appliedAt: app.created_at,
+    message: 'Your application is under review. Check back soon.',
+  });
+});
+
 export { router as onboardingAgentRouter };
