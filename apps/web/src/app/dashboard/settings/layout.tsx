@@ -23,7 +23,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-8 max-w-[1600px] mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Settings</h1>
         <p className="text-gray-600 dark:text-gray-400">Manage your account, team, and configuration</p>

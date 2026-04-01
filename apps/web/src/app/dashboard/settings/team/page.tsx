@@ -279,12 +279,7 @@ export default function TeamSettingsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-2xl font-bold">Team</h1>
-        <p className="text-muted-foreground">Manage team members and invitations.</p>
-      </div>
-
+    <div className="space-y-6">
       {error && (
         <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-md">
           {error}

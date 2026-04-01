@@ -15,6 +15,8 @@ export default function SettingsPage() {
   const apiFetch = useApiFetch();
   const { showFullSidebar, setShowFullSidebar } = useSidebarData();
   const [mounted, setMounted] = useState(false);
+  const [supabaseEmail, setSupabaseEmail] = useState('');
+  const [supabaseName, setSupabaseName] = useState('');
   const [resourceUsage, setResourceUsage] = useState<{
     teamMembers: { current: number; limit: number | null };
     agents: { current: number; limit: number | null };
@@ -27,7 +29,7 @@ export default function SettingsPage() {
   });
 
   // Fetch user profile
-  const { data: meData } = useQuery({
+  const { data: meData, isLoading: isMeLoading } = useQuery({
     queryKey: ['auth-me', apiEnvironment],
     queryFn: async () => {
       const res = await apiFetch(`${apiUrl}/v1/auth/me`);
@@ -39,12 +41,31 @@ export default function SettingsPage() {
   });
 
   const me = meData?.data || meData;
-  const userName = me?.name || '';
-  const userEmail = me?.email || '';
+  const userName = me?.name || supabaseName || '';
+  const userEmail = me?.email || supabaseEmail || '';
+  const isProfileLoading = isMeLoading && !me;
 
   // Prevent hydration mismatch by only showing theme-dependent content after mount
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // Fetch Supabase session user as fallback for profile fields
+  useEffect(() => {
+    async function fetchSupabaseUser() {
+      try {
+        const { createSupabaseBrowserClient } = await import('@/lib/supabase/client');
+        const supabase = createSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setSupabaseEmail(session.user.email || '');
+          setSupabaseName(session.user.user_metadata?.name || '');
+        }
+      } catch {
+        // Non-critical fallback
+      }
+    }
+    fetchSupabaseUser();
   }, []);
 
   // Fetch resource usage
@@ -120,23 +141,31 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Display Name
               </label>
-              <input
-                type="text"
-                value={userName}
-                readOnly
-                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-gray-900 dark:text-white"
-              />
+              {isProfileLoading ? (
+                <div className="w-full h-[42px] bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
+              ) : (
+                <input
+                  type="text"
+                  value={userName}
+                  readOnly
+                  className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-gray-900 dark:text-white"
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Email
               </label>
-              <input
-                type="email"
-                value={userEmail}
-                readOnly
-                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-gray-900 dark:text-white"
-              />
+              {isProfileLoading ? (
+                <div className="w-full h-[42px] bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
+              ) : (
+                <input
+                  type="email"
+                  value={userEmail}
+                  readOnly
+                  className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-gray-900 dark:text-white"
+                />
+              )}
               <p className="mt-1 text-xs text-gray-500">Email cannot be changed</p>
             </div>
           </div>
