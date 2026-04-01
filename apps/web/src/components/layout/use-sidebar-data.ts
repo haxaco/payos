@@ -1,7 +1,10 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useApiConfig, useApiFetch } from '@/lib/api-client';
+
+const FULL_SIDEBAR_KEY = 'sly:show-full-sidebar';
 
 export function useSidebarData() {
   const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
@@ -41,5 +44,21 @@ export function useSidebarData() {
     x402: protocols?.x402?.enabled ?? true,
   };
 
-  return { role, isAdmin, enabledProtocols };
+  const [showFullSidebar, setShowFullSidebarState] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(FULL_SIDEBAR_KEY);
+      if (stored === 'true') setShowFullSidebarState(true);
+    } catch {}
+  }, []);
+
+  const setShowFullSidebar = useCallback((value: boolean) => {
+    setShowFullSidebarState(value);
+    try {
+      localStorage.setItem(FULL_SIDEBAR_KEY, String(value));
+    } catch {}
+  }, []);
+
+  return { role, isAdmin, enabledProtocols, showFullSidebar, setShowFullSidebar };
 }

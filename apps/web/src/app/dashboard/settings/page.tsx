@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe, Users, Bot } from 'lucide-react';
+import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe, Users, Bot, LayoutDashboard } from 'lucide-react';
 import { useLocale, type Locale } from '@/lib/locale';
 import { useApiConfig } from '@/lib/api-client';
+import { useSidebarData } from '@/components/layout/use-sidebar-data';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, formatCurrency, formatDate } = useLocale();
   const { apiUrl } = useApiConfig();
+  const { showFullSidebar, setShowFullSidebar } = useSidebarData();
   const [mounted, setMounted] = useState(false);
   const [resourceUsage, setResourceUsage] = useState<{
     teamMembers: { current: number; limit: number | null };
@@ -82,12 +84,6 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Settings</h1>
-        <p className="text-gray-600 dark:text-gray-400">Manage your account and preferences</p>
-      </div>
-
       <div className="space-y-6">
         {/* Profile Section */}
         <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
@@ -244,6 +240,44 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Dashboard Section */}
+        <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-orange-100 dark:bg-orange-950 rounded-xl flex items-center justify-center">
+              <LayoutDashboard className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Dashboard</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Customize your sidebar and navigation</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm font-medium text-gray-900 dark:text-white">Show all sidebar sections</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Display Operations and Developers sections in the sidebar</div>
+              </div>
+              <button
+                onClick={() => setShowFullSidebar(!showFullSidebar)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  showFullSidebar
+                    ? 'bg-blue-600'
+                    : 'bg-gray-200 dark:bg-gray-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                    showFullSidebar
+                      ? 'translate-x-5'
+                      : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </section>
+
         {/* Appearance Section */}
         <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
           <div className="flex items-center gap-3 mb-6">
@@ -367,6 +401,5 @@ export default function SettingsPage() {
         </section>
 
       </div>
-    </div>
   );
 }
