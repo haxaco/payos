@@ -275,12 +275,19 @@ router.post('/one-click', async (c) => {
       ip, agentId: agent.id, tenantId: tenant.id, name,
     });
 
-    // Redeem beta code if provided
-    if (isFeatureEnabled('closedBeta') && inviteCode) {
+    // Redeem beta code if provided — increment current_uses
+    if (inviteCode) {
       try {
-        await (supabase.from('beta_access_codes') as any)
-          .update({ current_uses: (supabase as any).rpc ? undefined : 1 })
-          .eq('code', inviteCode);
+        // Fetch current count and increment
+        const { data: codeRow } = await (supabase.from('beta_access_codes') as any)
+          .select('current_uses')
+          .eq('code', inviteCode)
+          .single();
+        if (codeRow) {
+          await (supabase.from('beta_access_codes') as any)
+            .update({ current_uses: (codeRow.current_uses || 0) + 1 })
+            .eq('code', inviteCode);
+        }
       } catch { /* non-fatal */ }
     }
 
