@@ -1179,6 +1179,24 @@ export function createMcpServer(
         };
       }
 
+      case 'agent_wallet_fund': {
+        const { agentId, amount, sourceWalletId } = args as {
+          agentId: string;
+          amount: number;
+          sourceWalletId?: string;
+        };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/request-funds`, {
+          method: 'POST',
+          body: JSON.stringify({
+            amount,
+            ...(sourceWalletId ? { source_wallet_id: sourceWalletId } : {}),
+          }),
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
       case 'agent_wallet_set_policy': {
         const { agentId, ...policyFields } = args as {
           agentId: string;

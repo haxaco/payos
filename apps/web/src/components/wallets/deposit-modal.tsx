@@ -9,7 +9,10 @@ import {
   X,
   Wallet,
   ExternalLink,
+  Copy,
+  QrCode,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { initOnRamp, type CBPayInstanceType } from '@coinbase/cbpay-js';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -27,31 +30,27 @@ interface DepositModalProps {
 }
 
 const BLOCKCHAIN_TO_COINBASE: Record<string, string> = {
-  base: 'base',
-  eth: 'ethereum',
-  ethereum: 'ethereum',
-  polygon: 'polygon',
-  sol: 'solana',
-  solana: 'solana',
+  base: 'base', eth: 'ethereum', ethereum: 'ethereum',
+  polygon: 'polygon', sol: 'solana', solana: 'solana',
 };
 
-type Provider = 'coinbase' | 'stripe';
-type Phase = 'select-provider' | 'coinbase-init' | 'coinbase-ready' | 'stripe-loading' | 'stripe-embedded' | 'success' | 'error';
+const NETWORK_DISPLAY: Record<string, string> = {
+  base: 'Base', eth: 'Ethereum', ethereum: 'Ethereum',
+  polygon: 'Polygon', sol: 'Solana', solana: 'Solana',
+};
+
+type Provider = 'coinbase' | 'stripe' | 'qrcode';
+type Phase = 'select-provider' | 'coinbase-init' | 'coinbase-ready' | 'stripe-loading' | 'stripe-embedded' | 'qrcode' | 'success' | 'error';
 
 export function DepositModal({
-  walletId,
-  walletName,
-  walletAddress,
-  blockchain,
-  walletType,
-  onClose,
+  walletId, walletName, walletAddress, blockchain, walletType, onClose,
 }: DepositModalProps) {
   const [phase, setPhase] = useState<Phase>('select-provider');
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  // Coinbase refs
   const instanceRef = useRef<CBPayInstanceType | null>(null);
   const lastEventAmountRef = useRef<number | null>(null);
   const popupOpenedRef = useRef(false);
@@ -67,18 +66,16 @@ export function DepositModal({
   const queryClient = useQueryClient();
 
   const isOnChain = walletAddress && !walletAddress.startsWith('internal://');
+  const networkDisplay = NETWORK_DISPLAY[blockchain || 'base'] || blockchain || 'Base';
 
   // Shared completion handler
   const handleDepositComplete = useCallback(async () => {
     if (phaseRef.current === 'success') return;
     setPhase('success');
     toast.success('Deposit completed! Syncing wallet...');
-
     const token = authTokenRef.current;
     const url = apiUrlRef.current;
     if (!token) return;
-
-    // In sandbox: use Circle faucet for real testnet USDC
     if (process.env.NODE_ENV === 'development') {
       try {
         const resp = await fetch(`${url}/v1/wallets/${walletId}/fund`, {
@@ -95,13 +92,10 @@ export function DepositModal({
         }
       } catch {}
     }
-
-    // Sync wallet balance
     const syncWallet = async () => {
       try {
         await fetch(`${url}/v1/wallets/${walletId}/sync`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
+          method: 'POST', headers: { 'Authorization': `Bearer ${token}` },
         });
       } catch {}
       queryClient.invalidateQueries({ queryKey: ['wallet', walletId] });
@@ -116,101 +110,79 @@ export function DepositModal({
   const initCoinbase = useCallback(async () => {
     if (!api || !walletAddress) return;
     setPhase('coinbase-init');
-
     try {
       const session = await api.fundingSources.createOnrampSession({ walletId });
       const network = session.network || BLOCKCHAIN_TO_COINBASE[blockchain || 'base'] || 'base';
       const isSandbox = process.env.NODE_ENV === 'development';
-
-      initOnRamp(
-        {
-          appId: CDP_PROJECT_ID,
-          ...(isSandbox ? { host: 'https://pay-sandbox.coinbase.com' } : {}),
-          widgetParameters: {
-            addresses: { [walletAddress]: [network] },
-            assets: ['USDC'],
-            defaultAsset: 'USDC',
-            defaultNetwork: network,
-            sessionToken: session.session_token,
-          } as any,
-          onSuccess: () => handleDepositComplete(),
-          onExit: () => {
-            if (process.env.NODE_ENV === 'development') handleDepositComplete();
-          },
-          onEvent: (event: any) => {
-            const amount = event?.purchaseAmount || event?.amount || event?.cryptoAmount;
-            if (amount && !isNaN(Number(amount))) lastEventAmountRef.current = Number(amount);
-          },
-          experienceLoggedIn: 'popup',
-          experienceLoggedOut: 'popup',
-          closeOnExit: true,
-          closeOnSuccess: true,
+      initOnRamp({
+        appId: CDP_PROJECT_ID,
+        ...(isSandbox ? { host: 'https://pay-sandbox.coinbase.com' } : {}),
+        widgetParameters: {
+          addresses: { [walletAddress]: [network] },
+          assets: ['USDC'], defaultAsset: 'USDC', defaultNetwork: network,
+          sessionToken: session.session_token,
+        } as any,
+        onSuccess: () => handleDepositComplete(),
+        onExit: () => { if (process.env.NODE_ENV === 'development') handleDepositComplete(); },
+        onEvent: (event: any) => {
+          const amount = event?.purchaseAmount || event?.amount || event?.cryptoAmount;
+          if (amount && !isNaN(Number(amount))) lastEventAmountRef.current = Number(amount);
         },
-        (err, instance) => {
-          if (err) {
-            setError(typeof err === 'string' ? err : (err as Error).message);
-            setPhase('error');
-          } else if (instance) {
-            instanceRef.current = instance;
-            setPhase('coinbase-ready');
-          }
-        }
-      );
-    } catch (err: any) {
-      setError(err.message || 'Failed to initialize Coinbase');
-      setPhase('error');
-    }
+        experienceLoggedIn: 'popup', experienceLoggedOut: 'popup',
+        closeOnExit: true, closeOnSuccess: true,
+      }, (err, instance) => {
+        if (err) { setError(typeof err === 'string' ? err : (err as Error).message); setPhase('error'); }
+        else if (instance) { instanceRef.current = instance; setPhase('coinbase-ready'); }
+      });
+    } catch (err: any) { setError(err.message); setPhase('error'); }
   }, [api, walletAddress, walletId, blockchain, handleDepositComplete]);
 
-  // Coinbase focus fallback
   useEffect(() => {
     const handleFocus = () => {
       if (popupOpenedRef.current && phaseRef.current === 'coinbase-ready') {
-        setTimeout(() => {
-          if (phaseRef.current === 'coinbase-ready') handleDepositComplete();
-        }, 2000);
+        setTimeout(() => { if (phaseRef.current === 'coinbase-ready') handleDepositComplete(); }, 2000);
       }
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [handleDepositComplete]);
 
-  const handleCoinbaseBuy = useCallback(() => {
-    popupOpenedRef.current = true;
-    instanceRef.current?.open();
-  }, []);
+  const handleCoinbaseBuy = useCallback(() => { popupOpenedRef.current = true; instanceRef.current?.open(); }, []);
 
   // ── Stripe flow ──
   const initStripe = useCallback(async () => {
     if (!api) return;
     setPhase('stripe-loading');
-
     try {
       const session = await api.fundingSources.createStripeOnrampSession({ walletId });
       setStripeClientSecret(session.client_secret);
       setPhase('stripe-embedded');
-    } catch (err: any) {
-      setError(err.message || 'Failed to initialize Stripe');
-      setPhase('error');
-    }
+    } catch (err: any) { setError(err.message); setPhase('error'); }
   }, [api, walletId]);
+
+  // ── Copy address ──
+  const copyAddress = useCallback(() => {
+    if (walletAddress) {
+      navigator.clipboard.writeText(walletAddress);
+      setCopied(true);
+      toast.success('Address copied!');
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [walletAddress]);
 
   // ── Provider selection ──
   const selectProvider = useCallback((provider: Provider) => {
     setSelectedProvider(provider);
     if (provider === 'coinbase') initCoinbase();
-    else initStripe();
+    else if (provider === 'stripe') initStripe();
+    else if (provider === 'qrcode') setPhase('qrcode');
   }, [initCoinbase, initStripe]);
 
-  const handleClose = useCallback(() => {
-    instanceRef.current?.destroy();
-    onClose();
-  }, [onClose]);
+  const handleClose = useCallback(() => { instanceRef.current?.destroy(); onClose(); }, [onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleClose} />
-
       <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
@@ -218,9 +190,7 @@ export function DepositModal({
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               {phase === 'success' ? 'Deposit Complete' : 'Deposit USDC'}
             </h2>
-            {walletName && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">to {walletName}</p>
-            )}
+            {walletName && <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">to {walletName}</p>}
           </div>
           <button onClick={handleClose} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
             <X className="w-5 h-5" />
@@ -235,49 +205,86 @@ export function DepositModal({
                 <Wallet className="w-7 h-7 text-yellow-600 dark:text-yellow-400" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">On-Chain Wallet Required</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                This wallet doesn't have an on-chain address. To deposit real USDC, create a Circle wallet.
-              </p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">Create a Circle wallet with an on-chain address to deposit real USDC.</p>
               <button onClick={handleClose} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">Got It</button>
             </div>
           )}
 
           {/* ── Provider Selection ── */}
           {phase === 'select-provider' && isOnChain && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Choose how you'd like to buy USDC:</p>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Choose how you'd like to add USDC:</p>
 
-              {/* Coinbase option */}
-              <button
-                onClick={() => selectProvider('coinbase')}
-                className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 transition-colors text-left"
-              >
-                <div className="flex items-center justify-between mb-2">
+              <button onClick={() => selectProvider('coinbase')} className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 transition-colors text-left">
+                <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-gray-900 dark:text-white">Coinbase</span>
                   <span className="text-sm font-bold text-green-600 dark:text-green-400">0% fee</span>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Card, bank transfer, Apple Pay. Opens in a popup window.
-                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Card, bank, Apple Pay. Opens in a popup.</p>
               </button>
 
-              {/* Stripe option */}
-              <button
-                onClick={() => selectProvider('stripe')}
-                className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-colors text-left"
-              >
-                <div className="flex items-center justify-between mb-2">
+              <button onClick={() => selectProvider('stripe')} className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-colors text-left">
+                <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-gray-900 dark:text-white">Stripe</span>
                   <span className="text-sm font-medium text-gray-500 dark:text-gray-400">1.5% fee</span>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Card, bank transfer, Apple Pay, Google Pay. Embedded checkout — no popup.
-                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Card, bank, Apple Pay, Google Pay. Embedded — no popup.</p>
               </button>
 
-              <p className="text-center text-xs text-gray-400 dark:text-gray-500">
-                Both deliver USDC directly to your wallet. Sly never holds your money.
+              <button onClick={() => selectProvider('qrcode')} className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-green-500 dark:hover:border-green-500 transition-colors text-left">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-gray-900 dark:text-white">Send USDC Directly</span>
+                  <span className="text-sm font-bold text-green-600 dark:text-green-400">Free</span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Send from MetaMask, Coinbase Wallet, or any wallet via QR code.</p>
+              </button>
+
+              <p className="text-center text-xs text-gray-400 dark:text-gray-500 pt-1">
+                All options deliver USDC directly to your wallet. Sly never holds your money.
               </p>
+            </div>
+          )}
+
+          {/* ── QR Code ── */}
+          {phase === 'qrcode' && isOnChain && walletAddress && (
+            <div className="space-y-5">
+              <div className="text-center">
+                <div className="inline-block p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
+                  <QRCodeSVG value={walletAddress} size={200} level="M" />
+                </div>
+              </div>
+
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 space-y-3">
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Wallet Address</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono text-gray-900 dark:text-white break-all bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
+                      {walletAddress}
+                    </code>
+                    <button onClick={copyAddress} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors flex-shrink-0">
+                      {copied ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Network</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{networkDisplay}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Asset</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">USDC</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                  Only send <strong>USDC on {networkDisplay}</strong> to this address. Sending other tokens or using the wrong network may result in permanent loss.
+                </p>
+              </div>
+
+              <button onClick={() => setPhase('select-provider')} className="w-full text-center text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                Back to payment options
+              </button>
             </div>
           )}
 
@@ -294,24 +301,21 @@ export function DepositModal({
             <div className="space-y-5">
               <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Destination</span>
+                  <span className="text-sm text-gray-500">Destination</span>
                   <span className="font-mono text-xs text-gray-700 dark:text-gray-300 truncate max-w-[200px]">{walletAddress}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Network</span>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">{blockchain || 'base'}</span>
+                  <span className="text-sm text-gray-500">Network</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{networkDisplay}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Asset</span>
+                  <span className="text-sm text-gray-500">Asset</span>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">USDC</span>
                 </div>
               </div>
-
               <button onClick={handleCoinbaseBuy} className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
-                <ExternalLink className="w-5 h-5" />
-                Buy USDC with Coinbase
+                <ExternalLink className="w-5 h-5" />Buy USDC with Coinbase
               </button>
-
               <p className="text-center text-xs text-gray-400">0% fees on USDC. Powered by Coinbase.</p>
             </div>
           )}
@@ -327,11 +331,7 @@ export function DepositModal({
           {/* ── Stripe Embedded ── */}
           {phase === 'stripe-embedded' && stripeClientSecret && (
             <CryptoElements>
-              <OnrampElement
-                clientSecret={stripeClientSecret}
-                onComplete={handleDepositComplete}
-                onError={(msg) => { setError(msg); setPhase('error'); }}
-              />
+              <OnrampElement clientSecret={stripeClientSecret} onComplete={handleDepositComplete} onError={(msg) => { setError(msg); setPhase('error'); }} />
             </CryptoElements>
           )}
 

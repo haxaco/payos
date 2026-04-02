@@ -415,4 +415,171 @@ agentWallets.get('/:agentId/wallet/policy/evaluations', async (c) => {
   });
 });
 
+// ============================================
+// Agent Self-Funding
+// ============================================
+
+const requestFundsSchema = z.object({
+  amount: z.number().positive().max(100000),
+  source_wallet_id: z.string().uuid().optional(),
+});
+
+/**
+ * POST /v1/agents/:agentId/wallet/request-funds
+ *
+ * Agent requests USDC from its parent account's wallet.
+ * If no source_wallet_id is provided, uses the parent account's primary wallet.
+ */
+agentWallets.post('/:agentId/wallet/request-funds', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const agentId = c.req.param('agentId');
+  const body = await c.req.json();
+  const parsed = requestFundsSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const supabase = createClient();
+    const env = getEnv(ctx);
+
+    // Get agent and its wallet
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select('id, name, parent_account_id, tenant_id, wallet_id')
+      .eq('id', agentId)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (agentError || !agent) {
+      return c.json({ error: 'Agent not found' }, 404);
+    }
+
+    // Get agent's wallet
+    const agentWalletId = agent.wallet_id;
+    if (!agentWalletId) {
+      return c.json({ error: 'Agent has no wallet. Create one first.' }, 400);
+    }
+
+    const { data: agentWallet, error: agentWalletError } = await supabase
+      .from('wallets')
+      .select('id, balance, currency, status')
+      .eq('id', agentWalletId)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (agentWalletError || !agentWallet) {
+      return c.json({ error: 'Agent wallet not found' }, 404);
+    }
+
+    if (agentWallet.status !== 'active') {
+      return c.json({ error: `Agent wallet is ${agentWallet.status}` }, 400);
+    }
+
+    // Find source wallet
+    let sourceWalletId = parsed.data.source_wallet_id;
+
+    if (!sourceWalletId && agent.parent_account_id) {
+      // Find parent account's primary wallet
+      const { data: parentWallets } = await supabase
+        .from('wallets')
+        .select('id, balance')
+        .eq('owner_account_id', agent.parent_account_id)
+        .eq('tenant_id', ctx.tenantId)
+        .eq('status', 'active')
+        .order('balance', { ascending: false })
+        .limit(1);
+
+      if (parentWallets && parentWallets.length > 0) {
+        sourceWalletId = parentWallets[0].id;
+      }
+    }
+
+    if (!sourceWalletId) {
+      return c.json({ error: 'No source wallet available. Provide source_wallet_id or ensure parent account has a funded wallet.' }, 400);
+    }
+
+    // Get source wallet and check balance
+    const { data: sourceWallet, error: sourceError } = await supabase
+      .from('wallets')
+      .select('id, balance, currency, status')
+      .eq('id', sourceWalletId)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (sourceError || !sourceWallet) {
+      return c.json({ error: 'Source wallet not found' }, 404);
+    }
+
+    const sourceBalance = parseFloat(sourceWallet.balance);
+    if (sourceBalance < parsed.data.amount) {
+      return c.json({
+        error: `Insufficient balance in source wallet. Available: ${sourceBalance} ${sourceWallet.currency}, requested: ${parsed.data.amount}`,
+      }, 400);
+    }
+
+    // Transfer: debit source, credit agent wallet
+    const newSourceBalance = sourceBalance - parsed.data.amount;
+    const newAgentBalance = parseFloat(agentWallet.balance) + parsed.data.amount;
+
+    const { error: debitError } = await supabase
+      .from('wallets')
+      .update({ balance: newSourceBalance, updated_at: new Date().toISOString() })
+      .eq('id', sourceWalletId)
+      .eq('tenant_id', ctx.tenantId);
+
+    if (debitError) {
+      return c.json({ error: 'Failed to debit source wallet' }, 500);
+    }
+
+    const { error: creditError } = await supabase
+      .from('wallets')
+      .update({ balance: newAgentBalance, updated_at: new Date().toISOString() })
+      .eq('id', agentWalletId)
+      .eq('tenant_id', ctx.tenantId);
+
+    if (creditError) {
+      // Rollback debit
+      await supabase.from('wallets').update({ balance: sourceBalance }).eq('id', sourceWalletId);
+      return c.json({ error: 'Failed to credit agent wallet' }, 500);
+    }
+
+    // Create transfer record
+    const { data: transfer } = await supabase
+      .from('transfers')
+      .insert({
+        tenant_id: ctx.tenantId,
+        sender_account_id: agent.parent_account_id,
+        receiver_account_id: agent.parent_account_id,
+        amount: parsed.data.amount,
+        currency: agentWallet.currency || 'USDC',
+        type: 'internal',
+        status: 'completed',
+        description: `Agent ${agent.name} self-funded from wallet ${sourceWalletId}`,
+        metadata: {
+          source: 'agent_request_funds',
+          agent_id: agentId,
+          source_wallet_id: sourceWalletId,
+          destination_wallet_id: agentWalletId,
+        },
+      })
+      .select('id')
+      .single();
+
+    console.log(`[Agent Fund] Agent ${agent.name} (${agentId}) funded ${parsed.data.amount} USDC from wallet ${sourceWalletId}`);
+
+    return c.json({
+      transfer_id: transfer?.id,
+      amount: parsed.data.amount,
+      currency: agentWallet.currency || 'USDC',
+      source_wallet_id: sourceWalletId,
+      destination_wallet_id: agentWalletId,
+      new_balance: newAgentBalance,
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 export default agentWallets;

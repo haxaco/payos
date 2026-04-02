@@ -1444,6 +1444,28 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'agent_wallet_fund',
+    description: "Request funds for an agent's wallet from its parent account's wallet. The agent specifies the amount needed and USDC is transferred from the parent account's primary wallet.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: {
+          type: 'string',
+          description: 'UUID of the agent whose wallet to fund',
+        },
+        amount: {
+          type: 'number',
+          description: 'Amount of USDC to transfer to the agent wallet',
+        },
+        sourceWalletId: {
+          type: 'string',
+          description: 'UUID of the source wallet to fund from (optional, defaults to parent account primary wallet)',
+        },
+      },
+      required: ['agentId', 'amount'],
+    },
+  },
+  {
     name: 'agent_wallet_set_policy',
     description: "Set or update the spending and contract policy on an agent's wallet. Supports daily/monthly limits, approval thresholds, counterparty blocklists, exposure caps, and contract type restrictions.",
     inputSchema: {
