@@ -75,8 +75,10 @@ export async function createOnrampToken(
 // Stripe Crypto Onramp
 // ============================================
 
+// Stripe Crypto Onramp supported networks: ethereum, solana, polygon, bitcoin, stellar
+// Base is an Ethereum L2 — map to ethereum (same address format, Stripe delivers to EVM address)
 const BLOCKCHAIN_TO_STRIPE: Record<string, string> = {
-  base: 'base',
+  base: 'ethereum',
   eth: 'ethereum',
   ethereum: 'ethereum',
   polygon: 'polygon',
@@ -108,14 +110,16 @@ export interface StripeOnrampResult {
 /**
  * Create a Stripe Crypto Onramp session.
  * Returns a client_secret for the embeddable widget.
+ * Uses direct fetch with form encoding since the Stripe SDK
+ * doesn't have built-in crypto onramp support.
  */
 export async function createStripeOnrampSession(
   input: CreateStripeOnrampInput
 ): Promise<StripeOnrampResult> {
-  const stripe = getStripe();
-  const network = BLOCKCHAIN_TO_STRIPE[input.blockchain] || 'base';
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const network = BLOCKCHAIN_TO_STRIPE[input.blockchain] || 'ethereum';
 
-  if (!stripe) {
+  if (!secretKey) {
     const mockId = `cos_mock_${Date.now()}`;
     return {
       client_secret: `${mockId}_secret_mock`,
@@ -123,17 +127,32 @@ export async function createStripeOnrampSession(
     };
   }
 
-  const session = await stripe.rawRequest('POST', '/v1/crypto/onramp_sessions', {
-    [`wallet_addresses[${network}]`]: input.wallet_address,
-    lock_wallet_address: 'true',
-    'destination_currencies[]': 'usdc',
-    'destination_networks[]': network,
-    'metadata[tenant_id]': input.tenant_id,
-    'metadata[wallet_id]': input.wallet_id,
-    'metadata[account_id]': input.account_id,
+  // Build form-encoded body (Stripe API uses application/x-www-form-urlencoded)
+  const params = new URLSearchParams();
+  params.append(`wallet_addresses[${network}]`, input.wallet_address);
+  params.append('lock_wallet_address', 'true');
+  params.append('destination_currencies[]', 'usdc');
+  params.append('destination_networks[]', network);
+  params.append('metadata[tenant_id]', input.tenant_id);
+  params.append('metadata[wallet_id]', input.wallet_id);
+  params.append('metadata[account_id]', input.account_id);
+
+  const response = await fetch('https://api.stripe.com/v1/crypto/onramp_sessions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${secretKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
   });
 
-  const data = JSON.parse(session.rawResponse.toString());
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error('[Stripe Onramp] API error:', response.status, errorBody);
+    throw new Error(`Stripe Crypto Onramp error: ${response.status} - ${errorBody}`);
+  }
+
+  const data = await response.json();
 
   return {
     client_secret: data.client_secret,
