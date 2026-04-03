@@ -776,7 +776,6 @@ export class A2ATaskProcessor {
       .from('ap2_mandates')
       .select('*')
       .eq('mandate_id', mandateId)
-      .eq('tenant_id', this.tenantId)
       .single();
 
     if (!mandate || mandate.status !== 'active') return;
@@ -786,9 +785,21 @@ export class A2ATaskProcessor {
       const providerAgentId = mandate.metadata?.providerAgentId;
       const providerAccountId = mandate.metadata?.providerAccountId;
 
+      // Resolve tenant_ids for caller and provider (cross-tenant support)
+      const { data: callerAgent } = await this.supabase
+        .from('agents').select('tenant_id').eq('id', mandate.agent_id).single();
+      const callerTenantId = callerAgent?.tenant_id || this.tenantId;
+
+      let providerTenantId = this.tenantId;
+      if (providerAgentId) {
+        const { data: provAgent } = await this.supabase
+          .from('agents').select('tenant_id').eq('id', providerAgentId).single();
+        providerTenantId = provAgent?.tenant_id || this.tenantId;
+      }
+
       // Insert execution record
       await this.supabase.from('ap2_mandate_executions').insert({
-        tenant_id: this.tenantId,
+        tenant_id: mandate.tenant_id,
         mandate_id: mandate.id,
         execution_index: 1,
         amount,
@@ -797,12 +808,15 @@ export class A2ATaskProcessor {
         completed_at: new Date().toISOString(),
       });
 
-      // Fetch both wallets with type info for real settlement
+      // Fetch both wallets using their respective tenant_ids
       const { data: callerWallet } = await this.supabase
         .from('wallets')
         .select('id, balance, owner_account_id, wallet_type, wallet_address, provider_wallet_id')
         .eq('managed_by_agent_id', mandate.agent_id)
-        .eq('tenant_id', this.tenantId)
+        .eq('tenant_id', callerTenantId)
+        .eq('status', 'active')
+        .order('balance', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       let providerWallet: any = null;
@@ -811,7 +825,10 @@ export class A2ATaskProcessor {
           .from('wallets')
           .select('id, balance, wallet_type, wallet_address, provider_wallet_id')
           .eq('managed_by_agent_id', providerAgentId)
-          .eq('tenant_id', this.tenantId)
+          .eq('tenant_id', providerTenantId)
+          .eq('status', 'active')
+          .order('balance', { ascending: false })
+          .limit(1)
           .maybeSingle();
         providerWallet = data;
       }
@@ -824,7 +841,8 @@ export class A2ATaskProcessor {
         const { data: transfer } = await this.supabase
           .from('transfers')
           .insert({
-            tenant_id: this.tenantId,
+            tenant_id: callerTenantId,
+            destination_tenant_id: providerTenantId,
             type: 'internal',
             status: 'pending',
             amount,
@@ -854,7 +872,8 @@ export class A2ATaskProcessor {
           // Fast ledger authorization — on-chain deferred to async worker (Epic 38, Story 38.2)
           const authorization = await authorizeWalletTransfer({
             supabase: this.supabase,
-            tenantId: this.tenantId,
+            tenantId: callerTenantId,
+            destinationTenantId: providerTenantId,
             sourceWallet: callerWallet,
             destinationWallet: providerWallet,
             amount,
@@ -1123,9 +1142,9 @@ export class A2ATaskProcessor {
     }
 
     if (agent.endpoint_type === 'a2a') {
-      return await this.forwardViaA2A(taskId, messageText, agent, skill, callerMetadata);
+      return await this.forwardViaA2A(taskId, messageText, agent, skill, callerMetadata, settlementMandateId);
     } else if (agent.endpoint_type === 'webhook') {
-      return await this.forwardViaWebhook(taskId, messageText, agent, skill);
+      return await this.forwardViaWebhook(taskId, messageText, agent, skill, settlementMandateId);
     } else if (agent.endpoint_type === 'x402') {
       return await this.forwardViaX402(taskId, messageText, agent, skill, callerMetadata);
     }
@@ -1144,11 +1163,13 @@ export class A2ATaskProcessor {
     agent: { id: string; endpoint_url: string; endpoint_secret?: string | null },
     skill: { skill_id: string },
     callerMetadata?: Record<string, unknown>,
+    passedSettlementMandateId?: string,
   ): Promise<A2ATask | null> {
     const client = new A2AClient();
 
-    // Helper: read settlement mandate ID from task metadata
+    // Helper: read settlement mandate ID from passed param or task metadata
     const getSettlementMandateId = async (): Promise<string | undefined> => {
+      if (passedSettlementMandateId) return passedSettlementMandateId;
       const { data: taskMeta } = await this.supabase
         .from('a2a_tasks')
         .select('metadata')
@@ -1324,6 +1345,7 @@ export class A2ATaskProcessor {
     messageText: string,
     agent: { id: string; endpoint_url: string; endpoint_secret?: string | null },
     skill: { skill_id: string },
+    settlementMandateId?: string,
   ): Promise<A2ATask | null> {
     const webhookHandler = new A2AWebhookHandler(this.supabase);
     const deliveryId = crypto.randomUUID();
@@ -1347,12 +1369,34 @@ export class A2ATaskProcessor {
 
     if (result.success) {
       await webhookHandler.recordSuccess(taskId, result);
-      await this.taskService.addMessage(taskId, 'agent', [
-        { text: `Task dispatched to agent webhook. Awaiting response.` },
-      ]);
-      // Mark as working — agent will call back via POST /a2a/:agentId/callback
-      await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent webhook');
+
+      // Execute settlement mandate — debit caller, credit provider
+      if (settlementMandateId) {
+        try {
+          await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
+          this.log(taskId, 'info', `Settlement mandate executed: ${settlementMandateId}`);
+          await this.taskService.updateTaskState(taskId, 'completed', 'Payment processed');
+        } catch (e: any) {
+          this.log(taskId, 'warn', `Settlement failed: ${e.message}`);
+          await this.taskService.addMessage(taskId, 'agent', [
+            { text: `Task completed but payment settlement failed: ${e.message}` },
+          ]);
+          await this.taskService.updateTaskState(taskId, 'completed', 'Task completed (settlement pending)');
+        }
+      } else {
+        await this.taskService.addMessage(taskId, 'agent', [
+          { text: `Task dispatched to agent webhook. Awaiting response.` },
+        ]);
+        await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent webhook');
+      }
     } else {
+      // Cancel settlement mandate on failure
+      if (settlementMandateId) {
+        try {
+          await this.resolveSettlementMandate(taskId, settlementMandateId, 'failed');
+        } catch { /* non-fatal */ }
+      }
+
       // R1: Retry transient webhook failures before giving up
       const webhookError = result.error || 'Unknown error';
       const isTransient = webhookError.includes('fetch failed') || webhookError.includes('ECONNREFUSED')
