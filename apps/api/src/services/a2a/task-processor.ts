@@ -259,7 +259,6 @@ export class A2ATaskProcessor {
         .from('agents')
         .select('processing_mode')
         .eq('id', agentCtx.agentId)
-        .eq('tenant_id', this.tenantId)
         .single();
       if (agentRow?.processing_mode === 'managed') {
         slyFirst = true;
@@ -281,7 +280,6 @@ export class A2ATaskProcessor {
         .from('agent_skills')
         .select('skill_id, handler_type')
         .eq('agent_id', agentCtx.agentId)
-        .eq('tenant_id', this.tenantId)
         .eq('skill_id', slySkillId)
         .eq('handler_type', 'sly_native')
         .eq('status', 'active')
@@ -303,7 +301,6 @@ export class A2ATaskProcessor {
             .from('agent_skills')
             .select('skill_id, handler_type, base_price, currency, x402_endpoint_id')
             .eq('agent_id', agentCtx.agentId)
-            .eq('tenant_id', this.tenantId)
             .eq('skill_id', targetSkillId)
             .eq('status', 'active')
             .maybeSingle();
@@ -355,7 +352,6 @@ export class A2ATaskProcessor {
           .from('agent_skills')
           .select('skill_id, handler_type, base_price, currency')
           .eq('agent_id', agentCtx.agentId)
-          .eq('tenant_id', this.tenantId)
           .eq('skill_id', targetSkillId)
           .eq('status', 'active')
           .maybeSingle();
@@ -983,7 +979,6 @@ export class A2ATaskProcessor {
       .from('agents')
       .select('endpoint_enabled')
       .eq('id', agentId)
-      .eq('tenant_id', this.tenantId)
       .eq('endpoint_enabled', true)
       .maybeSingle();
     return !!data;
@@ -1000,12 +995,11 @@ export class A2ATaskProcessor {
     agentCtx: AgentContext,
     callerMetadata?: Record<string, unknown>,
   ): Promise<A2ATask | null> {
-    // Look up agent's endpoint configuration
+    // Look up agent's endpoint configuration (no tenant filter — cross-tenant support)
     const { data: agent } = await this.supabase
       .from('agents')
       .select('id, endpoint_url, endpoint_type, endpoint_secret, endpoint_enabled')
       .eq('id', agentCtx.agentId)
-      .eq('tenant_id', this.tenantId)
       .single();
 
     if (!agent?.endpoint_url || !agent.endpoint_enabled || agent.endpoint_type === 'none') {
