@@ -113,10 +113,13 @@ export function WithdrawModal({
       const network = session.network || BLOCKCHAIN_TO_COINBASE[blockchain || 'base'] || 'base';
       const isSandbox = process.env.NODE_ENV === 'development';
 
-      const redirectUrl = encodeURIComponent(window.location.href);
       const partnerUserRef = encodeURIComponent(`sly-${walletId}`);
       const addresses = encodeURIComponent(JSON.stringify({ [walletAddress!]: [network] }));
-      const sellUrl = `https://${isSandbox ? 'pay-sandbox' : 'pay'}.coinbase.com/v3/sell/input?sessionToken=${session.session_token}&addresses=${addresses}&assets=["USDC"]&defaultAsset=USDC&redirectUrl=${redirectUrl}&partnerUserRef=${partnerUserRef}`;
+      const host = isSandbox ? 'pay-sandbox' : 'pay';
+      // redirectUrl must be a domain registered in CDP project settings
+      // Use the Coinbase default callback to avoid domain validation errors
+      const redirectUrl = encodeURIComponent(`https://${host}.coinbase.com/close`);
+      const sellUrl = `https://${host}.coinbase.com/v3/sell/input?sessionToken=${session.session_token}&addresses=${addresses}&assets=["USDC"]&defaultAsset=USDC&redirectUrl=${redirectUrl}&partnerUserRef=${partnerUserRef}`;
 
       window.open(sellUrl, '_blank', 'width=460,height=700');
       popupOpenedRef.current = true;
