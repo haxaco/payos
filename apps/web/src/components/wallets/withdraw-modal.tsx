@@ -113,10 +113,10 @@ export function WithdrawModal({
       const network = session.network || BLOCKCHAIN_TO_COINBASE[blockchain || 'base'] || 'base';
       const isSandbox = process.env.NODE_ENV === 'development';
 
-      // cbpay-js doesn't have initOffRamp — use initOnRamp with sell URL
-      // The Coinbase offramp uses the same session token approach
-      // For now, open the Coinbase sell page directly
-      const sellUrl = `https://${isSandbox ? 'pay-sandbox' : 'pay'}.coinbase.com/v3/sell/input?sessionToken=${session.session_token}&addresses={"${walletAddress}":["${network}"]}&assets=["USDC"]&defaultAsset=USDC`;
+      const redirectUrl = encodeURIComponent(window.location.href);
+      const partnerUserRef = encodeURIComponent(`sly-${walletId}`);
+      const addresses = encodeURIComponent(JSON.stringify({ [walletAddress!]: [network] }));
+      const sellUrl = `https://${isSandbox ? 'pay-sandbox' : 'pay'}.coinbase.com/v3/sell/input?sessionToken=${session.session_token}&addresses=${addresses}&assets=["USDC"]&defaultAsset=USDC&redirectUrl=${redirectUrl}&partnerUserRef=${partnerUserRef}`;
 
       window.open(sellUrl, '_blank', 'width=460,height=700');
       popupOpenedRef.current = true;
