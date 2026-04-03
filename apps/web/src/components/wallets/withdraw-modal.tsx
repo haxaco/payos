@@ -113,16 +113,9 @@ export function WithdrawModal({
       const network = session.network || BLOCKCHAIN_TO_COINBASE[blockchain || 'base'] || 'base';
       const isSandbox = process.env.NODE_ENV === 'development';
 
-      const partnerUserRef = encodeURIComponent(`sly-${walletId}`);
-      const addresses = encodeURIComponent(JSON.stringify({ [walletAddress!]: [network] }));
-      const host = isSandbox ? 'pay-sandbox' : 'pay';
-      // redirectUrl must be a domain registered in CDP project settings
-      // Use the Coinbase default callback to avoid domain validation errors
-      const redirectUrl = encodeURIComponent(`https://${host}.coinbase.com/close`);
-      const sellUrl = `https://${host}.coinbase.com/v3/sell/input?sessionToken=${session.session_token}&addresses=${addresses}&assets=["USDC"]&defaultAsset=USDC&redirectUrl=${redirectUrl}&partnerUserRef=${partnerUserRef}`;
-
-      window.open(sellUrl, '_blank', 'width=460,height=700');
-      popupOpenedRef.current = true;
+      // Coinbase Offramp requires domain registration in CDP project settings.
+      // Use the "Send to Wallet" option to send USDC to a Coinbase account address,
+      // then the user sells on Coinbase. Show instructions instead of broken popup.
       setPhase('coinbase-ready');
     } catch (err: any) {
       setError(err.message || 'Failed to initialize Coinbase');
@@ -298,14 +291,25 @@ export function WithdrawModal({
             </div>
           )}
 
-          {/* ── Coinbase Ready ── */}
+          {/* ── Coinbase Sell Instructions ── */}
           {phase === 'coinbase-ready' && (
-            <div className="text-center py-8">
-              <ExternalLink className="w-10 h-10 text-blue-600 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Coinbase Sell Window Open</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">Complete the sale in the Coinbase popup. When you're done, return here.</p>
-              <button onClick={() => { setPhase('success'); refreshWallet(); }} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
-                I'm Done
+            <div className="space-y-5">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Sell USDC via Coinbase</h3>
+              <div className="space-y-3">
+                <div className="flex gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                  <span className="flex-shrink-0 w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-xs font-bold text-blue-600">1</span>
+                  <div><p className="text-sm font-medium text-gray-900 dark:text-white">Send USDC to your Coinbase account</p><p className="text-xs text-gray-500">Use "Send to Wallet" and enter your Coinbase deposit address.</p></div>
+                </div>
+                <div className="flex gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                  <span className="flex-shrink-0 w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-xs font-bold text-blue-600">2</span>
+                  <div><p className="text-sm font-medium text-gray-900 dark:text-white">Sell on Coinbase</p><p className="text-xs text-gray-500">Go to coinbase.com → sell your USDC for USD → withdraw to your bank.</p></div>
+                </div>
+              </div>
+              <a href="https://www.coinbase.com/sell" target="_blank" rel="noopener noreferrer" className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                <ExternalLink className="w-4 h-4" />Open Coinbase
+              </a>
+              <button onClick={() => setPhase('select')} className="w-full text-center text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                Back to options
               </button>
             </div>
           )}
