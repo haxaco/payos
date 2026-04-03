@@ -896,6 +896,20 @@ export interface StripeOnrampSessionResponse {
   network: string;
 }
 
+export interface WithdrawExternalInput {
+  walletId: string;
+  destinationAddress: string;
+  amount: number;
+  currency?: string;
+}
+
+export interface WithdrawExternalResponse {
+  transfer_id: string;
+  tx_hash?: string;
+  status: string;
+  amount: number;
+}
+
 export interface CrossmintOrderInput {
   walletId: string;
   amount?: string;

@@ -31,6 +31,7 @@ import { formatCurrency } from '@sly/ui';
 import { formatDistanceToNow } from 'date-fns';
 import { SpendingPolicyEditor } from '@/components/wallets/spending-policy-editor';
 import { DepositModal } from '@/components/wallets/deposit-modal';
+import { WithdrawModal } from '@/components/wallets/withdraw-modal';
 
 const useWalletBalance = (walletId: string | undefined, authToken: string | null, apiUrl?: string) => {
     return useQuery({
@@ -79,6 +80,7 @@ export default function WalletDetailPage() {
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState('');
     const [showDepositModal, setShowDepositModal] = useState(false);
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
     // Fetch wallet details
     const { data: walletResponse, isLoading, error } = useQuery({
@@ -216,7 +218,7 @@ export default function WalletDetailPage() {
                         <ArrowDownLeft className="w-4 h-4 mr-2" />
                         Deposit
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => toast.info('Withdraw feature coming soon')}>
+                    <Button variant="outline" size="sm" onClick={() => setShowWithdrawModal(true)}>
                         <ArrowUpRight className="w-4 h-4 mr-2" />
                         Withdraw
                     </Button>
@@ -585,6 +587,17 @@ export default function WalletDetailPage() {
                     blockchain={wallet?.blockchain}
                     walletType={wallet?.walletType || wallet?.wallet_type}
                     onClose={() => setShowDepositModal(false)}
+                />
+            )}
+
+            {showWithdrawModal && id && (
+                <WithdrawModal
+                    walletId={id}
+                    walletName={wallet?.name || wallet?.wallet_address}
+                    walletAddress={wallet?.walletAddress || wallet?.wallet_address}
+                    blockchain={wallet?.blockchain}
+                    balance={parseFloat(wallet?.balance || '0')}
+                    onClose={() => setShowWithdrawModal(false)}
                 />
             )}
         </div>

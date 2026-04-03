@@ -53,6 +53,8 @@ import type {
   StripeOnrampSessionResponse,
   CrossmintOrderInput,
   CrossmintOrderResponse,
+  WithdrawExternalInput,
+  WithdrawExternalResponse,
   // x402 types
   X402Endpoint,
   CreateX402EndpointInput,
@@ -954,6 +956,24 @@ export class SlyClient {
         wallet_id: input.walletId,
         amount: input.amount || '5.00',
         receipt_email: input.receiptEmail,
+      }).then(r => (r as any).data || r),
+
+    /**
+     * Create a Coinbase Offramp session (sell USDC → fiat)
+     */
+    createOfframpSession: (input: OnrampSessionInput) =>
+      this.post<{ data: OnrampSessionResponse }>('/funding/offramp-session', {
+        wallet_id: input.walletId,
+      }).then(r => (r as any).data || r),
+
+    /**
+     * Withdraw USDC to an external wallet address
+     */
+    withdrawExternal: (input: WithdrawExternalInput) =>
+      this.post<{ data: WithdrawExternalResponse }>(`/wallets/${input.walletId}/transfer`, {
+        destinationAddress: input.destinationAddress,
+        amount: input.amount,
+        currency: input.currency || 'USDC',
       }).then(r => (r as any).data || r),
   };
 

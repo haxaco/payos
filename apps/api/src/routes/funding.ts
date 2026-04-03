@@ -16,6 +16,7 @@ import {
 } from '../services/funding/index.js';
 import {
   createOnrampToken,
+  createOfframpToken,
   BLOCKCHAIN_TO_COINBASE,
   createStripeOnrampSession,
   BLOCKCHAIN_TO_STRIPE,
@@ -572,6 +573,55 @@ app.post('/stripe-onramp-session', async (c) => {
 });
 
 /**
+ * POST /v1/funding/offramp-session - Create Coinbase Offramp Session Token
+ *
+ * Returns a session token for the Coinbase sell/offramp widget.
+ * User sells USDC → receives fiat to their bank/PayPal.
+ */
+app.post('/offramp-session', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json();
+  const parsed = onrampSessionSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const supabase = createClient();
+
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, owner_account_id, status, wallet_address, blockchain, wallet_type')
+      .eq('id', parsed.data.wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) return c.json({ error: 'Wallet not found' }, 404);
+    if (wallet.status !== 'active') return c.json({ error: `Wallet is ${wallet.status}` }, 400);
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({ error: 'no_onchain_address', message: 'Wallet needs an on-chain address.' }, 400);
+    }
+
+    const tokenResult = await createOfframpToken({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+    });
+
+    const network = BLOCKCHAIN_TO_COINBASE[wallet.blockchain || 'base'] || 'base';
+
+    return c.json({
+      session_token: tokenResult.token,
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain,
+      network,
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
  * POST /v1/funding/crossmint-order - Create Crossmint Onramp Order
  *
  * Returns orderId and clientSecret for the embedded checkout component.
@@ -604,11 +654,22 @@ app.post('/crossmint-order', async (c) => {
       return c.json({ error: 'no_onchain_address', message: 'Wallet needs an on-chain address.' }, 400);
     }
 
+    // Get user email for Crossmint
+    let userEmail = parsed.data.receipt_email;
+    if (!userEmail && ctx.userId) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('email')
+        .eq('id', ctx.userId)
+        .single();
+      userEmail = profile?.email;
+    }
+
     const orderResult = await createCrossmintOrder({
       wallet_address: wallet.wallet_address,
       blockchain: wallet.blockchain || 'base',
       amount: parsed.data.amount,
-      receipt_email: parsed.data.receipt_email,
+      receipt_email: userEmail || ctx.userEmail,
     });
 
     return c.json({
