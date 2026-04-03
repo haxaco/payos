@@ -87,25 +87,25 @@ internalTransfers.post('/', async (c) => {
       .from('accounts')
       .select('id, name, tenant_id')
       .eq('id', toAccountId)
-      .eq('tenant_id', ctx.tenantId)
       .eq('environment', getEnv(ctx))
       .single(),
   ]);
-  
+
   if (fromAccountResult.error || !fromAccountResult.data) {
     throw new NotFoundError('Source account', fromAccountId);
   }
   if (toAccountResult.error || !toAccountResult.data) {
     throw new NotFoundError('Destination account', toAccountId);
   }
-  
+
   const fromAccount = fromAccountResult.data;
   const toAccount = toAccountResult.data;
-  
-  // Verify both accounts belong to the same tenant
-  if (fromAccount.tenant_id !== ctx.tenantId || toAccount.tenant_id !== ctx.tenantId) {
-    throw new ValidationError('Both accounts must belong to the same tenant');
+
+  // Source account must belong to caller's tenant
+  if (fromAccount.tenant_id !== ctx.tenantId) {
+    throw new ValidationError('Source account must belong to your tenant');
   }
+  const isCrossTenant = toAccount.tenant_id !== ctx.tenantId;
   
   // Check sufficient balance
   const availableBalance = parseFloat(fromAccount.balance_available) || 0;
@@ -118,6 +118,7 @@ internalTransfers.post('/', async (c) => {
     .from('transfers')
     .insert({
       tenant_id: ctx.tenantId,
+      destination_tenant_id: toAccount.tenant_id,
       environment: getEnv(ctx),
       type: 'internal',
       status: 'completed',

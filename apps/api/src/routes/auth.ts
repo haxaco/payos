@@ -14,7 +14,7 @@ import {
   addRandomDelay,
 } from '../utils/auth.js';
 import { provisionTenant, TenantProvisioningError } from '../services/tenant-provisioning.js';
-import { generateAgentToken } from '../utils/crypto.js';
+import { generateAgentToken, verifyApiKey } from '../utils/crypto.js';
 import { logAudit } from '../utils/helpers.js';
 import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail, sendBetaApplicationReceivedEmail, sendBetaNewApplicationNotification } from '../services/email.js';
 import { isFeatureEnabled } from '../config/environment.js';
@@ -578,81 +578,35 @@ auth.get('/me', async (c) => {
     
     if (isApiKey) {
       // API KEY PATH - for SDKs
-      // Apply auth middleware logic inline
       const supabase = createAdminClient();
-      
-      // Hash the provided key
-      const keyHash = hashApiKey(token);
-      
-      // Look up API key
-      const { data: apiKeyRecord } = await supabase
-        .from('api_keys')
-        .select('*')
-        .eq('key_hash', keyHash)
-        .eq('status', 'active')
-        .single();
-      
-      if (!apiKeyRecord) {
-        return c.json({ error: 'Invalid or expired API key' }, 401);
-      }
-      
-      console.log('[/v1/auth/me] API key found:', { 
-        tenant_id: apiKeyRecord.tenant_id, 
-        created_by_user_id: apiKeyRecord.created_by_user_id 
-      });
-      
-      // Check if it's a user key or agent key
-      if (apiKeyRecord.created_by_user_id) {
-        // USER API KEY (pk_)
-        const { data: profile, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('id, tenant_id, name, role')
-          .eq('id', apiKeyRecord.created_by_user_id)
+
+      // Agent tokens (agent_*) are stored in the agents table, not api_keys
+      if (token.startsWith('agent_')) {
+        const keyPrefix = token.slice(0, 12);
+
+        const { data: agent } = await supabase
+          .from('agents')
+          .select('id, name, type, status, parent_account_id, tenant_id, x402_enabled, auth_token_hash')
+          .eq('auth_token_prefix', keyPrefix)
           .single();
-        
-        if (!profile) {
-          return c.json({ error: 'User not found', details: profileError?.message }, 404);
+
+        if (!agent) {
+          return c.json({ error: 'Invalid agent token' }, 401);
         }
-        
-        // Get user's primary account
-        const { data: accounts } = await supabase
-          .from('accounts')
-          .select('id, type')
-          .eq('tenant_id', apiKeyRecord.tenant_id)
-          .order('created_at', { ascending: true })
-          .limit(1);
-        
-        return c.json({
-          data: {
-            type: 'user',
-            userId: profile.id,
-            accountId: accounts?.[0]?.id || null,
-            organizationId: apiKeyRecord.tenant_id,
-            name: profile.name,
-            role: profile.role
-          }
-        });
-      }
-      
-      // If no user ID, check if it's an agent API key
-      // Look for agent with matching auth_token_prefix
-      const keyPrefix = token.split('_')[0] + '_' + token.split('_')[1]; // e.g., "agent_BPdeBu"
-      
-      const { data: agent } = await supabase
-        .from('agents')
-        .select('id, name, type, status, parent_account_id, tenant_id, x402_enabled')
-        .eq('auth_token_prefix', keyPrefix)
-        .single();
-      
-      if (agent) {
-        // AGENT API KEY (ak_ or agent_)
+
+        // Verify hash matches
+        const tokenHash = hashApiKey(token);
+        if (agent.auth_token_hash && !verifyApiKey(token, agent.auth_token_hash)) {
+          return c.json({ error: 'Invalid agent token' }, 401);
+        }
+
         const { data: wallet } = await supabase
           .from('wallets')
           .select('id, balance, currency')
           .eq('managed_by_agent_id', agent.id)
           .eq('status', 'active')
           .single();
-        
+
         return c.json({
           data: {
             type: 'agent',
@@ -668,7 +622,51 @@ auth.get('/me', async (c) => {
           }
         });
       }
-      
+
+      // API key path (pk_* or ak_*)
+      const keyHash = hashApiKey(token);
+
+      const { data: apiKeyRecord } = await supabase
+        .from('api_keys')
+        .select('*')
+        .eq('key_hash', keyHash)
+        .eq('status', 'active')
+        .single();
+
+      if (!apiKeyRecord) {
+        return c.json({ error: 'Invalid or expired API key' }, 401);
+      }
+
+      if (apiKeyRecord.created_by_user_id) {
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('id, tenant_id, name, role')
+          .eq('id', apiKeyRecord.created_by_user_id)
+          .single();
+
+        if (!profile) {
+          return c.json({ error: 'User not found', details: profileError?.message }, 404);
+        }
+
+        const { data: accounts } = await supabase
+          .from('accounts')
+          .select('id, type')
+          .eq('tenant_id', apiKeyRecord.tenant_id)
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        return c.json({
+          data: {
+            type: 'user',
+            userId: profile.id,
+            accountId: accounts?.[0]?.id || null,
+            organizationId: apiKeyRecord.tenant_id,
+            name: profile.name,
+            role: profile.role
+          }
+        });
+      }
+
       return c.json({ error: 'API key not associated with user or agent' }, 404);
       
     } else {

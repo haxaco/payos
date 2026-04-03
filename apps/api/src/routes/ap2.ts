@@ -115,13 +115,11 @@ ap2.post('/mandates', async (c) => {
     throw new ValidationError(`settlement_rail must be one of: ${VALID_SETTLEMENT_RAILS.join(', ')}`);
   }
 
-  // Look up agent name
+  // Look up agent name (cross-tenant: agent may be on a different tenant)
   const { data: agent } = await supabase
     .from('agents')
-    .select('name')
+    .select('name, tenant_id')
     .eq('id', agent_id)
-    .eq('tenant_id', ctx.tenantId)
-    .eq('environment', getEnv(ctx))
     .single();
 
   const { data: mandate, error } = await supabase
@@ -682,11 +680,18 @@ ap2.post('/mandates/:id/execute', async (c) => {
     if (accountWallets && accountWallets.length > 0) {
       wallet = accountWallets.find(w => w.currency === mandateCurrency) || accountWallets[0];
     } else {
-      // Fallback: wallet managed by the mandate's agent
+      // Fallback: wallet managed by the mandate's agent (may be cross-tenant)
+      const { data: mandateAgent } = await supabase
+        .from('agents')
+        .select('tenant_id')
+        .eq('id', mandate.agent_id)
+        .single();
+      const agentTenantId = mandateAgent?.tenant_id || ctx.tenantId;
+
       const { data: agentWallets } = await supabase
         .from('wallets')
         .select('id, balance, currency, owner_account_id, status')
-        .eq('tenant_id', ctx.tenantId)
+        .eq('tenant_id', agentTenantId)
         .eq('environment', getEnv(ctx))
         .eq('managed_by_agent_id', mandate.agent_id)
         .eq('status', 'active');
@@ -703,12 +708,20 @@ ap2.post('/mandates/:id/execute', async (c) => {
       const updatedBalance = currentBalance - execAmount;
       const updatedStatus = updatedBalance === 0 ? 'depleted' : 'active';
 
+      // Resolve the agent's tenant for cross-tenant recipient lookups
+      const { data: recipientAgent } = await supabase
+        .from('agents')
+        .select('name, parent_account_id, tenant_id')
+        .eq('id', mandate.agent_id)
+        .single();
+      const recipientTenantId = recipientAgent?.tenant_id || ctx.tenantId;
+
       // Look up account name, agent name, and recipient wallet for the transfer record
-      const [{ data: fromAccount }, { data: agentRecord }, { data: recipientWallets }] = await Promise.all([
+      const [{ data: fromAccount }, { data: recipientWallets }] = await Promise.all([
         supabase.from('accounts').select('name').eq('id', wallet.owner_account_id).eq('tenant_id', ctx.tenantId).eq('environment', getEnv(ctx)).single(),
-        supabase.from('agents').select('name, parent_account_id').eq('id', mandate.agent_id).eq('tenant_id', ctx.tenantId).eq('environment', getEnv(ctx)).single(),
-        supabase.from('wallets').select('id').eq('managed_by_agent_id', mandate.agent_id).eq('tenant_id', ctx.tenantId).eq('environment', getEnv(ctx)).eq('status', 'active').limit(1),
+        supabase.from('wallets').select('id').eq('managed_by_agent_id', mandate.agent_id).eq('tenant_id', recipientTenantId).eq('environment', getEnv(ctx)).eq('status', 'active').limit(1),
       ]);
+      const agentRecord = recipientAgent;
       const recipientWallet = recipientWallets?.[0] || null;
 
       const { error: walletUpdateError } = await supabase
@@ -728,6 +741,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
         const now = new Date().toISOString();
         const transferInsert: Record<string, any> = {
           tenant_id: ctx.tenantId,
+          destination_tenant_id: recipientTenantId,
           environment: getEnv(ctx),
           from_account_id: wallet.owner_account_id,
           from_account_name: fromAccount?.name || '',

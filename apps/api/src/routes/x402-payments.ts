@@ -531,14 +531,13 @@ app.post('/pay', async (c) => {
           .from('x402_endpoints')
           .select('*')
           .eq('id', auth.endpointId)
-          .eq('tenant_id', ctx.tenantId)
           .eq('environment', getEnv(ctx))
           .single(),
         supabase
           .from('wallets')
           .select('*')
           .eq('id', auth.walletId)
-          .eq('tenant_id', ctx.tenantId)
+          .eq('tenant_id', ctx.tenantId)  // Source wallet must be caller's tenant
           .eq('environment', getEnv(ctx))
           .single()
       ]);
@@ -808,12 +807,14 @@ app.post('/pay', async (c) => {
     let providerWallet: { id: string; wallet_type?: string | null; wallet_address?: string | null } | null = null;
     let providerWalletError: any = null;
 
+    // Provider wallet is in the endpoint's tenant (may differ from consumer's tenant)
+    const providerTenantId = endpoint.tenant_id;
     if (endpoint.payment_address) {
       const { data, error } = await supabase
         .from('wallets')
         .select('id, wallet_type, wallet_address, blockchain')
         .eq('wallet_address', endpoint.payment_address)
-        .eq('tenant_id', ctx.tenantId)
+        .eq('tenant_id', providerTenantId)
         .eq('environment', getEnv(ctx))
         .eq('status', 'active')
         .limit(1)
@@ -829,7 +830,7 @@ app.post('/pay', async (c) => {
         .from('wallets')
         .select('id, wallet_type, wallet_address, blockchain')
         .eq('owner_account_id', endpoint.account_id)
-        .eq('tenant_id', ctx.tenantId)
+        .eq('tenant_id', providerTenantId)
         .eq('environment', getEnv(ctx))
         .eq('currency', auth.currency)
         .eq('status', 'active')
@@ -983,6 +984,7 @@ app.post('/pay', async (c) => {
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
+        destination_tenant_id: providerTenantId,
         environment: getEnv(ctx),
         from_account_id: wallet.owner_account_id,
         to_account_id: endpoint.account_id,
@@ -1056,7 +1058,8 @@ app.post('/pay', async (c) => {
           p_gross_amount: auth.amount,
           p_net_amount: netAmount,
           p_transfer_id: transfer.id,
-          p_tenant_id: ctx.tenantId
+          p_tenant_id: ctx.tenantId,
+          p_provider_tenant_id: providerTenantId !== ctx.tenantId ? providerTenantId : null,
         });
 
       timings['11_settlement'] = Date.now() - t11;

@@ -238,9 +238,8 @@ transfers.post('/', async (c) => {
 
   const { data: toAccount, error: toError } = await supabase
     .from('accounts')
-    .select('id, name, verification_status')
+    .select('id, name, verification_status, tenant_id')
     .eq('id', toAccountId)
-    .eq('tenant_id', ctx.tenantId)
     .eq('environment', getEnv(ctx))
     .single();
   
@@ -308,6 +307,7 @@ transfers.post('/', async (c) => {
     .from('transfers')
     .insert({
       tenant_id: ctx.tenantId,
+      destination_tenant_id: toAccount.tenant_id || ctx.tenantId,
       environment: getEnv(ctx),
       type: transferType,
       status: isInternal ? 'completed' : 'processing', // Internal transfers complete instantly

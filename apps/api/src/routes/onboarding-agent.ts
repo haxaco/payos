@@ -26,6 +26,7 @@ import {
 import { logAudit } from '../utils/helpers.js';
 import { checkRateLimit, logSecurityEvent } from '../utils/auth.js';
 import { isFeatureEnabled } from '../config/environment.js';
+import { getCircleService } from '../services/circle-mock.js';
 
 function getClientInfo(c: any): { ip: string; userAgent: string } {
   const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
@@ -253,6 +254,46 @@ router.post('/one-click', async (c) => {
       .select('id, balance, currency, wallet_address')
       .single();
 
+    // 4b. Create Base sandbox wallet (Circle custodial) — same as human onboarding
+    let baseWallet: { id: string; address: string; balance: number } | null = null;
+    try {
+      const mockCircle = getCircleService(tenant.id);
+
+      const circleWallet = await mockCircle.createWallet({
+        walletSetId: mockCircle.getDefaultWalletSetId(),
+        blockchain: 'BASE',
+        name: `${name} Base Sandbox`,
+        refId: account.id,
+      });
+
+      const { data: baseWalletRow } = await (supabase.from('wallets') as any)
+        .insert({
+          tenant_id: tenant.id,
+          owner_account_id: account.id,
+          managed_by_agent_id: agent.id,
+          balance: 10,
+          currency: 'USDC',
+          wallet_address: circleWallet.address,
+          network: 'base-mainnet',
+          status: 'active',
+          wallet_type: 'circle_custodial',
+          provider: 'circle',
+          provider_wallet_id: circleWallet.id,
+          provider_metadata: { circle_state: circleWallet.state, circle_create_date: new Date().toISOString() },
+          blockchain: 'base',
+          name: `${name} Base Sandbox`,
+          purpose: 'Auto-created Base sandbox wallet',
+        })
+        .select('id, wallet_address, balance')
+        .single();
+
+      if (baseWalletRow) {
+        baseWallet = { id: baseWalletRow.id, address: baseWalletRow.wallet_address, balance: baseWalletRow.balance };
+      }
+    } catch (e: any) {
+      console.warn('[agent-onboard] Base wallet creation skipped:', e.message);
+    }
+
     // 5. Fetch limits
     const { data: kyaLimits } = await (supabase.from('kya_tier_limits') as any)
       .select('per_transaction, daily, monthly')
@@ -361,6 +402,15 @@ router.post('/one-click', async (c) => {
         balance: wallet.balance,
         currency: wallet.currency,
         address: wallet.wallet_address,
+      } : null,
+      baseWallet: baseWallet ? {
+        id: baseWallet.id,
+        address: baseWallet.address,
+        balance: baseWallet.balance,
+        currency: 'USDC',
+        network: 'base',
+        type: 'circle_custodial',
+        explorer: `https://basescan.org/address/${baseWallet.address}`,
       } : null,
       limits: kyaLimits ? {
         tier: 0,

@@ -257,12 +257,11 @@ export class A2ATaskWorker {
     const startTime = Date.now();
 
     try {
-      // Load agent's processing config
+      // Load agent's processing config (no tenant filter — target agent may be cross-tenant)
       const { data: agent } = await supabase
         .from('agents')
         .select('id, processing_mode, processing_config, name, status')
         .eq('id', task.agent_id)
-        .eq('tenant_id', task.tenant_id)
         .single();
 
       if (!agent || agent.status !== 'active') {
@@ -410,12 +409,11 @@ export class A2ATaskWorker {
     console.log(`[A2A Worker] Found ${retryTasks.length} webhook tasks ready for retry`);
 
     for (const retryTask of retryTasks) {
-      // Load agent config
+      // Load agent config (no tenant filter — target agent may be cross-tenant)
       const { data: agent } = await supabase
         .from('agents')
         .select('id, processing_mode, processing_config, name, status')
         .eq('id', retryTask.agent_id)
-        .eq('tenant_id', retryTask.tenant_id)
         .single();
 
       if (!agent || agent.status !== 'active') {

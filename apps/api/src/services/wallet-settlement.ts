@@ -348,6 +348,7 @@ export async function executeOnChainTransfer(
 export interface AuthorizeWalletTransferParams {
   supabase: SupabaseClient;
   tenantId: string;
+  destinationTenantId?: string;  // For cross-tenant payments; defaults to tenantId
   sourceWallet: SettlementWallet;
   destinationWallet: SettlementWallet | null;
   amount: number;
@@ -372,7 +373,8 @@ export interface AuthorizeWalletTransferResult {
 export async function authorizeWalletTransfer(
   params: AuthorizeWalletTransferParams,
 ): Promise<AuthorizeWalletTransferResult> {
-  const { supabase, tenantId, sourceWallet, destinationWallet, amount, transferId, protocolMetadata } = params;
+  const { supabase, tenantId, destinationTenantId, sourceWallet, destinationWallet, amount, transferId, protocolMetadata } = params;
+  const effectiveDestTenantId = destinationTenantId || tenantId;
 
   // Atomic debit with .gte() guard to prevent double-spend
   const srcBal = typeof sourceWallet.balance === 'string'
@@ -415,7 +417,7 @@ export async function authorizeWalletTransfer(
       .from('wallets')
       .update({ balance: destinationNewBalance, updated_at: new Date().toISOString() })
       .eq('id', destinationWallet.id)
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', effectiveDestTenantId);
 
     if (creditErr) {
       // Rollback the debit

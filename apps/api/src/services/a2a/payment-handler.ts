@@ -48,20 +48,34 @@ export class A2APaymentHandler {
     amount: number,
     currency: string = 'USDC',
   ): Promise<{ success: boolean; transferId?: string; txHash?: string; error?: string }> {
-    // Fetch both agents' wallets
+    // Resolve each agent's tenant_id (supports cross-tenant payments)
+    const [fromAgentResult, toAgentResult] = await Promise.all([
+      this.supabase.from('agents').select('id, tenant_id').eq('id', fromAgentId).single(),
+      this.supabase.from('agents').select('id, tenant_id').eq('id', toAgentId).single(),
+    ]);
+
+    if (!fromAgentResult.data || !toAgentResult.data) {
+      return { success: false, error: 'One or both agents not found' };
+    }
+
+    const fromTenantId = fromAgentResult.data.tenant_id;
+    const toTenantId = toAgentResult.data.tenant_id;
+    const isCrossTenant = fromTenantId !== toTenantId;
+
+    // Fetch both agents' wallets using their respective tenant_ids
     const [fromWalletResult, toWalletResult] = await Promise.all([
       this.supabase
         .from('wallets')
         .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id')
         .eq('managed_by_agent_id', fromAgentId)
-        .eq('tenant_id', this.tenantId)
+        .eq('tenant_id', fromTenantId)
         .limit(1)
         .maybeSingle(),
       this.supabase
         .from('wallets')
         .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id')
         .eq('managed_by_agent_id', toAgentId)
-        .eq('tenant_id', this.tenantId)
+        .eq('tenant_id', toTenantId)
         .limit(1)
         .maybeSingle(),
     ]);
@@ -84,7 +98,7 @@ export class A2APaymentHandler {
       const policyResult = await policyEngine.evaluate({
         walletId: fromWallet.id,
         agentId: fromAgentId,
-        tenantId: this.tenantId,
+        tenantId: fromTenantId,
         amount,
         currency,
         actionType: 'payment',
@@ -174,7 +188,8 @@ export class A2APaymentHandler {
     const { data: transfer, error: transferError } = await this.supabase
       .from('transfers')
       .insert({
-        tenant_id: this.tenantId,
+        tenant_id: fromTenantId,
+        destination_tenant_id: toTenantId,
         from_account_id: fromWallet.owner_account_id,
         to_account_id: toWallet.owner_account_id,
         amount,
@@ -192,6 +207,7 @@ export class A2APaymentHandler {
           to_agent_id: toAgentId,
           wallet_id: fromWallet.id,
           provider_wallet_id: toWallet.id,
+          cross_tenant: isCrossTenant,
         },
       })
       .select('id')
@@ -204,7 +220,8 @@ export class A2APaymentHandler {
     // Fast ledger authorization — on-chain deferred to async worker (Epic 38, Story 38.2)
     const authorization = await authorizeWalletTransfer({
       supabase: this.supabase,
-      tenantId: this.tenantId,
+      tenantId: fromTenantId,
+      destinationTenantId: toTenantId,
       sourceWallet: fromWallet,
       destinationWallet: toWallet,
       amount,
@@ -216,6 +233,7 @@ export class A2APaymentHandler {
         to_agent_id: toAgentId,
         wallet_id: fromWallet.id,
         provider_wallet_id: toWallet.id,
+        cross_tenant: isCrossTenant,
       },
     });
 

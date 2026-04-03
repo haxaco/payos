@@ -273,22 +273,24 @@ export class AgentToolRegistry {
     taskId?: string,
     contextId?: string,
   ): Promise<AgentContext | null> {
-    // Load agent + parent account
+    // Load agent (no tenant filter — target agent may be cross-tenant)
     const { data: agent } = await this.supabase
       .from('agents')
-      .select('id, parent_account_id, permissions, status')
+      .select('id, parent_account_id, permissions, status, tenant_id')
       .eq('id', agentId)
-      .eq('tenant_id', tenantId)
       .single();
 
     if (!agent || agent.status !== 'active') return null;
 
-    // Load wallet managed by this agent (include wallet details for context)
+    // Use the agent's own tenant_id for related lookups
+    const agentTenantId = agent.tenant_id || tenantId;
+
+    // Load wallet managed by this agent
     const { data: wallet } = await this.supabase
       .from('wallets')
       .select('id, wallet_address, wallet_type, balance')
       .eq('managed_by_agent_id', agentId)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', agentTenantId)
       .limit(1)
       .maybeSingle();
 
@@ -297,7 +299,7 @@ export class AgentToolRegistry {
       .from('ap2_mandates')
       .select('id')
       .eq('agent_id', agentId)
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', agentTenantId)
       .eq('status', 'active');
 
     const permissions = flattenPermissions(
