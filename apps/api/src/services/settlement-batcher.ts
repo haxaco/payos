@@ -212,13 +212,11 @@ async function settleNetPosition(
   batchId: string,
   environment: 'test' | 'live' = 'test',
 ): Promise<{ txHash?: string; settlementType: 'on_chain' | 'ledger'; transferId?: string }> {
-  // Fetch wallet details
+  // Fetch wallet details (no tenant filter — cross-tenant batch settlement)
   const { data: wallets } = await supabase
     .from('wallets')
-    .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id')
-    .in('id', [sourceWalletId, destWalletId])
-    .eq('tenant_id', tenantId)
-    .eq('environment', environment);
+    .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id, tenant_id')
+    .in('id', [sourceWalletId, destWalletId]);
 
   if (!wallets || wallets.length < 2) {
     throw new Error(`Wallets not found for net position ${sourceWalletId} → ${destWalletId}`);
@@ -235,7 +233,8 @@ async function settleNetPosition(
   const { data: transfer, error: txErr } = await supabase
     .from('transfers')
     .insert({
-      tenant_id: tenantId,
+      tenant_id: (srcWallet as any).tenant_id || tenantId,
+      destination_tenant_id: (dstWallet as any).tenant_id || tenantId,
       environment,
       from_account_id: srcWallet.owner_account_id,
       to_account_id: dstWallet.owner_account_id,
