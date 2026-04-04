@@ -148,8 +148,27 @@ export class AsyncSettlementWorker {
       return;
     }
 
-    const sourceWallet = wallets.find((w: any) => w.id === srcWalletId);
-    const destWallet = wallets.find((w: any) => w.id === dstWalletId);
+    let sourceWallet = wallets.find((w: any) => w.id === srcWalletId);
+    let destWallet = wallets.find((w: any) => w.id === dstWalletId);
+
+    // Resolve internal wallets to their Circle custodial counterparts for on-chain settlement
+    for (const role of ['source', 'dest'] as const) {
+      const w = role === 'source' ? sourceWallet : destWallet;
+      if (w && (w.wallet_type === 'internal' || w.wallet_address?.startsWith('internal://'))) {
+        const { data: circleWallet } = await supabase
+          .from('wallets')
+          .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id')
+          .eq('owner_account_id', w.owner_account_id)
+          .eq('wallet_type', 'circle_custodial')
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        if (circleWallet) {
+          if (role === 'source') sourceWallet = circleWallet;
+          else destWallet = circleWallet;
+        }
+      }
+    }
 
     if (!sourceWallet || !destWallet) {
       await supabase

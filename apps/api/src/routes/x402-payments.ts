@@ -858,6 +858,25 @@ app.post('/pay', async (c) => {
       }, 500);
     }
 
+    // If provider wallet is internal, resolve the Circle custodial wallet for on-chain settlement
+    // The internal wallet is a ledger wrapper; the Circle wallet is the real on-chain address
+    let providerWalletFull = providerWallet as any;
+    if (providerWallet.wallet_type === 'internal' || providerWallet.wallet_address?.startsWith('internal://')) {
+      const { data: circleWallet } = await supabase
+        .from('wallets')
+        .select('id, wallet_type, wallet_address, blockchain, provider_wallet_id')
+        .eq('owner_account_id', endpoint.account_id)
+        .eq('tenant_id', providerTenantId)
+        .eq('wallet_type', 'circle_custodial')
+        .eq('status', 'active')
+        .eq('currency', auth.currency)
+        .limit(1)
+        .maybeSingle();
+      if (circleWallet) {
+        providerWalletFull = { ...providerWallet, ...circleWallet, ledgerWalletId: providerWallet.id };
+      }
+    }
+
     // ============================================
     // 9.5. DEFERRED MICRO-PAYMENT CHECK (Epic 38, Story 38.12)
     // For payments below threshold, use PaymentIntent instead of full transfer.
@@ -874,7 +893,7 @@ app.post('/pay', async (c) => {
           supabase,
           tenantId: ctx.tenantId,
           sourceWalletId: wallet.id,
-          destinationWalletId: providerWallet.id,
+          destinationWalletId: providerWalletFull?.id || providerWallet.id,
           sourceAccountId: wallet.owner_account_id,
           destinationAccountId: endpoint.account_id,
           amount: auth.amount,
@@ -1082,12 +1101,8 @@ app.post('/pay', async (c) => {
       let settlementStatus: 'completed' | 'authorized' = 'completed';
 
       if (isRealWallet && isSandboxEnv) {
-        // Check if provider wallet supports on-chain
-        const { data: providerWalletFull } = await supabase
-          .from('wallets')
-          .select('wallet_address')
-          .eq('id', providerWallet.id)
-          .single();
+        // Check if provider has an on-chain capable wallet (Circle custodial)
+        // providerWalletFull may have been resolved from internal → circle_custodial earlier
         const providerOnChainAddress = providerWalletFull?.wallet_address;
         const providerIsOnChain = !!providerOnChainAddress && !providerOnChainAddress.startsWith('internal://');
 
