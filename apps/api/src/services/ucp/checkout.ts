@@ -766,10 +766,12 @@ export async function completeCheckout(
           try {
             const { authorizeWalletTransfer } = await import('../wallet-settlement.js');
 
-            const { data: walletTransfer } = await supabase
+            const { data: walletTransfer, error: xferErr } = await supabase
               .from('transfers')
               .insert({
                 tenant_id: tenantId,
+                environment,
+                from_account_id: agentWallet.owner_account_id,
                 type: 'ucp',
                 status: 'pending',
                 amount: amountInUnits,
@@ -781,6 +783,10 @@ export async function completeCheckout(
               })
               .select('id')
               .single();
+
+            if (xferErr) {
+              console.error('[UCP Checkout] Transfer insert failed:', xferErr.message);
+            }
 
             if (walletTransfer) {
               const result = await authorizeWalletTransfer({
@@ -809,10 +815,9 @@ export async function completeCheckout(
         }
       }
 
-      // Skip external handler if wallet payment was used or agent has a wallet
-      const skipHandler = walletPaymentUsed || (agentId && paymentStatus === 'completed');
-      const handler = !skipHandler ? getHandler(handlerId) : null;
-      if (!skipHandler && handler && instrumentId) {
+      // Skip external handler if wallet payment was used
+      const handler = !walletPaymentUsed ? getHandler(handlerId) : null;
+      if (!walletPaymentUsed && handler && instrumentId) {
         console.log(`[UCP Checkout] Processing payment via handler "${handlerId}" for ${totalAmount} ${existing.currency}`);
         const paymentResult = await handlerProcessPayment(handlerId, {
           instrumentId,
