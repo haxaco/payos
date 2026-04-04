@@ -1416,10 +1416,26 @@ export class A2ATaskProcessor {
           await this.taskService.updateTaskState(taskId, 'completed', 'Task completed (settlement pending)');
         }
       } else {
-        await this.taskService.addMessage(taskId, 'agent', [
-          { text: `Task dispatched to agent webhook. Awaiting response.` },
-        ]);
-        await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent webhook');
+        // Auto-respond for managed agents — generate AI response and complete immediately
+        try {
+          const { autoRespondToTask } = await import('./auto-responder.js');
+          const autoResult = await autoRespondToTask(this.supabase, taskId, agent.id, messageText, skill.skill_id);
+          if (autoResult.success) {
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: autoResult.response },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'completed', 'Task completed');
+            this.log(taskId, 'info', 'Auto-responded and completed');
+          } else {
+            await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent');
+          }
+        } catch (autoErr: any) {
+          this.log(taskId, 'warn', `Auto-responder failed: ${autoErr.message}`);
+          await this.taskService.addMessage(taskId, 'agent', [
+            { text: `Task dispatched to agent webhook. Awaiting response.` },
+          ]);
+          await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent webhook');
+        }
       }
     } else {
       // Cancel settlement mandate on failure
