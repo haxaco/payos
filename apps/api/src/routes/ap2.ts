@@ -13,6 +13,7 @@ import { ValidationError } from '../middleware/error.js';
 import { randomUUID } from 'crypto';
 import { createClient } from '../db/client.js';
 import { sanitizeSearchInput, getEnv } from '../utils/helpers.js';
+import { LimitService } from '../services/limits.js';
 import { 
   createSpendingPolicyService,
   type PolicyContext 
@@ -532,6 +533,17 @@ ap2.post('/mandates/:id/execute', async (c) => {
       protocol_metadata: { mandate_id: mandate.id, remaining, requested: execAmount },
     });
     return c.json({ error: 'Amount exceeds remaining mandate budget' }, 400);
+  }
+
+  // KYA limit enforcement — prevent mandate bypass of per-transaction limits
+  try {
+    const limitService = new LimitService(supabase);
+    const limitCheck = await limitService.checkTransactionLimit(mandate.agent_id, execAmount);
+    if (!limitCheck.allowed) {
+      return c.json({ error: `Limit check failed: ${limitCheck.reason}`, code: 'LIMIT_EXCEEDED', details: limitCheck }, 403);
+    }
+  } catch (limitErr: any) {
+    console.warn('[AP2] Limit check warning:', limitErr.message);
   }
 
   const newExecIndex = (mandate.execution_count || 0) + 1;

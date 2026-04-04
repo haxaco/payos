@@ -36,8 +36,8 @@ const DEFAULT_CONFIG: WorkerConfig = {
   pollIntervalMs: parseInt(process.env.A2A_WORKER_POLL_MS || '500'),
   maxConcurrent: parseInt(process.env.A2A_WORKER_MAX_CONCURRENT || '5'),
   maxPerTenant: parseInt(process.env.A2A_WORKER_MAX_PER_TENANT || '3'),
-  taskTimeoutMs: parseInt(process.env.A2A_WORKER_TASK_TIMEOUT || '60000'),
-  forwardedTaskTimeoutMs: parseInt(process.env.A2A_WORKER_FORWARDED_TIMEOUT || '120000'),
+  taskTimeoutMs: parseInt(process.env.A2A_WORKER_TASK_TIMEOUT || '300000'),
+  forwardedTaskTimeoutMs: parseInt(process.env.A2A_WORKER_FORWARDED_TIMEOUT || '300000'),
   shutdownGracePeriodMs: parseInt(process.env.A2A_WORKER_SHUTDOWN_GRACE || '30000'),
 };
 
@@ -620,18 +620,25 @@ export class A2ATaskWorker {
       const isForwarded = !!(task as any).remote_task_id;
       const timeoutMs = isForwarded ? this.config.forwardedTaskTimeoutMs : this.config.taskTimeoutMs;
 
+      // Check if task has a settlement mandate (payment already processed) — auto-complete instead of fail
+      const hasSettlement = !!(task as any).transfer_id || !!(task as any).mandate_id;
+      const finalState = hasSettlement ? 'completed' : 'failed';
+      const statusMsg = hasSettlement
+        ? `Auto-completed after ${timeoutMs / 1000}s (payment already settled)`
+        : `Timed out after ${timeoutMs / 1000}s`;
+
       // Atomic claim: only proceed if we successfully transition from 'working'
       const { data: claimed, error } = await supabase
         .from('a2a_tasks')
-        .update({ state: 'failed', processor_id: null })
+        .update({ state: finalState, status_message: statusMsg, processor_id: null })
         .eq('id', task.id)
         .eq('state', 'working')
         .select('id')
         .single();
 
-      if (error || !claimed) continue; // Another sweep or handler got it first
+      if (error || !claimed) continue;
 
-      this.log(task.id, 'warn', `Task stuck past timeout (${timeoutMs / 1000}s${isForwarded ? ', forwarded' : ''}), failing`);
+      this.log(task.id, hasSettlement ? 'info' : 'warn', `Task stuck past timeout — ${finalState}`);
 
       // Story 58.17: Emit audit event for timeout failure
       taskEventBus.emitTask(task.id, {

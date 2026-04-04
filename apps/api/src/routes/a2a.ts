@@ -370,6 +370,15 @@ a2aPublicRouter.post('/:agentId', async (c) => {
     }
   }
 
+  // Reject self-targeting (agent sending task to itself)
+  if (callerAgentId && callerAgentId === agentId && rpcRequest.method === 'message/send') {
+    return jsonRpc({
+      jsonrpc: '2.0',
+      error: { code: -32600, message: 'Agent cannot send tasks to itself' },
+      id: rpcRequest.id,
+    }, 400);
+  }
+
   // ---- SSE streaming for message/stream ----
   if (rpcRequest.method === 'message/stream') {
     return handleMessageStream(c, rpcRequest, agentId, tenantId);

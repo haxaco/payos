@@ -219,6 +219,13 @@ export class A2ATaskProcessor {
     // Check agent limits for operations involving money before any payment/forwarding.
     // Also extract amount from DataPart (e.g. quoted_price, amount) for skill-based tasks.
     let effectiveAmount = intent.amount;
+
+    // Reject negative amounts immediately
+    if (effectiveAmount < 0) {
+      await this.taskService.updateTaskState(taskId, 'failed', 'Invalid amount: negative values not allowed');
+      return this.taskService.getTask(taskId);
+    }
+
     if (effectiveAmount <= 0) {
       // Check DataParts for amount-like fields
       for (const part of lastUserMsg.parts) {
@@ -305,6 +312,14 @@ export class A2ATaskProcessor {
             .eq('status', 'active')
             .maybeSingle();
           if (data) skillRow = data;
+          else {
+            // Explicit skillId was provided but not found on this agent
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: `Skill "${targetSkillId}" not found on this agent. Available skills can be discovered via the agent card.` },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'failed', `Unknown skill: ${targetSkillId}`);
+            return this.taskService.getTask(taskId);
+          }
         }
 
         const skill = skillRow
@@ -356,6 +371,13 @@ export class A2ATaskProcessor {
           .eq('status', 'active')
           .maybeSingle();
         if (data) skillRow = data;
+        else {
+          await this.taskService.addMessage(taskId, 'agent', [
+            { text: `Skill "${targetSkillId}" not found on this agent.` },
+          ]);
+          await this.taskService.updateTaskState(taskId, 'failed', `Unknown skill: ${targetSkillId}`);
+          return this.taskService.getTask(taskId);
+        }
       }
 
       const skill = skillRow
@@ -580,6 +602,8 @@ export class A2ATaskProcessor {
     amount: number,
     currency: string,
   ): Promise<{ mandateId: string } | { error: 'kya_required' | 'insufficient_funds' } | null> {
+    if (amount <= 0) return null; // Reject zero/negative amounts
+
     // 1. Look up caller agent — check KYA tier (tier 0 allowed if effective limits > 0)
     const { data: callerAgent } = await this.supabase
       .from('agents')
