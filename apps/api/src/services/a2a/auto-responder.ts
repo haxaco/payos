@@ -4,20 +4,17 @@
  * When an A2A task arrives for a managed-mode agent that has no real backend,
  * this generates a skill-appropriate response using Claude and completes the task.
  *
- * This runs inside the existing API server — no separate relay service needed.
- * Triggered by the A2A task worker when processing_mode = 'managed'.
+ * Each agent gets a unique personality and responds based on their skills.
+ * Falls back to structured responses if the Anthropic API is unavailable.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-
-// No Anthropic SDK dependency — use structured fallback responses only.
-// This ensures the build works on all environments without optional deps.
-// For AI-powered responses, deploy the webhook relay service separately.
 
 interface TaskContext {
   taskId: string;
   agentId: string;
   agentName: string;
+  agentDescription?: string;
   skillId?: string;
   skillDescription?: string;
   messageText: string;
@@ -25,11 +22,81 @@ interface TaskContext {
   callerName?: string;
 }
 
+// Agent personality profiles for richer AI responses
+const AGENT_PERSONALITIES: Record<string, string> = {
+  DataMiner: 'You are a data specialist who provides precise, numbers-heavy analysis. You cite sources, include confidence intervals, and present data in structured formats. You are direct and quantitative.',
+  CodeSmith: 'You are a senior software engineer who writes clean, well-documented code. You explain your reasoning, flag potential issues, and suggest best practices. You are thorough and detail-oriented.',
+  ResearchBot: 'You are a research analyst who synthesizes information from multiple sources. You present balanced perspectives, note limitations, and provide actionable recommendations. You are methodical.',
+  TradingBot: 'You are a quantitative trader who thinks in risk/reward ratios. You provide entry/exit points, confidence levels, and position sizing. You are analytical and decisive.',
+  ContentGen: 'You are a creative writer who produces compelling, brand-aligned copy. You adapt tone to the audience, suggest A/B variants, and optimize for engagement. You are creative and versatile.',
+  AuditBot: 'You are a compliance auditor who is meticulous about security and regulatory requirements. You categorize findings by severity, provide remediation steps, and never cut corners. You are rigorous.',
+  SupportBot: 'You are a customer support specialist who is empathetic, efficient, and solution-oriented. You diagnose issues quickly, provide clear resolution steps, and follow up. You are friendly and helpful.',
+  AnalyticsBot: 'You are a business intelligence analyst who transforms raw data into actionable insights. You create clear visualizations descriptions, identify trends, and recommend actions. You are insightful.',
+  SecurityBot: 'You are a cybersecurity expert who thinks like an attacker to defend better. You identify vulnerabilities, assess risk scores, and provide prioritized remediation plans. You are thorough and security-focused.',
+  OpsBot: 'You are a DevOps engineer who values reliability, automation, and observability. You optimize for uptime, provide runbooks, and think about failure modes. You are systematic and pragmatic.',
+};
+
 /**
  * Generate an AI response for an incoming A2A task.
  * Uses Claude Haiku for speed and cost efficiency.
+ * Falls back to structured responses if API is unavailable.
  */
 export async function generateTaskResponse(ctx: TaskContext): Promise<string> {
+  // Try Claude API first
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      console.log(`[AutoResponder] No ANTHROPIC_API_KEY — using fallback for ${ctx.agentName}`);
+      return generateFallbackResponse(ctx);
+    }
+
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey });
+
+    const personality = AGENT_PERSONALITIES[ctx.agentName] ||
+      `You are ${ctx.agentName}, a professional AI agent in the Sly marketplace.`;
+
+    const systemPrompt = `${personality}
+
+You are operating as "${ctx.agentName}" in the Sly agentic economy marketplace.
+${ctx.agentDescription ? `Your description: ${ctx.agentDescription}` : ''}
+${ctx.skillId ? `You are responding to a request for your "${ctx.skillId}" skill.` : ''}
+${ctx.skillDescription ? `Skill description: ${ctx.skillDescription}` : ''}
+
+IMPORTANT RULES:
+- Respond as if you actually performed the work. Generate realistic, detailed output.
+- Include specific numbers, findings, or deliverables — not vague promises.
+- Keep responses concise but substantive (150-300 words).
+- Format output professionally with bullet points or sections where appropriate.
+- Do not mention that you are an AI or that this is simulated.
+- Respond in the context of the agentic economy — crypto, stablecoins, DeFi, Web3, agent commerce.
+${ctx.callerName ? `The requesting agent is "${ctx.callerName}".` : ''}`;
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: ctx.messageText },
+      ],
+    });
+
+    const text = response.content
+      .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+      .map(block => block.text)
+      .join('\n');
+
+    if (text) {
+      console.log(`[AutoResponder] Claude response for ${ctx.agentName}/${ctx.skillId} (${text.length} chars)`);
+      return text;
+    }
+
+    // Empty response — fall through to fallback
+    console.warn(`[AutoResponder] Empty Claude response for ${ctx.agentName}/${ctx.skillId}`);
+  } catch (err: any) {
+    console.error(`[AutoResponder] Claude API error for ${ctx.agentName}:`, err.message);
+  }
+
   return generateFallbackResponse(ctx);
 }
 
@@ -93,13 +160,33 @@ export async function autoRespondToTask(
     skillDescription = skill?.description;
   }
 
+  // Look up caller details
+  const { data: task } = await supabase
+    .from('a2a_tasks')
+    .select('caller_agent_id')
+    .eq('id', taskId)
+    .single();
+
+  let callerName: string | undefined;
+  if (task?.caller_agent_id) {
+    const { data: caller } = await supabase
+      .from('agents')
+      .select('name')
+      .eq('id', task.caller_agent_id)
+      .single();
+    callerName = caller?.name;
+  }
+
   const response = await generateTaskResponse({
     taskId,
     agentId,
     agentName: agent?.name || 'Agent',
+    agentDescription: agent?.description,
     skillId,
     skillDescription,
     messageText,
+    callerAgentId: task?.caller_agent_id,
+    callerName,
   });
 
   return { success: true, response };

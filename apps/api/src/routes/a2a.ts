@@ -1556,6 +1556,83 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
 });
 
 /**
+ * POST /v1/a2a/tasks/:taskId/complete
+ * Complete a working task with a response message.
+ * Used by autonomous agents (local processes) to post their AI-generated responses.
+ * Accepts: { message: "response text" } or { parts: [{ text: "..." }] }
+ */
+a2aRouter.post('/tasks/:taskId/complete', async (c) => {
+  const ctx = c.get('ctx');
+  const taskId = c.req.param('taskId');
+
+  if (!UUID_RE.test(taskId)) {
+    return c.json({ error: 'Invalid task ID format' }, 400);
+  }
+
+  let body: Record<string, any>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+
+  const supabase = createClient();
+
+  // Verify task exists and is in working state
+  const { data: task, error: fetchError } = await supabase
+    .from('a2a_tasks')
+    .select('id, state, tenant_id, agent_id')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError || !task) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
+  if ((task as any).state !== 'working') {
+    return c.json({
+      error: `Task is in '${(task as any).state}' state. Only 'working' tasks can be completed.`,
+    }, 400);
+  }
+
+  // Extract response text
+  let responseText: string | undefined;
+  if (typeof body.message === 'string') {
+    responseText = body.message;
+  } else if (body.text) {
+    responseText = body.text;
+  } else if (body.parts?.[0]?.text) {
+    responseText = body.parts[0].text;
+  }
+
+  if (!responseText) {
+    return c.json({ error: 'message (string), text, or parts[].text is required' }, 400);
+  }
+
+  const taskService = new A2ATaskService(supabase, (task as any).tenant_id, getEnv(ctx) as 'test' | 'live');
+
+  // Add the agent's response message
+  await taskService.addMessage(taskId, 'agent', [{ text: responseText }]);
+
+  // Complete the task
+  await taskService.updateTaskState(taskId, 'completed', 'Completed by autonomous agent');
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.A2A_TASK_STATE_CHANGED,
+    subject: `a2a/task/${taskId}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { toState: 'completed', source: 'autonomous_agent' },
+  });
+
+  const updated = await taskService.getTask(taskId);
+  return c.json({ data: updated });
+});
+
+/**
  * POST /v1/a2a/tasks/:taskId/cancel
  * Cancel an A2A task.
  */

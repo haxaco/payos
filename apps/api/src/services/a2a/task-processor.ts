@@ -1051,7 +1051,7 @@ export class A2ATaskProcessor {
     // Look up agent's endpoint configuration (no tenant filter — cross-tenant support)
     const { data: agent } = await this.supabase
       .from('agents')
-      .select('id, endpoint_url, endpoint_type, endpoint_secret, endpoint_enabled')
+      .select('id, endpoint_url, endpoint_type, endpoint_secret, endpoint_enabled, processing_mode')
       .eq('id', agentCtx.agentId)
       .single();
 
@@ -1179,6 +1179,21 @@ export class A2ATaskProcessor {
       (agent.endpoint_url.includes('getsly.ai') || agent.endpoint_url.includes('localhost'));
 
     if (isSelfReferencing || (!agent.endpoint_url && agent.endpoint_type !== 'x402')) {
+      // Autonomous mode: handle settlement but leave task in 'working' for local agent to pick up
+      if (agent.processing_mode === 'autonomous') {
+        if (settlementMandateId) {
+          try {
+            await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
+            this.log(taskId, 'info', `Settlement mandate executed: ${settlementMandateId}`);
+          } catch (e: any) {
+            this.log(taskId, 'warn', `Settlement failed: ${e.message}`);
+          }
+        }
+        await this.taskService.updateTaskState(taskId, 'working', 'Awaiting autonomous agent response');
+        this.log(taskId, 'info', 'Autonomous agent — task left in working state for local pickup');
+        return this.taskService.getTask(taskId);
+      }
+
       // Auto-respond: generate skill response and complete immediately
       try {
         const { autoRespondToTask } = await import('./auto-responder.js');
@@ -1445,6 +1460,10 @@ export class A2ATaskProcessor {
           ]);
           await this.taskService.updateTaskState(taskId, 'completed', 'Task completed (settlement pending)');
         }
+      } else if (agent.processing_mode === 'autonomous') {
+        // Autonomous mode: leave in working for local agent to process
+        await this.taskService.updateTaskState(taskId, 'working', 'Awaiting autonomous agent response');
+        this.log(taskId, 'info', 'Autonomous agent — task left in working state for local pickup');
       } else {
         // Auto-respond for managed agents — generate AI response and complete immediately
         try {

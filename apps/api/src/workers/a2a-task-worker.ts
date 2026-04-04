@@ -576,12 +576,14 @@ export class A2ATaskWorker {
     const forwardedCutoff = new Date(Date.now() - this.config.forwardedTaskTimeoutMs).toISOString();
 
     // Find stuck tasks: local tasks past localCutoff, forwarded tasks past forwardedCutoff
+    // Exclude autonomous agents (they have longer timeouts — 30 min)
+    const autonomousCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const { data: stuckTasks } = await supabase
       .from('a2a_tasks')
-      .select('id, tenant_id, metadata, remote_task_id')
+      .select('id, tenant_id, metadata, remote_task_id, agent_id')
       .eq('state', 'working')
       .lt('processing_started_at', localCutoff)
-      .limit(10);
+      .limit(20);
 
     if (!stuckTasks?.length) return;
 
@@ -617,6 +619,26 @@ export class A2ATaskWorker {
     console.log(`[A2A Worker] Found ${tasksToFail.length} stuck tasks past timeout`);
 
     for (const task of tasksToFail) {
+      // Skip autonomous agents unless past the 30-min autonomous cutoff
+      if ((task as any).agent_id) {
+        const { data: agentRow } = await supabase
+          .from('agents')
+          .select('processing_mode')
+          .eq('id', (task as any).agent_id)
+          .single();
+        if (agentRow?.processing_mode === 'autonomous') {
+          // Only timeout autonomous tasks after 30 minutes
+          const { data: taskRow } = await supabase
+            .from('a2a_tasks')
+            .select('processing_started_at')
+            .eq('id', task.id)
+            .single();
+          if (taskRow?.processing_started_at && taskRow.processing_started_at > autonomousCutoff) {
+            continue; // Not yet timed out for autonomous agent
+          }
+        }
+      }
+
       const isForwarded = !!(task as any).remote_task_id;
       const timeoutMs = isForwarded ? this.config.forwardedTaskTimeoutMs : this.config.taskTimeoutMs;
 
