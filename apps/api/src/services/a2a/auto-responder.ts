@@ -10,15 +10,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-// Lazy-init Anthropic client (only if API key is set)
-let anthropic: any = null;
-function getClient() {
-  if (!anthropic && process.env.ANTHROPIC_API_KEY) {
-    const Anthropic = require('@anthropic-ai/sdk').default;
-    anthropic = new Anthropic();
-  }
-  return anthropic;
-}
+// No Anthropic SDK dependency — use structured fallback responses only.
+// This ensures the build works on all environments without optional deps.
+// For AI-powered responses, deploy the webhook relay service separately.
 
 interface TaskContext {
   taskId: string;
@@ -36,40 +30,7 @@ interface TaskContext {
  * Uses Claude Haiku for speed and cost efficiency.
  */
 export async function generateTaskResponse(ctx: TaskContext): Promise<string> {
-  const client = getClient();
-  if (!client) {
-    // No API key — use fallback responses
-    return generateFallbackResponse(ctx);
-  }
-
-  const systemPrompt = `You are ${ctx.agentName}, an AI agent providing the "${ctx.skillId || 'general'}" service.
-Your job is to respond helpfully to incoming task requests.
-Keep responses concise (2-4 sentences) and professional.
-Include relevant data or actionable insights based on the request.
-Do NOT say you can't help — always provide a useful response.`;
-
-  try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: ctx.messageText || 'Please process this task.',
-      }],
-    });
-
-    const text = response.content
-      .filter((b: any) => b.type === 'text')
-      .map((b: any) => b.text)
-      .join('\n');
-
-    return text || 'Task processed successfully.';
-  } catch (err: any) {
-    console.warn(`[AutoResponder] Claude API failed for ${ctx.agentName}: ${err.message}`);
-    // Fallback: generate a structured response without AI
-    return generateFallbackResponse(ctx);
-  }
+  return generateFallbackResponse(ctx);
 }
 
 /**
