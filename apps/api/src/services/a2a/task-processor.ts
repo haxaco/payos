@@ -577,14 +577,19 @@ export class A2ATaskProcessor {
     amount: number,
     currency: string,
   ): Promise<{ mandateId: string } | { error: 'kya_required' | 'insufficient_funds' } | null> {
-    // 1. Look up caller agent — check KYA tier before anything else
+    // 1. Look up caller agent — check KYA tier (tier 0 allowed if effective limits > 0)
     const { data: callerAgent } = await this.supabase
       .from('agents')
-      .select('parent_account_id, name, kya_tier')
+      .select('parent_account_id, name, kya_tier, effective_limit_per_tx')
       .eq('id', callerAgentId)
       .single();
 
-    if (!callerAgent || (callerAgent.kya_tier ?? 0) < 1) {
+    if (!callerAgent) {
+      return { error: 'kya_required' };
+    }
+    const callerTier = callerAgent.kya_tier ?? 0;
+    const callerLimit = parseFloat(callerAgent.effective_limit_per_tx) || 0;
+    if (callerTier < 1 && callerLimit <= 0) {
       return { error: 'kya_required' };
     }
 
