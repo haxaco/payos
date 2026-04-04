@@ -78,7 +78,12 @@ transfers.get('/', async (c) => {
     .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
-  
+
+  // Agent tokens: scope to transfers initiated by this agent
+  if (ctx.actorType === 'agent' && ctx.actorId) {
+    dbQuery = dbQuery.eq('initiated_by_id', ctx.actorId);
+  }
+
   if (status) {
     dbQuery = dbQuery.eq('status', status);
   }

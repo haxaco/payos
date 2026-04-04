@@ -135,6 +135,42 @@ async function handleGatewayMessage(
       return handleVerifyAgent(request.id, intent.payload || {}, supabase, BASE_URL, authContext);
     case 'apply_for_beta':
       return handleApplyForBeta(request.id, intent.payload || {});
+    case 'rate_agent': {
+      // Agent feedback/rating skill
+      const payload = intent.payload || {};
+      if (!authContext?.agentId) {
+        return { jsonrpc: '2.0', error: { code: -32004, message: 'Agent token required to submit ratings' }, id: request.id };
+      }
+      if (!payload.provider_agent_id || !payload.score) {
+        return { jsonrpc: '2.0', error: { code: -32602, message: 'provider_agent_id and score (0-100) are required' }, id: request.id };
+      }
+      const score = Math.min(100, Math.max(0, Number(payload.score)));
+      const satisfaction = score >= 80 ? 'excellent' : score >= 60 ? 'acceptable' : score >= 40 ? 'partial' : 'unacceptable';
+      const { error: fbErr } = await supabase.from('a2a_task_feedback').insert({
+        tenant_id: authContext.tenantId,
+        task_id: payload.task_id || null,
+        caller_agent_id: authContext.agentId,
+        provider_agent_id: payload.provider_agent_id,
+        skill_id: payload.skill_id || null,
+        action: 'accept',
+        satisfaction,
+        score,
+        comment: payload.comment || null,
+        currency: 'USDC',
+      });
+      if (fbErr) {
+        return { jsonrpc: '2.0', error: { code: -32603, message: 'Failed to save rating: ' + fbErr.message }, id: request.id };
+      }
+      return {
+        jsonrpc: '2.0',
+        result: {
+          id: request.id,
+          status: { state: 'completed', timestamp: new Date().toISOString() },
+          artifacts: [{ parts: [{ data: { rated: true, provider_agent_id: payload.provider_agent_id, score, satisfaction } }] }],
+        },
+        id: request.id,
+      };
+    }
     default:
       // Fallback: return platform capabilities
       return buildCapabilitiesResponse(request.id, BASE_URL);
@@ -142,13 +178,13 @@ async function handleGatewayMessage(
 }
 
 interface Intent {
-  skill: 'find_agent' | 'list_agents' | 'register_agent' | 'update_agent' | 'get_my_status' | 'manage_wallet' | 'check_task' | 'verify_agent' | 'apply_for_beta' | 'unknown';
+  skill: 'find_agent' | 'list_agents' | 'register_agent' | 'update_agent' | 'get_my_status' | 'manage_wallet' | 'check_task' | 'verify_agent' | 'apply_for_beta' | 'rate_agent' | 'unknown';
   query?: string;
   tags?: string[];
   payload?: Record<string, unknown>;
 }
 
-const ONBOARDING_SKILLS = new Set(['register_agent', 'update_agent', 'get_my_status', 'manage_wallet', 'check_task', 'verify_agent', 'apply_for_beta']);
+const ONBOARDING_SKILLS = new Set(['register_agent', 'update_agent', 'get_my_status', 'manage_wallet', 'check_task', 'verify_agent', 'apply_for_beta', 'rate_agent']);
 
 /**
  * Extract the caller's intent from message parts.

@@ -495,6 +495,11 @@ app.get('/', async (c) => {
       .eq('environment', getEnv(ctx))
       .order('created_at', { ascending: false });
 
+    // Agent tokens: scope to agent's own wallets only
+    if (ctx.actorType === 'agent' && ctx.actorId) {
+      query = query.eq('managed_by_agent_id', ctx.actorId);
+    }
+
     // Apply filters
     if (ownerAccountId) {
       query = query.eq('owner_account_id', ownerAccountId);

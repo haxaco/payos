@@ -748,8 +748,66 @@ export async function completeCheckout(
       let settlementId: string | undefined;
       let paymentId: string | undefined;
 
-      const handler = getHandler(handlerId);
-      if (handler && instrumentId) {
+      // Try wallet payment first if agent_id is present
+      let walletPaymentUsed = false;
+      const agentId = existing.agent_id || existing.metadata?.agent_id;
+      if (agentId) {
+        const { data: agentWallet } = await supabase
+          .from('wallets')
+          .select('id, balance, wallet_type, wallet_address, provider_wallet_id, owner_account_id')
+          .eq('managed_by_agent_id', agentId)
+          .eq('status', 'active')
+          .order('balance', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const amountInUnits = totalAmount / 100; // UCP amounts are in cents
+        if (agentWallet && parseFloat(agentWallet.balance) >= amountInUnits) {
+          try {
+            const { authorizeWalletTransfer } = await import('../wallet-settlement.js');
+
+            const { data: walletTransfer } = await supabase
+              .from('transfers')
+              .insert({
+                tenant_id: tenantId,
+                type: 'ucp',
+                status: 'pending',
+                amount: amountInUnits,
+                currency: existing.currency,
+                description: `UCP checkout ${checkoutId}`,
+                initiated_by_type: 'agent',
+                initiated_by_id: agentId,
+                protocol_metadata: { protocol: 'ucp', checkout_id: checkoutId, agent_wallet: true },
+              })
+              .select('id')
+              .single();
+
+            if (walletTransfer) {
+              const result = await authorizeWalletTransfer({
+                supabase,
+                tenantId,
+                sourceWallet: agentWallet,
+                destinationWallet: null,
+                amount: amountInUnits,
+                transferId: walletTransfer.id,
+                protocolMetadata: { protocol: 'ucp', checkout_id: checkoutId },
+              });
+
+              if (result.success) {
+                walletPaymentUsed = true;
+                paymentStatus = 'completed';
+                paymentId = walletTransfer.id;
+                console.log(`[UCP Checkout] Wallet payment: $${amountInUnits} debited from agent ${agentId}`);
+              }
+            }
+          } catch (walletErr: any) {
+            console.warn('[UCP Checkout] Wallet payment failed, falling through to handler:', walletErr.message);
+          }
+        }
+      }
+
+      const handler = !walletPaymentUsed ? getHandler(handlerId) : null;
+      if (!walletPaymentUsed && handler && instrumentId) {
         console.log(`[UCP Checkout] Processing payment via handler "${handlerId}" for ${totalAmount} ${existing.currency}`);
         const paymentResult = await handlerProcessPayment(handlerId, {
           instrumentId,

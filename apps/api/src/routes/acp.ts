@@ -771,10 +771,98 @@ app.post('/checkouts/:id/complete', async (c) => {
       }
     }
 
-    // Process SharedPaymentToken through Stripe (if configured)
+    // Try wallet payment first (agent has funded USDC wallet)
     let stripePaymentIntent = null;
     let paymentStatus = 'completed';
-    
+    let walletPaymentUsed = false;
+
+    // Look up agent's wallet for direct debit
+    if (checkout.agent_id) {
+      const { data: agentRow } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('id', checkout.agent_id)
+        .single();
+
+      if (agentRow) {
+        const { data: agentWallet } = await supabase
+          .from('wallets')
+          .select('id, balance, wallet_type, wallet_address, provider_wallet_id, owner_account_id')
+          .eq('managed_by_agent_id', agentRow.id)
+          .eq('status', 'active')
+          .order('balance', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const checkoutAmount = parseFloat(checkout.total_amount);
+        if (agentWallet && parseFloat(agentWallet.balance) >= checkoutAmount) {
+          try {
+            const { authorizeWalletTransfer } = await import('../services/wallet-settlement.js');
+
+            // Create transfer record first
+            const { data: walletTransfer } = await supabase
+              .from('transfers')
+              .insert({
+                tenant_id: ctx.tenantId,
+                environment: getEnv(ctx),
+                from_account_id: agentWallet.owner_account_id,
+                to_account_id: checkout.account_id,
+                amount: checkoutAmount,
+                currency: checkout.currency,
+                type: 'acp',
+                status: 'pending',
+                description: `ACP checkout: ${checkout.merchant_name || checkout.merchant_id}`,
+                initiated_by_type: ctx.actorType,
+                initiated_by_id: ctx.actorId || ctx.userId || 'unknown',
+                protocol_metadata: { protocol: 'acp', checkout_id: checkout.checkout_id, agent_wallet: true },
+              })
+              .select('id')
+              .single();
+
+            if (walletTransfer) {
+              const result = await authorizeWalletTransfer({
+                supabase,
+                tenantId: ctx.tenantId,
+                sourceWallet: agentWallet,
+                destinationWallet: null,
+                amount: checkoutAmount,
+                transferId: walletTransfer.id,
+                protocolMetadata: { protocol: 'acp', checkout_id: checkout.checkout_id },
+              });
+
+              if (result.success) {
+                walletPaymentUsed = true;
+                paymentStatus = 'completed';
+
+                // Update checkout with transfer
+                await supabase
+                  .from('acp_checkouts')
+                  .update({
+                    status: 'completed',
+                    transfer_id: walletTransfer.id,
+                    completed_at: new Date().toISOString(),
+                  })
+                  .eq('id', id);
+
+                return c.json({
+                  data: {
+                    ...checkout,
+                    status: 'completed',
+                    transfer_id: walletTransfer.id,
+                    payment_method: 'wallet',
+                    total_amount: checkoutAmount,
+                  },
+                });
+              }
+            }
+          } catch (walletErr: any) {
+            console.warn('[ACP] Wallet payment failed, falling through to Stripe:', walletErr.message);
+          }
+        }
+      }
+    }
+
+    // Fall through to Stripe if wallet payment not used
     if (isStripeConfigured()) {
       try {
         const stripe = getStripeClient();
