@@ -430,12 +430,12 @@ async function validateSkillAtReceive(
   const skillId = extractSkillId(parts);
   if (!skillId) return null; // No skill specified — skip validation
 
-  // Query agent_skills for the specified skill
+  // Query agent_skills for the specified skill — use agent's own tenant (no caller tenant filter)
+  // This supports cross-tenant calls where caller and provider are in different tenants.
   const { data: skill } = await supabase
     .from('agent_skills')
     .select('skill_id, base_price, currency, status')
     .eq('agent_id', agentId)
-    .eq('tenant_id', tenantId)
     .eq('skill_id', skillId)
     .maybeSingle();
 

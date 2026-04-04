@@ -309,8 +309,9 @@ a2aPublicRouter.post('/:agentId', async (c) => {
     }
   }
 
-  // If no Sly auth, check the target agent exists and use its tenant
-  if (!tenantId) {
+  // Always resolve target agent's tenant — tasks must be created in the provider's tenant
+  // even when the caller authenticates with their own token (cross-tenant support).
+  {
     const supabase = createClient();
     const { data: targetAgent } = await supabase
       .from('agents')
@@ -326,6 +327,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
       }, 404);
     }
 
+    // Always use the target agent's tenant for task creation and skill validation
     tenantId = targetAgent.tenant_id;
   }
 

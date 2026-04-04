@@ -313,6 +313,7 @@ export class AgentToolRegistry {
 
     return {
       tenantId,
+      agentTenantId: agentTenantId,
       agentId,
       accountId: agent.parent_account_id,
       walletId: wallet?.id,

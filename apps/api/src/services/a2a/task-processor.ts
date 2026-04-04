@@ -471,12 +471,15 @@ export class A2ATaskProcessor {
       return { charged: false, fee, currency };
     }
 
+    // Use caller's own tenant for wallet lookup (cross-tenant: caller wallet lives in caller's tenant)
+    const callerTenantId = agentCtx.agentTenantId || this.tenantId;
+
     // Check balance
     const { data: wallet } = await this.supabase
       .from('wallets')
       .select('balance')
       .eq('id', agentCtx.walletId)
-      .eq('tenant_id', this.tenantId)
+      .eq('tenant_id', callerTenantId)
       .single();
 
     if (!wallet || Number(wallet.balance) < fee) {
@@ -491,7 +494,7 @@ export class A2ATaskProcessor {
       .from('wallets')
       .update({ balance: Number(wallet.balance) - fee })
       .eq('id', agentCtx.walletId)
-      .eq('tenant_id', this.tenantId)
+      .eq('tenant_id', callerTenantId)
       .gte('balance', fee);
 
     if (deductError) {

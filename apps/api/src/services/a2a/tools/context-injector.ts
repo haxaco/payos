@@ -7,6 +7,7 @@
 
 export interface AgentContext {
   tenantId: string;
+  agentTenantId?: string; // The caller agent's own tenant (may differ from provider tenantId in cross-tenant calls)
   agentId: string;
   accountId: string;
   walletId?: string;
