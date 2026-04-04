@@ -258,6 +258,10 @@ router.post('/one-click', async (c) => {
     let baseWallet: { id: string; address: string; balance: number } | null = null;
     try {
       const circleService = getCircleServiceForTenant(tenant.id, 'test');
+      let accountType: 'SCA' | 'EOA' | undefined;
+      try {
+        if (isFeatureEnabled('circleGasStation')) accountType = 'SCA';
+      } catch { /* optional */ }
 
       const circleWallet = await circleService.createWallet({
         blockchain: 'base' as any,
