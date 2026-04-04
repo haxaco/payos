@@ -953,8 +953,8 @@ export async function completeCheckout(
       console.log(`[UCP Checkout] Checkout ${checkoutId} completed, order ${order.id} created (persisted)`);
 
       // Increment agent attribution counters if agent_id is set
-      const agentId = existing.agent_id || (existing.metadata?.agent_id as string | undefined);
-      if (agentId && supabase) {
+      const attrAgentId = existing.agent_id || (existing.metadata?.agent_id as string | undefined);
+      if (attrAgentId && supabase) {
         // Convert from minor units to major units, then to USD if non-USD currency
         const majorUnits = totalAmount / 100;
         const currency = existing.currency?.toUpperCase() || 'USD';
@@ -970,10 +970,10 @@ export async function completeCheckout(
         }
         try {
           await supabase.rpc('increment_agent_counters', {
-            p_agent_id: agentId,
+            p_agent_id: attrAgentId,
             p_volume: usdAmount,
           });
-          console.log(`[UCP Checkout] Incremented agent ${agentId} counters: +$${usdAmount} volume, +1 txn`);
+          console.log(`[UCP Checkout] Incremented agent ${attrAgentId} counters: +$${usdAmount} volume, +1 txn`);
 
           // Record daily/monthly usage for limit tracking
           const limitService = new LimitService(supabase, environment);
