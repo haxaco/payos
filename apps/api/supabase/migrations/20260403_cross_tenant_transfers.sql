@@ -54,7 +54,7 @@ BEGIN
 
   -- Mark transfer as completed
   UPDATE transfers
-  SET status = 'completed', settled_at = NOW(), updated_at = NOW()
+  SET status = 'completed', settled_at = NOW()
   WHERE id = p_transfer_id AND tenant_id = p_tenant_id;
 
   IF NOT FOUND THEN
