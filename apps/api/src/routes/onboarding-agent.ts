@@ -294,6 +294,31 @@ router.post('/one-click', async (c) => {
 
       if (baseWalletRow) {
         baseWallet = { id: baseWalletRow.id, address: baseWalletRow.wallet_address, balance: baseWalletRow.balance };
+
+        // Request Circle faucet drip (20 USDC + ETH gas on Base Sepolia) — non-blocking
+        if (circleWallet.address) {
+          import('../services/circle/client.js').then(({ getCircleClient }) => {
+            getCircleClient().requestFaucetDrip(circleWallet.address, 'BASE-SEPOLIA', { usdc: true, native: true })
+              .then(() => {
+                console.log(`[agent-onboard] Faucet drip sent to ${circleWallet.address}`);
+                // Update DB balance after a delay to reflect on-chain funds
+                setTimeout(async () => {
+                  try {
+                    const circle = getCircleClient();
+                    const balances = await circle.getWalletBalances(circleWallet.id);
+                    const usdcBal = balances.find((b: any) => b.token.symbol === 'USDC');
+                    if (usdcBal) {
+                      const onChainBalance = parseFloat(usdcBal.amount) / Math.pow(10, usdcBal.token.decimals);
+                      await (supabase.from('wallets') as any)
+                        .update({ balance: onChainBalance })
+                        .eq('id', baseWalletRow.id);
+                    }
+                  } catch { /* non-fatal */ }
+                }, 10000);
+              })
+              .catch((err: any) => console.warn('[agent-onboard] Faucet drip failed:', err.message));
+          }).catch(() => {});
+        }
       }
     } catch (e: any) {
       console.warn('[agent-onboard] Base wallet creation skipped:', e.message);
