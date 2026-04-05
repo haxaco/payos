@@ -141,10 +141,15 @@ async function handleGatewayMessage(
       if (!authContext?.agentId) {
         return { jsonrpc: '2.0', error: { code: -32004, message: 'Agent token required to submit ratings' }, id: request.id };
       }
-      if (!payload.provider_agent_id || !payload.score) {
-        return { jsonrpc: '2.0', error: { code: -32602, message: 'provider_agent_id and score (0-100) are required' }, id: request.id };
+      if (!payload.provider_agent_id || payload.score == null) {
+        return { jsonrpc: '2.0', error: { code: -32602, message: 'provider_agent_id and score (0-100 or 0-5) are required' }, id: request.id };
       }
-      const score = Math.min(100, Math.max(0, Number(payload.score)));
+      // Normalize score to 0-100 scale. Accept either 0-5 (star rating) or 0-100 (percentage).
+      // Heuristic: if the submitted score is <= 5 (and > 0), treat as a 0-5 star rating and multiply by 20.
+      const rawScore = Number(payload.score);
+      const score = rawScore > 0 && rawScore <= 5
+        ? Math.round(rawScore * 20)
+        : Math.min(100, Math.max(0, rawScore));
       const satisfaction = score >= 80 ? 'excellent' : score >= 60 ? 'acceptable' : score >= 40 ? 'partial' : 'unacceptable';
       const { error: fbErr } = await supabase.from('a2a_task_feedback').insert({
         tenant_id: authContext.tenantId,
