@@ -2016,6 +2016,192 @@ agents.post('/:id/sign-request', async (c) => {
 });
 
 // ============================================
+// POST /v1/agents/:id/x402-sign
+// Sign an EIP-3009 transferWithAuthorization payload for x402 payments.
+// Uses the agent's managed secp256k1 EOA key stored in agent_signing_keys.
+// ============================================
+agents.post('/:id/x402-sign', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid agent ID format');
+  }
+
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+
+  const {
+    to,
+    value,
+    chainId = 84532,
+    validAfter = 0,
+    validBefore,
+    nonce,
+  } = body;
+
+  if (!to || !value || !validBefore) {
+    throw new ValidationError('Missing required fields: to, value, validBefore');
+  }
+
+  const supabase = createClient();
+
+  // Verify caller has permission (agent must own the key OR caller is same tenant API key)
+  if (ctx.actorType === 'agent' && ctx.actorId !== id) {
+    return c.json({ error: 'Agent can only sign with their own key' }, 403);
+  }
+
+  // Verify agent exists and is active
+  const { data: agent, error: agentError } = await supabase
+    .from('agents')
+    .select('id, name, status, kya_tier, tenant_id')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (agentError || !agent) {
+    throw new NotFoundError('Agent', id);
+  }
+
+  if (agent.status !== 'active') {
+    throw new ValidationError('Agent is not active');
+  }
+
+  // Fetch the agent's secp256k1 key
+  const { getAgentEvmKey, signTransferWithAuthorization, usdcDomain, generateNonce } =
+    await import('../services/x402/signer.js');
+
+  const keyRecord = await getAgentEvmKey(supabase, id);
+  if (!keyRecord) {
+    return c.json({
+      error: 'Agent has no EVM signing key registered',
+      code: 'NO_EVM_KEY',
+      hint: 'POST /v1/agents/:id/evm-keys to provision one',
+    }, 404);
+  }
+
+  // Resolve the USDC contract for the requested chain
+  let domain;
+  try {
+    domain = usdcDomain(Number(chainId));
+  } catch (e: any) {
+    throw new ValidationError(e.message);
+  }
+
+  // Sign the EIP-3009 payload
+  try {
+    const signed = await signTransferWithAuthorization(keyRecord, {
+      from: keyRecord.ethereum_address,
+      to,
+      value: String(value),
+      validAfter: Number(validAfter),
+      validBefore: Number(validBefore),
+      nonce: nonce || generateNonce(),
+      ...domain,
+      chainId: Number(chainId),
+    });
+
+    // Update usage stats (fire-and-forget)
+    await supabase
+      .from('agent_signing_keys')
+      .update({ last_used_at: new Date().toISOString(), use_count: undefined })
+      .eq('agent_id', id)
+      .eq('algorithm', 'secp256k1')
+      .then(() => {}, () => {});
+
+    return c.json({
+      success: true,
+      signature: signed.signature,
+      v: signed.v,
+      r: signed.r,
+      s: signed.s,
+      from: signed.from,
+      to: signed.params.to,
+      value: signed.params.value,
+      chainId: signed.params.chainId,
+      tokenAddress: signed.params.tokenAddress,
+      validAfter: signed.params.validAfter,
+      validBefore: signed.params.validBefore,
+      nonce: signed.params.nonce,
+    });
+  } catch (e: any) {
+    return c.json({ error: `Signing failed: ${e.message}` }, 500);
+  }
+});
+
+// ============================================
+// POST /v1/agents/:id/evm-keys
+// Provision a new secp256k1 (EVM EOA) signing key for an agent.
+// Idempotent — returns the existing key if one already exists.
+// ============================================
+agents.post('/:id/evm-keys', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid agent ID format');
+  }
+
+  if (ctx.actorType === 'agent' && ctx.actorId !== id) {
+    return c.json({ error: 'Agent can only provision their own EVM key' }, 403);
+  }
+
+  const supabase = createClient();
+
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, tenant_id, status')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (!agent) throw new NotFoundError('Agent', id);
+  if ((agent as any).status !== 'active') throw new ValidationError('Agent is not active');
+
+  const { getAgentEvmKey, generateAgentEvmKey } = await import('../services/x402/signer.js');
+
+  // Idempotent — return existing key if present
+  const existing = await getAgentEvmKey(supabase, id);
+  if (existing) {
+    return c.json({
+      keyId: existing.key_id,
+      ethereumAddress: existing.ethereum_address,
+      publicKey: existing.public_key,
+      created: false,
+    });
+  }
+
+  // Generate new keypair
+  const keyRecord = generateAgentEvmKey(id);
+
+  const { error: insertErr } = await (supabase.from('agent_signing_keys') as any).insert({
+    tenant_id: (agent as any).tenant_id,
+    agent_id: id,
+    key_id: keyRecord.key_id,
+    algorithm: 'secp256k1',
+    private_key_encrypted: keyRecord.private_key_encrypted,
+    public_key: keyRecord.public_key,
+    ethereum_address: keyRecord.ethereum_address,
+    status: 'active',
+  });
+
+  if (insertErr) {
+    return c.json({ error: `Failed to store key: ${insertErr.message}` }, 500);
+  }
+
+  return c.json({
+    keyId: keyRecord.key_id,
+    ethereumAddress: keyRecord.ethereum_address,
+    publicKey: keyRecord.public_key,
+    created: true,
+  });
+});
+
+// ============================================
 // AGENT SKILLS CRUD
 // ============================================
 
