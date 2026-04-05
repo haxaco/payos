@@ -277,6 +277,16 @@ a2aPublicRouter.post('/:agentId', async (c) => {
   }
 
   // ---- Auth: try Sly API key / agent token (prefix lookup + hash verification) ----
+  //
+  // Auth model for POST /a2a/:agentId:
+  //   - No Authorization header at all        → anonymous caller, proceed
+  //     (matches x402-style "payment is auth" for external clients)
+  //   - Valid Bearer token (pk_* or agent_*)  → authenticated, set callerAgentId
+  //   - Invalid/malformed Bearer token        → 401 reject (do NOT silently fall through)
+  //
+  // The "silently accept failed auth as anonymous" behavior that shipped earlier
+  // was masking token corruption and bypassing cross-tenant charging. Strict
+  // rejection on a present-but-invalid token is the standard HTTP pattern.
   const authHeader = c.req.header('Authorization');
   let tenantId: string | null = null;
   let callerAgentId: string | undefined;
@@ -306,6 +316,16 @@ a2aPublicRouter.post('/:agentId', async (c) => {
         tenantId = agentRow.tenant_id;
         callerAgentId = agentRow.id;
       }
+    }
+
+    // A token was provided but failed verification → reject with 401.
+    // This is the "don't silently accept bad tokens" fix.
+    if (!tenantId && !callerAgentId) {
+      return jsonRpc({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: 'Invalid or expired credential' },
+        id: null,
+      }, 401);
     }
   }
 

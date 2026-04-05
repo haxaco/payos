@@ -2202,6 +2202,83 @@ agents.post('/:id/evm-keys', async (c) => {
 });
 
 // ============================================
+// POST /v1/agents/:id/wallet/refill-faucet
+// Request a Circle faucet drip to top up the agent's Circle custodial wallet
+// with testnet USDC + native gas. Idempotency: Circle's faucet has its own
+// per-address rate limit (~1 drip per 2 hours), so repeated calls within
+// that window return an error from Circle.
+// ============================================
+agents.post('/:id/wallet/refill-faucet', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid agent ID format');
+  }
+
+  if (ctx.actorType === 'agent' && ctx.actorId !== id) {
+    return c.json({ error: 'Agent can only refill their own wallet' }, 403);
+  }
+
+  const supabase = createClient();
+
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, tenant_id, status')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+
+  if (!agent) throw new NotFoundError('Agent', id);
+  if ((agent as any).status !== 'active') throw new ValidationError('Agent is not active');
+
+  // Find the agent's Circle custodial wallet
+  const { data: circleWallet } = await (supabase.from('wallets') as any)
+    .select('id, wallet_address, blockchain')
+    .eq('managed_by_agent_id', id)
+    .eq('wallet_type', 'circle_custodial')
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (!circleWallet || !circleWallet.wallet_address) {
+    return c.json({
+      error: 'Agent has no Circle custodial wallet',
+      code: 'NO_CIRCLE_WALLET',
+    }, 400);
+  }
+
+  try {
+    const { getCircleClient } = await import('../services/circle/client.js');
+    const circle = getCircleClient();
+
+    // Map chain to Circle faucet blockchain identifier
+    const chainMap: Record<string, string> = {
+      base: 'BASE-SEPOLIA',
+      eth: 'ETH-SEPOLIA',
+      polygon: 'MATIC-AMOY',
+    };
+    const faucetChain = chainMap[circleWallet.blockchain] || 'BASE-SEPOLIA';
+
+    await circle.requestFaucetDrip(circleWallet.wallet_address, faucetChain as any, {
+      usdc: true,
+      native: true,
+    });
+
+    return c.json({
+      success: true,
+      walletAddress: circleWallet.wallet_address,
+      blockchain: faucetChain,
+      note: 'Faucet drip requested. Typically ~20 USDC + gas arrives within 30-60s. Circle rate-limits ~1 drip per 2 hours per address.',
+    });
+  } catch (e: any) {
+    return c.json({
+      error: `Faucet request failed: ${e.message}`,
+      code: 'FAUCET_FAILED',
+    }, 500);
+  }
+});
+
+// ============================================
 // POST /v1/agents/:id/fund-eoa
 // Bridge USDC from the agent's Circle custodial wallet to their EVM EOA
 // so they can pay external x402-protected resources on-chain.
