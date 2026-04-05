@@ -496,10 +496,10 @@ export class A2ATaskProcessor {
     // Use caller's own tenant for wallet lookup (cross-tenant: caller wallet lives in caller's tenant)
     const callerTenantId = agentCtx.agentTenantId || this.tenantId;
 
-    // Check balance
+    // Check balance — fetch full wallet fields for authorizeWalletTransfer
     const { data: wallet } = await this.supabase
       .from('wallets')
-      .select('balance')
+      .select('id, balance, owner_account_id, wallet_type, wallet_address, provider_wallet_id')
       .eq('id', agentCtx.walletId)
       .eq('tenant_id', callerTenantId)
       .single();
@@ -511,25 +511,38 @@ export class A2ATaskProcessor {
       return { charged: false, fee, currency };
     }
 
-    // Deduct atomically
-    const { error: deductError } = await this.supabase
-      .from('wallets')
-      .update({ balance: Number(wallet.balance) - fee })
-      .eq('id', agentCtx.walletId)
-      .eq('tenant_id', callerTenantId)
-      .gte('balance', fee);
-
-    if (deductError) {
-      return { charged: false, fee, currency };
+    // Look up destination (provider) wallet for on-chain settlement
+    let providerWallet: any = null;
+    if (this.config.agentId) {
+      const { data } = await this.supabase
+        .from('wallets')
+        .select('id, balance, wallet_type, wallet_address, provider_wallet_id, owner_account_id')
+        .eq('managed_by_agent_id', this.config.agentId)
+        .eq('tenant_id', this.tenantId)
+        .eq('status', 'active')
+        .order('balance', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      providerWallet = data;
     }
 
-    // Create transfer record for the service fee
+    const settlementMetadata = {
+      protocol: 'a2a',
+      serviceFee: true,
+      skillId,
+      source_wallet_id: wallet.id,
+      destination_wallet_id: providerWallet?.id || null,
+      wallet_id: wallet.id,
+    };
+
+    // Create transfer record as pending — authorizeWalletTransfer will set to 'authorized'
     const { data: transferRecord } = await this.supabase
       .from('transfers')
       .insert({
-        tenant_id: this.tenantId,
+        tenant_id: callerTenantId,
+        destination_tenant_id: this.tenantId,
         type: 'internal',
-        status: 'completed',
+        status: 'pending',
         amount: fee,
         currency,
         destination_amount: fee,
@@ -544,11 +557,32 @@ export class A2ATaskProcessor {
         initiated_by_type: 'agent',
         initiated_by_id: agentCtx.agentId,
         initiated_by_name: 'Agent',
-        completed_at: new Date().toISOString(),
-        protocol_metadata: { protocol: 'a2a', serviceFee: true, skillId },
+        protocol_metadata: settlementMetadata,
       })
       .select('id')
       .single();
+
+    if (transferRecord) {
+      // Ledger authorization — debits/credits wallets and sets status='authorized'.
+      // The async settlement worker picks up 'authorized' transfers for on-chain execution.
+      const authorization = await authorizeWalletTransfer({
+        supabase: this.supabase,
+        tenantId: callerTenantId,
+        destinationTenantId: this.tenantId,
+        sourceWallet: wallet,
+        destinationWallet: providerWallet,
+        amount: fee,
+        transferId: transferRecord.id,
+        protocolMetadata: settlementMetadata,
+      });
+
+      if (!authorization.success) {
+        this.log(taskId, 'warn', `Service fee ledger authorization failed: ${authorization.error}`);
+        return { charged: false, fee, currency };
+      }
+    } else {
+      return { charged: false, fee, currency };
+    }
 
     // Emit payment audit event for timeline visibility
     await this.supabase.from('a2a_audit_events').insert({

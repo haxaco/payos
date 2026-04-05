@@ -25,6 +25,7 @@ import { getLiveFXService } from '../services/fx/live-rates.js';
 import { createCheckoutTelemetryService, extractMerchantDomain } from '../services/telemetry/checkout-telemetry.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
+import { authorizeWalletTransfer } from '../services/wallet-settlement.js';
 
 const ap2 = new Hono();
 
@@ -682,7 +683,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     const mandateCurrency = currency || mandate.currency;
     const { data: accountWallets } = await supabase
       .from('wallets')
-      .select('id, balance, currency, owner_account_id, status')
+      .select('id, balance, currency, owner_account_id, status, wallet_type, wallet_address, provider_wallet_id')
       .eq('tenant_id', ctx.tenantId)
       .eq('environment', getEnv(ctx))
       .eq('owner_account_id', mandate.account_id)
@@ -702,7 +703,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
 
       const { data: agentWallets } = await supabase
         .from('wallets')
-        .select('id, balance, currency, owner_account_id, status')
+        .select('id, balance, currency, owner_account_id, status, wallet_type, wallet_address, provider_wallet_id')
         .eq('tenant_id', agentTenantId)
         .eq('environment', getEnv(ctx))
         .eq('managed_by_agent_id', mandate.agent_id)
@@ -717,8 +718,6 @@ ap2.post('/mandates/:id/execute', async (c) => {
   if (wallet) {
     const currentBalance = Number(wallet.balance);
     if (currentBalance >= execAmount) {
-      const updatedBalance = currentBalance - execAmount;
-      const updatedStatus = updatedBalance === 0 ? 'depleted' : 'active';
 
       // Resolve the agent's tenant for cross-tenant recipient lookups
       const { data: recipientAgent } = await supabase
@@ -731,81 +730,92 @@ ap2.post('/mandates/:id/execute', async (c) => {
       // Look up account name, agent name, and recipient wallet for the transfer record
       const [{ data: fromAccount }, { data: recipientWallets }] = await Promise.all([
         supabase.from('accounts').select('name').eq('id', wallet.owner_account_id).eq('tenant_id', ctx.tenantId).eq('environment', getEnv(ctx)).single(),
-        supabase.from('wallets').select('id').eq('managed_by_agent_id', mandate.agent_id).eq('tenant_id', recipientTenantId).eq('environment', getEnv(ctx)).eq('status', 'active').limit(1),
+        supabase.from('wallets').select('id, balance, wallet_type, wallet_address, provider_wallet_id, owner_account_id').eq('managed_by_agent_id', mandate.agent_id).eq('tenant_id', recipientTenantId).eq('environment', getEnv(ctx)).eq('status', 'active').limit(1),
       ]);
       const agentRecord = recipientAgent;
       const recipientWallet = recipientWallets?.[0] || null;
+      const destWallet = recipientWallet?.id !== wallet.id ? recipientWallet : null;
 
-      const { error: walletUpdateError } = await supabase
-        .from('wallets')
-        .update({
-          balance: updatedBalance,
-          status: updatedStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', wallet.id)
-        .eq('tenant_id', ctx.tenantId);
+      // Build transfer record as pending — authorizeWalletTransfer will set to 'authorized'
+      const now = new Date().toISOString();
+      const settlementMetadata: Record<string, any> = {
+        protocol: 'ap2',
+        wallet_id: wallet.id,
+        source_wallet_id: wallet.id,
+        destination_wallet_id: destWallet?.id || null,
+        settlement_type: 'ledger',
+        authorized_at: now,
+        operation: 'mandate_execution',
+        mandate_id: mandate.id,
+        execution_index: newExecIndex,
+      };
 
-      if (walletUpdateError) {
-        console.error('[AP2] Wallet deduction error:', walletUpdateError);
-      } else {
-        // Build transfer record — cross-border or internal
-        const now = new Date().toISOString();
-        const transferInsert: Record<string, any> = {
-          tenant_id: ctx.tenantId,
-          destination_tenant_id: recipientTenantId,
-          environment: getEnv(ctx),
-          from_account_id: wallet.owner_account_id,
-          from_account_name: fromAccount?.name || '',
-          amount: execAmount,
-          currency: currency || mandate.currency,
-          type: isCrossBorder ? 'cross_border' : 'ap2',
-          status: 'authorized',
-          initiated_by_type: 'agent',
-          initiated_by_id: mandate.agent_id,
-          initiated_by_name: agentRecord?.name || '',
-          description: description || `Mandate execution #${newExecIndex}`,
-          protocol_metadata: {
-            protocol: 'ap2',
-            wallet_id: wallet.id,
-            source_wallet_id: wallet.id,
-            destination_wallet_id: recipientWallet?.id !== wallet.id ? recipientWallet?.id || null : null,
-            settlement_type: 'ledger',
-            authorized_at: now,
-            operation: 'mandate_execution',
-            mandate_id: mandate.id,
-            execution_index: newExecIndex,
-          },
+      const transferInsert: Record<string, any> = {
+        tenant_id: ctx.tenantId,
+        destination_tenant_id: recipientTenantId,
+        environment: getEnv(ctx),
+        from_account_id: wallet.owner_account_id,
+        from_account_name: fromAccount?.name || '',
+        amount: execAmount,
+        currency: currency || mandate.currency,
+        type: isCrossBorder ? 'cross_border' : 'ap2',
+        status: 'pending',
+        initiated_by_type: 'agent',
+        initiated_by_id: mandate.agent_id,
+        initiated_by_name: agentRecord?.name || '',
+        description: description || `Mandate execution #${newExecIndex}`,
+        protocol_metadata: settlementMetadata,
+      };
+
+      // Attach cross-border fields
+      if (crossBorderInfo) {
+        transferInsert.to_account_id = crossBorderInfo.to_account_id;
+        transferInsert.to_account_name = crossBorderInfo.to_account_name;
+        transferInsert.destination_amount = crossBorderInfo.destination_amount;
+        transferInsert.destination_currency = crossBorderInfo.destination_currency;
+        transferInsert.fx_rate = crossBorderInfo.fx_rate;
+        transferInsert.corridor_id = crossBorderInfo.corridor_id;
+        transferInsert.fee_amount = crossBorderInfo.fee_amount;
+        transferInsert.settled_at = now;
+        transferInsert.settlement_metadata = {
+          corridor: crossBorderInfo.corridor_id,
+          rail: mandate.settlement_rail || 'raast',
+          fx_rate: crossBorderInfo.fx_rate,
+          fx_source: 'live_exchangerate_api',
+          destination_amount: crossBorderInfo.destination_amount,
+          destination_currency: crossBorderInfo.destination_currency,
+          fee_percent: 0.7,
+          fee_amount: crossBorderInfo.fee_amount,
+          settled_at: now,
         };
+      }
 
-        // Attach cross-border fields
-        if (crossBorderInfo) {
-          transferInsert.to_account_id = crossBorderInfo.to_account_id;
-          transferInsert.to_account_name = crossBorderInfo.to_account_name;
-          transferInsert.destination_amount = crossBorderInfo.destination_amount;
-          transferInsert.destination_currency = crossBorderInfo.destination_currency;
-          transferInsert.fx_rate = crossBorderInfo.fx_rate;
-          transferInsert.corridor_id = crossBorderInfo.corridor_id;
-          transferInsert.fee_amount = crossBorderInfo.fee_amount;
-          transferInsert.settled_at = now;
-          transferInsert.settlement_metadata = {
-            corridor: crossBorderInfo.corridor_id,
-            rail: mandate.settlement_rail || 'raast',
-            fx_rate: crossBorderInfo.fx_rate,
-            fx_source: 'live_exchangerate_api',
-            destination_amount: crossBorderInfo.destination_amount,
-            destination_currency: crossBorderInfo.destination_currency,
-            fee_percent: 0.7,
-            fee_amount: crossBorderInfo.fee_amount,
-            settled_at: now,
-          };
+      const { data: transfer } = await supabase
+        .from('transfers')
+        .insert(transferInsert)
+        .select('id')
+        .single();
+
+      // Ledger authorization — debits/credits wallets and sets status='authorized'.
+      // The async settlement worker picks up 'authorized' transfers for on-chain execution.
+      if (transfer) {
+        const authorization = await authorizeWalletTransfer({
+          supabase,
+          tenantId: ctx.tenantId,
+          destinationTenantId: recipientTenantId,
+          sourceWallet: wallet,
+          destinationWallet: destWallet,
+          amount: execAmount,
+          transferId: transfer.id,
+          protocolMetadata: settlementMetadata,
+        });
+
+        if (!authorization.success) {
+          console.error('[AP2] Ledger authorization failed:', authorization.error);
         }
+      }
 
-        const { data: transfer } = await supabase
-          .from('transfers')
-          .insert(transferInsert)
-          .select('id')
-          .single();
+      if (transfer) {
 
         // ============================================
         // On-chain Tempo settlement (if wallet has private key)
@@ -938,7 +948,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
         walletDeduction = {
           walletId: wallet.id,
           previousBalance: currentBalance,
-          newBalance: updatedBalance,
+          newBalance: currentBalance - execAmount,
           transferId: transfer?.id,
         };
 
