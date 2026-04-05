@@ -1349,6 +1349,50 @@ export function createMcpServer(
         };
       }
 
+      case 'agent_evm_key_provision': {
+        const { agentId } = args as { agentId: string };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/evm-keys`, {
+          method: 'POST',
+          body: '{}',
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'agent_x402_sign': {
+        const { agentId, to, value, chainId, validBefore, validAfter, nonce } = args as {
+          agentId: string;
+          to: string;
+          value: string;
+          chainId?: number;
+          validBefore: number;
+          validAfter?: number;
+          nonce?: string;
+        };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/x402-sign`, {
+          method: 'POST',
+          body: JSON.stringify({ to, value, chainId: chainId || 84532, validBefore, validAfter: validAfter || 0, nonce }),
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'agent_fund_eoa': {
+        const { agentId, amount } = args as { agentId: string; amount?: string };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/fund-eoa`, {
+          method: 'POST',
+          body: JSON.stringify({ amount: amount || '1' }),
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'agent_refill_faucet': {
+        const { agentId } = args as { agentId: string };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/refill-faucet`, {
+          method: 'POST',
+          body: '{}',
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
       // ====================================================================
       // A2A Tools
       // ====================================================================

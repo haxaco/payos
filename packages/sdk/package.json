@@ -1,6 +1,6 @@
 {
   "name": "@sly_ai/sdk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Unified Sly SDK for the agentic economy platform",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

@@ -1712,6 +1712,57 @@ export const tools: Tool[] = [
       required: [],
     },
   },
+  {
+    name: 'agent_evm_key_provision',
+    description: 'Provision a Sly-custodial secp256k1 EVM key for an agent so they can sign EIP-3009 payloads for spec-compliant x402 payments. Idempotent — returns the existing key if one already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'UUID of the agent' },
+      },
+      required: ['agentId'],
+    },
+  },
+  {
+    name: 'agent_x402_sign',
+    description: 'Sign an EIP-3009 transferWithAuthorization payload using the agent\'s managed EVM key. Returns a spec-compliant signature that any x402 facilitator can verify. Use this to pay EXTERNAL x402-protected endpoints (as opposed to x402_pay which is for Sly\'s internal marketplace API).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'UUID of the agent whose EOA will sign' },
+        to: { type: 'string', description: 'Recipient EVM address (from the 402 response\'s payTo field)' },
+        value: { type: 'string', description: 'Amount in token units as decimal string (e.g. "100000" for 0.1 USDC at 6 decimals)' },
+        chainId: { type: 'number', description: 'Chain ID (default 84532 = Base Sepolia)', default: 84532 },
+        validBefore: { type: 'number', description: 'Unix seconds deadline — signature rejected after this time' },
+        validAfter: { type: 'number', description: 'Unix seconds start time (default 0)', default: 0 },
+        nonce: { type: 'string', description: '32-byte hex nonce (auto-generated if omitted)' },
+      },
+      required: ['agentId', 'to', 'value', 'validBefore'],
+    },
+  },
+  {
+    name: 'agent_fund_eoa',
+    description: 'Bridge USDC from an agent\'s Circle custodial wallet to their managed EVM EOA. Required before the EOA can pay external x402 endpoints on-chain.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'UUID of the agent' },
+        amount: { type: 'string', description: 'USDC amount as decimal string (default "1")', default: '1' },
+      },
+      required: ['agentId'],
+    },
+  },
+  {
+    name: 'agent_refill_faucet',
+    description: 'Request a Circle testnet faucet drip to top up the agent\'s Circle custodial wallet. Rate-limited by Circle (~1 drip per 2 hours per address).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'UUID of the agent' },
+      },
+      required: ['agentId'],
+    },
+  },
 
   // ==========================================================================
   // A2A Tools (Google Agent-to-Agent Protocol)

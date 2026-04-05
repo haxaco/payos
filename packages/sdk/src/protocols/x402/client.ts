@@ -149,6 +149,116 @@ export class SlyX402Client {
     };
   }
 
+  // ==========================================================================
+  // Spec-compliant x402 (EIP-3009) via Sly-custodial EOA
+  //
+  // These methods talk to Sly's server-side signing endpoints so agents whose
+  // private keys are custodied by Sly can produce spec-compliant x402 payment
+  // signatures for EXTERNAL x402-protected endpoints.
+  // ==========================================================================
+
+  /**
+   * Provision or fetch the agent's managed EVM address.
+   * Idempotent — returns the same address on repeated calls.
+   */
+  async getEvmAddress(agentId: string): Promise<string> {
+    const envConfig = getEnvironmentConfig(this.config.environment);
+    const response = await fetch(`${envConfig.apiUrl}/v1/agents/${agentId}/evm-keys`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.apiKey}`,
+      },
+      body: '{}',
+    });
+    if (!response.ok) {
+      const err = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(`getEvmAddress failed: ${err.error || response.statusText}`);
+    }
+    const body = (await response.json()) as { data?: { ethereumAddress: string } };
+    const addr = body.data?.ethereumAddress;
+    if (!addr) throw new Error('No EVM address in response');
+    return addr;
+  }
+
+  /**
+   * Sign an EIP-3009 transferWithAuthorization payload using the agent's
+   * Sly-custodial EVM key. The resulting signature is a spec-compliant
+   * PAYMENT-SIGNATURE value that any x402 facilitator can verify.
+   */
+  async signTransferAuth(
+    agentId: string,
+    params: {
+      to: string;
+      value: string;
+      chainId?: number;
+      validBefore: number;
+      validAfter?: number;
+      nonce?: string;
+    },
+  ): Promise<{
+    signature: `0x${string}`;
+    v: number;
+    r: `0x${string}`;
+    s: `0x${string}`;
+    from: string;
+    to: string;
+    value: string;
+    chainId: number;
+    tokenAddress: string;
+    validAfter: number;
+    validBefore: number;
+    nonce: string;
+  }> {
+    const envConfig = getEnvironmentConfig(this.config.environment);
+    const response = await fetch(`${envConfig.apiUrl}/v1/agents/${agentId}/x402-sign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        to: params.to,
+        value: params.value,
+        chainId: params.chainId || 84532,
+        validBefore: params.validBefore,
+        validAfter: params.validAfter || 0,
+        nonce: params.nonce,
+      }),
+    });
+    if (!response.ok) {
+      const err = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(`signTransferAuth failed: ${err.error || response.statusText}`);
+    }
+    return (await response.json()) as any;
+  }
+
+  /**
+   * Bridge USDC from the agent's Circle custodial wallet to their managed EOA.
+   * Required before the EOA can pay external x402 endpoints on-chain.
+   */
+  async fundEvmAddress(agentId: string, amount: string = '1'): Promise<{
+    txId: string;
+    destinationAddress: string;
+    amount: string;
+  }> {
+    const envConfig = getEnvironmentConfig(this.config.environment);
+    const response = await fetch(`${envConfig.apiUrl}/v1/agents/${agentId}/fund-eoa`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({ amount }),
+    });
+    if (!response.ok) {
+      const err = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(`fundEvmAddress failed: ${err.error || response.statusText}`);
+    }
+    const body = (await response.json()) as { data?: any };
+    return body.data || (body as any);
+  }
+
   /**
    * Parse 402 response
    */
