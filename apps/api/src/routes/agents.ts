@@ -2363,6 +2363,124 @@ agents.post('/:id/smart-wallet-sign', async (c) => {
 });
 
 // ============================================
+// POST /v1/agents/:id/smart-wallet/send-usdc
+// Send USDC from the agent's smart wallet via an ERC-4337 UserOperation.
+// The bundler handles wrapping, gas, and on-chain submission. Smart wallet
+// is deployed atomically with the first userOp.
+// ============================================
+agents.post('/:id/smart-wallet/send-usdc', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+
+  if (!isValidUUID(id)) {
+    throw new ValidationError('Invalid agent ID format');
+  }
+
+  if (ctx.actorType === 'agent' && ctx.actorId !== id) {
+    return c.json({ error: 'Agent can only spend from their own smart wallet' }, 403);
+  }
+
+  let body: any;
+  try { body = await c.req.json(); } catch {
+    throw new ValidationError('Invalid JSON body');
+  }
+
+  const { to, value, chainId = 84532 } = body;
+  if (!to || !value) {
+    throw new ValidationError('Missing required fields: to, value (USDC units as decimal string)');
+  }
+
+  const supabase = createClient();
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, tenant_id, status')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  if (!agent) throw new NotFoundError('Agent', id);
+  if ((agent as any).status !== 'active') throw new ValidationError('Agent is not active');
+
+  const { data: keyRow } = await (supabase.from('agent_signing_keys') as any)
+    .select('private_key_encrypted, smart_account_address')
+    .eq('agent_id', id)
+    .eq('algorithm', 'secp256k1')
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (!keyRow) return c.json({ error: 'Agent has no EVM key', code: 'NO_EVM_KEY' }, 400);
+
+  try {
+    const { sendUsdcViaSmartAccount } = await import('../services/x402/smart-account.js');
+    const { deserializeAndDecrypt } = await import('../services/credential-vault/index.js');
+
+    const decrypted = deserializeAndDecrypt(keyRow.private_key_encrypted);
+    const privateKey = decrypted.privateKey as `0x${string}`;
+
+    const result = await sendUsdcViaSmartAccount({
+      ownerPrivateKey: privateKey,
+      to: to as `0x${string}`,
+      valueUnits: BigInt(value),
+      chainId: Number(chainId),
+    });
+
+    return c.json({
+      success: true,
+      userOpHash: result.userOpHash,
+      txHash: result.txHash || null,
+      smartAccountAddress: result.smartAccountAddress,
+      status: result.status,
+      blockNumber: result.blockNumber ? String(result.blockNumber) : null,
+      explorer: result.txHash
+        ? `https://sepolia.basescan.org/tx/${result.txHash}`
+        : null,
+    });
+  } catch (e: any) {
+    return c.json({
+      error: `UserOp submission failed: ${e.message}`,
+      code: 'USEROP_FAILED',
+    }, 500);
+  }
+});
+
+// ============================================
+// GET /v1/agents/:id/smart-wallet/balance
+// Read USDC balance of the agent's smart wallet (ERC-20 balanceOf call,
+// works even if the smart account is not yet deployed).
+// ============================================
+agents.get('/:id/smart-wallet/balance', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  const chainId = Number(c.req.query('chainId') || '84532');
+
+  if (!isValidUUID(id)) throw new ValidationError('Invalid agent ID format');
+
+  const supabase = createClient();
+  const { data: keyRow } = await (supabase.from('agent_signing_keys') as any)
+    .select('smart_account_address')
+    .eq('agent_id', id)
+    .eq('algorithm', 'secp256k1')
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (!keyRow?.smart_account_address) {
+    return c.json({ error: 'Agent has no smart wallet provisioned', code: 'NO_SMART_WALLET' }, 400);
+  }
+
+  try {
+    const { getSmartAccountUsdcBalance } = await import('../services/x402/smart-account.js');
+    const balanceUnits = await getSmartAccountUsdcBalance(keyRow.smart_account_address, chainId);
+    return c.json({
+      smartAccountAddress: keyRow.smart_account_address,
+      chainId,
+      balanceUnits: String(balanceUnits),
+      balanceUsdc: (Number(balanceUnits) / 1_000_000).toFixed(6),
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ============================================
 // POST /v1/agents/:id/wallet/refill-faucet
 // Request a Circle faucet drip to top up the agent's Circle custodial wallet
 // with testnet USDC + native gas. Idempotency: Circle's faucet has its own
