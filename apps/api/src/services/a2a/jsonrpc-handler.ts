@@ -229,6 +229,21 @@ async function handleMessageSend(
     }
   }
 
+  // --- Idempotency check (fail-fast before skill validation / task creation) ---
+  // Derive a key from the caller + JSON-RPC request id so retried requests with
+  // the same id return the existing task instead of creating a duplicate + charging twice.
+  // Scoped to (tenant_id, agent_id) via the unique index, so different callers can safely
+  // reuse the same JSON-RPC id value (e.g. "1") without colliding.
+  const idempotencyKey = request.id != null
+    ? `${callerAgentId || 'anon'}:${String(request.id)}`
+    : undefined;
+  if (idempotencyKey) {
+    const existing = await taskService.findByIdempotencyKey(agentId, idempotencyKey);
+    if (existing) {
+      return { jsonrpc: '2.0', result: existing, id: request.id };
+    }
+  }
+
   // Create new task — resolve contextId via session affinity if caller didn't provide one
   let resolvedContextId = contextId;
   if (!resolvedContextId && callerAgentId) {
@@ -260,6 +275,7 @@ async function handleMessageSend(
     callbackUrl,
     callbackSecret,
     callerAgentId,
+    idempotencyKey,
   );
 
   return {

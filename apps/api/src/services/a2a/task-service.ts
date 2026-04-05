@@ -43,6 +43,24 @@ export class A2ATaskService {
   ) {}
 
   /**
+   * Look up an existing task by its idempotency key (scoped to tenant + target agent).
+   * Returns null if no match. Used by message/send to deduplicate retried requests.
+   */
+  async findByIdempotencyKey(agentId: string, idempotencyKey: string): Promise<A2ATask | null> {
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('id')
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
+      .eq('agent_id', agentId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+
+    if (!taskRow) return null;
+    return this.getTask((taskRow as any).id);
+  }
+
+  /**
    * Create a new A2A task with an initial message.
    */
   async createTask(
@@ -55,6 +73,7 @@ export class A2ATaskService {
     callbackUrl?: string,
     callbackSecret?: string,
     clientAgentId?: string,
+    idempotencyKey?: string,
   ): Promise<A2ATask> {
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
@@ -71,11 +90,17 @@ export class A2ATaskService {
         callback_url: callbackUrl || null,
         callback_secret: callbackSecret || null,
         client_agent_id: clientAgentId || null,
+        idempotency_key: idempotencyKey || null,
       })
       .select()
       .single();
 
     if (taskError || !taskRow) {
+      // If this was an idempotency conflict (unique index violation), fetch and return the existing task
+      if (idempotencyKey && taskError?.code === '23505') {
+        const existing = await this.findByIdempotencyKey(agentId, idempotencyKey);
+        if (existing) return existing;
+      }
       throw new Error(`Failed to create task: ${taskError?.message || 'unknown error'}`);
     }
 
