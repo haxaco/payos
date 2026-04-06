@@ -334,7 +334,11 @@ transfers.post('/', async (c) => {
       destination_tenant_id: toAccount.tenant_id || ctx.tenantId,
       environment: getEnv(ctx),
       type: transferType,
-      status: isInternal ? 'completed' : 'processing', // Internal transfers complete instantly
+      // All transfers go through the settlement pipeline — no shortcuts.
+      // The settlement worker calls Circle.transferTokens() or routes through
+      // the smart wallet based on the agent's wallet type. 'authorized' means
+      // the ledger debit is done, on-chain settlement is pending.
+      status: 'authorized',
       from_account_id: fromAccountId,
       from_account_name: fromAccount.name,
       to_account_id: toAccountId,
@@ -350,8 +354,8 @@ transfers.post('/', async (c) => {
       fee_amount: feeAmount,
       description,
       idempotency_key: idempotencyKey,
-      processing_at: isInternal ? null : new Date().toISOString(),
-      completed_at: isInternal ? new Date().toISOString() : null,
+      processing_at: new Date().toISOString(),
+      completed_at: null,
     })
     .select()
     .single();
