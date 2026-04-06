@@ -336,7 +336,9 @@ export async function syncSmartWalletBalance(
     const balance = await getSmartAccountUsdcBalance(walletAddress, chainId);
     const balanceNum = Number(balance) / 1e6; // USDC has 6 decimals
 
-    const { error } = await supabase
+    // Supabase .eq() on wallet_address is case-sensitive.
+    // Smart wallet addresses are checksummed (mixed case), so also try lowercase.
+    let result = await supabase
       .from('wallets')
       .update({
         balance: balanceNum,
@@ -344,10 +346,26 @@ export async function syncSmartWalletBalance(
         sync_enabled: true,
       })
       .eq('wallet_address', walletAddress)
-      .eq('wallet_type', 'smart_wallet');
+      .eq('wallet_type', 'smart_wallet')
+      .select('id');
 
-    return { balance: balanceNum, synced: !error };
-  } catch {
+    // If no rows matched, try case-insensitive via ilike
+    if (!result.data?.length) {
+      result = await supabase
+        .from('wallets')
+        .update({
+          balance: balanceNum,
+          last_synced_at: new Date().toISOString(),
+          sync_enabled: true,
+        })
+        .ilike('wallet_address', walletAddress)
+        .eq('wallet_type', 'smart_wallet')
+        .select('id');
+    }
+
+    return { balance: balanceNum, synced: (result.data?.length || 0) > 0 };
+  } catch (e: any) {
+    console.warn(`[SmartWalletSync] Failed to sync ${walletAddress}: ${e.message?.slice(0, 80)}`);
     return { balance: 0, synced: false };
   }
 }
