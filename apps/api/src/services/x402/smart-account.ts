@@ -24,11 +24,40 @@ import { baseSepolia, base } from 'viem/chains';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { deserializeAndDecrypt } from '../credential-vault/index.js';
 
-// Public Pimlico bundler endpoints (no API key required for testnet)
-const BUNDLER_URLS: Record<number, string> = {
+// Bundler configuration with fallback support.
+// Primary: Pimlico public endpoints (no API key for testnet).
+// Fallback: configurable via env vars for production resilience.
+// If the primary bundler fails (timeout, 5xx, network error), the fallback is tried.
+const PIMLICO_URLS: Record<number, string> = {
   84532: 'https://public.pimlico.io/v2/84532/rpc',
   8453: 'https://public.pimlico.io/v2/8453/rpc',
 };
+
+function getBundlerUrls(chainId: number): string[] {
+  const urls: string[] = [];
+
+  // Primary: env override or Pimlico default
+  const envPrimary = process.env[`BUNDLER_URL_${chainId}`] || process.env.BUNDLER_URL;
+  if (envPrimary) {
+    urls.push(envPrimary);
+  } else if (PIMLICO_URLS[chainId]) {
+    urls.push(PIMLICO_URLS[chainId]);
+  }
+
+  // Fallback: env override (separate from primary)
+  const envFallback = process.env[`BUNDLER_URL_FALLBACK_${chainId}`] || process.env.BUNDLER_URL_FALLBACK;
+  if (envFallback) {
+    urls.push(envFallback);
+  }
+
+  // If primary is Pimlico and no explicit fallback, add Pimlico as self-retry
+  // (many Pimlico failures are transient — a retry often succeeds)
+  if (urls.length === 1 && PIMLICO_URLS[chainId]) {
+    urls.push(PIMLICO_URLS[chainId]);
+  }
+
+  return urls;
+}
 
 // USDC contract addresses per chain (same as x402/signer.ts)
 const USDC_ADDRESSES: Record<number, Address> = {
@@ -217,8 +246,8 @@ export async function sendUsdcViaSmartAccount(params: {
   const chain = CHAIN_MAP[chainId as keyof typeof CHAIN_MAP];
   if (!chain) throw new Error(`Unsupported chain: ${chainId}`);
 
-  const bundlerUrl = BUNDLER_URLS[chainId];
-  if (!bundlerUrl) throw new Error(`No bundler configured for chain ${chainId}`);
+  const bundlerUrls = getBundlerUrls(chainId);
+  if (bundlerUrls.length === 0) throw new Error(`No bundler configured for chain ${chainId}`);
 
   const usdcAddress = USDC_ADDRESSES[chainId];
   if (!usdcAddress) throw new Error(`No USDC contract for chain ${chainId}`);
@@ -231,12 +260,6 @@ export async function sendUsdcViaSmartAccount(params: {
     owners: [ownerAccount],
   });
 
-  const bundlerClient = createBundlerClient({
-    account: smartAccount,
-    client: publicClient,
-    transport: http(bundlerUrl),
-  });
-
   // Encode the USDC.transfer(to, value) calldata
   const erc20Abi = parseAbi(['function transfer(address to, uint256 value)']);
   const transferCalldata = encodeFunctionData({
@@ -245,40 +268,59 @@ export async function sendUsdcViaSmartAccount(params: {
     args: [params.to, params.valueUnits],
   });
 
-  // Submit the UserOperation
-  const userOpHash = await bundlerClient.sendUserOperation({
-    account: smartAccount,
-    calls: [
-      {
-        to: usdcAddress,
-        data: transferCalldata,
-        value: 0n,
-      },
-    ],
-  });
+  // Try each bundler URL in order (primary, then fallback).
+  // Most failures are transient (Pimlico rate limit, network blip) — a retry
+  // often succeeds even against the same endpoint.
+  let lastError: Error | null = null;
+  for (let i = 0; i < bundlerUrls.length; i++) {
+    const bundlerUrl = bundlerUrls[i];
+    const isRetry = i > 0;
+    if (isRetry) {
+      console.log(`[smart-account] Bundler attempt ${i + 1}/${bundlerUrls.length}: ${bundlerUrl}`);
+    }
 
-  // Wait for inclusion (bundlers typically include within 1-2 blocks)
-  try {
-    const receipt = await bundlerClient.waitForUserOperationReceipt({
-      hash: userOpHash,
-      timeout: 60_000, // 60s
-    });
+    try {
+      const bundlerClient = createBundlerClient({
+        account: smartAccount,
+        client: publicClient,
+        transport: http(bundlerUrl),
+      });
 
-    return {
-      userOpHash,
-      txHash: receipt.receipt.transactionHash,
-      smartAccountAddress: smartAccount.address,
-      status: receipt.success ? 'included' : 'failed',
-      blockNumber: receipt.receipt.blockNumber,
-    };
-  } catch (err: any) {
-    // If waiting timed out, return the hash anyway so callers can poll
-    return {
-      userOpHash,
-      smartAccountAddress: smartAccount.address,
-      status: 'pending',
-    };
+      const userOpHash = await bundlerClient.sendUserOperation({
+        account: smartAccount,
+        calls: [{ to: usdcAddress, data: transferCalldata, value: 0n }],
+      });
+
+      // Wait for inclusion
+      try {
+        const receipt = await bundlerClient.waitForUserOperationReceipt({
+          hash: userOpHash,
+          timeout: 60_000,
+        });
+        return {
+          userOpHash,
+          txHash: receipt.receipt.transactionHash,
+          smartAccountAddress: smartAccount.address,
+          status: receipt.success ? 'included' as const : 'failed' as const,
+          blockNumber: receipt.receipt.blockNumber,
+        };
+      } catch {
+        // Timeout waiting for receipt — return hash for caller to poll
+        return {
+          userOpHash,
+          smartAccountAddress: smartAccount.address,
+          status: 'pending' as const,
+        };
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[smart-account] Bundler ${bundlerUrl} failed: ${err.message?.slice(0, 200)}`);
+      // Continue to next bundler URL
+    }
   }
+
+  // All bundlers failed
+  throw lastError || new Error('All bundler endpoints failed');
 }
 
 /**
