@@ -266,15 +266,10 @@ transfers.post('/', async (c) => {
     throw new NotFoundError('Destination account', toAccountId);
   }
 
-  // KYA-gated cross-tenant check: unverified agents (tier 0) cannot initiate
-  // cross-tenant transfers. This prevents unverified agents from moving funds
-  // to unknown tenants. Tier 1+ agents can transfer cross-tenant subject to
-  // their normal spending limits. API key and user actors are unrestricted.
-  if (toAccount.tenant_id && toAccount.tenant_id !== ctx.tenantId) {
-    if (ctx.actorType === 'agent' && (ctx.kyaTier === 0 || ctx.kyaTier === undefined)) {
-      throw new ValidationError('KYA verification required for cross-tenant transfers. Upgrade to KYA tier 1+ to enable cross-tenant payments.');
-    }
-  }
+  // Cross-tenant transfers are allowed. Each marketplace agent has its own tenant,
+  // so cross-tenant is the normal operating mode. The real governance controls are
+  // spending limits (per-tx/daily/monthly), balance checks, wallet freeze, and audit
+  // trail — all of which apply regardless of destination tenant.
 
   // Check sender has sufficient balance
   const availableBalance = parseFloat(fromAccount.balance_available) || 0;
