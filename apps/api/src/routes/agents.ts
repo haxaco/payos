@@ -2074,13 +2074,13 @@ agents.post('/:id/x402-sign', async (c) => {
   }
 
   // Check wallet freeze status — block signing if agent's wallet is frozen
-  const { data: agentWallet } = await supabase
+  const { data: frozenWallets } = await supabase
     .from('wallets')
     .select('status')
     .eq('managed_by_agent_id', id)
     .eq('status', 'frozen')
-    .maybeSingle();
-  if (agentWallet) {
+    .limit(1);
+  if (frozenWallets && frozenWallets.length > 0) {
     return c.json({ error: 'Agent wallet is frozen — signing blocked', code: 'WALLET_FROZEN' }, 403);
   }
 
@@ -2419,13 +2419,13 @@ agents.post('/:id/smart-wallet/send-usdc', async (c) => {
   }
 
   // Check wallet freeze status — block UserOp execution if frozen
-  const { data: frozenWallet } = await supabase
+  const { data: frozenWalletRows } = await supabase
     .from('wallets')
     .select('status')
     .eq('managed_by_agent_id', id)
     .eq('status', 'frozen')
-    .maybeSingle();
-  if (frozenWallet) {
+    .limit(1);
+  if (frozenWalletRows && frozenWalletRows.length > 0) {
     return c.json({ error: 'Agent wallet is frozen — UserOp execution blocked', code: 'WALLET_FROZEN' }, 403);
   }
 
