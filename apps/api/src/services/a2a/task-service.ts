@@ -75,6 +75,14 @@ export class A2ATaskService {
     clientAgentId?: string,
     idempotencyKey?: string,
   ): Promise<A2ATask> {
+    // Validate callback security: if a callback URL is provided, a secret is required
+    // to prevent callback hijacking (attacker sets callback to their server without auth).
+    // The secret is used for HMAC signing on delivery — without it, anyone could
+    // intercept completion notifications by pointing callbacks to their own endpoint.
+    if (callbackUrl && !callbackSecret) {
+      throw new Error('callbackSecret is required when callbackUrl is provided. This prevents callback hijacking — the secret is used for HMAC verification on delivery.');
+    }
+
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
       .from('a2a_tasks')

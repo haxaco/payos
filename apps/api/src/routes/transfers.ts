@@ -265,7 +265,14 @@ transfers.post('/', async (c) => {
   if (toError || !toAccount) {
     throw new NotFoundError('Destination account', toAccountId);
   }
-  
+
+  // Block cross-tenant transfers on the generic API.
+  // Protocol-specific paths (A2A, ACP, x402) handle cross-tenant explicitly
+  // via their own transfer creation code with proper authorization.
+  if (toAccount.tenant_id && toAccount.tenant_id !== ctx.tenantId) {
+    throw new ValidationError('Cross-tenant transfers are not allowed on this endpoint. Use protocol-specific APIs (A2A, ACP, x402) for cross-tenant payments.');
+  }
+
   // Check sender has sufficient balance
   const availableBalance = parseFloat(fromAccount.balance_available) || 0;
   if (availableBalance < amount) {

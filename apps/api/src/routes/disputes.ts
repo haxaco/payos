@@ -325,6 +325,15 @@ disputes.post('/', async (c) => {
     throw new Error('Failed to create dispute in database');
   }
   
+  // Flag the transfer as disputed so downstream consumers (settlement workers,
+  // balance queries) can hold or block further processing on this transfer.
+  // This is the functional enforcement that was previously missing — disputes
+  // were audit-only with no impact on the transfer lifecycle.
+  await supabase
+    .from('transfers')
+    .update({ status: 'disputed' })
+    .eq('id', transferId);
+
   // Audit log
   await logAudit(supabase, {
     tenantId: disputeTenantId,
@@ -338,9 +347,10 @@ disputes.post('/', async (c) => {
       transferId,
       reason,
       amountDisputed: disputeAmount,
+      previousTransferStatus: transfer.status,
     },
   });
-  
+
   return c.json({
     data: {
       id: dispute.id,

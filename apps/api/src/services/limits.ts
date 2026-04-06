@@ -164,11 +164,40 @@ export class LimitService {
       return result;
     }
 
-    const effectiveLimits: AgentLimits = {
+    let effectiveLimits: AgentLimits = {
       perTransaction: parseFloat(agent.effective_limit_per_tx) || 0,
       daily: parseFloat(agent.effective_limit_daily) || 0,
       monthly: parseFloat(agent.effective_limit_monthly) || 0,
     };
+
+    // Rating-based limit reduction: if average received rating is below 30/100,
+    // reduce effective limits by 50%. This gives the rating system functional teeth —
+    // agents with consistently poor service face real spending consequences.
+    try {
+      const { data: ratings } = await this.supabase
+        .from('a2a_task_feedback')
+        .select('score')
+        .eq('provider_agent_id', agentId)
+        .limit(50);
+      if (ratings && ratings.length >= 3) {
+        const avgScore = ratings.reduce((s: number, r: any) => s + (r.score || 0), 0) / ratings.length;
+        if (avgScore < 30) {
+          effectiveLimits = {
+            perTransaction: effectiveLimits.perTransaction * 0.5,
+            daily: effectiveLimits.daily * 0.5,
+            monthly: effectiveLimits.monthly * 0.5,
+          };
+          trackOp({
+            tenantId: agent.tenant_id,
+            operation: OpType.GOVERNANCE_LIMIT_CHECK,
+            subject: `agent/${agentId}`,
+            correlationId,
+            success: true,
+            data: { avgScore, ratingCount: ratings.length, limitReduction: '50%', reason: 'low_rating_penalty' },
+          });
+        }
+      }
+    } catch { /* rating check is best-effort — don't block transfers if feedback table unavailable */ }
 
     // Check KYA tier (tier 0 blocked only if no effective limits set)
     if (agent.kya_tier === 0 && effectiveLimits.perTransaction <= 0) {
