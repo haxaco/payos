@@ -408,11 +408,6 @@ export class A2ATaskService {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    // Ownership scoping: when an agent calls listTasks, only show tasks they're involved in
-    if (scopeToAgentId) {
-      query = query.or(`agent_id.eq.${scopeToAgentId},client_agent_id.eq.${scopeToAgentId}`);
-    }
-
     if (agentId) query = query.eq('agent_id', agentId);
     if (callerAgentId) query = query.eq('client_agent_id', callerAgentId);
     if (state) query = query.eq('state', state);
@@ -425,8 +420,17 @@ export class A2ATaskService {
       throw new Error(`Failed to list tasks: ${error.message}`);
     }
 
+    // Ownership scoping: when an agent calls listTasks, filter to tasks they're involved in.
+    // Applied in-memory because Supabase PostgREST .or() interacts poorly with !inner joins.
+    let filteredRows = rows || [];
+    if (scopeToAgentId && filteredRows.length > 0) {
+      filteredRows = filteredRows.filter((r: any) =>
+        r.agent_id === scopeToAgentId || r.client_agent_id === scopeToAgentId
+      );
+    }
+
     // Batch-fetch transfer amounts for tasks with linked transfers
-    const transferIds = (rows || [])
+    const transferIds = filteredRows
       .map((r: any) => r.transfer_id)
       .filter(Boolean) as string[];
     const transferAmounts = new Map<string, { amount: number; currency: string; status: string }>();
@@ -442,7 +446,7 @@ export class A2ATaskService {
     }
 
     // Batch-fetch message counts per task
-    const taskIds = (rows || []).map((r: any) => r.id);
+    const taskIds = filteredRows.map((r: any) => r.id);
     const messageCounts = new Map<string, number>();
     if (taskIds.length > 0) {
       const { data: msgCounts } = await this.supabase
@@ -455,7 +459,7 @@ export class A2ATaskService {
       }
     }
 
-    const tasks = (rows || []).map((row: any) => {
+    const tasks = filteredRows.map((row: any) => {
       const transfer = row.transfer_id ? transferAmounts.get(row.transfer_id) : undefined;
       return {
         id: row.id,
