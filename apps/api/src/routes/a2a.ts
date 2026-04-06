@@ -1155,6 +1155,8 @@ a2aRouter.get('/tasks', async (c) => {
     contextId,
     page,
     limit,
+    // Ownership scoping: when caller is an agent, only show tasks they're involved in
+    scopeToAgentId: ctx.actorType === 'agent' ? ctx.actorId : undefined,
   });
 
   return c.json(result);
