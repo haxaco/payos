@@ -80,7 +80,10 @@ function formatTimeAgo(timestamp: string): string {
 }
 
 function ActivityItem({ activity }: { activity: RecentActivity }) {
-  const ui = PROTOCOL_UI[activity.protocol];
+  const ui = PROTOCOL_UI[activity.protocol] || {
+    icon: Zap, name: activity.protocol || 'Transfer',
+    color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-100 dark:bg-gray-950',
+  };
   const Icon = ui.icon;
 
   return (

@@ -2495,6 +2495,14 @@ agents.post('/:id/smart-wallet/send-usdc', async (c) => {
       chainId: Number(chainId),
     });
 
+    // Sync smart wallet balance in wallets table after UserOp (fire-and-forget)
+    if (result.smartAccountAddress) {
+      import('../services/x402/smart-account.js').then(({ syncSmartWalletBalance }) => {
+        syncSmartWalletBalance(supabase, result.smartAccountAddress, Number(chainId))
+          .catch(() => {});
+      }).catch(() => {});
+    }
+
     return c.json({
       success: true,
       userOpHash: result.userOpHash,

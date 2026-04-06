@@ -17,6 +17,7 @@ import { startOpTracker, stopOpTracker } from './services/ops/track-op.js';
 import { startRequestCounter, stopRequestCounter } from './services/ops/request-counter.js';
 import { startPartitionManager, stopPartitionManager } from './workers/partition-manager.js';
 import { taskEventBus } from './services/a2a/task-event-bus.js';
+import { startSmartWalletSyncWorker, stopSmartWalletSyncWorker } from './workers/smart-wallet-sync.js';
 
 // Railway uses PORT, fallback to API_PORT for local dev
 const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
@@ -83,6 +84,9 @@ if (enableScheduledTransfers) {
 
 // Start idempotency cleanup worker (runs every hour)
 const stopIdempotencyCleanup = startIdempotencyCleanupWorker(60 * 60 * 1000);
+
+// Start smart wallet balance sync worker (syncs on-chain balances every 5 min)
+startSmartWalletSyncWorker();
 
 // Start webhook cleanup worker (runs daily) - Story 27.5
 if (enableWebhookCleanup) {
@@ -171,6 +175,7 @@ const shutdown = async (signal: string) => {
   await stopOpTracker();
   await stopRequestCounter();
   stopPartitionManager();
+  stopSmartWalletSyncWorker();
   process.exit(0);
 };
 

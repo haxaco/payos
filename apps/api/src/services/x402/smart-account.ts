@@ -324,6 +324,58 @@ export async function sendUsdcViaSmartAccount(params: {
 }
 
 /**
+ * Sync a smart wallet's on-chain USDC balance back to the wallets table.
+ * Called after each UserOp and periodically by the balance sync worker.
+ */
+export async function syncSmartWalletBalance(
+  supabase: SupabaseClient,
+  walletAddress: Address,
+  chainId: number = 84532,
+): Promise<{ balance: number; synced: boolean }> {
+  try {
+    const balance = await getSmartAccountUsdcBalance(walletAddress, chainId);
+    const balanceNum = Number(balance) / 1e6; // USDC has 6 decimals
+
+    const { error } = await supabase
+      .from('wallets')
+      .update({
+        balance: balanceNum,
+        last_synced_at: new Date().toISOString(),
+        sync_enabled: true,
+      })
+      .eq('wallet_address', walletAddress)
+      .eq('wallet_type', 'smart_wallet');
+
+    return { balance: balanceNum, synced: !error };
+  } catch {
+    return { balance: 0, synced: false };
+  }
+}
+
+/**
+ * Sync ALL smart wallet balances in the wallets table.
+ * Called by the periodic balance sync worker.
+ */
+export async function syncAllSmartWalletBalances(
+  supabase: SupabaseClient,
+  chainId: number = 84532,
+): Promise<{ synced: number; failed: number }> {
+  const { data: wallets } = await supabase
+    .from('wallets')
+    .select('id, wallet_address')
+    .eq('wallet_type', 'smart_wallet')
+    .eq('status', 'active');
+
+  let synced = 0, failed = 0;
+  for (const w of wallets || []) {
+    if (!w.wallet_address) { failed++; continue; }
+    const result = await syncSmartWalletBalance(supabase, w.wallet_address as Address, chainId);
+    if (result.synced) synced++; else failed++;
+  }
+  return { synced, failed };
+}
+
+/**
  * Read the USDC balance of a smart account (wraps a standard ERC-20 balanceOf
  * call — the smart account doesn't need to be deployed for this to work).
  */
