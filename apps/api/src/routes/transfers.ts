@@ -266,11 +266,14 @@ transfers.post('/', async (c) => {
     throw new NotFoundError('Destination account', toAccountId);
   }
 
-  // Block cross-tenant transfers on the generic API.
-  // Protocol-specific paths (A2A, ACP, x402) handle cross-tenant explicitly
-  // via their own transfer creation code with proper authorization.
+  // KYA-gated cross-tenant check: unverified agents (tier 0) cannot initiate
+  // cross-tenant transfers. This prevents unverified agents from moving funds
+  // to unknown tenants. Tier 1+ agents can transfer cross-tenant subject to
+  // their normal spending limits. API key and user actors are unrestricted.
   if (toAccount.tenant_id && toAccount.tenant_id !== ctx.tenantId) {
-    throw new ValidationError('Cross-tenant transfers are not allowed on this endpoint. Use protocol-specific APIs (A2A, ACP, x402) for cross-tenant payments.');
+    if (ctx.actorType === 'agent' && (ctx.kyaTier === 0 || ctx.kyaTier === undefined)) {
+      throw new ValidationError('KYA verification required for cross-tenant transfers. Upgrade to KYA tier 1+ to enable cross-tenant payments.');
+    }
   }
 
   // Check sender has sufficient balance
