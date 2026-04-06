@@ -10,6 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { encryptAndSerialize, deserializeAndDecrypt } from '../credential-vault/index.js';
 
 // ============================================
 // Types
@@ -104,7 +105,7 @@ export class MppWalletProvisioning {
         blockchain: 'tempo',
         token_contract: tokenInfo.tokenContract,
         provider_metadata: {
-          encrypted_private_key: privateKey,  // TODO: encrypt with KMS in production
+          encrypted_private_key: encryptAndSerialize({ privateKey }),
           key_derivation: 'viem/generatePrivateKey',
           chain_id: isTestnet ? 42431 : 4217,
           rpc_url: isTestnet ? 'https://rpc.moderato.tempo.xyz' : 'https://rpc.tempo.xyz',
@@ -145,11 +146,25 @@ export class MppWalletProvisioning {
 
     const meta = wallet.provider_metadata as Record<string, any> | null;
 
+    // Decrypt the private key from credential-vault encrypted format.
+    // Handles both new (encrypted JSON blob) and legacy (plaintext hex) formats
+    // so existing wallets still work after the migration.
+    let privateKey: string | undefined;
+    if (meta?.encrypted_private_key) {
+      try {
+        const decrypted = deserializeAndDecrypt(meta.encrypted_private_key);
+        privateKey = decrypted.privateKey as string;
+      } catch {
+        // Legacy plaintext format (pre-encryption) — use directly
+        privateKey = meta.encrypted_private_key;
+      }
+    }
+
     return {
       walletId: wallet.id,
       address: wallet.wallet_address || undefined,
       network: wallet.network,
-      privateKey: meta?.encrypted_private_key || undefined,
+      privateKey,
     };
   }
 
