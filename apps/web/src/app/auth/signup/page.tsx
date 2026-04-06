@@ -208,7 +208,7 @@ function SignUpPageInner() {
               <span className="text-4xl font-bold text-foreground">Sly</span>
             </div>
           </div>
-          <h1 className="text-xl font-semibold text-foreground">Join The Agentic Economy Platform</h1>
+          <h1 className="text-xl font-semibold text-foreground">The Agentic Economy Platform</h1>
         </div>
 
         {/* Tab toggle */}
@@ -246,7 +246,7 @@ function SignUpPageInner() {
                 {!showAccess && (
                   <>
                     <div className="text-center space-y-1">
-                      <h3 className="font-semibold text-foreground">Request Access</h3>
+                      <h3 className="font-semibold text-foreground">Request Access for free credits in our Closed Beta Launch coming soon</h3>
                       <p className="text-xs text-muted-foreground">
                         Enter your email and we&apos;ll let you know when you&apos;re in.
                       </p>
