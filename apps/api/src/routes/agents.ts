@@ -2252,7 +2252,7 @@ agents.post('/:id/smart-wallet', async (c) => {
 
   const { data: agent } = await supabase
     .from('agents')
-    .select('id, tenant_id, status')
+    .select('id, tenant_id, status, parent_account_id')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
     .single();
@@ -2281,6 +2281,32 @@ agents.post('/:id/smart-wallet', async (c) => {
       .eq('agent_id', id)
       .eq('algorithm', 'secp256k1')
       .eq('status', 'active');
+
+    // Also register in the wallets table so the smart wallet is visible
+    // alongside Circle, Tempo, BYOW wallets in the unified wallet registry.
+    const network = chainId === 84532 ? 'base-sepolia' : 'base-mainnet';
+    await supabase.from('wallets').upsert({
+      tenant_id: ctx.tenantId,
+      owner_account_id: (agent as any).parent_account_id || ctx.tenantId,
+      managed_by_agent_id: id,
+      wallet_type: 'smart_wallet',
+      wallet_address: smartAccount.address,
+      network,
+      blockchain: 'base',
+      currency: 'USDC',
+      balance: 0,
+      status: 'active',
+      purpose: 'default',
+      name: `Smart Wallet (${network})`,
+      provider: 'coinbase',
+      custody_type: 'custodial',
+      provider_metadata: {
+        owner_eoa: smartAccount.ownerAddress,
+        factory: smartAccount.factoryAddress,
+        deployed: smartAccount.deployed,
+        chain_id: chainId,
+      },
+    } as any, { onConflict: 'managed_by_agent_id,wallet_type' } as any).then(() => {}, () => {});
 
     return c.json({
       success: true,

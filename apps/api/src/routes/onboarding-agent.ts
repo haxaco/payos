@@ -45,6 +45,9 @@ const oneClickSchema = z.object({
   model: z.string().max(100).optional(),
   inviteCode: z.string().optional(),
   idempotencyKey: z.string().uuid().optional(),
+  // Wallet choice: what default wallet the agent gets on registration
+  walletType: z.enum(['smart_wallet', 'circle', 'byow', 'none']).optional().default('smart_wallet'),
+  byowAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(), // required if walletType='byow'
 });
 
 router.post('/one-click', async (c) => {
@@ -73,7 +76,12 @@ router.post('/one-click', async (c) => {
       return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
     }
 
-    const { name, email, description, model, inviteCode, idempotencyKey } = parsed.data;
+    const { name, email, description, model, inviteCode, idempotencyKey, walletType, byowAddress } = parsed.data;
+
+    // Validate BYOW requires address
+    if (walletType === 'byow' && !byowAddress) {
+      return c.json({ error: 'byowAddress is required when walletType is byow' }, 400);
+    }
     const supabase = createClient();
     const baseUrl = process.env.API_BASE_URL || 'https://api.getsly.ai';
 
@@ -263,14 +271,46 @@ router.post('/one-click', async (c) => {
         network: 'internal',
         status: 'active',
         wallet_type: 'internal',
-        name: `${name} Wallet`,
-        purpose: 'Auto-created wallet for agent',
+        name: `${name} Internal Ledger`,
+        purpose: 'internal',
       })
       .select('id, balance, currency, wallet_address')
       .single();
 
-    // 4b. Create Base sandbox wallet (Circle custodial) — same as human onboarding
+    // 4b. Create the agent's chosen default wallet based on walletType param.
+    // Internal wallet (step 4) is always created for Sly-internal ledger.
+    // The walletType choice determines the agent's default payment wallet.
     let baseWallet: { id: string; address: string; balance: number } | null = null;
+
+    // BYOW wallet — create an external wallet entry (pending verification)
+    if (walletType === 'byow' && byowAddress) {
+      const { data: byowWallet } = await (supabase.from('wallets') as any)
+        .insert({
+          tenant_id: tenant.id,
+          owner_account_id: account.id,
+          managed_by_agent_id: agent.id,
+          balance: 0,
+          currency: 'USDC',
+          wallet_address: byowAddress.toLowerCase(),
+          network: 'base-mainnet',
+          status: 'active',
+          wallet_type: 'external',
+          custody_type: 'self',
+          provider: 'byow',
+          blockchain: 'base',
+          name: `${name} BYOW Wallet`,
+          purpose: 'default',
+          verification_status: 'pending',
+        })
+        .select('id, wallet_address, balance')
+        .single();
+      if (byowWallet) {
+        baseWallet = { id: byowWallet.id, address: byowWallet.wallet_address, balance: 0 };
+      }
+    }
+
+    // Circle wallet — only if walletType='circle' (or legacy default behavior)
+    if (walletType === 'circle') {
     try {
       const circleService = getCircleServiceForTenant(tenant.id, 'test');
       let accountType: 'SCA' | 'EOA' | undefined;
@@ -302,7 +342,7 @@ router.post('/one-click', async (c) => {
           provider_metadata: { circle_state: circleWallet.state, circle_create_date: new Date().toISOString() },
           blockchain: 'base',
           name: `${name} Base Sandbox`,
-          purpose: 'Auto-created Base sandbox wallet',
+          purpose: walletType === 'circle' ? 'default' : 'circle',
         })
         .select('id, wallet_address, balance')
         .single();
@@ -338,12 +378,16 @@ router.post('/one-click', async (c) => {
     } catch (e: any) {
       console.warn('[agent-onboard] Base wallet creation skipped:', e.message);
     }
+    } // end walletType === 'circle'
 
-    // 4b. Provision secp256k1 EOA for x402 spec compliance (non-blocking)
+    // 4c. Provision secp256k1 EOA + smart wallet for 'smart_wallet' or 'circle' walletType
+    // Smart wallet agents need the EVM key for signing. Circle agents also get one for x402.
+    // BYOW and 'none' agents skip this — they manage their own keys.
     // Each agent gets a managed EVM keypair so they can sign EIP-3009 payloads
     // to pay external x402-protected endpoints. Private key is encrypted via
     // credential-vault, stored alongside any existing card-network keys.
     let evmKey: { address: string; keyId: string } | undefined;
+    if (walletType === 'smart_wallet' || walletType === 'circle') {
     try {
       const { generateAgentEvmKey, getAgentEvmKey } = await import('../services/x402/signer.js');
       // Skip if somehow already exists (idempotent)
@@ -372,6 +416,44 @@ router.post('/one-click', async (c) => {
     } catch (e: any) {
       console.warn('[agent-onboard] EVM key provisioning skipped:', e.message);
     }
+
+    // For smart_wallet type: derive the smart wallet and create a wallets row as default
+    if (walletType === 'smart_wallet' && evmKey) {
+      try {
+        const { getAgentSmartAccount } = await import('../services/x402/smart-account.js');
+        const smartAccount = await getAgentSmartAccount(supabase as any, agent.id, 84532);
+        if (smartAccount) {
+          // Register in wallets table with purpose='default'
+          const { data: swRow } = await (supabase.from('wallets') as any)
+            .insert({
+              tenant_id: tenant.id,
+              owner_account_id: account.id,
+              managed_by_agent_id: agent.id,
+              wallet_type: 'smart_wallet',
+              wallet_address: smartAccount.address,
+              network: 'base-sepolia',
+              blockchain: 'base',
+              currency: 'USDC',
+              balance: 0,
+              status: 'active',
+              purpose: 'default',
+              name: `${name} Smart Wallet`,
+              provider: 'coinbase',
+              custody_type: 'custodial',
+              provider_metadata: { owner_eoa: smartAccount.ownerAddress, factory: smartAccount.factoryAddress, deployed: smartAccount.deployed },
+            })
+            .select('id, wallet_address, balance')
+            .single();
+          if (swRow) {
+            baseWallet = { id: swRow.id, address: swRow.wallet_address, balance: 0 };
+            console.log(`[agent-onboard] Smart wallet provisioned: ${smartAccount.address}`);
+          }
+        }
+      } catch (e: any) {
+        console.warn('[agent-onboard] Smart wallet provisioning skipped:', e.message);
+      }
+    }
+    } // end walletType === 'smart_wallet' || 'circle'
 
     // 5. Fetch limits
     const { data: kyaLimits } = await (supabase.from('kya_tier_limits') as any)
