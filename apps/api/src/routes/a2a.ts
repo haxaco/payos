@@ -1631,20 +1631,29 @@ a2aRouter.post('/tasks/:taskId/rate', async (c) => {
   const supabase = createClient();
   const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
-  // Verify task exists and caller is a party to it
+  // Verify task exists — no tenant filter since A2A tasks are cross-tenant
   const { data: task } = await (supabase.from('a2a_tasks') as any)
-    .select('id, agent_id, client_agent_id, state')
+    .select('id, agent_id, client_agent_id, state, tenant_id')
     .eq('id', taskId)
     .single();
 
   if (!task) return c.json({ error: 'Task not found' }, 404);
 
-  // Verify caller is the right party for this direction
-  if (direction === 'buyer_rates_provider' && ctx.actorType === 'agent' && ctx.actorId !== task.client_agent_id) {
-    return c.json({ error: 'Only the buyer (task initiator) can rate the provider' }, 403);
-  }
-  if (direction === 'provider_rates_buyer' && ctx.actorType === 'agent' && ctx.actorId !== task.agent_id) {
-    return c.json({ error: 'Only the provider (task recipient) can rate the buyer' }, 403);
+  // Verify caller is the right party for this direction.
+  // Cross-tenant A2A: client_agent_id may be null (MCP tool doesn't always set it).
+  // In that case, allow any authenticated agent to rate as buyer if the task's
+  // provider is a different agent (they must be the other side of the transaction).
+  if (ctx.actorType === 'agent') {
+    const isProvider = ctx.actorId === task.agent_id;
+    const isBuyer = ctx.actorId === task.client_agent_id;
+    const couldBeBuyer = !task.client_agent_id && ctx.actorId !== task.agent_id;
+
+    if (direction === 'buyer_rates_provider' && !isBuyer && !couldBeBuyer) {
+      return c.json({ error: 'Only the buyer (task initiator) can rate the provider' }, 403);
+    }
+    if (direction === 'provider_rates_buyer' && !isProvider) {
+      return c.json({ error: 'Only the provider (task recipient) can rate the buyer' }, 403);
+    }
   }
 
   // Check for duplicate rating
@@ -1658,12 +1667,14 @@ a2aRouter.post('/tasks/:taskId/rate', async (c) => {
   }
 
   // Insert the rating (hidden until counterparty rates)
+  // For cross-tenant tasks, client_agent_id may be null — use caller's actorId as buyer
+  const resolvedBuyerId = task.client_agent_id || (direction === 'buyer_rates_provider' && ctx.actorType === 'agent' ? ctx.actorId : null);
   const { data: inserted, error: insertErr } = await (supabase.from('a2a_task_feedback') as any)
     .insert({
-      tenant_id: ctx.tenantId,
+      tenant_id: task.tenant_id, // use the task's tenant so both ratings are in same tenant
       environment: getEnv(ctx),
       task_id: taskId,
-      caller_agent_id: task.client_agent_id,
+      caller_agent_id: resolvedBuyerId,
       provider_agent_id: task.agent_id,
       action: score >= 50 ? 'accept' : 'reject',
       satisfaction: satisfaction || (score >= 80 ? 'excellent' : score >= 50 ? 'acceptable' : score >= 30 ? 'partial' : 'unacceptable'),
