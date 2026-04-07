@@ -1494,7 +1494,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     // Store feedback if provided
     const originalAmount = inputContext.details?.amount;
     if (satisfaction || score !== undefined || comment) {
-      await supabase.from('a2a_task_feedback').insert({
+      const feedbackRow = {
         tenant_id: ctx.tenantId,
         environment: getEnv(ctx),
         task_id: taskId,
@@ -1509,7 +1509,23 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
         original_amount: originalAmount ?? null,
         settlement_amount: overrideAmount ?? originalAmount ?? null,
         currency: 'USDC',
-      });
+        direction: 'buyer_rates_provider',
+        revealed: false, // hidden until provider also rates (double-blind)
+      };
+      const { data: inserted } = await supabase.from('a2a_task_feedback').insert(feedbackRow).select('id').single();
+
+      // Check if provider already rated — if so, reveal both
+      if (inserted?.id) {
+        const { data: counterpart } = await (supabase.from('a2a_task_feedback') as any)
+          .select('id')
+          .eq('task_id', taskId)
+          .eq('direction', 'provider_rates_buyer')
+          .maybeSingle();
+        if (counterpart) {
+          await supabase.from('a2a_task_feedback').update({ revealed: true, counterparty_feedback_id: counterpart.id } as any).eq('id', inserted.id);
+          await supabase.from('a2a_task_feedback').update({ revealed: true, counterparty_feedback_id: inserted.id } as any).eq('id', counterpart.id);
+        }
+      }
 
       // Emit feedback audit event
       const { taskEventBus: feedbackBus } = await import('../services/a2a/task-event-bus.js');
@@ -1588,6 +1604,105 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
  * Used by autonomous agents (local processes) to post their AI-generated responses.
  * Accepts: { message: "response text" } or { parts: [{ text: "..." }] }
  */
+// ============================================
+// POST /v1/a2a/tasks/:taskId/rate
+// Double-blind bidirectional rating. Both buyer and provider can rate.
+// Rating is hidden until the counterparty also submits.
+// ============================================
+a2aRouter.post('/tasks/:taskId/rate', async (c) => {
+  const ctx = c.get('ctx');
+  const taskId = c.req.param('taskId');
+  if (!UUID_RE.test(taskId)) return c.json({ error: 'Invalid task ID' }, 400);
+
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  const { score, satisfaction, comment, direction } = body;
+  if (!direction || !['buyer_rates_provider', 'provider_rates_buyer'].includes(direction)) {
+    return c.json({ error: 'direction must be "buyer_rates_provider" or "provider_rates_buyer"' }, 400);
+  }
+  if (score !== undefined && (score < 0 || score > 100)) {
+    return c.json({ error: 'score must be 0-100' }, 400);
+  }
+  if (satisfaction && !['excellent', 'acceptable', 'partial', 'unacceptable'].includes(satisfaction)) {
+    return c.json({ error: 'satisfaction must be excellent|acceptable|partial|unacceptable' }, 400);
+  }
+
+  const supabase = createClient();
+  const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
+
+  // Verify task exists and caller is a party to it
+  const { data: task } = await (supabase.from('a2a_tasks') as any)
+    .select('id, agent_id, client_agent_id, state')
+    .eq('id', taskId)
+    .single();
+
+  if (!task) return c.json({ error: 'Task not found' }, 404);
+
+  // Verify caller is the right party for this direction
+  if (direction === 'buyer_rates_provider' && ctx.actorType === 'agent' && ctx.actorId !== task.client_agent_id) {
+    return c.json({ error: 'Only the buyer (task initiator) can rate the provider' }, 403);
+  }
+  if (direction === 'provider_rates_buyer' && ctx.actorType === 'agent' && ctx.actorId !== task.agent_id) {
+    return c.json({ error: 'Only the provider (task recipient) can rate the buyer' }, 403);
+  }
+
+  // Check for duplicate rating
+  const { data: existing } = await (supabase.from('a2a_task_feedback') as any)
+    .select('id')
+    .eq('task_id', taskId)
+    .eq('direction', direction)
+    .maybeSingle();
+  if (existing) {
+    return c.json({ error: 'Rating already submitted for this direction', existingId: existing.id }, 409);
+  }
+
+  // Insert the rating (hidden until counterparty rates)
+  const { data: inserted, error: insertErr } = await (supabase.from('a2a_task_feedback') as any)
+    .insert({
+      tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
+      task_id: taskId,
+      caller_agent_id: task.client_agent_id,
+      provider_agent_id: task.agent_id,
+      action: score >= 50 ? 'accept' : 'reject',
+      satisfaction: satisfaction || (score >= 80 ? 'excellent' : score >= 50 ? 'acceptable' : score >= 30 ? 'partial' : 'unacceptable'),
+      score: score ?? null,
+      comment: comment || null,
+      direction,
+      revealed: false,
+    })
+    .select('id')
+    .single();
+
+  if (insertErr) return c.json({ error: 'Failed to store rating' }, 500);
+
+  // Check if counterparty already rated — if so, reveal both (double-blind lift)
+  const counterDirection = direction === 'buyer_rates_provider' ? 'provider_rates_buyer' : 'buyer_rates_provider';
+  const { data: counterpart } = await (supabase.from('a2a_task_feedback') as any)
+    .select('id, score, satisfaction')
+    .eq('task_id', taskId)
+    .eq('direction', counterDirection)
+    .maybeSingle();
+
+  let revealed = false;
+  if (counterpart) {
+    await (supabase.from('a2a_task_feedback') as any).update({ revealed: true, counterparty_feedback_id: counterpart.id }).eq('id', inserted.id);
+    await (supabase.from('a2a_task_feedback') as any).update({ revealed: true, counterparty_feedback_id: inserted.id }).eq('id', counterpart.id);
+    revealed = true;
+  }
+
+  return c.json({
+    success: true,
+    feedbackId: inserted.id,
+    direction,
+    revealed,
+    counterpartyRated: !!counterpart,
+    // Only show counterparty's rating if revealed
+    counterpartyRating: revealed ? { score: counterpart.score, satisfaction: counterpart.satisfaction } : null,
+  });
+});
+
 a2aRouter.post('/tasks/:taskId/complete', async (c) => {
   const ctx = c.get('ctx');
   const taskId = c.req.param('taskId');

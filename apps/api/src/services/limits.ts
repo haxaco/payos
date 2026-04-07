@@ -170,18 +170,71 @@ export class LimitService {
       monthly: parseFloat(agent.effective_limit_monthly) || 0,
     };
 
-    // Rating-based limit reduction: if average received rating is below 30/100,
-    // reduce effective limits by 50%. This gives the rating system functional teeth —
-    // agents with consistently poor service face real spending consequences.
+    // Rating-based limit reduction with rater reliability weighting.
+    // Instead of a simple average, each rater's score is weighted by how
+    // calibrated they are vs consensus. A rater who consistently deviates
+    // >40 points from the mean gets their weight reduced (e.g., CodeSmith
+    // rating everyone 8/100 when consensus is 75 gets reliability ~0.35).
     try {
       const { data: ratings } = await this.supabase
         .from('a2a_task_feedback')
-        .select('score')
+        .select('score, caller_agent_id')
         .eq('provider_agent_id', agentId)
+        .eq('revealed', true) // only count revealed ratings (double-blind)
         .limit(50);
       if (ratings && ratings.length >= 3) {
-        const avgScore = ratings.reduce((s: number, r: any) => s + (r.score || 0), 0) / ratings.length;
-        if (avgScore < 30) {
+        // Compute rater reliability: for each rater, how far do their scores
+        // deviate from the consensus score for the same providers?
+        const raterIds = [...new Set(ratings.map((r: any) => r.caller_agent_id).filter(Boolean))];
+        const raterReliability: Record<string, number> = {};
+
+        if (raterIds.length >= 2) {
+          // Get ALL ratings from these raters to compute their deviation
+          const { data: allRaterScores } = await this.supabase
+            .from('a2a_task_feedback')
+            .select('caller_agent_id, provider_agent_id, score')
+            .in('caller_agent_id', raterIds)
+            .eq('revealed', true)
+            .limit(200);
+
+          if (allRaterScores && allRaterScores.length > 0) {
+            // Group by provider to get consensus per provider
+            const byProvider: Record<string, number[]> = {};
+            allRaterScores.forEach((r: any) => {
+              if (!byProvider[r.provider_agent_id]) byProvider[r.provider_agent_id] = [];
+              byProvider[r.provider_agent_id].push(r.score || 0);
+            });
+
+            // For each rater, compute avg deviation from provider consensus
+            for (const raterId of raterIds) {
+              const raterScores = allRaterScores.filter((r: any) => r.caller_agent_id === raterId);
+              let totalDev = 0, count = 0;
+              for (const rs of raterScores) {
+                const provScores = byProvider[rs.provider_agent_id] || [];
+                if (provScores.length >= 2) {
+                  const othersAvg = provScores.filter((_, i) => provScores[i] !== rs.score || i > 0)
+                    .reduce((s, v) => s + v, 0) / Math.max(1, provScores.length - 1);
+                  totalDev += Math.abs((rs.score || 0) - othersAvg);
+                  count++;
+                }
+              }
+              const avgDev = count > 0 ? totalDev / count : 0;
+              // reliability: 1.0 = perfectly calibrated, 0.2 = minimum floor
+              raterReliability[raterId] = Math.max(0.2, 1.0 - avgDev / 100);
+            }
+          }
+        }
+
+        // Weighted average: each rating's score × rater's reliability
+        let weightedSum = 0, weightTotal = 0;
+        for (const r of ratings) {
+          const weight = raterReliability[r.caller_agent_id] || 1.0;
+          weightedSum += (r.score || 0) * weight;
+          weightTotal += weight;
+        }
+        const weightedAvg = weightTotal > 0 ? weightedSum / weightTotal : 0;
+
+        if (weightedAvg < 30) {
           effectiveLimits = {
             perTransaction: effectiveLimits.perTransaction * 0.5,
             daily: effectiveLimits.daily * 0.5,
@@ -193,7 +246,7 @@ export class LimitService {
             subject: `agent/${agentId}`,
             correlationId,
             success: true,
-            data: { avgScore, ratingCount: ratings.length, limitReduction: '50%', reason: 'low_rating_penalty' },
+            data: { weightedAvg: Math.round(weightedAvg), ratingCount: ratings.length, raterCount: raterIds.length, limitReduction: '50%', reason: 'low_rating_penalty' },
           });
         }
       }

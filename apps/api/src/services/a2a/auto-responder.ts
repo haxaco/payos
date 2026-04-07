@@ -20,6 +20,7 @@ interface TaskContext {
   messageText: string;
   callerAgentId?: string;
   callerName?: string;
+  peerDirectory?: string;
 }
 
 // Agent personality profiles for richer AI responses
@@ -62,6 +63,7 @@ You are operating as "${ctx.agentName}" in the Sly agentic economy marketplace.
 ${ctx.agentDescription ? `Your description: ${ctx.agentDescription}` : ''}
 ${ctx.skillId ? `You are responding to a request for your "${ctx.skillId}" skill.` : ''}
 ${ctx.skillDescription ? `Skill description: ${ctx.skillDescription}` : ''}
+${ctx.peerDirectory || ''}
 
 IMPORTANT RULES:
 - Respond as if you actually performed the work. Generate realistic, detailed output.
@@ -70,6 +72,7 @@ IMPORTANT RULES:
 - Format output professionally with bullet points or sections where appropriate.
 - Do not mention that you are an AI or that this is simulated.
 - Respond in the context of the agentic economy — crypto, stablecoins, DeFi, Web3, agent commerce.
+- If you need input from a peer agent to complete this task well, mention what you would request and from whom. For example: "I would request market_data from DataMiner to supplement this analysis."
 ${ctx.callerName ? `The requesting agent is "${ctx.callerName}".` : ''}`;
 
     const response = await client.messages.create({
@@ -177,6 +180,47 @@ export async function autoRespondToTask(
     callerName = caller?.name;
   }
 
+  // Build peer directory — all active agents and their skills in the marketplace
+  // This gives the agent awareness of who else exists and what they offer,
+  // enabling multi-hop task chains (e.g., TradingBot calls DataMiner for data)
+  let peerDirectory = '';
+  try {
+    const { data: allSkills } = await supabase
+      .from('agent_skills')
+      .select('agent_id, skill_id, name, base_price, currency, description')
+      .eq('status', 'active')
+      .limit(100);
+    const { data: allAgents } = await supabase
+      .from('agents')
+      .select('id, name, description')
+      .eq('status', 'active')
+      .neq('id', agentId) // exclude self
+      .limit(20);
+
+    if (allAgents && allAgents.length > 0) {
+      const agentSkillMap: Record<string, { name: string; desc?: string; skills: string[] }> = {};
+      for (const a of allAgents) {
+        agentSkillMap[a.id] = { name: a.name, desc: a.description, skills: [] };
+      }
+      for (const s of (allSkills || [])) {
+        if (agentSkillMap[s.agent_id]) {
+          agentSkillMap[s.agent_id].skills.push(`${s.skill_id} ($${s.base_price} ${s.currency || 'USDC'})`);
+        }
+      }
+      const lines = Object.values(agentSkillMap)
+        .filter(a => a.skills.length > 0)
+        .map(a => `- ${a.name}: ${a.skills.join(', ')}${a.desc ? ' — ' + a.desc.slice(0, 60) : ''}`);
+      if (lines.length > 0) {
+        peerDirectory = `\n\nAVAILABLE PEERS (other agents you can request help from):
+${lines.join('\n')}
+
+If you need data, analysis, or capabilities from a peer to better complete this task,
+mention which peer you would call and what you would request. In a real multi-hop scenario,
+you would use the a2a_send_task tool to request their help and incorporate their output.`;
+      }
+    }
+  } catch { /* peer directory is best-effort */ }
+
   const response = await generateTaskResponse({
     taskId,
     agentId,
@@ -187,6 +231,7 @@ export async function autoRespondToTask(
     messageText,
     callerAgentId: task?.caller_agent_id,
     callerName,
+    peerDirectory,
   });
 
   return { success: true, response };
