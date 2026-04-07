@@ -1395,12 +1395,37 @@ export class A2ATaskProcessor {
 
           await this.taskService.updateTaskState(taskId, 'failed', errorMsg);
         } else {
-          // Task is still working on the remote side — mark as working, await callback
-          // Settlement mandate stays active — will be resolved when callback arrives
-          await this.taskService.addMessage(taskId, 'agent', [
-            { text: `Task forwarded to agent. Awaiting response (remote state: ${remoteState || 'working'}).` },
-          ]);
-          await this.taskService.updateTaskState(taskId, 'working', 'Awaiting agent response');
+          // Task is still working on the remote side.
+          // If the remote response contains agent messages, the auto-responder
+          // already generated a response — complete immediately instead of
+          // leaving in 'working' forever (which was causing 67% failure rate).
+          const history = result.history || [];
+          const agentMessages = history.filter((m: any) => m.role === 'agent');
+          if (agentMessages.length > 0) {
+            // Auto-responder produced output — extract and complete
+            const lastMsg = agentMessages[agentMessages.length - 1];
+            if (lastMsg?.parts?.length) {
+              await this.taskService.addMessage(taskId, 'agent', lastMsg.parts, lastMsg.metadata);
+            }
+            if (result.artifacts?.length) {
+              for (const artifact of result.artifacts) {
+                await this.taskService.addArtifact(taskId, artifact);
+              }
+            }
+            const settlementMandateId = await getSettlementMandateId();
+            if (settlementMandateId) {
+              await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
+            }
+            agentCircuitBreaker.recordSuccess(agent.id);
+            await this.taskService.updateTaskState(taskId, 'completed', 'Task completed (agent responded)');
+            this.log(taskId, 'info', 'Agent responded with working state but had messages — completing');
+          } else {
+            // Truly still working with no response yet — await callback
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: `Task forwarded to agent. Awaiting response (remote state: ${remoteState || 'working'}).` },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'working', 'Awaiting agent response');
+          }
         }
       } else if ((response as any).error) {
         const rpcError = (response as any).error;
@@ -1523,14 +1548,19 @@ export class A2ATaskProcessor {
             await this.taskService.updateTaskState(taskId, 'completed', 'Task completed');
             this.log(taskId, 'info', 'Auto-responded and completed');
           } else {
-            await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent');
+            // Auto-responder returned but with no content — fail immediately
+            // instead of leaving in 'working' forever
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: 'Agent could not generate a response for this task.' },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'failed', 'Auto-responder returned empty');
           }
         } catch (autoErr: any) {
           this.log(taskId, 'warn', `Auto-responder failed: ${autoErr.message}`);
           await this.taskService.addMessage(taskId, 'agent', [
-            { text: `Task dispatched to agent webhook. Awaiting response.` },
+            { text: `Agent processing error: ${autoErr.message?.slice(0, 100)}` },
           ]);
-          await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent webhook');
+          await this.taskService.updateTaskState(taskId, 'failed', `Auto-responder error: ${autoErr.message?.slice(0, 100)}`);
         }
       }
     } else {
