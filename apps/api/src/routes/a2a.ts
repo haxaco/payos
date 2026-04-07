@@ -1391,7 +1391,9 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
   const supabase = createClient();
 
   // Verify task exists and is in input-required state
-  const { data: task, error: fetchError } = await supabase
+  // Try same-tenant first, then cross-tenant for buyer acceptance (result_review)
+  let task: Record<string, any> | null = null;
+  const { data: sameTenant } = await supabase
     .from('a2a_tasks')
     .select('id, state, tenant_id, metadata, agent_id, client_agent_id')
     .eq('id', taskId)
@@ -1399,17 +1401,33 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     .eq('environment', getEnv(ctx))
     .single();
 
-  if (fetchError || !task) {
+  if (sameTenant) {
+    task = sameTenant;
+  } else if (ctx.actorType === 'agent') {
+    // Cross-tenant: buyer (client_agent_id) responding to seller's task
+    const { data: crossTenant } = await supabase
+      .from('a2a_tasks')
+      .select('id, state, tenant_id, metadata, agent_id, client_agent_id')
+      .eq('id', taskId)
+      .eq('environment', getEnv(ctx))
+      .single();
+    if (crossTenant && (crossTenant.client_agent_id === ctx.actorId || !crossTenant.client_agent_id)) {
+      task = crossTenant;
+    }
+  }
+
+  if (!task) {
     return c.json({ error: 'Task not found' }, 404);
   }
 
-  if ((task as any).state !== 'input-required') {
+  if (task.state !== 'input-required') {
     return c.json({
-      error: `Task is in '${(task as any).state}' state. Only 'input-required' tasks can be responded to.`,
+      error: `Task is in '${task.state}' state. Only 'input-required' tasks can be responded to.`,
     }, 400);
   }
 
-  const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
+  const taskTenantId = task.tenant_id as string;
+  const taskService = new A2ATaskService(supabase, taskTenantId, getEnv(ctx) as 'test' | 'live');
   const taskMeta = (task as any).metadata || {};
   const inputContext = taskMeta.input_required_context;
 
@@ -1441,7 +1459,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     // Settlement only applies when there's a payment mandate
     if (mandateId) {
       const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
-      const processor = new A2ATaskProcessor(supabase, ctx.tenantId);
+      const processor = new A2ATaskProcessor(supabase, taskTenantId);
 
       // Handle partial settlement
       if (action === 'accept' && settlementAmount !== undefined && settlementAmount !== null) {
@@ -1449,7 +1467,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
           .from('ap2_mandates')
           .select('authorized_amount, metadata')
           .eq('mandate_id', mandateId)
-          .eq('tenant_id', ctx.tenantId)
+          .eq('tenant_id', taskTenantId)
           .eq('environment', getEnv(ctx))
           .single();
 
@@ -1469,7 +1487,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
             .select('metadata')
             .eq('agent_id', (task as any).agent_id)
             .eq('skill_id', skillId)
-            .eq('tenant_id', ctx.tenantId)
+            .eq('tenant_id', taskTenantId)
             .maybeSingle();
 
           if (!skill?.metadata?.allows_partial_settlement) {
@@ -1499,7 +1517,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     const originalAmount = inputContext.details?.amount;
     if (satisfaction || score !== undefined || comment) {
       const feedbackRow = {
-        tenant_id: ctx.tenantId,
+        tenant_id: taskTenantId,
         environment: getEnv(ctx),
         task_id: taskId,
         caller_agent_id: (task as any).client_agent_id,
