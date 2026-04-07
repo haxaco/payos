@@ -868,6 +868,46 @@ async function handleMessageStream(
 export const a2aRouter = new Hono();
 
 /**
+ * GET /v1/a2a/marketplace
+ * Discover all active agents and their skills across the platform.
+ * Used by agent backends to find peers for multi-hop task delegation.
+ */
+a2aRouter.get('/marketplace', async (c) => {
+  const supabase = createClient();
+
+  const { data: agents } = await supabase
+    .from('agents')
+    .select('id, name, description, tenant_id')
+    .eq('status', 'active')
+    .limit(50);
+
+  const { data: skills } = await supabase
+    .from('agent_skills')
+    .select('agent_id, skill_id, name, description, base_price, currency')
+    .eq('status', 'active')
+    .limit(200);
+
+  const agentMap: Record<string, any> = {};
+  for (const a of (agents || [])) {
+    agentMap[a.id] = { id: a.id, name: a.name, description: a.description, skills: [] };
+  }
+  for (const s of (skills || [])) {
+    if (agentMap[s.agent_id]) {
+      agentMap[s.agent_id].skills.push({
+        id: s.skill_id,
+        name: s.name,
+        description: s.description,
+        price: s.base_price,
+        currency: s.currency || 'USDC',
+      });
+    }
+  }
+
+  const result = Object.values(agentMap).filter((a: any) => a.skills.length > 0);
+  return c.json({ data: result, total: result.length });
+});
+
+/**
  * GET /v1/a2a/agents/:agentId/card
  * Per-agent card (authenticated, for dashboard use).
  */
