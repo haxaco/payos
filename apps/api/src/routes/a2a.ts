@@ -19,7 +19,7 @@ import { handleGatewayJsonRpc, type GatewayAuthContext } from '../services/a2a/g
 import { A2AWebhookHandler } from '../services/a2a/webhook-handler.js';
 import { taskEventBus } from '../services/a2a/task-event-bus.js';
 import type { A2AJsonRpcRequest, A2APart, A2ATaskState, A2AConfiguration } from '../services/a2a/types.js';
-import { normalizeParts } from '../services/a2a/types.js';
+import { normalizeParts, DEFAULT_ACCEPTANCE_POLICY } from '../services/a2a/types.js';
 import { verifyApiKey } from '../utils/crypto.js';
 import { getEnv } from '../utils/helpers.js';
 import { trackOp } from '../services/ops/track-op.js';
@@ -1421,9 +1421,6 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     }
 
     const mandateId = inputContext.details?.mandate_id || taskMeta.settlementMandateId;
-    if (!mandateId) {
-      return c.json({ error: 'No settlement mandate found for this task' }, 500);
-    }
 
     // Parse optional feedback
     const satisfaction = body.satisfaction;
@@ -1439,55 +1436,62 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
       return c.json({ error: 'score must be a number between 0 and 100' }, 400);
     }
 
-    const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
-    const processor = new A2ATaskProcessor(supabase, ctx.tenantId);
-
-    // Handle partial settlement
     let overrideAmount: number | undefined;
-    if (action === 'accept' && settlementAmount !== undefined && settlementAmount !== null) {
-      // Read mandate to validate amount
-      const { data: mandate } = await supabase
-        .from('ap2_mandates')
-        .select('authorized_amount, metadata')
-        .eq('mandate_id', mandateId)
-        .eq('tenant_id', ctx.tenantId)
-        .eq('environment', getEnv(ctx))
-        .single();
 
-      if (!mandate) {
-        return c.json({ error: 'Mandate not found' }, 404);
-      }
+    // Settlement only applies when there's a payment mandate
+    if (mandateId) {
+      const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+      const processor = new A2ATaskProcessor(supabase, ctx.tenantId);
 
-      const originalAmount = Number(mandate.authorized_amount);
-      if (typeof settlementAmount !== 'number' || settlementAmount <= 0 || settlementAmount > originalAmount) {
-        return c.json({ error: `settlement_amount must be between 0 and ${originalAmount}` }, 400);
-      }
-
-      // Check if provider skill allows partial settlement
-      const skillId = taskMeta.skillId;
-      if (skillId) {
-        const { data: skill } = await supabase
-          .from('agent_skills')
-          .select('metadata')
-          .eq('agent_id', (task as any).agent_id)
-          .eq('skill_id', skillId)
+      // Handle partial settlement
+      if (action === 'accept' && settlementAmount !== undefined && settlementAmount !== null) {
+        const { data: mandate } = await supabase
+          .from('ap2_mandates')
+          .select('authorized_amount, metadata')
+          .eq('mandate_id', mandateId)
           .eq('tenant_id', ctx.tenantId)
-          .maybeSingle();
+          .eq('environment', getEnv(ctx))
+          .single();
 
-        if (!skill?.metadata?.allows_partial_settlement) {
-          return c.json({ error: 'Provider skill does not allow partial settlement' }, 400);
+        if (!mandate) {
+          return c.json({ error: 'Mandate not found' }, 404);
         }
+
+        const originalAmount = Number(mandate.authorized_amount);
+        if (typeof settlementAmount !== 'number' || settlementAmount <= 0 || settlementAmount > originalAmount) {
+          return c.json({ error: `settlement_amount must be between 0 and ${originalAmount}` }, 400);
+        }
+
+        const skillId = taskMeta.skillId;
+        if (skillId) {
+          const { data: skill } = await supabase
+            .from('agent_skills')
+            .select('metadata')
+            .eq('agent_id', (task as any).agent_id)
+            .eq('skill_id', skillId)
+            .eq('tenant_id', ctx.tenantId)
+            .maybeSingle();
+
+          if (!skill?.metadata?.allows_partial_settlement) {
+            return c.json({ error: 'Provider skill does not allow partial settlement' }, 400);
+          }
+        }
+
+        overrideAmount = settlementAmount;
       }
 
-      overrideAmount = settlementAmount;
+      // Resolve mandate
+      if (action === 'accept') {
+        await processor.resolveSettlementMandate(taskId, mandateId, 'completed', overrideAmount);
+      } else {
+        await processor.resolveSettlementMandate(taskId, mandateId, 'failed');
+      }
     }
 
-    // Resolve mandate
+    // Update task state
     if (action === 'accept') {
-      await processor.resolveSettlementMandate(taskId, mandateId, 'completed', overrideAmount);
       await taskService.updateTaskState(taskId, 'completed', 'Accepted by caller');
     } else {
-      await processor.resolveSettlementMandate(taskId, mandateId, 'failed');
       await taskService.updateTaskState(taskId, 'failed', 'Rejected by caller');
     }
 
@@ -1904,8 +1908,55 @@ a2aRouter.post('/tasks/:taskId/complete', async (c) => {
   // Add the agent's response message
   await taskService.addMessage(taskId, 'agent', [{ text: responseText }]);
 
-  // Complete the task
-  await taskService.updateTaskState(taskId, 'completed', 'Completed by autonomous agent');
+  // Check acceptance gate — if policy requires buyer review, set input-required instead of completed
+  const policy = DEFAULT_ACCEPTANCE_POLICY;
+  let finalState: A2ATaskState = 'completed';
+  let statusMessage = 'Completed by autonomous agent';
+
+  if (policy.requires_acceptance) {
+    // Check if there's a mandate to evaluate auto-accept threshold
+    const { data: taskFull } = await supabase
+      .from('a2a_tasks')
+      .select('mandate_id, metadata')
+      .eq('id', taskId)
+      .single();
+
+    let amount = Infinity; // Default: engage escrow
+    if (taskFull?.mandate_id) {
+      const { data: mandate } = await supabase
+        .from('ap2_mandates')
+        .select('authorized_amount')
+        .eq('mandate_id', taskFull.mandate_id)
+        .single();
+      if (mandate) amount = Number(mandate.authorized_amount);
+    }
+
+    // Engage gate unless amount is below auto-accept threshold
+    if (!(policy.auto_accept_below > 0 && amount < policy.auto_accept_below)) {
+      finalState = 'input-required';
+      statusMessage = 'Task completed — awaiting caller acceptance';
+
+      // Store review metadata
+      await supabase
+        .from('a2a_tasks')
+        .update({
+          metadata: {
+            ...(taskFull?.metadata || {}),
+            review_status: 'pending',
+            review_requested_at: new Date().toISOString(),
+            review_timeout_minutes: policy.review_timeout_minutes,
+            input_required_context: {
+              reason_code: 'result_review',
+              next_action: 'accept_or_reject',
+              details: { mandate_id: taskFull?.mandate_id || null, amount },
+            },
+          },
+        })
+        .eq('id', taskId);
+    }
+  }
+
+  await taskService.updateTaskState(taskId, finalState, statusMessage);
 
   trackOp({
     tenantId: ctx.tenantId,
@@ -1915,7 +1966,7 @@ a2aRouter.post('/tasks/:taskId/complete', async (c) => {
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
     correlationId: c.get('requestId'),
     success: true,
-    data: { toState: 'completed', source: 'autonomous_agent' },
+    data: { toState: finalState, source: 'autonomous_agent' },
   });
 
   const updated = await taskService.getTask(taskId);
