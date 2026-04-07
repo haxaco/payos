@@ -1939,18 +1939,46 @@ a2aRouter.post('/tasks/:taskId/complete', async (c) => {
       .eq('id', taskId)
       .single();
 
-    let amount = Infinity; // Default: engage escrow
-    if (taskFull?.mandate_id) {
+    // Resolve mandate ID from either the task column or metadata (task-processor stores it in metadata)
+    const resolvedMandateId = taskFull?.mandate_id
+      || (taskFull?.metadata as any)?.settlementMandateId
+      || null;
+
+    let amount = Infinity; // Default: engage escrow (no mandate = quality review only)
+    if (resolvedMandateId) {
       const { data: mandate } = await supabase
         .from('ap2_mandates')
         .select('authorized_amount')
-        .eq('mandate_id', taskFull.mandate_id)
+        .eq('mandate_id', resolvedMandateId)
         .single();
       if (mandate) amount = Number(mandate.authorized_amount);
     }
 
-    // Engage gate unless amount is below auto-accept threshold
-    if (!(policy.auto_accept_below > 0 && amount < policy.auto_accept_below)) {
+    // Engage gate unless amount is below auto-accept threshold AND cumulative spend is low
+    let skipGate = false;
+    if (policy.auto_accept_below > 0 && amount < policy.auto_accept_below) {
+      // Check cumulative 24h spend per buyer-seller pair to prevent splitting attacks
+      const CUMULATIVE_THRESHOLD = 1.00;
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentTasks } = await supabase
+        .from('a2a_tasks')
+        .select('metadata')
+        .eq('agent_id', (task as any).agent_id)
+        .eq('client_agent_id', (task as any).client_agent_id || '')
+        .eq('state', 'completed')
+        .gte('updated_at', twentyFourHoursAgo);
+
+      let cumulativeSpend = amount;
+      if (recentTasks) {
+        for (const rt of recentTasks) {
+          const rtAmount = (rt.metadata as any)?.input_required_context?.details?.amount;
+          if (typeof rtAmount === 'number') cumulativeSpend += rtAmount;
+        }
+      }
+      skipGate = cumulativeSpend < CUMULATIVE_THRESHOLD;
+    }
+
+    if (!skipGate) {
       finalState = 'input-required';
       statusMessage = 'Task completed — awaiting caller acceptance';
 
@@ -1966,7 +1994,7 @@ a2aRouter.post('/tasks/:taskId/complete', async (c) => {
             input_required_context: {
               reason_code: 'result_review',
               next_action: 'accept_or_reject',
-              details: { mandate_id: taskFull?.mandate_id || null, amount },
+              details: { mandate_id: resolvedMandateId, amount },
             },
           },
         })

@@ -820,7 +820,36 @@ export class A2ATaskProcessor {
     if (!mandate) return false;
 
     const amount = Number(mandate.authorized_amount);
-    if (policy.auto_accept_below > 0 && amount < policy.auto_accept_below) return false;
+
+    // Auto-accept for micropayments, but check cumulative threshold to prevent splitting attacks.
+    // If buyer has spent > $1 to this same seller in the last 24h, engage escrow regardless.
+    if (policy.auto_accept_below > 0 && amount < policy.auto_accept_below) {
+      const CUMULATIVE_THRESHOLD = 1.00; // $1.00 rolling 24h per buyer-seller pair
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+      const { data: recentTasks } = await this.supabase
+        .from('a2a_tasks')
+        .select('metadata')
+        .eq('agent_id', task.agent_id)
+        .eq('client_agent_id', task.client_agent_id)
+        .eq('tenant_id', this.tenantId)
+        .eq('state', 'completed')
+        .gte('updated_at', twentyFourHoursAgo);
+
+      // Sum amounts from completed tasks' mandate data
+      let cumulativeSpend = amount;
+      if (recentTasks) {
+        for (const rt of recentTasks) {
+          const rtAmount = (rt.metadata as any)?.input_required_context?.details?.amount;
+          if (typeof rtAmount === 'number') cumulativeSpend += rtAmount;
+        }
+      }
+
+      if (cumulativeSpend < CUMULATIVE_THRESHOLD) {
+        return false; // Under both per-task and cumulative thresholds — auto-accept
+      }
+      this.log(taskId, 'info', `Cumulative 24h spend $${cumulativeSpend.toFixed(2)} exceeds $${CUMULATIVE_THRESHOLD} — engaging escrow despite micro-task`);
+    }
 
     // Engage the gate: set input-required with review context
     this.log(taskId, 'info', `Acceptance gate engaged — awaiting caller review (timeout: ${policy.review_timeout_minutes}m)`);

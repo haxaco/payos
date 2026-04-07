@@ -586,6 +586,10 @@ export class A2ATaskService {
     remoteAgentUrl?: string;
     clientAgentId?: string;
   } {
+    // Extract input_required_context for top-level surfacing
+    const meta = row.metadata as Record<string, unknown> | null;
+    const inputContext = meta?.input_required_context as Record<string, unknown> | undefined;
+
     return {
       id: row.id,
       contextId: row.context_id || undefined,
@@ -593,6 +597,12 @@ export class A2ATaskService {
         state: row.state,
         message: row.status_message || undefined,
         timestamp: row.updated_at,
+        // Surface reason directly in status so clients don't have to dig into metadata
+        ...(row.state === 'input-required' && inputContext ? {
+          reason: inputContext.reason_code as string,
+          nextAction: inputContext.next_action as string,
+          resolveEndpoint: inputContext.resolve_endpoint as string | undefined,
+        } : {}),
       },
       history: messages.map((m) => this.rowToMessage(m)),
       artifacts: artifacts.map((a) => this.rowToArtifact(a)),

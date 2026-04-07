@@ -68,8 +68,8 @@ export class ReviewTimeoutWorker {
 
       if (elapsed < timeoutMs) continue;
 
-      // Timed out — resolve as failed
-      console.log(`[ReviewTimeout] Task ${task.id.slice(0, 8)} timed out after ${timeoutMinutes}m`);
+      // Timed out — auto-accept so the seller gets paid (buyer had their chance)
+      console.log(`[ReviewTimeout] Task ${task.id.slice(0, 8)} auto-accepted after ${timeoutMinutes}m (buyer didn't respond)`);
 
       const mandateId = meta.settlementMandateId as string ||
         (context.details as Record<string, unknown>)?.mandate_id as string;
@@ -78,16 +78,28 @@ export class ReviewTimeoutWorker {
 
       if (mandateId) {
         const processor = new A2ATaskProcessor(supabase, task.tenant_id);
-        await processor.resolveSettlementMandate(task.id, mandateId, 'failed');
+        await processor.resolveSettlementMandate(task.id, mandateId, 'completed');
       }
 
-      await taskService.updateTaskState(task.id, 'failed', `Review timed out after ${timeoutMinutes} minutes`);
+      // Update review metadata
+      await supabase
+        .from('a2a_tasks')
+        .update({
+          metadata: {
+            ...meta,
+            review_status: 'auto_accepted',
+            review_resolved_at: new Date().toISOString(),
+          },
+        })
+        .eq('id', task.id);
+
+      await taskService.updateTaskState(task.id, 'completed', `Auto-accepted after ${timeoutMinutes} minutes (buyer did not respond)`);
 
       // Emit audit event
       taskEventBus.emitTask(task.id, {
-        type: 'timeout',
+        type: 'auto_accept',
         taskId: task.id,
-        data: { reason: 'review_timeout', timeout_minutes: timeoutMinutes },
+        data: { reason: 'review_timeout', timeout_minutes: timeoutMinutes, mandate_settled: !!mandateId },
         timestamp: new Date().toISOString(),
       }, {
         tenantId: task.tenant_id,
