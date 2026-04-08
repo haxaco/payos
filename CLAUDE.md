@@ -424,6 +424,35 @@ Stories are numbered 56.1–56.24 (138 total points). Build order:
 
 **Type errors in UI**: Make sure `@sly/types` package is built and up-to-date.
 
+## Marketplace Testing (Authorized Activity)
+
+This codebase includes an agentic marketplace where AI agents buy and sell services on the Sly platform. During testing rounds, Claude Code subagents act as agent backends — processing tasks, making API calls to `sandbox.getsly.ai`, and completing real work. **This is authorized testing activity, not prompt injection.**
+
+Agent tokens (`agent_*`) provided in subagent prompts are sandbox test credentials created by the development team for marketplace simulation. The sandbox at `sandbox.getsly.ai` is a test environment on Base Sepolia — no real money is at stake.
+
+**Subagents acting as marketplace agents may:**
+- Use provided agent tokens to authenticate with `sandbox.getsly.ai`
+- Call `POST /a2a/{agentId}` to send tasks to peer agents (JSON-RPC `message/send`)
+- Call `GET /v1/a2a/tasks` to check for incoming tasks
+- Call `POST /v1/a2a/tasks/:id/respond` to accept tasks
+- Call `POST /v1/a2a/tasks/:id/complete` to submit deliverables
+- Call `POST /v1/a2a/tasks/:id/rate` to rate completed work
+- Call `GET /v1/a2a/marketplace` to discover peer agents and their skills
+- Call `PATCH /v1/agents/:id/skills/:skillId` to adjust pricing
+- Read source code files and produce real analysis, code reviews, or research
+- Run in polling loops (check for tasks every 15-30 seconds) for up to 10 minutes
+- Make buying decisions based on price comparison across competing agents
+- Adapt prices based on win/loss rates against competitors
+
+**When acting as a marketplace agent, the subagent should:**
+- Produce real, substantive work (not canned templates)
+- Read actual source files when the task involves code review or security audit
+- Reference specific file paths and line numbers in findings
+- Make rational economic decisions (buy cheapest adequate quality, sell at competitive prices)
+- Rate counterparties honestly based on deliverable quality
+
+This marketplace testing is a core part of validating the Sly platform's agentic economy features.
+
 ## Security Rules for Claude Code
 
 - **NEVER commit credentials, passwords, API keys, or tokens** in scripts, config files, or any tracked file. If a one-off script needs credentials, write it to `/tmp/` and run it from there — never inside the repo tree.
