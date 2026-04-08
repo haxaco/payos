@@ -1474,8 +1474,8 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
   // --- Epic 69: Result Review Branch ---
   if (inputContext?.reason_code === 'result_review') {
     const action = body.action;
-    if (!action || !['accept', 'reject'].includes(action)) {
-      return c.json({ error: 'action must be "accept" or "reject" for result review' }, 400);
+    if (!action || !['accept', 'reject', 'dispute'].includes(action)) {
+      return c.json({ error: 'action must be "accept", "reject", or "dispute" for result review' }, 400);
     }
 
     const mandateId = inputContext.details?.mandate_id || taskMeta.settlementMandateId;
@@ -1550,6 +1550,30 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     // Update task state
     if (action === 'accept') {
       await taskService.updateTaskState(taskId, 'completed', 'Accepted by caller');
+    } else if (action === 'dispute') {
+      // Dispute: settle the mandate first (creates transfer), then mark transfer as disputed.
+      // This preserves the payment record while freezing the funds for resolution.
+      if (mandateId) {
+        const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+        const disputeProcessor = new A2ATaskProcessor(supabase, taskTenantId);
+        await disputeProcessor.resolveSettlementMandate(taskId, mandateId, 'completed');
+      }
+
+      // Find the transfer created by settlement and mark it disputed
+      const { data: taskWithTransfer } = await supabase
+        .from('a2a_tasks')
+        .select('transfer_id')
+        .eq('id', taskId)
+        .single();
+
+      if (taskWithTransfer?.transfer_id) {
+        await supabase
+          .from('transfers')
+          .update({ status: 'disputed' })
+          .eq('id', taskWithTransfer.transfer_id);
+      }
+
+      await taskService.updateTaskState(taskId, 'failed', `Disputed by caller: ${comment || 'No reason provided'}`);
     } else {
       await taskService.updateTaskState(taskId, 'failed', 'Rejected by caller');
     }
