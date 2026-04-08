@@ -243,7 +243,8 @@ app.route('/.well-known/ucp', wellKnownUcpRouter);
 app.route('/.well-known/agent.json', wellKnownA2aRouter);
 
 // Agent webhook backend (public — verifies HMAC signature internally)
-app.route('/v1/agent-backend', backendRouter);
+// Mounted outside /v1 to avoid auth middleware
+app.route('/agent-backend', backendRouter);
 
 // A2A public routes (agent card discovery + JSON-RPC endpoint)
 // Epic 57: Google A2A Protocol Integration
