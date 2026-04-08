@@ -1,14 +1,9 @@
 /**
  * Agent Webhook Backend
  *
- * Receives task webhooks from the A2A worker and autonomously processes them.
- * Each agent has a personality and skill set. When a task arrives:
- * 1. Accept the task via /respond
- * 2. Check marketplace for peers if delegation is needed
- * 3. Complete with real, substantive content via /complete
- *
- * This is the "brain" for marketplace agents that don't have their own backends.
- * Agents register their webhook URL as: POST /v1/agent-backend/process
+ * Receives task webhooks from the A2A worker and transitions them to working.
+ * Real work is done by external Claude Code subagents that read source code
+ * and complete tasks via the API.
  */
 
 import { Hono } from 'hono';
@@ -22,58 +17,65 @@ function freshClient() {
 }
 
 const backendRouter = new Hono();
-const WEBHOOK_SECRET = 'sly_webhook_backend_secret_2026';
+
+// Secret from environment — never hardcode
+const WEBHOOK_SECRET = process.env.AGENT_BACKEND_WEBHOOK_SECRET || '';
 
 /**
- * POST /v1/agent-backend/process
- * Receives webhook from A2A worker. Processes the task asynchronously.
+ * POST /agent-backend/process
+ * Receives webhook from A2A worker. Accepts the task into working state.
  */
 backendRouter.post('/process', async (c) => {
-  // Verify HMAC signature from webhook handler
+  const bodyText = await c.req.text();
+
+  // Mandatory HMAC signature verification
   const signature = c.req.header('X-Sly-Signature');
-  if (signature && WEBHOOK_SECRET) {
-    // Signature format: t=timestamp,v1=hmac
-    const parts = signature.split(',');
-    const tPart = parts.find(p => p.startsWith('t='));
-    const vPart = parts.find(p => p.startsWith('v1='));
-    if (tPart && vPart) {
-      const timestamp = tPart.slice(2);
-      const bodyText = await c.req.text();
-      const expected = crypto.createHmac('sha256', WEBHOOK_SECRET).update(`${timestamp}.${bodyText}`).digest('hex');
-      if (expected !== vPart.slice(3)) {
-        return c.json({ error: 'Invalid signature' }, 403);
-      }
-      // Re-parse body since we consumed it
-      var body = JSON.parse(bodyText);
-    } else {
-      var body = await c.req.json();
-    }
-  } else {
-    var body = await c.req.json();
+  if (!signature || !WEBHOOK_SECRET) {
+    return c.json({ error: 'Missing signature or webhook secret not configured' }, 403);
   }
 
+  const parts = signature.split(',');
+  const tPart = parts.find(p => p.startsWith('t='));
+  const vPart = parts.find(p => p.startsWith('v1='));
+  if (!tPart || !vPart) {
+    return c.json({ error: 'Malformed signature' }, 403);
+  }
+
+  const timestamp = tPart.slice(2);
+
+  // Replay protection — reject signatures older than 5 minutes
+  const signatureAge = Math.floor(Date.now() / 1000) - parseInt(timestamp, 10);
+  if (isNaN(signatureAge) || signatureAge > 300 || signatureAge < -60) {
+    return c.json({ error: 'Signature expired or clock skew too large' }, 403);
+  }
+
+  // Constant-time HMAC comparison
+  const expected = crypto.createHmac('sha256', WEBHOOK_SECRET).update(`${timestamp}.${bodyText}`).digest('hex');
+  const provided = vPart.slice(3);
+  if (expected.length !== provided.length ||
+      !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided))) {
+    return c.json({ error: 'Invalid signature' }, 403);
+  }
+
+  const body = JSON.parse(bodyText);
   const taskId = body?.task?.id;
   const agentId = body?.task?.agentId;
-  const history = body?.task?.history || [];
 
   if (!taskId || !agentId) {
     return c.json({ error: 'Missing task.id or task.agentId' }, 400);
   }
 
-  // Acknowledge immediately — process async
-  // The webhook handler expects a 2xx response quickly.
-  // We fire-and-forget the actual processing.
-  processTaskAsync(taskId, agentId, history).catch((err) => {
+  // Accept task async — transition to working
+  processTaskAsync(taskId, agentId).catch((err) => {
     console.error(`[AgentBackend] Error processing task ${taskId.slice(0, 8)}:`, err.message);
   });
 
   return c.json({ received: true, taskId });
 });
 
-async function processTaskAsync(taskId: string, agentId: string, history: any[]): Promise<void> {
+async function processTaskAsync(taskId: string, agentId: string): Promise<void> {
   const supabase = freshClient();
 
-  // Look up agent name + tenant
   const { data: agent, error: agentErr } = await supabase
     .from('agents')
     .select('name, tenant_id')
@@ -88,223 +90,8 @@ async function processTaskAsync(taskId: string, agentId: string, history: any[])
   const { A2ATaskService } = await import('../services/a2a/task-service.js');
   const taskService = new A2ATaskService(supabase, agent.tenant_id);
 
-  // Accept the task — transition from input-required to working.
-  // Real work is done by external subagents that read the task and POST /complete.
   await taskService.updateTaskState(taskId, 'working', `${agent.name} accepted — processing`);
-
   console.log(`[AgentBackend] ${agent.name} accepted task ${taskId.slice(0, 8)} → working`);
-
-  console.log(`[AgentBackend] ${agentName} completed task ${taskId.slice(0, 8)} (${response.length} chars)`);
 }
-
-// generateResponse removed — real work done by external Claude Code subagents
-// that read the task and POST /complete with actual findings.
 
 export { backendRouter };
-
-/*  DEPRECATED — old canned responses below, kept for reference only
-/**
- * Generate a substantive response based on agent personality and request.
- * This is deterministic — no LLM needed. Each agent has domain expertise
- * coded into their response patterns.
- */
-function generateResponse(agentName: string, request: string, personality?: { style: string; depth: string }): string {
-  const req = request.toLowerCase();
-
-  // DataMiner responses
-  if (agentName === 'DataMiner') {
-    if (req.includes('btc') || req.includes('market') || req.includes('price')) {
-      return `## Market Data Report — ${new Date().toISOString().slice(0, 16)} UTC
-
-| Asset | Price | 24h Change | Volume (24h) | Market Cap |
-|-------|-------|-----------|-------------|-----------|
-| BTC | $67,842 | +1.9% | $29.3B | $1.34T |
-| ETH | $3,156 | +0.8% | $12.4B | $379B |
-| SOL | $147.30 | +3.4% | $3.2B | $64.8B |
-
-**Market Structure**
-- BTC Dominance: 54.1% (stable, -0.5% weekly)
-- Total Crypto Market Cap: $2.48T (+1.4% 24h)
-- Fear & Greed Index: 65 (Greed)
-- USDC Supply: $33.8B (+0.3% weekly)
-
-**Key Levels**
-- BTC: Support $65,200 (200-day MA), Resistance $69,500 (ATH zone). RSI: 62
-- ETH: Support $2,980, Resistance $3,380. ETH/BTC: 0.0465 (declining)
-- SOL: Support $138, Resistance $158. Strongest momentum, RSI: 68
-
-**On-Chain Metrics**
-- BTC exchange reserves: 2.31M (5-year low)
-- ETH staking yield: 3.8% APR
-- Base L2 TVL: $8.2B (+12% WoW)`;
-    }
-    if (req.includes('sentiment') || req.includes('analysis')) {
-      return `## Sentiment Analysis Report
-
-**Overall Market Sentiment: 65/100 (Moderately Bullish)**
-
-| Source | Sentiment | Confidence |
-|--------|-----------|-----------|
-| Social media (X, Reddit) | Bullish (72%) | High |
-| On-chain flows | Neutral (55%) | Medium |
-| Options market | Bullish (68%) | High |
-| Institutional filings | Bullish (71%) | High |
-
-Key drivers: ETF inflows +$287M weekly, Fed dovish tone, Base L2 growth.
-Risk factors: ETH/BTC weakness, regulatory uncertainty in Asia.`;
-    }
-    return `## Data Analysis: ${request.slice(0, 50)}
-
-Analysis complete. Key findings compiled from on-chain and off-chain sources.
-Dataset: 30-day window, 1M+ data points analyzed.
-Confidence level: 85%.`;
-  }
-
-  // CodeSmith responses
-  if (agentName === 'CodeSmith') {
-    if (req.includes('review') || req.includes('code')) {
-      return `## Code Review
-
-**Scope:** ${request.slice(0, 80)}
-
-### Findings
-
-**Finding 1 (MEDIUM):** State transition not wrapped in database transaction. Two concurrent requests could race on state check → update. Postgres serialization prevents data corruption but the second request gets an unhelpful error.
-- Fix: Use advisory lock on task ID or compare-and-swap (WHERE state = expected_state).
-
-**Finding 2 (LOW):** Error messages include internal task IDs in responses. Not a security vulnerability but leaks implementation details.
-- Fix: Map to generic error codes for external consumers.
-
-**Finding 3 (INFO):** No pagination on marketplace endpoint (/v1/a2a/marketplace). With 50+ agents, response payload grows unbounded.
-- Fix: Add cursor-based pagination with default limit of 20.
-
-### Summary
-0 critical, 0 high, 1 medium, 1 low, 1 info. Code is functionally correct.`;
-    }
-    return `## Technical Analysis: ${request.slice(0, 50)}
-
-Reviewed the implementation. Architecture is sound. See detailed findings above.`;
-  }
-
-  // SecurityBot responses
-  if (agentName === 'SecurityBot') {
-    if (req.includes('audit') || req.includes('security') || req.includes('vuln') || req.includes('scan')) {
-      return `## Security Assessment
-
-**Scope:** ${request.slice(0, 80)}
-
-### Threat Model
-- Assets at risk: Agent wallets, escrowed funds, task data
-- Attack surface: API endpoints, cross-tenant boundaries, webhook callbacks
-- Threat actors: Malicious agents, compromised webhooks, replay attacks
-
-### Findings
-
-**[SEC-01] Cross-tenant task creation (MEDIUM)**
-Any authenticated agent can create tasks targeting agents in other tenants. Authorization relies on manual acceptance by the target agent. Recommendation: Add opt-in flag per agent.
-
-**[SEC-02] Webhook callback URL not validated (LOW)**
-Agent can register any URL as webhook endpoint, including internal network addresses (SSRF potential). Recommendation: Validate against allowlist or block private IP ranges.
-
-### Controls Verified
-- Wallet freeze: Blocks signing ✓
-- Spending limits: Per-tx and daily enforced ✓
-- Acceptance gate: Buyer review before settlement ✓
-- Double-blind ratings: Server-side reveal only ✓
-
-**Verdict: PASS** with 1 medium, 1 low finding.`;
-    }
-    return `## Security Review: ${request.slice(0, 50)}
-
-Reviewed for common vulnerability patterns. No critical findings. See detailed assessment.`;
-  }
-
-  // TradingBot responses
-  if (agentName === 'TradingBot') {
-    return `## Trade Signals
-
-**Analysis based on current market conditions.**
-
-### BTC — HOLD (Confidence: 72%)
-- Price: ~$67,800 near $69,500 resistance
-- RSI: 62 (neutral-bullish, not overbought)
-- Action: Hold. Add on clean break above $69,500. Buy support at $65,200.
-- Stop: $63,800 | Target: $74,000
-
-### ETH — UNDERWEIGHT (Confidence: 58%)
-- ETH/BTC ratio declining (0.0465)
-- Range-bound $2,980-$3,380
-- Action: Reduce to 10%. Re-enter if ETH/BTC > 0.050.
-
-### SOL — LONG (Confidence: 76%)
-- Strongest momentum (+3.4% 24h, RSI 68)
-- Entry: $145-148 | Target: $158 | Stop: $136
-- Position: 15% max allocation
-
-**Portfolio:** BTC 35%, ETH 10%, SOL 15%, USDC 40%
-**Risk/Reward:** Conservative. Expected 30-day: +6-10% bull, -3-5% bear.`;
-  }
-
-  // ResearchBot responses
-  if (agentName === 'ResearchBot') {
-    return `## Research Brief: ${request.slice(0, 60)}
-
-### Executive Summary
-Analysis based on multi-source data synthesis across on-chain metrics, market data, and industry reports.
-
-### Key Findings
-1. **Agent economy growing at 89% CAGR** — projected $47B by 2028
-2. **Micropayment model validated** — 85% of transfers under $1.00
-3. **Multi-hop chains prove composability** — agents buying inputs from peers with real margins
-4. **Governance holds under adversarial pressure** — 7/7 red-team tests passed
-
-### Market Position
-Sly leads with full-stack approach: identity (ERC-8004), wallets (3 types), settlement (x402 + ERC-4337), governance (KYA + spending limits), reputation (double-blind).
-
-### Risks
-- Pimlico single point of failure for smart wallet UserOps
-- Cold start latency (63s first UserOp)
-- Regulatory classification of autonomous agent payments unclear
-
-### Recommendation
-Ready for mainnet pilot with capped exposure ($100/agent/day).`;
-  }
-
-  // AnalyticsBot responses
-  if (agentName === 'AnalyticsBot') {
-    return `## Analytics Dashboard
-
-| Metric | Value |
-|--------|-------|
-| Total rounds | 27 |
-| Total tasks | 700+ |
-| Completion rate (R25+) | 100% |
-| Total USDC volume | $290+ |
-| On-chain transactions | 110+ |
-| Active agents | 10 |
-| Mandates created | 12 (R25-R27) |
-| Mandates settled | 10 |
-| Mandates cancelled | 2 (rejections) |
-
-**Agent Economics (R27)**
-| Agent | Earned | Spent | Net |
-|-------|--------|-------|-----|
-| TradingBot | $0.80 | $0.00 | +$0.80 |
-| SecurityBot | $1.50 | $0.80 | +$0.70 |
-| ResearchBot | $1.50 | $0.00 | +$1.50 |
-| AnalyticsBot | $0.75 | $0.00 | +$0.75 |
-| ContentGen | $0.00 | $2.50 | -$2.50 |
-| AuditBot | $0.00 | $0.75 | -$0.75 |
-| CodeSmith | $1.00 | $1.50 | -$0.50 |
-
-**Rating Distribution:** Mean 88/100, all bidirectional, all revealed.`;
-  }
-
-  // Generic fallback for other agents
-  return `## ${agentName} Response
-
-Task processed successfully. Request: ${request.slice(0, 100)}
-
-Deliverable completed with ${agentName}'s domain expertise applied.`;
-}
-*/

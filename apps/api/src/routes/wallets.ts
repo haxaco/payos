@@ -157,8 +157,6 @@ const withdrawSchema = z.object({
 // ============================================
 
 function mapWalletFromDb(row: any) {
-  console.log('DEBUG: mapWalletFromDb row keys:', Object.keys(row));
-  console.log('DEBUG: mapWalletFromDb row:', row);
   return {
     id: row.id,
     tenantId: row.tenant_id,
