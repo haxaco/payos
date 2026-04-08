@@ -48,6 +48,8 @@ interface ClaimedTask {
   context_id: string | null;
   state: string;
   mandate_id: string | null;
+  client_agent_id: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 interface AgentRow {
@@ -196,7 +198,7 @@ export class A2ATaskWorker {
     const now = new Date().toISOString();
     const { data: candidates } = await supabase
       .from('a2a_tasks')
-      .select('id, tenant_id, agent_id, context_id, state, mandate_id')
+      .select('id, tenant_id, agent_id, context_id, state, mandate_id, client_agent_id, metadata')
       .eq('state', 'submitted')
       .is('processor_id', null)
       .eq('direction', 'inbound')
@@ -230,7 +232,7 @@ export class A2ATaskWorker {
         .eq('id', candidate.id)
         .is('processor_id', null)
         .eq('state', 'submitted')
-        .select('id, tenant_id, agent_id, context_id, state, mandate_id')
+        .select('id, tenant_id, agent_id, context_id, state, mandate_id, client_agent_id, metadata')
         .single();
 
       if (!error && claimed) {
@@ -340,12 +342,51 @@ export class A2ATaskWorker {
    * On success, task stays in 'working' state awaiting external state update.
    * On failure, schedules retry or moves to DLQ.
    */
+  /**
+   * Create settlement mandate for a task if skill has a price.
+   * Shared by manual and webhook handlers.
+   */
+  private async createMandateIfNeeded(supabase: SupabaseClient, task: ClaimedTask): Promise<void> {
+    const callerAgentId = task.client_agent_id;
+    const skillId = (task.metadata as any)?.skillId as string | undefined;
+    if (!callerAgentId || !skillId) return;
+
+    const { data: skill } = await supabase
+      .from('agent_skills')
+      .select('base_price, currency')
+      .eq('agent_id', task.agent_id)
+      .eq('skill_id', skillId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!skill || Number(skill.base_price) <= 0) return;
+
+    const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+    const processor = new A2ATaskProcessor(supabase, task.tenant_id);
+    const result = await processor.createSettlementMandate(
+      task.id, callerAgentId, task.agent_id,
+      Number(skill.base_price), skill.currency || 'USDC',
+    );
+
+    if (result && 'mandateId' in result) {
+      await supabase.from('a2a_tasks').update({
+        metadata: { ...(task.metadata || {}), settlementMandateId: result.mandateId },
+      }).eq('id', task.id);
+      console.log(`[A2A Worker] Task ${task.id.slice(0, 8)}: mandate ${result.mandateId} ($${skill.base_price})`);
+    } else if (result && 'error' in result) {
+      console.log(`[A2A Worker] Task ${task.id.slice(0, 8)}: mandate skipped (${result.error})`);
+    }
+  }
+
   private async handleWebhook(
     supabase: SupabaseClient,
     task: ClaimedTask,
     agent: AgentRow,
     config: Record<string, unknown>,
   ): Promise<void> {
+    // Create settlement mandate before dispatching to webhook
+    await this.createMandateIfNeeded(supabase, task);
+
     const callbackUrl = config.callbackUrl as string;
     if (!callbackUrl) {
       await this.failTask(supabase, task, 'Webhook agent missing callbackUrl in processing_config');
@@ -497,7 +538,8 @@ export class A2ATaskWorker {
   }
 
   /**
-   * Manual handler: leave task in queue for human processing.
+   * Manual handler: create settlement mandate if skill has a price,
+   * then leave task in queue for human/agent-backend processing.
    */
   private async handleManual(
     supabase: SupabaseClient,
@@ -506,11 +548,13 @@ export class A2ATaskWorker {
   ): Promise<void> {
     const taskService = new A2ATaskService(supabase, task.tenant_id);
 
+    // Create settlement mandate so money is held in escrow
+    await this.createMandateIfNeeded(supabase, task);
+
     await taskService.addMessage(task.id, 'agent', [
       { text: 'Task queued for manual processing. A human operator will review this shortly.' },
     ]);
 
-    // Set to input-required with structured context so callers know what to do
     await taskService.setInputRequired(
       task.id,
       'Awaiting manual processing',
