@@ -551,13 +551,9 @@ export class A2ATaskWorker {
     // Create settlement mandate so money is held in escrow
     await this.createMandateIfNeeded(supabase, task);
 
-    await taskService.addMessage(task.id, 'agent', [
-      { text: 'Task queued for manual processing. A human operator will review this shortly.' },
-    ]);
-
     await taskService.setInputRequired(
       task.id,
-      'Awaiting manual processing',
+      'Awaiting agent backend',
       {
         reason_code: 'manual_processing',
         next_action: 'human_respond',
