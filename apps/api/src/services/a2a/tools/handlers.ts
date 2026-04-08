@@ -335,11 +335,19 @@ async function handleSendA2aTask(
     return { success: false, error: { code: 'INVALID_PARAM', message: 'agent_id must be a valid UUID' } };
   }
 
+  // Hop depth limit — prevent infinite delegation chains
+  const MAX_HOP_DEPTH = 3;
+  const parentHopDepth = (args.hop_depth as number) || 0;
+  if (parentHopDepth >= MAX_HOP_DEPTH) {
+    return { success: false, error: { code: 'HOP_LIMIT', message: `Maximum delegation depth (${MAX_HOP_DEPTH}) reached. Cannot delegate further.` } };
+  }
+
   // Build parts from string message
   const parts = [{ text: messageText }];
   const metadata: Record<string, unknown> = {
     initiatingAgentId: ctx.agentId,
     initiatingTaskId: ctx.currentTaskId,
+    hopDepth: parentHopDepth + 1,
   };
 
   if (remoteUrl) {
@@ -362,15 +370,21 @@ async function handleSendA2aTask(
     }
   }
 
-  // Intra-platform: verify target agent exists (cross-tenant OK for marketplace)
+  // Intra-platform: verify target agent exists and allows cross-tenant if needed
   const { data: targetAgent } = await supabase
     .from('agents')
-    .select('id, status, tenant_id')
+    .select('id, status, tenant_id, allow_cross_tenant')
     .eq('id', targetAgentId)
     .single();
 
   if (!targetAgent || targetAgent.status !== 'active') {
     return { success: false, error: { code: 'AGENT_NOT_FOUND', message: `Agent ${targetAgentId} not found or inactive` } };
+  }
+
+  // Cross-tenant opt-in check
+  const isCrossTenant = targetAgent.tenant_id !== ctx.tenantId;
+  if (isCrossTenant && targetAgent.allow_cross_tenant === false) {
+    return { success: false, error: { code: 'CROSS_TENANT_BLOCKED', message: `Agent ${targetAgentId} does not accept cross-tenant tasks` } };
   }
 
   // Create child task in the TARGET agent's tenant (cross-tenant support)

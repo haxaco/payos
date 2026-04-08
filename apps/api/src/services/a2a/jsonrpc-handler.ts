@@ -250,6 +250,30 @@ async function handleMessageSend(
     resolvedContextId = await taskService.findRecentSession(agentId, callerAgentId) || undefined;
   }
 
+  // --- Cross-tenant opt-in check ---
+  if (callerAgentId && supabase) {
+    const { data: callerRow } = await supabase
+      .from('agents')
+      .select('tenant_id')
+      .eq('id', callerAgentId)
+      .single();
+    if (callerRow && tenantId && callerRow.tenant_id !== tenantId) {
+      // Cross-tenant call — check if target allows it
+      const { data: targetAgent } = await supabase
+        .from('agents')
+        .select('allow_cross_tenant')
+        .eq('id', agentId)
+        .single();
+      if (targetAgent?.allow_cross_tenant === false) {
+        return {
+          jsonrpc: '2.0',
+          error: { code: JSON_RPC_ERRORS.UNAUTHORIZED, message: 'This agent does not accept cross-tenant tasks' },
+          id: request.id,
+        };
+      }
+    }
+  }
+
   // --- Skill validation at receive time (fail-fast before task creation) ---
   const skillValidation = await validateSkillAtReceive(request, agentId, message.parts, supabase, tenantId);
   if (skillValidation) {

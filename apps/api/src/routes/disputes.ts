@@ -687,6 +687,52 @@ disputes.post('/:id/resolve', async (c) => {
     return c.json({ error: 'Failed to resolve dispute' }, 500);
   }
   
+  // Release or cancel disputed A2A mandate based on resolution
+  if (dispute.transfer_id) {
+    // Find task linked to this transfer's mandate
+    const { data: linkedTask } = await supabase
+      .from('a2a_tasks')
+      .select('id, metadata')
+      .eq('transfer_id', dispute.transfer_id)
+      .maybeSingle();
+
+    // Also check tasks by mandate in metadata
+    const mandateId = (linkedTask?.metadata as any)?.settlementMandateId;
+    if (!mandateId) {
+      // Try finding mandate via task metadata dispute info
+      const { data: disputedTasks } = await supabase
+        .from('a2a_tasks')
+        .select('metadata')
+        .filter('metadata->>dispute', 'neq', 'null')
+        .limit(10);
+      // Find the task whose dispute matches this mandate
+      for (const dt of (disputedTasks || [])) {
+        const dm = (dt.metadata as any)?.dispute?.mandate_id;
+        if (dm) {
+          const { data: m } = await supabase.from('ap2_mandates')
+            .select('mandate_id, status').eq('mandate_id', dm).eq('status', 'active').maybeSingle();
+          if (m) {
+            // Resolve the mandate based on dispute outcome
+            if (resolution === 'no_action') {
+              // No action = seller keeps the money
+              const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+              const processor = new A2ATaskProcessor(supabase, ctx.tenantId);
+              await processor.resolveSettlementMandate(linkedTask?.id || '', dm, 'completed');
+              console.log(`[Disputes] Mandate ${dm.slice(0, 20)} settled (no_action — seller keeps funds)`);
+            } else {
+              // Refund = cancel mandate, money returns to buyer
+              await supabase.from('ap2_mandates').update({
+                status: 'cancelled', cancelled_at: new Date().toISOString(),
+              }).eq('mandate_id', dm);
+              console.log(`[Disputes] Mandate ${dm.slice(0, 20)} cancelled (${resolution} — funds returned)`);
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+
   // Audit log
   await logAudit(supabase, {
     tenantId: ctx.tenantId,
