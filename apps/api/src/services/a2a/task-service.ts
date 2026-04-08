@@ -83,6 +83,11 @@ export class A2ATaskService {
       throw new Error('callbackSecret is required when callbackUrl is provided. This prevents callback hijacking — the secret is used for HMAC verification on delivery.');
     }
 
+    // Propagate skillId from message metadata to task metadata
+    // so the worker can create settlement mandates for priced skills.
+    const taskMetadata: Record<string, unknown> = {};
+    if (message.metadata?.skillId) taskMetadata.skillId = message.metadata.skillId;
+
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
       .from('a2a_tasks')
@@ -99,6 +104,7 @@ export class A2ATaskService {
         callback_secret: callbackSecret || null,
         client_agent_id: clientAgentId || null,
         idempotency_key: idempotencyKey || null,
+        ...(Object.keys(taskMetadata).length > 0 ? { metadata: taskMetadata } : {}),
       })
       .select()
       .single();
