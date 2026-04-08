@@ -1551,27 +1551,53 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     if (action === 'accept') {
       await taskService.updateTaskState(taskId, 'completed', 'Accepted by caller');
     } else if (action === 'dispute') {
-      // Dispute: settle the mandate first (creates transfer), then mark transfer as disputed.
-      // This preserves the payment record while freezing the funds for resolution.
+      // Dispute: keep mandate ACTIVE (funds held in escrow), mark task as disputed.
+      // The mandate amount stays locked until the dispute is resolved.
+      // Resolution comes later via the disputes API (POST /v1/disputes).
       if (mandateId) {
-        const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
-        const disputeProcessor = new A2ATaskProcessor(supabase, taskTenantId);
-        await disputeProcessor.resolveSettlementMandate(taskId, mandateId, 'completed');
-      }
-
-      // Find the transfer created by settlement and mark it disputed
-      const { data: taskWithTransfer } = await supabase
-        .from('a2a_tasks')
-        .select('transfer_id')
-        .eq('id', taskId)
-        .single();
-
-      if (taskWithTransfer?.transfer_id) {
         await supabase
-          .from('transfers')
-          .update({ status: 'disputed' })
-          .eq('id', taskWithTransfer.transfer_id);
+          .from('ap2_mandates')
+          .update({
+            status: 'active', // Keep active — funds held
+            metadata: supabase.rpc ? undefined : undefined, // Can't merge JSONB easily, skip
+          })
+          .eq('mandate_id', mandateId);
+        // Update mandate metadata with dispute info
+        const { data: currentMandate } = await supabase
+          .from('ap2_mandates')
+          .select('metadata')
+          .eq('mandate_id', mandateId)
+          .single();
+        await supabase
+          .from('ap2_mandates')
+          .update({
+            metadata: {
+              ...(currentMandate?.metadata || {}),
+              disputed: true,
+              dispute_reason: comment || 'No reason provided',
+              disputed_at: new Date().toISOString(),
+              disputed_by: ctx.actorId,
+            },
+          })
+          .eq('mandate_id', mandateId);
       }
+
+      // Store dispute info in task metadata
+      await supabase
+        .from('a2a_tasks')
+        .update({
+          metadata: {
+            ...taskMeta,
+            dispute: {
+              reason: comment || 'No reason provided',
+              filed_at: new Date().toISOString(),
+              filed_by: ctx.actorId,
+              mandate_id: mandateId,
+              status: 'open',
+            },
+          },
+        })
+        .eq('id', taskId);
 
       await taskService.updateTaskState(taskId, 'failed', `Disputed by caller: ${comment || 'No reason provided'}`);
     } else {
