@@ -7,13 +7,7 @@
 
 import { Hono } from 'hono';
 import crypto from 'node:crypto';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
-function freshClient() {
-  return createSupabaseClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
+import { createClient } from '../db/client.js';
 
 const backendRouter = new Hono();
 const WEBHOOK_SECRET = process.env.AGENT_BACKEND_WEBHOOK_SECRET || '';
@@ -57,14 +51,14 @@ backendRouter.post('/process', async (c) => {
   }
 
   processTaskAsync(taskId, agentId, history).catch((err) => {
-    console.error(`[AgentBackend] Error processing task ${taskId.slice(0, 8)}:`, err.message);
+    console.error(`[AgentBackend] Error processing task ${taskId.slice(0, 8)}:`, err.message, err.stack?.split('\n')[1]);
   });
 
   return c.json({ received: true, taskId });
 });
 
 async function processTaskAsync(taskId: string, agentId: string, history: any[]): Promise<void> {
-  const supabase = freshClient();
+  const supabase = createClient();
 
   const { data: agent, error: agentErr } = await supabase
     .from('agents')
