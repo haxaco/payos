@@ -84,7 +84,7 @@ canvas{width:100%;height:100%}
 
 <div class="connect-bar">
   <input type="text" id="apiUrl" value="https://sandbox.getsly.ai" placeholder="API URL">
-  <input type="text" id="apiKey" placeholder="API Key (pk_test_... or agent_...)" style="flex:2">
+  <input type="text" id="apiKey" placeholder="Platform Admin Key (PLATFORM_ADMIN_API_KEY)" style="flex:2">
   <button onclick="connect()" id="connectBtn">Connect</button>
 </div>
 
@@ -146,28 +146,28 @@ async function connect() {
     const headers = key ? { 'Authorization': 'Bearer ' + key } : {};
 
     // Load marketplace agents
-    const mktRes = await fetch(url + '/v1/a2a/marketplace', { headers });
+    const mktRes = await fetch(url + '/admin/round/agents', { headers });
     const mkt = await mktRes.json();
-    state.agents = mkt?.data?.data || mkt?.data || [];
+    state.agents = mkt?.data || [];
     state.agents.forEach(a => { agentNames[a.id] = a.name; });
     renderAgents();
 
     // Load snapshot
-    const snapRes = await fetch(url + '/v1/a2a/round/snapshot?minutes=10', { headers });
+    const snapRes = await fetch(url + '/admin/round/snapshot?minutes=10', { headers });
     const snap = await snapRes.json();
     if (snap?.data) {
       state.tasks = snap.data.tasks || [];
       state.mandates = snap.data.mandates || [];
       state.transfers = snap.data.transfers || [];
-      // Build name cache from tasks
-      state.tasks.forEach(t => {
-        if (t.agent_id && !agentNames[t.agent_id]) agentNames[t.agent_id] = t.agent_id.slice(0, 8);
-      });
+      // Use server-provided agent names
+      if (snap.data.agentNames) {
+        Object.assign(agentNames, snap.data.agentNames);
+      }
       updateMetrics();
     }
 
-    // Connect SSE
-    const sseUrl = url + '/v1/a2a/round/stream';
+    // Connect SSE — pass token as query param since EventSource doesn't support headers
+    const sseUrl = url + '/admin/round/stream' + (key ? '?token=' + encodeURIComponent(key) : '');
     eventSource = new EventSource(sseUrl);
     eventSource.onopen = () => {
       connected = true;
@@ -200,7 +200,7 @@ async function connect() {
     // Poll for snapshot updates every 3s
     pollInterval = setInterval(async () => {
       try {
-        const r = await fetch(url + '/v1/a2a/round/snapshot?minutes=5', { headers });
+        const r = await fetch(url + '/admin/round/snapshot?minutes=5', { headers });
         const s = await r.json();
         if (s?.data) {
           state.tasks = s.data.tasks || [];

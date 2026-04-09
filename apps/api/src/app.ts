@@ -66,6 +66,7 @@ import wellKnownUcpRouter from './routes/well-known-ucp.js';
 import wellKnownA2aRouter from './routes/well-known-a2a.js';
 import { a2aPublicRouter, a2aRouter } from './routes/a2a.js';
 import { backendRouter } from './routes/agent-backend.js';
+import { roundViewerRouter } from './routes/round-viewer.js';
 import ucpSchemasRouter from './routes/ucp-schemas.js';
 import ucpRouter from './routes/ucp.js';
 import ucpCheckoutRouter from './routes/ucp-checkout.js';
@@ -286,6 +287,7 @@ app.get('/docs', (c) => {
 
 // Beta admin routes (platform admin auth, NOT tenant auth)
 app.route('/admin/beta', betaAdminRouter);
+app.route('/admin/round', roundViewerRouter); // Live round viewer (platform admin only)
 
 // NOTE: UCP Identity routes moved to v1 router for auth middleware
 

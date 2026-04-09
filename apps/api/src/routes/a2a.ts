@@ -926,71 +926,8 @@ a2aRouter.get('/marketplace', async (c) => {
   return c.json({ data: result, total: result.length });
 });
 
-/**
- * GET /v1/a2a/round/stream
- * SSE stream of all marketplace task events for the live round viewer.
- * Emits task lifecycle events: status, message, acceptance, feedback, etc.
- */
-a2aRouter.get('/round/stream', async (c) => {
-  return streamSSE(c, async (stream) => {
-    let eventId = 0;
-
-    const unsub = taskEventBus.subscribeAll((event) => {
-      try {
-        stream.writeSSE({
-          data: JSON.stringify(event),
-          event: event.type,
-          id: String(++eventId),
-        });
-      } catch { /* client disconnected */ }
-    });
-
-    // Heartbeat every 15s
-    const hb = setInterval(() => {
-      try { stream.writeSSE({ data: new Date().toISOString(), event: 'heartbeat', id: String(++eventId) }); }
-      catch { /* client disconnected */ }
-    }, 15000);
-
-    stream.onAbort(() => { unsub(); clearInterval(hb); });
-
-    // Keep alive for 10 minutes max
-    await new Promise(r => setTimeout(r, 600000));
-    unsub();
-    clearInterval(hb);
-  });
-});
-
-/**
- * GET /v1/a2a/round/snapshot
- * Point-in-time snapshot of recent marketplace activity for the live viewer.
- * Returns tasks, mandates, transfers from the last N minutes.
- */
-a2aRouter.get('/round/snapshot', async (c) => {
-  const minutes = parseInt(c.req.query('minutes') || '5');
-  const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
-  const supabase = createClient();
-
-  const [tasksRes, mandatesRes, transfersRes] = await Promise.all([
-    supabase.from('a2a_tasks')
-      .select('id, state, agent_id, client_agent_id, metadata, created_at, updated_at')
-      .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(100),
-    supabase.from('ap2_mandates')
-      .select('mandate_id, status, authorized_amount, agent_id, created_at')
-      .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(50),
-    supabase.from('transfers')
-      .select('id, amount, status, tx_hash, created_at')
-      .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(50),
-  ]);
-
-  return c.json({
-    data: {
-      tasks: tasksRes.data || [],
-      mandates: mandatesRes.data || [],
-      transfers: transfersRes.data || [],
-      timestamp: new Date().toISOString(),
-    },
-  });
-});
+// Round viewer endpoints moved to /admin/round (platform admin protected)
+// See routes/round-viewer.ts
 
 /**
  * GET /v1/a2a/agents/:agentId/card
