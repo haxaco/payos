@@ -128,13 +128,17 @@ if (process.env.NODE_ENV !== 'production') {
   app.use('*', prettyJSON());
 }
 
-// CORS preflight for admin round viewer — must respond before auth middleware rejects OPTIONS
-app.options('/admin/round/*', (c) => {
-  c.header('Access-Control-Allow-Origin', c.req.header('Origin') || '*');
-  c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-  c.header('Access-Control-Max-Age', '86400');
-  return c.text('', 204);
+// CORS preflight for admin round viewer — raw Response to bypass all middleware
+app.on('OPTIONS', '/admin/round/*', (c) => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': c.req.header('Origin') || '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
 });
 
 // CORS configuration
