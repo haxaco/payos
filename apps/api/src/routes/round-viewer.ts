@@ -75,7 +75,7 @@ roundViewerRouter.get('/snapshot', async (c) => {
   const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
   const supabase = createClient(); // service role — bypasses RLS
 
-  const [tasksRes, mandatesRes, transfersRes, agentsRes] = await Promise.all([
+  const [tasksRes, mandatesRes, transfersRes] = await Promise.all([
     supabase.from('a2a_tasks')
       .select('id, state, agent_id, client_agent_id, metadata, status_message, created_at, updated_at, webhook_status')
       .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(200),
@@ -85,15 +85,24 @@ roundViewerRouter.get('/snapshot', async (c) => {
     supabase.from('transfers')
       .select('id, amount, status, tx_hash, created_at')
       .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(100),
-    supabase.from('agents')
-      .select('id, name, status, kya_tier')
-      .eq('status', 'active').limit(50),
   ]);
 
-  // Build agent name map
+  // Collect all unique agent IDs from tasks (both buyer and seller)
+  const agentIdSet = new Set<string>();
+  for (const t of (tasksRes.data || [])) {
+    if (t.agent_id) agentIdSet.add(t.agent_id);
+    if (t.client_agent_id) agentIdSet.add(t.client_agent_id);
+  }
+
+  // Resolve names for ALL referenced agents (no status filter)
   const agentNames: Record<string, string> = {};
-  for (const a of (agentsRes.data || [])) {
-    agentNames[a.id] = a.name;
+  if (agentIdSet.size > 0) {
+    const { data: agentsData } = await supabase.from('agents')
+      .select('id, name')
+      .in('id', Array.from(agentIdSet));
+    for (const a of (agentsData || [])) {
+      agentNames[a.id] = a.name;
+    }
   }
 
   return c.json({

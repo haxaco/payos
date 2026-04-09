@@ -303,17 +303,48 @@ function updateEdge(from, to, edgeState) {
   if (edge) edge.state = edgeState;
 }
 
-// Render agents panel
+// Render agents panel — only show agents that are transacting
 function renderAgents() {
   const panel = document.getElementById('agentPanel');
-  let h = '<h3>Agents (' + state.agents.length + ')</h3>';
-  state.agents.forEach(a => {
-    const skills = (a.skills || []).map(s => s.id + ' $' + (s.price || '?')).join(', ');
+
+  // Collect IDs of agents involved in tasks
+  const activeIds = new Set();
+  state.tasks.forEach(t => {
+    if (t.agent_id) activeIds.add(t.agent_id);
+    if (t.client_agent_id) activeIds.add(t.client_agent_id);
+  });
+  state.edges.forEach(e => {
+    if (e.from) activeIds.add(e.from);
+    if (e.to) activeIds.add(e.to);
+  });
+
+  // Filter + sort by activity
+  const transacting = state.agents
+    .filter(a => activeIds.has(a.id))
+    .map(a => {
+      const sent = state.tasks.filter(t => t.client_agent_id === a.id).length;
+      const recv = state.tasks.filter(t => t.agent_id === a.id).length;
+      return { ...a, sent, recv, total: sent + recv };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  const idle = state.agents.length - transacting.length;
+
+  let h = '<h3>Active (' + transacting.length + ')</h3>';
+  transacting.forEach(a => {
+    const statusCls = a.status === 'frozen' ? 'frozen' : a.status === 'suspended' ? 'suspended' : '';
+    const skills = (a.skills || []).slice(0, 3).map(s => s.id + ' $' + (s.price || '?')).join(', ');
+    const walletBal = (a.wallets || []).reduce((s, w) => s + (w.balance || 0), 0);
     h += '<div class="agent-card">';
-    h += '<div class="name"><div class="dot"></div>' + a.name + '</div>';
-    h += '<div class="price">' + skills + '</div>';
+    h += '<div class="name"><div class="dot ' + statusCls + '"></div>' + a.name + '</div>';
+    h += '<div class="stats">' + a.sent + ' sent · ' + a.recv + ' recv' + (walletBal > 0 ? ' · $' + walletBal.toFixed(2) : '') + '</div>';
+    if (skills) h += '<div class="price">' + skills + '</div>';
     h += '</div>';
   });
+
+  if (idle > 0) {
+    h += '<div style="padding:8px 10px;font-size:10px;color:var(--muted)">' + idle + ' idle agents hidden</div>';
+  }
   panel.innerHTML = h;
 }
 
@@ -339,6 +370,7 @@ function updateMetrics() {
   }));
 
   updateMetricsDisplay();
+  renderAgents();
 }
 
 function updateMetricsDisplay() {
