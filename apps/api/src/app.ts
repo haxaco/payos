@@ -128,13 +128,14 @@ if (process.env.NODE_ENV !== 'production') {
   app.use('*', prettyJSON());
 }
 
-// CORS: admin round viewer allows any origin (auth-protected by admin key)
-app.use('/admin/round/*', cors({
-  origin: (origin) => origin || '*', // reflect any origin
-  allowMethods: ['GET', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}));
+// CORS preflight for admin round viewer — must respond before auth middleware rejects OPTIONS
+app.options('/admin/round/*', (c) => {
+  c.header('Access-Control-Allow-Origin', c.req.header('Origin') || '*');
+  c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  c.header('Access-Control-Max-Age', '86400');
+  return c.text('', 204);
+});
 
 // CORS configuration
 app.use(
