@@ -128,6 +128,14 @@ if (process.env.NODE_ENV !== 'production') {
   app.use('*', prettyJSON());
 }
 
+// CORS: admin round viewer allows any origin (auth-protected by admin key)
+app.use('/admin/round/*', cors({
+  origin: (origin) => origin || '*', // reflect any origin
+  allowMethods: ['GET', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+
 // CORS configuration
 app.use(
   '*',
