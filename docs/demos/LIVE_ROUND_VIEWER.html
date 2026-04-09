@@ -17,7 +17,15 @@ body{font-family:'SF Mono','Fira Code',monospace;background:var(--bg);color:var(
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .timer{font-size:20px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
 
-.main{display:grid;grid-template-columns:220px 1fr;height:calc(100vh - 49px)}
+.main{display:grid;grid-template-columns:220px 1fr 200px;height:calc(100vh - 49px)}
+
+/* Skills panel */
+.skills{border-left:1px solid var(--border);overflow-y:auto;padding:8px}
+.skills h3{font-size:11px;color:var(--muted);text-transform:uppercase;padding:8px 8px 4px;letter-spacing:1px}
+.skill-row{padding:6px 10px;border-radius:4px;margin-bottom:2px;font-size:11px;display:flex;justify-content:space-between;align-items:center}
+.skill-row .skill-name{color:var(--text);font-weight:500}
+.skill-row .skill-stats{color:var(--muted);font-size:10px;text-align:right}
+.skill-row .skill-price{color:var(--cyan);font-size:10px}
 
 /* Agent panel */
 .agents{border-right:1px solid var(--border);overflow-y:auto;padding:8px}
@@ -109,6 +117,10 @@ canvas{width:100%;height:100%}
       <div style="padding:20px;color:var(--muted);text-align:center;font-size:12px">Connect to see live events</div>
     </div>
   </div>
+  <div class="skills" id="skillsPanel">
+    <h3>Skills</h3>
+    <div style="padding:12px;color:var(--muted);font-size:11px">Connect to see activity</div>
+  </div>
 </div>
 
 <script>
@@ -145,26 +157,38 @@ async function connect() {
   try {
     const headers = key ? { 'Authorization': 'Bearer ' + key } : {};
 
-    // Load marketplace agents
-    const mktRes = await fetch(url + '/admin/round/agents', { headers });
-    const mkt = await mktRes.json();
-    state.agents = mkt?.data || [];
-    state.agents.forEach(a => { agentNames[a.id] = a.name; });
-    renderAgents();
-
-    // Load snapshot
+    // Load snapshot first (has agent names resolved from task participants)
     const snapRes = await fetch(url + '/admin/round/snapshot?minutes=10', { headers });
     const snap = await snapRes.json();
     if (snap?.data) {
       state.tasks = snap.data.tasks || [];
       state.mandates = snap.data.mandates || [];
       state.transfers = snap.data.transfers || [];
-      // Use server-provided agent names
       if (snap.data.agentNames) {
         Object.assign(agentNames, snap.data.agentNames);
       }
-      updateMetrics();
     }
+
+    // Load all agents (for skills/wallets info)
+    const mktRes = await fetch(url + '/admin/round/agents', { headers });
+    const mkt = await mktRes.json();
+    state.agents = mkt?.data || [];
+    // Merge agent names (agents endpoint has names for all loaded agents)
+    state.agents.forEach(a => { if (a.name) agentNames[a.id] = a.name; });
+
+    // Build a combined agent list: start with agents endpoint, enrich with snapshot participants
+    const allIds = new Set(state.agents.map(a => a.id));
+    // Add agents from tasks that aren't in the agents list
+    state.tasks.forEach(t => {
+      for (const id of [t.agent_id, t.client_agent_id]) {
+        if (id && !allIds.has(id)) {
+          allIds.add(id);
+          state.agents.push({ id, name: agentNames[id] || id.slice(0, 8), skills: [], wallets: [], status: 'active' });
+        }
+      }
+    });
+
+    updateMetrics();
 
     // Connect SSE — pass token as query param since EventSource doesn't support headers
     const sseUrl = url + '/admin/round/stream' + (key ? '?token=' + encodeURIComponent(key) : '');
@@ -206,6 +230,16 @@ async function connect() {
           state.tasks = s.data.tasks || [];
           state.mandates = s.data.mandates || [];
           state.transfers = s.data.transfers || [];
+          // Merge agent names from snapshot
+          if (s.data.agentNames) Object.assign(agentNames, s.data.agentNames);
+          // Add new task participants to agent list
+          state.tasks.forEach(t => {
+            for (const id of [t.agent_id, t.client_agent_id]) {
+              if (id && !state.agents.some(a => a.id === id)) {
+                state.agents.push({ id, name: agentNames[id] || id.slice(0, 8), skills: [], wallets: [], status: 'active' });
+              }
+            }
+          });
           updateMetrics();
           renderGraph();
         }
@@ -371,6 +405,59 @@ function updateMetrics() {
 
   updateMetricsDisplay();
   renderAgents();
+  renderSkills();
+}
+
+// Render skills panel — aggregate skills being bought/sold
+function renderSkills() {
+  const panel = document.getElementById('skillsPanel');
+  const skillMap = {};
+  state.tasks.forEach(t => {
+    const sk = t.metadata?.skillId || 'general';
+    if (!skillMap[sk]) skillMap[sk] = { count: 0, completed: 0, volume: 0 };
+    skillMap[sk].count++;
+    if (t.state === 'completed') skillMap[sk].completed++;
+  });
+  // Add mandate amounts to skills
+  state.mandates.forEach(m => {
+    if (m.status === 'completed') {
+      // Can't directly link mandate to skill, but count volume
+    }
+  });
+
+  const sorted = Object.entries(skillMap).sort((a, b) => b[1].count - a[1].count);
+
+  let h = '<h3>Skills (' + sorted.length + ')</h3>';
+  if (sorted.length === 0) {
+    h += '<div style="padding:12px;color:var(--muted);font-size:11px">No activity yet</div>';
+  }
+  sorted.forEach(([name, data]) => {
+    const pct = data.count > 0 ? Math.round(data.completed / data.count * 100) : 0;
+    h += '<div class="skill-row">';
+    h += '<div><div class="skill-name">' + name + '</div>';
+    h += '<div class="skill-stats">' + data.count + ' tasks · ' + pct + '% done</div></div>';
+    h += '</div>';
+  });
+
+  // Also show top buyer-seller pairs
+  const pairMap = {};
+  state.tasks.forEach(t => {
+    if (!t.client_agent_id || !t.agent_id) return;
+    const buyer = N(t.client_agent_id);
+    const seller = N(t.agent_id);
+    const pair = buyer + ' → ' + seller;
+    pairMap[pair] = (pairMap[pair] || 0) + 1;
+  });
+  const topPairs = Object.entries(pairMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  if (topPairs.length > 0) {
+    h += '<h3 style="margin-top:12px">Top Pairs</h3>';
+    topPairs.forEach(([pair, count]) => {
+      h += '<div class="skill-row"><div class="skill-name" style="font-size:10px">' + pair + '</div><div class="skill-stats">' + count + '</div></div>';
+    });
+  }
+
+  panel.innerHTML = h;
 }
 
 function updateMetricsDisplay() {
@@ -414,10 +501,9 @@ function renderGraph() {
   ctx.scale(2, 2);
   ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // Collect unique agents from edges + state
+  // Only show agents that are in edges (actually transacting)
   const agentIds = new Set();
   state.edges.forEach(e => { agentIds.add(e.from); agentIds.add(e.to); });
-  state.agents.forEach(a => agentIds.add(a.id));
   const nodes = Array.from(agentIds).filter(Boolean);
 
   if (nodes.length === 0) {
