@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sly Marketplace — Live Round</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--surface:#12121a;--border:#1e1e2e;--text:#e0e0e8;--muted:#6b6b80;--accent:#6366f1;--green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--cyan:#06b6d4}
+body{font-family:'SF Mono','Fira Code',monospace;background:var(--bg);color:var(--text);overflow:hidden;height:100vh}
+
+.header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+.header h1{font-size:16px;font-weight:600;letter-spacing:1px}
+.header .status{display:flex;align-items:center;gap:12px;font-size:13px}
+.header .dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 2s infinite}
+.header .dot.live{background:var(--green)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.timer{font-size:20px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+
+.main{display:grid;grid-template-columns:220px 1fr;height:calc(100vh - 49px)}
+
+/* Agent panel */
+.agents{border-right:1px solid var(--border);overflow-y:auto;padding:8px}
+.agents h3{font-size:11px;color:var(--muted);text-transform:uppercase;padding:8px 8px 4px;letter-spacing:1px}
+.agent-card{padding:8px 10px;border-radius:6px;margin-bottom:2px;cursor:default;transition:background 0.2s}
+.agent-card:hover{background:rgba(99,102,241,0.08)}
+.agent-card .name{font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
+.agent-card .name .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+.agent-card .name .dot.frozen{background:var(--red);animation:pulse 1s infinite}
+.agent-card .name .dot.suspended{background:var(--yellow)}
+.agent-card .stats{font-size:10px;color:var(--muted);margin-top:2px}
+.agent-card .price{font-size:10px;color:var(--cyan)}
+
+/* Content area */
+.content{display:grid;grid-template-rows:1fr auto 1fr;gap:0;overflow:hidden}
+
+/* Network graph */
+.graph-area{position:relative;border-bottom:1px solid var(--border);overflow:hidden}
+canvas{width:100%;height:100%}
+
+/* Metrics bar */
+.metrics{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--surface)}
+.metric{flex:1;padding:10px 16px;border-right:1px solid var(--border);text-align:center}
+.metric:last-child{border-right:none}
+.metric .label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.metric .value{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.metric .value.green{color:var(--green)}
+.metric .value.red{color:var(--red)}
+.metric .value.yellow{color:var(--yellow)}
+.metric .sub{font-size:10px;color:var(--muted)}
+
+/* Live feed */
+.feed{overflow-y:auto;padding:8px 12px}
+.feed-item{padding:6px 10px;border-radius:4px;margin-bottom:2px;font-size:12px;display:flex;align-items:center;gap:8px;animation:slideIn 0.3s ease}
+@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.feed-item .time{color:var(--muted);font-size:10px;flex-shrink:0;width:60px}
+.feed-item .icon{font-size:14px;flex-shrink:0}
+.feed-item.created{background:rgba(99,102,241,0.06)}
+.feed-item.completed{background:rgba(34,197,94,0.06)}
+.feed-item.accepted{background:rgba(34,197,94,0.1)}
+.feed-item.rejected{background:rgba(239,68,68,0.06)}
+.feed-item.disputed{background:rgba(245,158,11,0.08)}
+.feed-item.frozen{background:rgba(239,68,68,0.1)}
+.feed-item.settlement{background:rgba(6,182,212,0.08)}
+
+/* Connection UI */
+.connect-bar{padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.connect-bar input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:4px;font-family:inherit;font-size:12px;flex:1}
+.connect-bar button{background:var(--accent);color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600}
+.connect-bar button:hover{opacity:0.9}
+.connect-bar button.stop{background:var(--red)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>SLY MARKETPLACE</h1>
+  <div class="status">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Disconnected</span>
+    <div class="timer" id="timer">00:00</div>
+  </div>
+</div>
+
+<div class="connect-bar">
+  <input type="text" id="apiUrl" value="https://sandbox.getsly.ai" placeholder="API URL">
+  <input type="text" id="apiKey" placeholder="API Key (pk_test_... or agent_...)" style="flex:2">
+  <button onclick="connect()" id="connectBtn">Connect</button>
+</div>
+
+<div class="main">
+  <div class="agents" id="agentPanel">
+    <h3>Agents</h3>
+    <div style="padding:12px;color:var(--muted);font-size:11px">Connect to load agents</div>
+  </div>
+  <div class="content">
+    <div class="graph-area">
+      <canvas id="graphCanvas"></canvas>
+    </div>
+    <div class="metrics">
+      <div class="metric"><div class="label">Tasks</div><div class="value" id="mTasks">0</div><div class="sub" id="mTasksSub">0 active</div></div>
+      <div class="metric"><div class="label">Completed</div><div class="value green" id="mCompleted">0</div><div class="sub" id="mCompletedSub">0%</div></div>
+      <div class="metric"><div class="label">Volume</div><div class="value" id="mVolume">$0</div><div class="sub" id="mVolumeSub">0 mandates</div></div>
+      <div class="metric"><div class="label">On-Chain</div><div class="value" style="color:var(--cyan)" id="mOnchain">0</div><div class="sub">tx hashes</div></div>
+      <div class="metric"><div class="label">Disputes</div><div class="value yellow" id="mDisputes">0</div><div class="sub" id="mDisputesSub">$0 escrowed</div></div>
+      <div class="metric"><div class="label">Failed</div><div class="value red" id="mFailed">0</div><div class="sub" id="mFailedSub">0 rejected</div></div>
+    </div>
+    <div class="feed" id="feed">
+      <div style="padding:20px;color:var(--muted);text-align:center;font-size:12px">Connect to see live events</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// State
+let connected = false;
+let eventSource = null;
+let pollInterval = null;
+let startTime = null;
+let timerInterval = null;
+const state = {
+  agents: [],
+  tasks: [],
+  mandates: [],
+  transfers: [],
+  events: [],
+  metrics: { tasks: 0, completed: 0, failed: 0, volume: 0, onchain: 0, disputes: 0, escrowed: 0, rejected: 0, mandates: 0 },
+  edges: [], // {from, to, state, time}
+};
+
+// Agent name cache
+const agentNames = {};
+
+function N(id) { return agentNames[id] || (id || '?').slice(0, 8); }
+
+// Connect
+async function connect() {
+  const url = document.getElementById('apiUrl').value.trim();
+  const key = document.getElementById('apiKey').value.trim();
+  if (!url) return;
+
+  if (connected) { disconnect(); return; }
+
+  // Load initial data
+  try {
+    const headers = key ? { 'Authorization': 'Bearer ' + key } : {};
+
+    // Load marketplace agents
+    const mktRes = await fetch(url + '/v1/a2a/marketplace', { headers });
+    const mkt = await mktRes.json();
+    state.agents = mkt?.data?.data || mkt?.data || [];
+    state.agents.forEach(a => { agentNames[a.id] = a.name; });
+    renderAgents();
+
+    // Load snapshot
+    const snapRes = await fetch(url + '/v1/a2a/round/snapshot?minutes=10', { headers });
+    const snap = await snapRes.json();
+    if (snap?.data) {
+      state.tasks = snap.data.tasks || [];
+      state.mandates = snap.data.mandates || [];
+      state.transfers = snap.data.transfers || [];
+      // Build name cache from tasks
+      state.tasks.forEach(t => {
+        if (t.agent_id && !agentNames[t.agent_id]) agentNames[t.agent_id] = t.agent_id.slice(0, 8);
+      });
+      updateMetrics();
+    }
+
+    // Connect SSE
+    const sseUrl = url + '/v1/a2a/round/stream';
+    eventSource = new EventSource(sseUrl);
+    eventSource.onopen = () => {
+      connected = true;
+      document.getElementById('statusDot').classList.add('live');
+      document.getElementById('statusText').textContent = 'Live';
+      document.getElementById('connectBtn').textContent = 'Disconnect';
+      document.getElementById('connectBtn').classList.add('stop');
+      startTime = Date.now();
+      timerInterval = setInterval(updateTimer, 1000);
+      document.getElementById('feed').innerHTML = '';
+      addFeedItem('system', 'Connected to ' + url, 'connected');
+    };
+
+    // Handle all event types
+    ['status', 'message', 'acceptance', 'feedback', 'payment', 'webhook', 'timeout', 'error'].forEach(type => {
+      eventSource.addEventListener(type, (e) => {
+        try {
+          const event = JSON.parse(e.data);
+          handleEvent(type, event);
+        } catch {}
+      });
+    });
+
+    eventSource.addEventListener('heartbeat', () => {});
+    eventSource.onerror = () => {
+      document.getElementById('statusDot').classList.remove('live');
+      document.getElementById('statusText').textContent = 'Reconnecting...';
+    };
+
+    // Poll for snapshot updates every 3s
+    pollInterval = setInterval(async () => {
+      try {
+        const r = await fetch(url + '/v1/a2a/round/snapshot?minutes=5', { headers });
+        const s = await r.json();
+        if (s?.data) {
+          state.tasks = s.data.tasks || [];
+          state.mandates = s.data.mandates || [];
+          state.transfers = s.data.transfers || [];
+          updateMetrics();
+          renderGraph();
+        }
+      } catch {}
+    }, 3000);
+
+  } catch (err) {
+    addFeedItem('error', 'Connection failed: ' + err.message, 'error');
+  }
+}
+
+function disconnect() {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  connected = false;
+  document.getElementById('statusDot').classList.remove('live');
+  document.getElementById('statusText').textContent = 'Disconnected';
+  document.getElementById('connectBtn').textContent = 'Connect';
+  document.getElementById('connectBtn').classList.remove('stop');
+}
+
+function updateTimer() {
+  if (!startTime) return;
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+  const s = (elapsed % 60).toString().padStart(2, '0');
+  document.getElementById('timer').textContent = m + ':' + s;
+}
+
+// Handle SSE events
+function handleEvent(type, event) {
+  const taskId = event.taskId || '';
+  const data = event.data || {};
+
+  if (type === 'status') {
+    const toState = data.state || data.toState;
+    const from = N(data.clientAgentId || data.callerAgentId);
+    const to = N(data.agentId || data.providerAgentId);
+
+    if (toState === 'submitted' || toState === 'working') {
+      addFeedItem('arrow', `${from} → ${to} (${toState})`, 'created');
+      addEdge(data.clientAgentId, data.agentId, 'working');
+    } else if (toState === 'completed') {
+      addFeedItem('check', `${to} completed task`, 'completed');
+      state.metrics.completed++;
+      updateEdge(data.clientAgentId, data.agentId, 'completed');
+    } else if (toState === 'failed') {
+      addFeedItem('cross', `Task failed: ${data.message || toState}`, 'rejected');
+      state.metrics.failed++;
+    } else if (toState === 'input-required') {
+      const reason = data.reason || '';
+      if (reason === 'result_review') {
+        addFeedItem('eye', `${to} → acceptance gate`, 'completed');
+      }
+    }
+    state.metrics.tasks++;
+  } else if (type === 'acceptance') {
+    const action = data.action;
+    if (action === 'accept') {
+      addFeedItem('check', `Buyer accepted (score: ${data.score || '?'})`, 'accepted');
+    } else if (action === 'reject') {
+      addFeedItem('cross', `Buyer rejected: ${(data.comment || '').slice(0, 50)}`, 'rejected');
+      state.metrics.rejected++;
+    } else if (action === 'dispute') {
+      addFeedItem('warning', `DISPUTED: ${(data.comment || '').slice(0, 50)}`, 'disputed');
+      state.metrics.disputes++;
+    }
+  } else if (type === 'feedback') {
+    addFeedItem('star', `Rating: ${data.score || '?'}/100 (${data.satisfaction || ''})`, 'completed');
+  } else if (type === 'payment') {
+    addFeedItem('dollar', `Payment: $${data.amount || '?'}`, 'settlement');
+  } else if (type === 'webhook') {
+    addFeedItem('globe', `Webhook delivered (${data.responseCode || '?'})`, 'created');
+  }
+
+  updateMetricsDisplay();
+  renderGraph();
+}
+
+function addEdge(from, to, edgeState) {
+  if (!from || !to) return;
+  state.edges.push({ from, to, state: edgeState, time: Date.now() });
+  // Keep last 50 edges
+  if (state.edges.length > 50) state.edges = state.edges.slice(-50);
+}
+
+function updateEdge(from, to, edgeState) {
+  const edge = state.edges.find(e => e.from === from && e.to === to);
+  if (edge) edge.state = edgeState;
+}
+
+// Render agents panel
+function renderAgents() {
+  const panel = document.getElementById('agentPanel');
+  let h = '<h3>Agents (' + state.agents.length + ')</h3>';
+  state.agents.forEach(a => {
+    const skills = (a.skills || []).map(s => s.id + ' $' + (s.price || '?')).join(', ');
+    h += '<div class="agent-card">';
+    h += '<div class="name"><div class="dot"></div>' + a.name + '</div>';
+    h += '<div class="price">' + skills + '</div>';
+    h += '</div>';
+  });
+  panel.innerHTML = h;
+}
+
+// Update metrics from snapshot
+function updateMetrics() {
+  const tasks = state.tasks;
+  const mandates = state.mandates;
+  const transfers = state.transfers;
+
+  state.metrics.tasks = tasks.length;
+  state.metrics.completed = tasks.filter(t => t.state === 'completed').length;
+  state.metrics.failed = tasks.filter(t => t.state === 'failed').length;
+  state.metrics.mandates = mandates.length;
+  state.metrics.volume = mandates.filter(m => m.status === 'completed').reduce((s, m) => s + Number(m.authorized_amount || 0), 0);
+  state.metrics.disputes = mandates.filter(m => m.status === 'active').length;
+  state.metrics.escrowed = mandates.filter(m => m.status === 'active').reduce((s, m) => s + Number(m.authorized_amount || 0), 0);
+  state.metrics.onchain = transfers.filter(t => t.tx_hash).length;
+  state.metrics.rejected = tasks.filter(t => t.state === 'failed' && t.status_message?.includes('Rejected')).length;
+
+  // Build edges from tasks
+  state.edges = tasks.filter(t => t.client_agent_id && t.agent_id).map(t => ({
+    from: t.client_agent_id, to: t.agent_id, state: t.state, time: new Date(t.created_at).getTime()
+  }));
+
+  updateMetricsDisplay();
+}
+
+function updateMetricsDisplay() {
+  const m = state.metrics;
+  document.getElementById('mTasks').textContent = m.tasks;
+  document.getElementById('mTasksSub').textContent = (m.tasks - m.completed - m.failed) + ' active';
+  document.getElementById('mCompleted').textContent = m.completed;
+  document.getElementById('mCompletedSub').textContent = m.tasks ? Math.round(m.completed / m.tasks * 100) + '%' : '0%';
+  document.getElementById('mVolume').textContent = '$' + m.volume.toFixed(2);
+  document.getElementById('mVolumeSub').textContent = m.mandates + ' mandates';
+  document.getElementById('mOnchain').textContent = m.onchain;
+  document.getElementById('mDisputes').textContent = m.disputes;
+  document.getElementById('mDisputesSub').textContent = '$' + m.escrowed.toFixed(2) + ' escrowed';
+  document.getElementById('mFailed').textContent = m.failed;
+  document.getElementById('mFailedSub').textContent = m.rejected + ' rejected';
+}
+
+// Feed
+const ICONS = { arrow: '→', check: '✓', cross: '✗', warning: '⚠', star: '★', dollar: '$', globe: '◉', eye: '👁', system: '●' };
+
+function addFeedItem(icon, text, cls) {
+  const feed = document.getElementById('feed');
+  const t = new Date().toLocaleTimeString('en-US', { hour12: false });
+  const div = document.createElement('div');
+  div.className = 'feed-item ' + (cls || '');
+  div.innerHTML = '<span class="time">' + t + '</span><span class="icon">' + (ICONS[icon] || icon) + '</span><span>' + text + '</span>';
+  feed.insertBefore(div, feed.firstChild);
+  // Keep last 100
+  while (feed.children.length > 100) feed.removeChild(feed.lastChild);
+}
+
+// Network graph (canvas)
+function renderGraph() {
+  const canvas = document.getElementById('graphCanvas');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * 2;
+  canvas.height = rect.height * 2;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  // Collect unique agents from edges + state
+  const agentIds = new Set();
+  state.edges.forEach(e => { agentIds.add(e.from); agentIds.add(e.to); });
+  state.agents.forEach(a => agentIds.add(a.id));
+  const nodes = Array.from(agentIds).filter(Boolean);
+
+  if (nodes.length === 0) {
+    ctx.fillStyle = '#6b6b80';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Waiting for activity...', rect.width / 2, rect.height / 2);
+    return;
+  }
+
+  // Layout: circle
+  const cx = rect.width / 2;
+  const cy = rect.height / 2;
+  const radius = Math.min(cx, cy) - 50;
+  const positions = {};
+  nodes.forEach((id, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+    positions[id] = { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
+  });
+
+  // Draw edges
+  const recentEdges = state.edges.filter(e => Date.now() - e.time < 300000); // last 5 min
+  recentEdges.forEach(e => {
+    const from = positions[e.from];
+    const to = positions[e.to];
+    if (!from || !to) return;
+
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+
+    const age = (Date.now() - e.time) / 300000; // 0=new, 1=5min old
+    const alpha = Math.max(0.1, 1 - age);
+
+    if (e.state === 'completed') ctx.strokeStyle = `rgba(34,197,94,${alpha})`;
+    else if (e.state === 'failed') ctx.strokeStyle = `rgba(239,68,68,${alpha})`;
+    else if (e.state === 'input-required') ctx.strokeStyle = `rgba(245,158,11,${alpha})`;
+    else ctx.strokeStyle = `rgba(99,102,241,${alpha})`;
+
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Arrow
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    const ax = to.x - Math.cos(angle) * 20;
+    const ay = to.y - Math.sin(angle) * 20;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - 8 * Math.cos(angle - 0.4), ay - 8 * Math.sin(angle - 0.4));
+    ctx.lineTo(ax - 8 * Math.cos(angle + 0.4), ay - 8 * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+  });
+
+  // Draw nodes
+  nodes.forEach(id => {
+    const pos = positions[id];
+    const name = N(id);
+    const taskCount = state.edges.filter(e => e.to === id || e.from === id).length;
+    const r = Math.max(12, Math.min(24, 8 + taskCount * 2));
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e1e2e';
+    ctx.fill();
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#e0e0e8';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(name, pos.x, pos.y + r + 14);
+  });
+}
+
+// Initial render
+renderGraph();
+window.addEventListener('resize', renderGraph);
+</script>
+</body>
+</html>

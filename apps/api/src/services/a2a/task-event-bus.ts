@@ -49,6 +49,8 @@ class TaskEventBus extends EventEmitter {
 
   emitTask(taskId: string, event: TaskStreamEvent, auditCtx?: AuditContext): boolean {
     const result = super.emit(`task:${taskId}`, event);
+    // Emit on global 'all' channel for live round viewer
+    super.emit('task:all', event);
     // Also emit on global channel for completion webhooks (Story 58.16)
     if (event.type === 'status' && TERMINAL_STATES.has(event.data.state as string)) {
       super.emit('task:terminal', event);
@@ -81,6 +83,14 @@ class TaskEventBus extends EventEmitter {
     return () => {
       super.removeListener(channel, listener);
     };
+  }
+
+  /**
+   * Subscribe to ALL task events across the platform (for live round viewer).
+   */
+  subscribeAll(listener: (event: TaskStreamEvent) => void): () => void {
+    super.on('task:all', listener);
+    return () => { super.removeListener('task:all', listener); };
   }
 
   /**
