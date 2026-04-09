@@ -94,20 +94,16 @@ canvas{width:100%;height:100%}
   <input type="text" id="apiUrl" value="https://sandbox.getsly.ai" placeholder="API URL">
   <input type="text" id="apiKey" placeholder="Platform Admin Key (PLATFORM_ADMIN_API_KEY)" style="flex:2">
   <button onclick="connect()" id="connectBtn">Connect</button>
+  <button onclick="loadTokens()" style="background:var(--surface);color:var(--muted);border:1px solid var(--border);padding:6px 10px;border-radius:4px;font-size:11px;cursor:pointer">Load Tokens</button>
 </div>
 
-<div id="scenarioBar" style="display:none;padding:8px 16px;background:rgba(99,102,241,0.08);border-bottom:1px solid var(--border);display:none">
+<div id="scenarioBar" style="display:none;padding:8px 16px;background:rgba(99,102,241,0.08);border-bottom:1px solid var(--border)">
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div>
-      <span style="font-size:13px;font-weight:700;color:var(--accent)" id="scenarioName"></span>
+      <span style="font-size:13px;font-weight:700;color:var(--accent)" id="scenarioName">Select a scenario</span>
       <span style="font-size:11px;color:var(--muted);margin-left:8px" id="scenarioDesc"></span>
     </div>
-    <div id="scenarioButtons" style="display:flex;gap:6px">
-      <button onclick="startRound('rogue_injection','3 rogues (DrainBot, SpamBot, GhostBot) vs healthy marketplace')" style="background:var(--red);color:white;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer">Rogue Injection</button>
-      <button onclick="startRound('collusion','3 colluders with wash trading and rating inflation')" style="background:var(--yellow);color:black;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer">Collusion</button>
-      <button onclick="startRound('lemon_market','HQ vs LQ agents — does reputation sort quality?')" style="background:var(--green);color:white;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer">Lemon Market</button>
-      <button onclick="startRound('cascading_default','Supply chain with thin margins — demand drop cascade')" style="background:var(--cyan);color:black;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer">Cascade</button>
-    </div>
+    <div id="scenarioButtons" style="display:flex;gap:6px;flex-wrap:wrap"></div>
   </div>
 </div>
 
@@ -232,7 +228,26 @@ async function connect() {
       timerInterval = setInterval(updateTimer, 1000);
       document.getElementById('feed').innerHTML = '';
       addFeedItem('system', 'Connected to ' + url, 'connected');
-      addFeedItem('system', 'Click a scenario button above to start a round', 'created');
+
+      // Load scenarios catalog from API
+      try {
+        const scenRes = await fetch(url + '/admin/round/scenarios', { headers });
+        const scenData = await scenRes.json();
+        const scenarios = scenData?.data || [];
+        const btns = document.getElementById('scenarioButtons');
+        btns.innerHTML = '';
+        scenarios.forEach(s => {
+          const btn = document.createElement('button');
+          btn.textContent = s.name;
+          btn.title = s.description + ' (' + s.duration + ', ' + s.agents + ')';
+          btn.style.cssText = 'background:' + s.color + ';color:white;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;white-space:nowrap';
+          btn.onclick = () => executeScenario(s);
+          btns.appendChild(btn);
+        });
+        if (scenarios.length > 0) {
+          addFeedItem('system', scenarios.length + ' scenarios available — click one to start', 'created');
+        }
+      } catch {}
     };
 
     // Handle all event types
@@ -281,78 +296,68 @@ async function connect() {
   }
 }
 
-async function startRound(scenario, description) {
+// Stored agent tokens — loaded via file picker, needed for scenario execution
+let storedAgentTokens = {};
+
+function loadTokens() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const agents = JSON.parse(ev.target.result);
+        storedAgentTokens = {};
+        agents.forEach(a => { if (a.name && a.token) storedAgentTokens[a.name] = a.token; });
+        addFeedItem('system', Object.keys(storedAgentTokens).length + ' agent tokens loaded from ' + file.name, 'completed');
+      } catch (err) {
+        addFeedItem('error', 'Failed to parse tokens: ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+async function executeScenario(scenario) {
   if (!connected) { addFeedItem('error', 'Connect first', 'error'); return; }
   const url = document.getElementById('apiUrl').value.trim();
   const key = document.getElementById('apiKey').value.trim();
   const headers = { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' };
 
-  // Announce round start via API
-  await fetch(url + '/admin/round/start', {
-    method: 'POST', headers,
-    body: JSON.stringify({ scenario, description }),
-  });
+  currentScenario = scenario.id;
+  document.getElementById('scenarioName').textContent = scenario.name;
+  document.getElementById('scenarioDesc').textContent = scenario.description;
 
-  currentScenario = scenario;
-  document.getElementById('scenarioName').textContent = scenario.replace(/_/g, ' ').toUpperCase();
-  document.getElementById('scenarioDesc').textContent = description;
-  document.getElementById('scenarioBar').style.display = 'block';
-  document.getElementById('scenarioBar').style.borderLeftColor = SCENARIOS[scenario]?.color || 'var(--accent)';
-
-  addFeedItem('system', 'ROUND STARTED: ' + scenario.replace(/_/g, ' ').toUpperCase(), 'created');
-  addFeedItem('system', description, 'created');
-
-  // Reset metrics for new round
+  // Reset
   state.metrics = { tasks: 0, completed: 0, failed: 0, volume: 0, onchain: 0, disputes: 0, escrowed: 0, rejected: 0, mandates: 0 };
+  state.tasks = []; state.edges = [];
   startTime = Date.now();
   updateMetricsDisplay();
+  document.getElementById('feed').innerHTML = '';
 
-  // Send commentary for the scenario
-  const commentaries = {
-    rogue_injection: [
-      [0, 'info', 'Healthy marketplace warming up — 12 legitimate tasks across 10 agents'],
-      [15, 'alert', 'ROGUE INJECTION: DrainBot, SpamBot, GhostBot entering the marketplace'],
-      [20, 'alert', 'DrainBot sending tasks to 5 sellers — plans to dispute everything'],
-      [25, 'alert', 'SpamBot flooding DataMiner with 20 micro-tasks ($0.01 each)'],
-      [30, 'alert', 'GhostBot attempting $50/$100/$200 transactions (Tier 0 limit: $20)'],
-      [45, 'finding', 'GhostBot: 3/3 over-limit transactions BLOCKED by KYA tier limits'],
-      [60, 'finding', 'DrainBot dispute rate detected — wallet FROZEN, future transactions BLOCKED'],
-      [75, 'governance', 'Governance held: $0 extracted by rogues. Legitimate commerce unaffected.'],
-    ],
-    collusion: [
-      [0, 'info', 'Establishing honest marketplace baseline — 10 agents competing normally'],
-      [15, 'alert', '3 colluders coordinating: identical pricing at $0.85, circular wash trades'],
-      [30, 'alert', 'Wash trading active: DeepAudit → QuickReview → InfraGuard → DeepAudit'],
-      [45, 'alert', 'Colluders rating each other 95/100, rating honest agents 35/100'],
-      [60, 'finding', 'DETECTED: circular transaction pattern — 6 internal trades between 3 agents'],
-      [70, 'finding', 'DETECTED: 100% volume concentration — all colluder trades are internal'],
-      [80, 'governance', 'Collusion detectable from existing audit trail — no new infrastructure needed'],
-    ],
-    lemon_market: [
-      [0, 'info', 'Phase A: Blind market — buyers cannot see reputation. HQ agents $0.80-1.00, LQ agents $0.25-0.40'],
-      [20, 'finding', 'Akerlof prediction: buyers picking cheapest option (LQ). HQ agents rejected.'],
-      [30, 'info', 'Phase B: Reputation enabled — buyers can now see ratings before purchasing'],
-      [50, 'finding', 'Quality sorting RESTORED: buyers paying premium for HQ agents (avg 83/100 rating)'],
-      [60, 'governance', 'Reputation solves the lemon problem — 32pt quality gap enables price differentiation'],
-    ],
-    cascading_default: [
-      [0, 'info', 'Supply chain: DataMiner → ResearchBot → TradingBot (thin margin) → SecurityBot → AuditBot'],
-      [15, 'info', 'Phase 1: Healthy chain — all 5 agents trading, full settlement'],
-      [30, 'alert', 'DEMAND DROP: AuditBot stops buying. Cascade begins.'],
-      [40, 'finding', 'TradingBot (-$0.40 margin) is the weakest link — rejects task, escrow returns funds'],
-      [50, 'governance', 'Escrow acts as circuit breaker — cascade stopped at TradingBot, upstream unaffected'],
-    ],
-  };
+  addFeedItem('system', scenario.name.toUpperCase(), 'created');
+  addFeedItem('system', scenario.description, 'created');
+  addFeedItem('system', scenario.duration + ' | ' + scenario.agents, 'created');
 
-  const comments = commentaries[scenario] || [];
-  comments.forEach(([delaySec, type, text]) => {
-    setTimeout(async () => {
-      await fetch(url + '/admin/round/comment', {
-        method: 'POST', headers,
-        body: JSON.stringify({ text, type }),
-      });
-    }, delaySec * 1000);
-  });
+  // Execute on server
+  try {
+    const r = await fetch(url + '/admin/round/execute', {
+      method: 'POST', headers,
+      body: JSON.stringify({ scenario: scenario.id, agentTokens: storedAgentTokens, apiBase: url }),
+    });
+    const j = await r.json();
+    if (j?.data?.status === 'started') {
+      addFeedItem('check', 'Round executing on server — watch the feed', 'completed');
+    } else {
+      addFeedItem('error', 'Start failed: ' + JSON.stringify(j?.error || j).slice(0, 100), 'rejected');
+    }
+  } catch (err) {
+    addFeedItem('error', 'Execute failed: ' + err.message, 'rejected');
+  }
 }
 
 function disconnect() {

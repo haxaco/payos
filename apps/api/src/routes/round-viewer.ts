@@ -159,29 +159,52 @@ roundViewerRouter.get('/agents', async (c) => {
 });
 
 /**
+ * GET /admin/round/scenarios
+ * List all available marketplace scenarios.
+ */
+roundViewerRouter.get('/scenarios', async (c) => {
+  const { SCENARIOS } = await import('../services/scenarios/registry.js');
+  return c.json({ data: SCENARIOS });
+});
+
+/**
+ * POST /admin/round/execute
+ * Execute a scenario. Requires agent tokens in the request body.
+ * Runs async — returns immediately, streams events via SSE.
+ */
+roundViewerRouter.post('/execute', async (c) => {
+  const body = await c.req.json();
+  const scenarioId = body?.scenario;
+  const agentTokens = body?.agentTokens || {};
+
+  if (!scenarioId) return c.json({ error: 'Missing scenario' }, 400);
+
+  const apiBase = body?.apiBase || `https://${c.req.header('Host')}`;
+
+  // Execute async — don't block the response
+  const { executeScenario } = await import('../services/scenarios/registry.js');
+  executeScenario(scenarioId, agentTokens, apiBase).then(result => {
+    console.log(`[Scenario] ${scenarioId}: ${result.summary}`);
+  }).catch(err => {
+    console.error(`[Scenario] ${scenarioId} failed:`, err.message);
+  });
+
+  return c.json({ data: { scenario: scenarioId, status: 'started' } });
+});
+
+/**
  * POST /admin/round/start
- * Start a marketplace round. Emits a round_start event via the event bus
- * so the live viewer knows which scenario is running.
+ * Announce a round start (for scripts calling from outside).
  */
 roundViewerRouter.post('/start', async (c) => {
   const body = await c.req.json();
-  const scenario = body?.scenario || 'custom';
-  const description = body?.description || '';
-
-  // Emit round start event so the viewer picks it up
   taskEventBus.emit('task:all', {
     type: 'status' as const,
     taskId: 'round:' + Date.now(),
-    data: {
-      state: 'round_start',
-      scenario,
-      description,
-      startedAt: new Date().toISOString(),
-    },
+    data: { state: 'round_start', scenario: body?.scenario || 'custom', description: body?.description || '', startedAt: new Date().toISOString() },
     timestamp: new Date().toISOString(),
   });
-
-  return c.json({ data: { scenario, startedAt: new Date().toISOString() } });
+  return c.json({ data: { scenario: body?.scenario, startedAt: new Date().toISOString() } });
 });
 
 /**
@@ -190,17 +213,13 @@ roundViewerRouter.post('/start', async (c) => {
  */
 roundViewerRouter.post('/comment', async (c) => {
   const body = await c.req.json();
-  const text = body?.text || '';
-  const type = body?.type || 'info'; // info, finding, alert, governance
-
   taskEventBus.emit('task:all', {
     type: 'status' as const,
     taskId: 'comment:' + Date.now(),
-    data: { state: 'commentary', text, commentType: type },
+    data: { state: 'commentary', text: body?.text || '', commentType: body?.type || 'info' },
     timestamp: new Date().toISOString(),
   });
-
-  return c.json({ data: { text, type } });
+  return c.json({ data: { text: body?.text, type: body?.type } });
 });
 
 export { roundViewerRouter };
