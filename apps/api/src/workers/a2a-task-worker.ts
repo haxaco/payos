@@ -771,6 +771,16 @@ export class A2ATaskWorker {
     console.log(`[A2A Worker] Found ${orphanMandates.length} orphan mandates (active >1h)`);
 
     for (const mandate of orphanMandates) {
+      // Skip mandates linked to webhook-delivered tasks — they're still being processed
+      if (mandate.a2a_session_id) {
+        const { data: linkedTask } = await supabase
+          .from('a2a_tasks')
+          .select('webhook_status')
+          .eq('id', mandate.a2a_session_id)
+          .single();
+        if (linkedTask?.webhook_status === 'delivered') continue;
+      }
+
       // Cancel the mandate
       await supabase
         .from('ap2_mandates')
