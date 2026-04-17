@@ -164,6 +164,7 @@ export interface Agent {
   erc8004AgentId?: string;
   walletAddress?: string;
 
+  avatarUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }

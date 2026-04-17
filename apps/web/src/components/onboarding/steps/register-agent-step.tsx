@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Bot, Loader2, CheckCircle, Info, Shield } from 'lucide-react';
 import { cn } from '@sly/ui';
-import { useApiClient, useApiConfig } from '@/lib/api-client';
+import { useApiClient, useApiConfig, useApiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { AvatarUpload } from '@/components/agents/avatar-upload';
 
 interface RegisterAgentStepProps {
   onAgentRegistered: (agentId: string, token: string) => void;
@@ -44,7 +45,8 @@ export function RegisterAgentStep({
   helpText = 'Agents need identity to create mandates. Set KYA (Know Your Agent) tier based on risk.',
 }: RegisterAgentStepProps) {
   const api = useApiClient();
-  const { authToken } = useApiConfig();
+  const { apiUrl, authToken } = useApiConfig();
+  const apiFetch = useApiFetch();
   const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState({
@@ -52,6 +54,7 @@ export function RegisterAgentStep({
     description: '',
     kyaTier: 1,
   });
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
 
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +99,17 @@ export function RegisterAgentStep({
       // Response structure: { data: Agent, credentials: AgentCredentials }
       const agent = response.data;
       const credentials = response.credentials;
+
+      // Second step: upload the avatar the user picked before submit, if any.
+      if (pendingAvatarFile && agent?.id) {
+        try {
+          const fd = new FormData();
+          fd.append('file', pendingAvatarFile);
+          await apiFetch(`${apiUrl}/v1/agents/${agent.id}/avatar`, { method: 'POST', body: fd });
+        } catch (avatarErr) {
+          console.warn('Avatar upload failed (agent was created):', avatarErr);
+        }
+      }
 
       setCreatedAgent({
         id: agent.id,
@@ -186,6 +200,17 @@ export function RegisterAgentStep({
             {error}
           </div>
         )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Avatar <span className="text-gray-400">(optional)</span>
+          </label>
+          <AvatarUpload
+            agentName={formData.name || 'New agent'}
+            onFileStaged={(file) => setPendingAvatarFile(file)}
+            size="md"
+          />
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

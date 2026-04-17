@@ -103,6 +103,7 @@ export function mapAgentFromDb(row: any): Agent {
     },
     erc8004AgentId: row.erc8004_agent_id || undefined,
     walletAddress: row.circle_wallet_address || row.wallet_address || undefined,
+    avatarUrl: row.avatar_url ?? null,
     // Flat fields for UI compatibility
     limit_per_transaction: parseFloat(row.limit_per_transaction) || 0,
     limit_daily: parseFloat(row.limit_daily) || 0,

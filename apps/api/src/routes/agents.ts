@@ -3711,4 +3711,166 @@ agentCardRouter.get('/:id/card.json', async (c) => {
   });
 });
 
+// ============================================
+// AGENT AVATAR UPLOAD / DELETE
+// ============================================
+
+const AVATAR_BUCKET = 'agent-avatars';
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const AVATAR_ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+/** Owner/admin user OR the agent itself may upload. */
+async function canManageAvatar(
+  ctx: { tenantId: string; actorType: string; userRole?: string; actorId?: string },
+  agent: { id: string; tenant_id: string }
+): Promise<boolean> {
+  if (agent.tenant_id !== ctx.tenantId) return false;
+  if (ctx.actorType === 'user') {
+    return ctx.userRole === 'owner' || ctx.userRole === 'admin';
+  }
+  if (ctx.actorType === 'agent') {
+    return ctx.actorId === agent.id;
+  }
+  // api_key: allowed (full-tenant scope)
+  return ctx.actorType === 'api_key';
+}
+
+/**
+ * POST /v1/agents/:id/avatar — Upload or replace an agent avatar.
+ * Accepts multipart/form-data with a `file` field. Image only, ≤2 MB.
+ */
+agents.post('/:id/avatar', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const id = c.req.param('id');
+  if (!isValidUUID(id)) throw new ValidationError('Invalid agent ID');
+
+  const supabase = createClient();
+  // avatar_url may not exist yet (migration pending) — select it separately
+  // so a missing column doesn't take down existence check.
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, tenant_id')
+    .eq('id', id)
+    .maybeSingle() as any;
+  if (!agent) throw new NotFoundError('Agent not found');
+
+  let priorAvatarUrl: string | null = null;
+  try {
+    const { data: priorRow } = await (supabase as any)
+      .from('agents').select('avatar_url').eq('id', id).maybeSingle();
+    priorAvatarUrl = priorRow?.avatar_url ?? null;
+  } catch { /* column may not exist yet */ }
+
+  if (!(await canManageAvatar(ctx, agent))) {
+    return c.json({ error: 'Not authorized to update this agent avatar' }, 403);
+  }
+
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    throw new ValidationError('Expected multipart/form-data with a "file" field');
+  }
+  const file = form.get('file');
+  if (!(file instanceof File)) {
+    throw new ValidationError('Missing "file" field or not a file upload');
+  }
+  if (!AVATAR_ALLOWED_MIME.has(file.type)) {
+    throw new ValidationError(`Unsupported MIME type "${file.type}". Use PNG, JPEG, or WebP.`);
+  }
+  if (file.size > AVATAR_MAX_BYTES) {
+    throw new ValidationError(`File too large (${file.size} bytes). Max 2 MB.`);
+  }
+
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+  const objectPath = `${agent.tenant_id}/${agent.id}-${Date.now()}.${ext}`;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  const { error: uploadErr } = await (supabase as any).storage
+    .from(AVATAR_BUCKET)
+    .upload(objectPath, bytes, {
+      contentType: file.type,
+      cacheControl: 'public, max-age=31536000, immutable',
+      upsert: false,
+    });
+  if (uploadErr) {
+    return c.json({ error: `Upload failed: ${uploadErr.message}` }, 500);
+  }
+
+  const { data: urlData } = (supabase as any).storage.from(AVATAR_BUCKET).getPublicUrl(objectPath);
+  const publicUrl: string = urlData?.publicUrl ?? '';
+
+  // Best-effort: delete the previous object so the bucket doesn't grow unbounded
+  if (priorAvatarUrl) {
+    try {
+      const prefix = (supabase as any).storage.from(AVATAR_BUCKET).getPublicUrl('').data?.publicUrl ?? '';
+      if (prefix && priorAvatarUrl.startsWith(prefix)) {
+        const prevPath = priorAvatarUrl.slice(prefix.length);
+        await (supabase as any).storage.from(AVATAR_BUCKET).remove([prevPath]);
+      }
+    } catch { /* best-effort */ }
+  }
+
+  const { error: updateErr } = await (supabase as any)
+    .from('agents')
+    .update({ avatar_url: publicUrl })
+    .eq('id', agent.id);
+  if (updateErr) {
+    const columnMissing = /avatar_url.*(does not exist|not.*find)/i.test(updateErr.message);
+    return c.json({
+      error: columnMissing
+        ? 'avatar_url column is missing. Run the migration apps/api/supabase/migrations/20260416_agent_avatars.sql in the Supabase SQL editor.'
+        : `Failed to persist avatar URL: ${updateErr.message}`,
+    }, columnMissing ? 503 : 500);
+  }
+
+  return c.json({ data: { avatar_url: publicUrl, avatarUrl: publicUrl } });
+});
+
+/**
+ * DELETE /v1/agents/:id/avatar — Remove the avatar, fall back to default icon.
+ */
+agents.delete('/:id/avatar', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const id = c.req.param('id');
+  if (!isValidUUID(id)) throw new ValidationError('Invalid agent ID');
+
+  const supabase = createClient();
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, tenant_id')
+    .eq('id', id)
+    .maybeSingle() as any;
+  if (!agent) throw new NotFoundError('Agent not found');
+
+  if (!(await canManageAvatar(ctx, agent))) {
+    return c.json({ error: 'Not authorized to delete this agent avatar' }, 403);
+  }
+
+  let priorAvatarUrl: string | null = null;
+  try {
+    const { data: priorRow } = await (supabase as any)
+      .from('agents').select('avatar_url').eq('id', id).maybeSingle();
+    priorAvatarUrl = priorRow?.avatar_url ?? null;
+  } catch { /* column may not exist yet */ }
+
+  if (priorAvatarUrl) {
+    try {
+      const prefix = (supabase as any).storage.from(AVATAR_BUCKET).getPublicUrl('').data?.publicUrl ?? '';
+      if (prefix && priorAvatarUrl.startsWith(prefix)) {
+        const objectPath = priorAvatarUrl.slice(prefix.length);
+        await (supabase as any).storage.from(AVATAR_BUCKET).remove([objectPath]);
+      }
+    } catch { /* best-effort */ }
+  }
+
+  const { error: updateErr } = await (supabase as any)
+    .from('agents').update({ avatar_url: null }).eq('id', agent.id);
+  if (updateErr && !/column .*avatar_url.* does not exist/i.test(updateErr.message)) {
+    return c.json({ error: updateErr.message }, 500);
+  }
+
+  return c.json({ data: { avatar_url: null } });
+});
+
 export default agents;
