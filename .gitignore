@@ -58,3 +58,46 @@ invu-demo/
 FINAL_SUMMARY.md
 AUTHENTICATION_FLOW_EXPLAINED.md
 
+
+# marketplace-sim
+apps/marketplace-sim/tokens.json
+apps/marketplace-sim/.env
+
+# Claude Code editor state
+.claude/
+
+# Office document lock/temp files
+~$*
+
+# Personal strategy / working docs (not part of the product)
+/Sly_Top10_Accelerators.xlsx
+/Sly_x_OpenClaw_Strategic_Exploration.docx
+/Sly_x_OpenClaw_Strategic_Exploration.pdf
+/2026-*-this-session-is-being-continued-*.txt
+
+# Large report dumps
+scanner-reports/
+docs/reports/*.docx
+docs/reports/*.xlsx
+docs/reports/*.pdf
+
+# Supabase CLI scratch
+supabase/.temp/
+apps/*/supabase/.temp/
+
+# Python package build artifacts (for sly-governance-skill)
+*.egg-info/
+__pycache__/
+*.pyc
+
+# Scratch data dumps from census scripts
+apps/api/scripts/census-combined.html
+apps/api/scripts/census-compact.js
+apps/api/scripts/census-data.js
+apps/api/scripts/census-explorer.html
+apps/api/scripts/census-final.html
+apps/api/scripts/census-report.html
+apps/api/scripts/census-skills-mcp.html
+apps/api/scripts/mcp-data.js
+apps/api/scripts/skills-data.js
+apps/api/scripts/catalog-data.json
