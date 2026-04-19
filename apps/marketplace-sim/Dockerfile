@@ -38,5 +38,11 @@ EXPOSE 4500
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://127.0.0.1:${SIM_PORT:-4500}/health || exit 1
 
+# Run as non-root. The node:22-alpine base ships a `node` user (uid 1000)
+# specifically for this. Keeps a compromised sim process from clobbering
+# anything outside its own working directory.
+RUN chown -R node:node /app
+USER node
+
 WORKDIR /app/apps/marketplace-sim
 CMD ["pnpm", "run", "sim:server"]

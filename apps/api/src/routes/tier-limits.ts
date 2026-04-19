@@ -14,7 +14,15 @@ const limitShape = z.object({
 });
 
 function requireAdminRole(ctx: RequestContext) {
-  if (ctx.actorType === 'user' && ctx.userRole !== 'owner' && ctx.userRole !== 'admin') {
+  // Tier limits are GLOBAL platform configuration (not per-tenant). Mutations
+  // affect every tenant, so only authenticated dashboard users with
+  // owner/admin role may edit them — never API keys, never agent tokens.
+  // TODO: migrate these endpoints to /admin/tier-limits under
+  // platformAdminMiddleware so only platform staff can change them.
+  if (ctx.actorType !== 'user') {
+    return { error: 'Only dashboard users can edit tier limits (API keys and agent tokens are rejected)' };
+  }
+  if (ctx.userRole !== 'owner' && ctx.userRole !== 'admin') {
     return { error: 'Owner or admin role required to edit tier limits' };
   }
   return null;

@@ -27,11 +27,14 @@
     "check:rls": "tsx scripts/check-rls-in-migrations.ts",
     "cleanup:simulations": "tsx scripts/cleanup-simulations.ts",
     "demo:agent-checkout": "tsx scripts/demo-agent-checkout.ts",
-    "seed:zindigi": "tsx scripts/seed-zindigi-demo.ts"
+    "seed:zindigi": "tsx scripts/seed-zindigi-demo.ts",
+    "mock:moltbook": "tsx scripts/mock-moltbook-agent.ts"
   },
   "dependencies": {
     "@coinbase/coinbase-sdk": "^0.25.0",
     "@modelcontextprotocol/sdk": "^1.25.1",
+    "@noble/ed25519": "^2.1.0",
+    "@noble/hashes": "^1.5.0",
     "@sly/cards": "workspace:*",
     "@sly/types": "workspace:*",
     "@sly/utils": "workspace:*",
@@ -45,7 +48,7 @@
     "hono": "^4.6.14",
     "jose": "^6.2.2",
     "jsonwebtoken": "^9.0.3",
-    "mppx": "^0.4.7",
+    "mppx": "^0.4.12",
     "resend": "^4.1.0",
     "stripe": "^20.2.0",
     "viem": "^2.47.5",

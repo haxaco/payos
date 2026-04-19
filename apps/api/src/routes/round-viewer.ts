@@ -11,6 +11,9 @@ import { platformAdminMiddleware } from '../middleware/platform-admin.js';
 import { createClient } from '../db/client.js';
 import { taskEventBus } from '../services/a2a/task-event-bus.js';
 
+// UUID regex used by input validators on admin endpoints
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const roundViewerRouter = new Hono();
 
 // CORS: allow any origin for the demo viewer (auth via admin key protects access)
@@ -501,17 +504,31 @@ roundViewerRouter.post('/seed-agent', async (c) => {
  */
 roundViewerRouter.post('/attest', async (c) => {
   const body = await c.req.json();
+  // Platform-admin gated, but validate IDs anyway — this writes into the
+  // a2a_tasks.metadata JSON blob, so a malformed taskId would silently
+  // corrupt nothing but wastes an EAS tx. Validate before paying gas.
+  for (const field of ['taskId', 'buyerAgentId', 'sellerAgentId'] as const) {
+    if (body?.[field] && !UUID_RE.test(body[field])) {
+      return c.json({ error: `Invalid ${field}: must be a UUID` }, 400);
+    }
+  }
+  if (body?.artifactHash && !/^(0x)?[0-9a-f]{0,64}$/i.test(body.artifactHash)) {
+    return c.json({ error: 'Invalid artifactHash: must be hex, ≤64 chars' }, 400);
+  }
+  if (typeof body?.amount === 'number' && (body.amount < 0 || body.amount > 1_000_000)) {
+    return c.json({ error: 'Invalid amount: out of range' }, 400);
+  }
   try {
     const { attestTrade } = await import('../services/eas/index.js');
     const result = await attestTrade({
       taskId: body.taskId,
       buyerAgentId: body.buyerAgentId,
       sellerAgentId: body.sellerAgentId,
-      skill: body.skill || 'general',
+      skill: String(body.skill || 'general').slice(0, 64),
       amount: body.amount || 2,
       artifactHash: body.artifactHash || '',
-      buyerScore: body.buyerScore || 0,
-      sellerScore: body.sellerScore || 0,
+      buyerScore: Math.max(0, Math.min(100, Number(body.buyerScore) || 0)),
+      sellerScore: Math.max(0, Math.min(100, Number(body.sellerScore) || 0)),
     });
     if (!result) return c.json({ error: 'Attestation disabled (no EVM_PRIVATE_KEY)' }, 503);
 

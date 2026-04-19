@@ -3818,10 +3818,13 @@ agents.post('/:id/avatar', async (c) => {
   const supabase = createClient();
   // avatar_url may not exist yet (migration pending) — select it separately
   // so a missing column doesn't take down existence check.
+  // Filter by tenant in the query so cross-tenant lookups return 404 instead
+  // of 403 — avoids leaking agent existence via response-code timing.
   const { data: agent } = await supabase
     .from('agents')
     .select('id, tenant_id')
     .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
     .maybeSingle() as any;
   if (!agent) throw new NotFoundError('Agent not found');
 
@@ -3907,10 +3910,13 @@ agents.delete('/:id/avatar', async (c) => {
   if (!isValidUUID(id)) throw new ValidationError('Invalid agent ID');
 
   const supabase = createClient();
+  // Filter by tenant in the query so cross-tenant lookups return 404 instead
+  // of 403 — avoids leaking agent existence via response-code timing.
   const { data: agent } = await supabase
     .from('agents')
     .select('id, tenant_id')
     .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
     .maybeSingle() as any;
   if (!agent) throw new NotFoundError('Agent not found');
 
