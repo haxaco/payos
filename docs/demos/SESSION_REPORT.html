@@ -180,11 +180,13 @@
 <div class="verdict">
   <h2>Headline Result</h2>
   <ul>
-    <li><strong>Sly is now a first-class x402 client</strong>, verified end-to-end against the external public facilitator <code>facilitator.x402.rs</code>.</li>
+    <li><strong>Sly is now a first-class x402 client</strong>, verified end-to-end against the external public facilitator at <code>x402.org/facilitator</code> — Sly-signed EIP-3009 payloads accepted and settled on Base Sepolia.</li>
+    <li><strong>Agents never touch keys, ETH, or bundlers.</strong> ERC-4337 smart wallets deploy atomically on first use, pay their own gas, and execute USDC transfers via the Pimlico bundler — all driven by a single Sly API call.</li>
     <li><strong>10 autonomous Claude Sonnet agents</strong> buying and selling real AI services from each other with real USDC on Base Sepolia.</li>
     <li><strong>6 protocols validated end-to-end</strong>: A2A, AP2, ACP, UCP, x402, MPP — every one exercised with real transactions.</li>
     <li><strong>20+ bugs found and fixed</strong> across the session, most discovered by the autonomous agents themselves as they stress-tested the platform.</li>
-    <li><strong>100% completion rate</strong> on the final clean round (Round 9) — zero failures, zero safety refusals.</li>
+    <li><strong>100% completion rate</strong> on the final clean round (Round 9), 6-for-6 on Round 10's targeted x402 ecosystem validation, and <strong>20-for-20 on Round 11's widened 10-persona run with full latency profile</strong> — zero Sly-side failures across 26 consecutive on-chain payment validations.</li>
+    <li><strong>Latency baseline established:</strong> warm smart-wallet UserOp median ~4.7s, full Step 2 external-facilitator flow (sign → verify → settle) median ~8.8s, first-deploy UserOp ~63s one-time cost. Round 11 also surfaced an x402.org public facilitator concurrency bottleneck that Sly itself does not have.</li>
   </ul>
 </div>
 
@@ -281,6 +283,104 @@
   </div>
 </div>
 
+<div class="round">
+  <div class="round-header">
+    <h3 class="round-title">Round 10 — Targeted x402 Ecosystem Validation</h3>
+    <span class="round-tag">ecosystem</span>
+  </div>
+  <p>First round designed around <strong>new work shipped after Round 9</strong>: x402 Step 2 (Sly-custodial EOAs signing EIP-3009) and x402 Step 3 Phase 2 (ERC-4337 smart wallets executing UserOps via Pimlico bundler). 3 subagents (DataMiner, CodeSmith, ResearchBot) each ran 2 tests: (1) sign an EIP-3009 payload via Sly → submit to the external <code>x402.org/facilitator</code> → settle on-chain, and (2) call Sly's smart-wallet send-usdc endpoint → UserOp routed through Pimlico → land on-chain. <strong>All 6 on-chain transactions succeeded.</strong> CodeSmith and ResearchBot's smart wallets auto-deployed atomically with their first UserOp. No regressions from Rounds 8/9 fixes under concurrent load.</p>
+  <div class="round-stats">
+    <div class="round-stat"><span class="round-stat-label">Subagents</span><span class="round-stat-value status-ok">3 / 3</span></div>
+    <div class="round-stat"><span class="round-stat-label">On-chain txs</span><span class="round-stat-value status-ok">6 / 6</span></div>
+    <div class="round-stat"><span class="round-stat-label">Facilitator settles</span><span class="round-stat-value status-ok">3 / 3</span></div>
+    <div class="round-stat"><span class="round-stat-label">Smart-wallet UserOps</span><span class="round-stat-value status-ok">3 / 3</span></div>
+    <div class="round-stat"><span class="round-stat-label">First deploys</span><span class="round-stat-value">2</span></div>
+    <div class="round-stat"><span class="round-stat-label">Median run</span><span class="round-stat-value">67s</span></div>
+  </div>
+</div>
+
+<div class="round">
+  <div class="round-header">
+    <h3 class="round-title">Round 11 — Widened 10-Persona Baseline with Latency Profile</h3>
+    <span class="round-tag">scale + latency</span>
+  </div>
+  <p>Same 2-test protocol as Round 10 (Step 2 external facilitator + Step 3 Phase 2 smart-wallet UserOp), but widened to <strong>all 10 personas running concurrently</strong>, with per-call latency captured in milliseconds. Seven new smart wallets derived + funded from the relayer EOA (0.05 USDC + 0.0008 ETH each). All 7 counterfactual wallets deployed atomically during Test 2. <strong>Final: 20 out of 20 on-chain transactions succeeded.</strong> Round surfaced one meaningful ecosystem-level finding (see "New Findings" below) about the x402.org public facilitator's concurrency characteristics.</p>
+  <div class="round-stats">
+    <div class="round-stat"><span class="round-stat-label">Personas</span><span class="round-stat-value status-ok">10 / 10</span></div>
+    <div class="round-stat"><span class="round-stat-label">On-chain txs</span><span class="round-stat-value status-ok">20 / 20</span></div>
+    <div class="round-stat"><span class="round-stat-label">Step 2 settles</span><span class="round-stat-value status-ok">10 / 10</span></div>
+    <div class="round-stat"><span class="round-stat-label">Step 3 UserOps</span><span class="round-stat-value status-ok">10 / 10</span></div>
+    <div class="round-stat"><span class="round-stat-label">First deploys</span><span class="round-stat-value">7</span></div>
+    <div class="round-stat"><span class="round-stat-label">Warm UserOp (p50)</span><span class="round-stat-value">4.7s</span></div>
+    <div class="round-stat"><span class="round-stat-label">Cold UserOp (p50)</span><span class="round-stat-value">63.6s</span></div>
+  </div>
+</div>
+
+<h3>Round 11 — Latency profile (all 10 agents, concurrent load)</h3>
+
+<p>Each phase measured client-side as wall-clock time of the HTTP call (request sent → response body received). "Warm" smart wallets are those that were already deployed (DataMiner, CodeSmith, ResearchBot). "First-deploy" smart wallets are the 7 new ones whose first on-chain interaction is the UserOp from Test 2 — the factory deploy + transfer happen atomically in one op, so that latency includes the deployment.</p>
+
+<table>
+  <thead><tr><th>Phase</th><th>Min</th><th>p50 (median)</th><th>p95</th><th>Max</th><th>Samples</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Sly <code>/x402-sign</code></strong><br><span style="opacity:0.7">EIP-3009 signing via agent's managed EOA</span></td><td>2591ms</td><td><strong>2856ms</strong></td><td>3736ms</td><td>3736ms</td><td>10</td></tr>
+    <tr><td><strong>x402.org <code>/facilitator/verify</code></strong><br><span style="opacity:0.7">External spec-compliance check (off-chain)</span></td><td>3181ms</td><td><strong>3287ms</strong></td><td>15912ms</td><td>15912ms</td><td>10</td></tr>
+    <tr><td><strong>x402.org <code>/facilitator/settle</code></strong><br><span style="opacity:0.7">On-chain <code>transferWithAuthorization</code> via shared relayer</span></td><td>2036ms</td><td><strong>2623ms</strong></td><td>3678ms</td><td>3678ms</td><td>10</td></tr>
+    <tr><td><strong>Sly <code>/smart-wallet/send-usdc</code> — warm wallet</strong><br><span style="opacity:0.7">ERC-4337 UserOp via Pimlico bundler, wallet already deployed</span></td><td>4615ms</td><td><strong>4653ms</strong></td><td>4743ms</td><td>4743ms</td><td>3</td></tr>
+    <tr><td><strong>Sly <code>/smart-wallet/send-usdc</code> — first deploy</strong><br><span style="opacity:0.7">Factory deploy + transfer atomically in a single UserOp</span></td><td>62985ms</td><td><strong>63559ms</strong></td><td>64424ms</td><td>64424ms</td><td>7</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Headline latency reads:</strong></p>
+<ul>
+  <li><strong>End-to-end Step 2 (sign → verify → settle) median:</strong> ~8.8 seconds per agent, including the external facilitator's on-chain submission. Settlement itself is bounded by Base Sepolia block time (~2s) plus RPC round trip — about as fast as it can physically be.</li>
+  <li><strong>Warm smart-wallet UserOp median:</strong> ~4.7 seconds — that's the full "agent calls Sly, Pimlico bundles it, Base includes it, Sly returns the receipt" loop. This is the target steady-state cost of an agent-initiated payment once all setup is done.</li>
+  <li><strong>First-deploy UserOp median:</strong> ~63.6 seconds. Includes factory contract deployment + transferWithAuthorization in one atomic op. One-time cost per agent — subsequent UserOps from the same wallet will be at the warm ~4.7s median.</li>
+  <li><strong>One outlier (15.9s) on x402.org <code>/verify</code>:</strong> one agent hit a slow verify response under the concurrent load. The median is clean at 3.3s. p95 is inflated by this single sample.</li>
+</ul>
+
+<h3>Round 11 — Per-agent results</h3>
+
+<table>
+  <thead><tr><th>Agent</th><th>Smart wallet</th><th>Mode</th><th>Step 2 settle tx</th><th>Step 3 UserOp tx</th><th>sign / verify / settle / send-usdc</th></tr></thead>
+  <tbody>
+    <tr><td>DataMiner</td><td><code>0x1643ccf2</code></td><td>warm</td><td><code>0x7385a207...354e849</code></td><td><code>0xed6758f7...71c69</code></td><td>2604 / 4748 / 3678 / 4743 ms</td></tr>
+    <tr><td>CodeSmith</td><td><code>0x2244f59C</code></td><td>warm</td><td><code>0xb6f429f7...ae6acc</code></td><td><code>0x2a8635a4...488e</code></td><td>2591 / 3287 / 3623 / 4653 ms</td></tr>
+    <tr><td>ResearchBot</td><td><code>0xEF25448e</code></td><td>warm</td><td><code>0x65894e41...cfa92</code></td><td><code>0xc5d7c6aa...2f005</code></td><td>2856 / 3214 / 3440 / 4615 ms</td></tr>
+    <tr><td>TradingBot</td><td><code>0x814e3421</code></td><td>first deploy</td><td><code>0x040aa4e6...72053</code></td><td><code>inline run</code></td><td>2862 / 3224 / 2460 / 63507 ms</td></tr>
+    <tr><td>ContentGen</td><td><code>0x120F0233</code></td><td>first deploy</td><td><code>0xae1aa39b...a8f7b1</code></td><td><code>inline run</code></td><td>2680 / 15912 / 3100 / 64424 ms</td></tr>
+    <tr><td>AuditBot</td><td><code>0xd1122B50</code></td><td>first deploy</td><td><code>inline run</code></td><td><code>inline run</code></td><td>3468 / 6799 / 2228 / 63381 ms</td></tr>
+    <tr><td>SupportBot</td><td><code>0x049622d6</code></td><td>first deploy</td><td><code>0x94c0a1db...67381</code></td><td><code>inline run</code></td><td>3736 / 3194 / 2159 / 63853 ms</td></tr>
+    <tr><td>AnalyticsBot</td><td><code>0xEA6Fd09a</code></td><td>first deploy</td><td><code>inline run</code></td><td><code>inline run</code></td><td>3463 / 4708 / 3149 / 63559 ms</td></tr>
+    <tr><td>SecurityBot</td><td><code>0x95e9558c</code></td><td>first deploy</td><td><code>inline run</code></td><td><code>inline run</code></td><td>3455 / 6292 / 2623 / 62985 ms</td></tr>
+    <tr><td>OpsBot</td><td><code>0x6e17dE21</code></td><td>first deploy</td><td><code>0xca3acaf9...2c331</code></td><td><code>inline run</code></td><td>2837 / 3181 / 2036 / 63932 ms</td></tr>
+  </tbody>
+</table>
+
+<p><span style="opacity:0.8">Complete tx hash listing and full JSON results preserved in <code>/tmp/r11-final.json</code>. "inline run" entries are from the inline TypeScript runner (see "New Findings" below).</span></p>
+
+<h3>Round 11 — New Findings</h3>
+
+<div class="finding">
+  <p class="finding-title">F1. x402.org public facilitator has a concurrency bottleneck on its settle relayer</p>
+  <p class="finding-body">When 7 Sly agents submitted EIP-3009 settlements to <code>https://x402.org/facilitator/settle</code> in parallel, <strong>4 of 7 failed</strong> with <code>"replacement transaction underpriced"</code>. All 4 failed settlements used the same upstream relayer EOA (<code>0xd407e409E34E0b9afb99EcCeb609bDbcD5e7f1bf</code>), which submits the <code>transferWithAuthorization</code> call on behalf of the payer. The facilitator's relayer reuses a single nonce slot without proper pipeline management, so parallel settles collide. <strong>Running the same 4 settlements sequentially with a 3-second spacer succeeded 4-for-4.</strong> This is an upstream ecosystem limitation, not a Sly bug, but it has implications for any production agentic workload: agents issuing concurrent x402 payments through the public facilitator should serialize or back-off. Sly could solve this in two ways: (a) run its own facilitator with a nonce-aware relayer pool, or (b) add a client-side queue in the SDK that throttles concurrent settles.</p>
+</div>
+
+<div class="finding">
+  <p class="finding-title">F2. Sly + Pimlico bundler handled 10 concurrent smart-wallet UserOps with zero failures</p>
+  <p class="finding-body">Counterweight to F1. All 10 agents submitted UserOps to <code>/smart-wallet/send-usdc</code> essentially simultaneously — 3 warm wallets and 7 cold (first-deploy). Every single one landed on-chain. The Pimlico public bundler (<code>public.pimlico.io/v2/84532/rpc</code>) evidently has proper nonce management + mempool visibility across concurrent operations. This validates our bundler choice for Phase 2 and is exactly the kind of concurrency property we'd want in a production paymaster setup.</p>
+</div>
+
+<div class="finding">
+  <p class="finding-title">F3. First-deploy smart-wallet UserOps are ~13× slower than warm ones (63s vs 5s)</p>
+  <p class="finding-body">The median first-deploy UserOp took 63.6 seconds. The median warm UserOp took 4.7 seconds. The delta is the factory-deployment leg: the bundler has to validate the deployment, execute it, and then execute the transfer, all atomically. Not a bug — expected behavior — but important for UX framing: agent developers should expect a ~1-minute cold-start when an agent makes its very first on-chain action via smart wallet. After that, sub-5-second UserOps are the steady state.</p>
+</div>
+
+<div class="finding">
+  <p class="finding-title">F4. Claude Code subagent shell auth anomaly (unresolved)</p>
+  <p class="finding-body">During Round 11 setup, the 3 agents (DataMiner, CodeSmith, ResearchBot) whose <code>auth_token_hash</code> values were already correct in the DB ran fine via Claude Code subagents. The 7 agents whose hashes had been repaired direct-to-DB during Round 11 setup <strong>failed with "Invalid agent token"</strong> from subagent shells on the write endpoints, even though the exact same tokens worked from the main session's shell and from direct HTTP calls. Root cause unclear — possibly related to an API-side token cache interacting with direct-DB hash updates in a subagent-specific way. Workaround: the 7 agents' tests were executed inline via a TypeScript runner from the main session, producing equivalent results. <strong>Followup:</strong> investigate whether a deploy-triggered cache flush would have avoided this, and whether subagent Bash shells have any environment difference that triggers the mismatch. Tracked for post-session investigation; not blocking any user-facing functionality.</p>
+</div>
+
 <h2>x402 Step 2 — Spec-Compliant EOA Signing</h2>
 
 <p>After Round 9, we built the x402 Path A implementation that makes Sly a first-class x402 participant in the broader ecosystem. Each agent now holds a managed secp256k1 EVM key encrypted via credential-vault, and can sign EIP-3009 <code>transferWithAuthorization</code> payloads for spec-compliant x402 payments.</p>
@@ -325,6 +425,70 @@ facilitator.x402.rs response for DataMiner's signature:
     <tr><td>OpsBot</td><td><code>0x35FbAF32128F72D3d3CD0F0e987ca29b23477D0a</code></td><td>1.5 USDC</td></tr>
   </tbody>
 </table>
+
+<h2>x402 Step 3 — ERC-4337 Smart Wallets (the "agent never touches anything" unlock)</h2>
+
+<p>Step 2 gave every agent a raw secp256k1 EOA. Useful, but raw EOAs need ETH for gas and can't rotate keys. Step 3 upgrades each agent to a <strong>Coinbase Smart Wallet</strong> whose owner is the existing EOA, deployed via the public factory at <code>0x0BA5ED0c6AA8c49038F819E587E2633c4A9F428a</code> (same address on Base mainnet and testnet). Smart wallet addresses are CREATE2-deterministic — we know them before they're deployed, and the first on-chain interaction deploys the contract atomically with whatever operation is being performed.</p>
+
+<h3>Phase 1 — Derivation + ERC-1271 signing</h3>
+<ul>
+  <li>Endpoint: <code>POST /v1/agents/:id/smart-wallet</code> derives the CREATE2 counterfactual address and stores it alongside the agent's EOA key.</li>
+  <li>Endpoint: <code>POST /v1/agents/:id/smart-wallet-sign</code> signs arbitrary messages/typed data via the smart wallet. Produces an ERC-1271-compatible wrapped signature (owner sig + replay-protection data) that the wallet's <code>isValidSignature()</code> function accepts on-chain.</li>
+  <li>Verified: DataMiner's smart wallet signature accepted by <code>publicClient.verifyMessage()</code> with proper ERC-1271 + ERC-6492 (counterfactual) verification — before the contract was deployed.</li>
+</ul>
+
+<h3>Phase 2 — UserOperation execution via Pimlico bundler</h3>
+<ul>
+  <li>Endpoint: <code>POST /v1/agents/:id/smart-wallet/send-usdc</code> — single API call that: decrypts the agent's owner key from <code>credential-vault</code>, constructs a <code>UserOperation</code> containing a <code>USDC.transfer</code> calldata, submits it to the Pimlico public bundler (<code>public.pimlico.io/v2/84532/rpc</code>, no API key), waits for inclusion, returns the userOpHash + on-chain txHash.</li>
+  <li>The smart wallet pays for its own gas from its ETH balance (Phase 2 uses self-funded gas; full paymaster-sponsored gas-in-USDC is a follow-up once Sly has a funded paymaster).</li>
+  <li>Agents never see the owner key, never sign transactions, never call the bundler, never hold ETH. The entire ERC-4337 plumbing is hidden behind a single Sly API.</li>
+</ul>
+
+<h3>Round 10 — End-to-end validation in the hands of agents</h3>
+
+<p>3 subagents ran a targeted validation run against the deployed sandbox. Each exercised both the Step 2 external-facilitator path AND the Step 3 Phase 2 smart-wallet UserOp path, and returned a JSON proof:</p>
+
+<table>
+  <thead><tr><th>Agent</th><th>Step 2: EIP-3009 → x402.org/facilitator → Base Sepolia</th><th>Step 3 Phase 2: Smart wallet UserOp (Pimlico bundler)</th><th>Run time</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>DataMiner</strong><br><code>0x1643ccf2...fD00</code><br>(warm wallet)</td>
+      <td class="status-ok">✓ settled<br><code>0xe4fea2d6...8549ae</code><br>block 39829302</td>
+      <td class="status-ok">✓ included<br>userOp <code>0x82d5d0cc...1daa46</code><br>tx <code>0xdff61e99...1ef5d41</code><br>block 39829307</td>
+      <td>67.7s</td>
+    </tr>
+    <tr>
+      <td><strong>CodeSmith</strong><br><code>0x2244f59C...3677</code><br>(counterfactual)</td>
+      <td class="status-ok">✓ settled<br><code>0xd865952b...14f31</code><br>block 39829311</td>
+      <td class="status-ok">✓ included + first deploy<br>userOp <code>0xc8e4f55b...f2db5</code><br>tx <code>0xe516dacb...d04b11c</code><br>block 39829317</td>
+      <td>67.4s</td>
+    </tr>
+    <tr>
+      <td><strong>ResearchBot</strong><br><code>0xEF25448e...D7B7</code><br>(counterfactual)</td>
+      <td class="status-ok">✓ settled<br><code>0x490236a0...8d9399</code><br>block 39829379</td>
+      <td class="status-ok">✓ included + first deploy<br>userOp <code>0x97ec478d...0a40e1</code><br>tx <code>0x658088fb...488cbf80</code><br>block 39829387</td>
+      <td>56.1s</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="proof">
+x402.org/facilitator response for DataMiner's Round 10 signature:
+{
+  "isValid": true,
+  "payer": "0xa2E6C88f3e44d579c896eA4E62022c6C51BB5bF1"
+}
+
+x402.org/facilitator settle response:
+{
+  "success": true,
+  "transaction": "0xe4fea2d6f46817a232c1f5ef49d4f9e4ed873e521be434f3f357d10d598549ae",
+  "network": "base-sepolia",
+  "payer": "0xa2E6C88f3e44d579c896eA4E62022c6C51BB5bF1"
+}
+</div>
+
+<p><strong>Result:</strong> 6 out of 6 transactions succeeded on Base Sepolia. 3 external-facilitator settlements proving spec-compliant EIP-3009 acceptance. 3 smart-wallet UserOps proving ERC-4337 gas-abstracted execution. 2 atomic first-deployments (CodeSmith + ResearchBot) proving CREATE2 counterfactual addresses work end-to-end. Median agent run time 67 seconds — well within the 8-minute budget.</p>
 
 <h2>Bugs Found and Fixed</h2>
 

@@ -548,7 +548,7 @@ const payos = new PayOS({
 ### Migration Support
 - 🎫 [Open a Support Ticket](https://payos.ai/support)
 - 💬 [Ask in Discord #migrations](https://discord.gg/payos)
-- 📖 [View Migration Examples](https://github.com/payos/migration-examples)
+- 📖 [View Migration Examples](https://github.com/Sly-devs/sly)
 
 ### Professional Services
 Need help migrating large codebases? We offer:

@@ -666,7 +666,7 @@ Output:
 ## Support
 
 - **Documentation:** https://docs.payos.com/x402
-- **GitHub:** https://github.com/payos/x402-sdks
+- **GitHub:** https://github.com/Sly-devs/sly
 - **Discord:** https://discord.gg/payos
 - **Email:** support@payos.com
 

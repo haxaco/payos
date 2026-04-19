@@ -331,8 +331,8 @@ Follow the guide in `docs/X402_MANUAL_TESTING_GUIDE.md`
 
 1. **Clone the repo:**
    ```bash
-   git clone https://github.com/haxaco/payos.git
-   cd payos
+   git clone https://github.com/Sly-devs/sly.git
+   cd sly
    ```
 
 2. **Install dependencies:**

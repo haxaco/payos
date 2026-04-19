@@ -66,7 +66,7 @@ git push origin main --force
 ## ✅ Done!
 
 Wait 5-10 minutes, then check:
-https://github.com/haxaco/payos/security
+https://github.com/Sly-devs/sly/security
 
 The alert should clear automatically. If not, click "Dismiss" and select "Revoked".
 

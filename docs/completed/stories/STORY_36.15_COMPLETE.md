@@ -259,7 +259,7 @@ Documented 4 common migration issues:
 - 💬 Discord: #migrations channel
 - 📧 Email: support@payos.ai
 - 🎫 Support tickets: payos.ai/support
-- 📖 GitHub Issues: github.com/payos/sdk
+- 📖 GitHub Issues: github.com/Sly-devs/sly
 
 ### Professional Services
 - 🤝 Migration consulting

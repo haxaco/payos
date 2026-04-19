@@ -453,28 +453,28 @@ console.log('Transfer ID:', result.transferId);
 - **Package:** `@sly/x402-sdk`, `@sly/ap2-sdk`, `@sly/acp-sdk`
 - **Install:** `npm install @sly/x402-sdk`
 - **Version:** v2.1.0
-- **Repo:** https://github.com/payos/x402-js-sdk
+- **Repo:** https://github.com/Sly-devs/sly
 - **Docs:** https://docs.payos.com/sdks/javascript
 
 ### Python
 - **Package:** `payos-x402`, `payos-ap2`, `payos-acp`
 - **Install:** `pip install payos-x402`
 - **Version:** v1.5.0
-- **Repo:** https://github.com/payos/x402-python-sdk
+- **Repo:** https://github.com/Sly-devs/sly
 - **Docs:** https://docs.payos.com/sdks/python
 
 ### Go
-- **Package:** `github.com/payos/x402-go`
-- **Install:** `go get github.com/payos/x402-go`
+- **Package:** `github.com/Sly-devs/x402-go`
+- **Install:** `go get github.com/Sly-devs/x402-go`
 - **Version:** v1.2.0
-- **Repo:** https://github.com/payos/x402-go-sdk
+- **Repo:** https://github.com/Sly-devs/sly
 - **Docs:** https://docs.payos.com/sdks/go
 
 ### Java
 - **Package:** `com.payos:x402-sdk`
 - **Install:** Maven/Gradle (show snippet)
 - **Version:** v1.0.0
-- **Repo:** https://github.com/payos/x402-java-sdk
+- **Repo:** https://github.com/Sly-devs/sly
 - **Docs:** https://docs.payos.com/sdks/java
 
 ---

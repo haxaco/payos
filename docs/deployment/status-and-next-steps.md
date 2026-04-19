@@ -187,7 +187,7 @@ cd apps/api && pnpm start
 | **API (Railway)** | 🔴 Down (502) | https://payos-production.up.railway.app |
 | **Dashboard (Vercel)** | 🟡 Deployed (no API connection) | https://payos-web.vercel.app |
 | **Supabase** | ✅ Running | https://YOUR_PROJECT.supabase.co |
-| **GitHub** | ✅ Latest commits pushed | https://github.com/haxaco/payos |
+| **GitHub** | ✅ Latest commits pushed | https://github.com/Sly-devs/sly |
 
 ---
 

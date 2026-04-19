@@ -476,12 +476,12 @@ Special thanks to:
 ### Support
 - 💬 [Discord](https://discord.gg/payos)
 - 📧 [Email](mailto:support@payos.ai)
-- 🐛 [GitHub Issues](https://github.com/payos/sdk/issues)
+- 🐛 [GitHub Issues](https://github.com/Sly-devs/sly/issues)
 - 📖 [Docs](https://docs.payos.ai)
 
 ### Source Code
 - 📦 [npm Package](https://npmjs.com/package/@sly/sdk)
-- 🐙 [GitHub Repo](https://github.com/payos/sdk)
+- 🐙 [GitHub Repo](https://github.com/Sly-devs/sly)
 - 📚 [Monorepo](../../packages/sdk/)
 
 ---

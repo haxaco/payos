@@ -93,7 +93,7 @@
 
 **Steps:**
 1. Go to Vercel Dashboard
-2. Import GitHub repository: `haxaco/payos`
+2. Import GitHub repository: `Sly-devs/sly`
 3. Configure project:
    - **Framework:** Vite (auto-detected)
    - **Root Directory:** `payos-ui`
@@ -297,7 +297,7 @@ SUPABASE_SERVICE_ROLE_KEY=<your-secret-key>
 - **Railway Dashboard:** https://railway.app
 - **Vercel Dashboard:** https://vercel.com
 - **Supabase Dashboard:** https://supabase.com
-- **GitHub Repository:** https://github.com/haxaco/payos
+- **GitHub Repository:** https://github.com/Sly-devs/sly
 - **Environment Variables Reference:** `RAILWAY_ENV_VARS.md`
 - **Deployment Guides:** `docs/DEPLOYMENT_*.md`
 
