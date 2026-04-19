@@ -1,6 +1,6 @@
 # Epic 73: KYC/KYA Tier Implementation
 
-**Status:** Backlog
+**Status:** Complete
 **Phase:** 4.3 (Compliance & Governance)
 **Priority:** P0
 **Total Points:** 116
@@ -405,3 +405,16 @@ SDK methods: `getKyaStatus()`, `getTrustProfile()`, `upgrade()`, `getTierStatus(
 **Critical path for pilots:** Phase 1 + Phase 2 = 40 points. Enables email-only onboarding + T1 lightweight KYC.
 
 **Phase 4 can start in parallel** with Phases 2-3 since KYA tiers only need the schema foundation (Phase 1).
+
+---
+
+## Completion Notes
+
+- **Date completed:** April 14, 2026
+- **Commit:** `7229b6b feat(epic-73): KYC/KYA tier implementation — unified verification ladder`
+- **Scope:** All 19 stories implemented across 4 phases (116 points)
+- **Migrations:** 5 applied to Supabase (tier limits, account fields, CAI fields, effective limit triggers, behavioral observations)
+- **Stubs awaiting production credentials:** Persona SDK (`services/kyc/persona.ts`), Circle Compliance Engine (`services/compliance/circle-compliance.ts`), IP geolocation (`getCountryFromIP()` returns null)
+- **Kill switch auth:** Works via API key when no operator designated; once operator is designated, only that operator or owner/admin can activate
+- **T0 KYA limits:** $20/$100/$500 (marketplace-validated, diverges from spec's $10/$50/$200)
+- **Completion doc:** [`docs/completed/EPIC_73_COMPLETE.md`](../../completed/EPIC_73_COMPLETE.md)

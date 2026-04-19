@@ -343,11 +343,11 @@ return c.json({
 
 ### Agent Permissions & Limits
 
-**KYA Tiers**:
-- Tier 0: Basic (low limits)
-- Tier 1: Standard (moderate limits)
-- Tier 2: Advanced (high limits)
-- Tier 3: Enterprise (very high limits)
+**KYA Tiers** (Epic 73):
+- Tier 0 — Registered: $20/tx, $100/day, $500/month
+- Tier 1 — Declared: $100/tx, $500/day, $2,000/month (requires DSD declaration)
+- Tier 2 — Verified: $1,000/tx, $5,000/day, $20,000/month (30-day history or enterprise override)
+- Tier 3 — Trusted: Custom limits (kill-switch operator, full CAI)
 
 **Effective Limits**: `min(agentLimit, parentAccountLimit)` - agents can't exceed parent account's verification tier limits.
 

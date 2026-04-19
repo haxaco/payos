@@ -2050,11 +2050,14 @@ agents.post('/:id/kill-switch', async (c) => {
 
   if (fetchError || !agent) throw new NotFoundError('Agent', id);
 
-  // Authorization: only the designated kill-switch operator or a tenant owner can activate
+  // Authorization: designated operator, tenant owner/admin, or API key holder.
+  // If no operator is designated, any authenticated tenant caller can activate (implicit operator).
   const isDesignatedOperator = agent.kill_switch_operator_id && agent.kill_switch_operator_id === ctx.userId;
   const isTenantOwner = ctx.userRole === 'owner' || ctx.userRole === 'admin';
+  const isApiKey = ctx.actorType === 'api_key';
+  const noOperatorDesignated = !agent.kill_switch_operator_id;
 
-  if (!isDesignatedOperator && !isTenantOwner) {
+  if (!isDesignatedOperator && !isTenantOwner && !isApiKey && !noOperatorDesignated) {
     throw new ValidationError(
       'Only the designated kill-switch operator or a tenant owner/admin can activate the kill switch',
     );
