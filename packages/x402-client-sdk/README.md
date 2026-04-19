@@ -299,13 +299,13 @@ MIT © PayOS
 
 - [x402 Whitepaper](https://www.x402.org/x402-whitepaper.pdf)
 - [PayOS Documentation](https://docs.payos.com)
-- [GitHub Repository](https://github.com/payos/x402-client-sdk)
+- [GitHub Repository](https://github.com/Sly-devs/sly)
 
 ## Support
 
 For issues or questions:
 
-- GitHub Issues: [payos/x402-client-sdk/issues](https://github.com/payos/x402-client-sdk/issues)
+- GitHub Issues: [Sly-devs/sly/issues](https://github.com/Sly-devs/sly/issues)
 - Discord: [payos.com/discord](https://payos.com/discord)
 - Email: support@payos.com
 
