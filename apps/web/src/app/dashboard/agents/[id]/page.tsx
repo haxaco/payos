@@ -697,6 +697,49 @@ function ReputationCard({ agentId }: { agentId: string }) {
         <span>0 — 1000</span>
       </div>
 
+      {/* Collusion ring detector — flagged when the rating graph looks closed */}
+      {reputation.collusion && (
+        <div className={`mb-4 rounded-lg p-3 text-xs border ${
+          reputation.collusion.flagged
+            ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-800 dark:text-red-200'
+            : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 font-semibold">
+              {reputation.collusion.flagged ? '⚠️ Rating ring detected' : 'Rater diversity'}
+            </div>
+            {reputation.collusion.flagged && (
+              <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/60">
+                capped at C
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <div className="text-[10px] opacity-70 uppercase">Unique raters</div>
+              <div className="tabular-nums font-medium">
+                {reputation.collusion.uniqueRaters} / {reputation.collusion.totalRatings}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] opacity-70 uppercase">Top rater share</div>
+              <div className="tabular-nums font-medium">
+                {Math.round(reputation.collusion.topRaterShare * 100)}%
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] opacity-70 uppercase">Reciprocal</div>
+              <div className="tabular-nums font-medium">
+                {Math.round(reputation.collusion.reciprocalRatio * 100)}%
+              </div>
+            </div>
+          </div>
+          {reputation.collusion.flagged && reputation.collusion.reason && (
+            <div className="mt-2 opacity-90">{reputation.collusion.reason}</div>
+          )}
+        </div>
+      )}
+
       {/* Dimension breakdown — shows why the score is what it is */}
       {dimensions.length > 0 && (
         <div className="pt-4 border-t border-gray-100 dark:border-gray-800">

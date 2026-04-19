@@ -25,6 +25,12 @@ import { mnemomSource } from './sources/mnemom.js';
 import { vouchedSource } from './sources/vouched.js';
 import { escrowHistorySource } from './sources/escrow-history.js';
 import { a2aFeedbackSource } from './sources/a2a-feedback.js';
+import {
+  computeCollusionSignals,
+  EMPTY_COLLUSION,
+  COLLUSION_PENALTY_CAP,
+  type CollusionSignals,
+} from './collusion-detector.js';
 
 const SOURCE_TIMEOUT_MS = 5000;
 
@@ -94,6 +100,14 @@ export class TrustScoreCalculator {
     // ratingCount = peer ratings specifically, from the a2a_feedback source only
     const ratingCount = results.find(r => r.source === 'a2a_feedback')?.dataPoints ?? 0;
 
+    // Compute collusion signals over the rating graph. Uses the agent UUID
+    // when the identifier is a UUID; otherwise falls back to empty (we can
+    // only analyze the graph when we have an internal agent ID).
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+    const collusion: CollusionSignals = isUuid
+      ? await computeCollusionSignals(this.supabase, identifier).catch(() => EMPTY_COLLUSION)
+      : EMPTY_COLLUSION;
+
     if (availableResults.length === 0) {
       const score: UnifiedTrustScore = {
         score: 0,
@@ -102,6 +116,7 @@ export class TrustScoreCalculator {
         dimensions: [],
         dataPoints: 0,
         ratingCount: 0,
+        collusion: collusion.totalRatings > 0 ? collusion : null,
         lastRefreshed: new Date().toISOString(),
         stale: false,
       };
@@ -134,7 +149,13 @@ export class TrustScoreCalculator {
 
     const dimensions: ReputationDimension[] = activeDimensions.map(dim => {
       const d = dimensionScores[dim];
-      const avgScore = Math.round(d.total / d.count);
+      let avgScore = Math.round(d.total / d.count);
+      // Collusion penalty: when the rating ring is flagged, cap
+      // service_quality at COLLUSION_PENALTY_CAP (default 600 / C tier max).
+      // The raw signal is still surfaced so the UI can explain the cap.
+      if (dim === 'service_quality' && collusion.flagged) {
+        avgScore = Math.min(avgScore, COLLUSION_PENALTY_CAP);
+      }
       // Redistribute weight proportionally
       const rawWeight = baseWeights[dim] || 0;
       const normalizedWeight = totalActiveWeight > 0 ? rawWeight / totalActiveWeight : 0;
@@ -161,6 +182,7 @@ export class TrustScoreCalculator {
       dimensions,
       dataPoints: totalDataPoints,
       ratingCount,
+      collusion: collusion.totalRatings > 0 ? collusion : null,
       lastRefreshed: new Date().toISOString(),
       stale: false,
     };
@@ -266,6 +288,13 @@ export class TrustScoreCalculator {
           ? sourceData.a2a_feedback.totalFeedback
           : 0;
 
+      // Collusion signals aren't persisted yet — compute them on cache load
+      // if the identifier is an agent UUID. Cheap (two targeted queries).
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+      const collusion = isUuid
+        ? await computeCollusionSignals(this.supabase, identifier).catch(() => EMPTY_COLLUSION)
+        : EMPTY_COLLUSION;
+
       return {
         score: data.unified_score ?? 0,
         tier: data.unified_tier ?? 'F',
@@ -273,6 +302,7 @@ export class TrustScoreCalculator {
         dimensions: data.dimensions ?? [],
         dataPoints: data.data_points ?? 0,
         ratingCount: cachedRatingCount,
+        collusion: collusion.totalRatings > 0 ? collusion : null,
         lastRefreshed: data.last_refreshed,
         stale: false,
       };

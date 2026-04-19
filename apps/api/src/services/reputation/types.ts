@@ -10,6 +10,16 @@ export interface ReputationDimension {
   dataPoints: number;
 }
 
+export interface CollusionSignals {
+  uniqueRaters: number;
+  topRaterShare: number;
+  reciprocalRatio: number;
+  flagged: boolean;
+  reason: string | null;
+  topRaters: string[];
+  totalRatings: number;
+}
+
 export interface UnifiedTrustScore {
   score: number;          // 0-1000
   tier: 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
@@ -18,6 +28,8 @@ export interface UnifiedTrustScore {
   dataPoints: number;
   /** Count of peer-to-peer ratings specifically (a2a_task_feedback rows) — distinct from dataPoints, which sums across all sources. */
   ratingCount: number;
+  /** Collusion-ring signals over the rating graph. null when no ratings exist. */
+  collusion: CollusionSignals | null;
   lastRefreshed: string;
   stale: boolean;
 }
