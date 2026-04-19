@@ -1,34 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sly Marketplace — Live Round</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0a0a0f;--surface:#12121a;--border:#1e1e2e;--text:#e0e0e8;--muted:#6b6b80;--accent:#6366f1;--green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--cyan:#06b6d4}
-body{font-family:'SF Mono','Fira Code',monospace;background:var(--bg);color:var(--text);overflow:hidden;height:100vh}
+:root{
+  /* Linear-inspired dark theme */
+  --bg:#08090a;--surface:#0f1011;--border:#23252a;--text:#f7f8f8;--muted:#8a8f98;
+  --accent:#5e6ad2;--accent-bright:#7170ff;--accent-hover:#828fff;
+  --green:#27a644;--red:#ef4444;--yellow:#f59e0b;--cyan:#06b6d4;
+  --border-subtle:rgba(255,255,255,0.05);--border-std:rgba(255,255,255,0.08);
+  --text-secondary:#d0d6e0;--text-tertiary:#62666d;
+  --surface-elevated:#191a1b;--surface-hover:#28282c;
+}
+html.light{
+  --bg:#f7f8f8;--surface:#ffffff;--border:#d0d6e0;--text:#1a1a2e;--muted:#62666d;
+  --accent:#5e6ad2;--accent-bright:#4f46e5;--accent-hover:#3b35c4;
+  --green:#16a34a;--red:#dc2626;--yellow:#d97706;--cyan:#0891b2;
+  --border-subtle:rgba(0,0,0,0.06);--border-std:rgba(0,0,0,0.10);
+  --text-secondary:#4b5563;--text-tertiary:#9ca3af;
+  --surface-elevated:#f3f4f5;--surface-hover:#e6e6e6;
+}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh;-webkit-font-smoothing:antialiased}
 
-.header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
-.header h1{font-size:16px;font-weight:600;letter-spacing:1px}
-.header .status{display:flex;align-items:center;gap:12px;font-size:13px}
-.header .dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 2s infinite}
+.header{display:flex;align-items:center;gap:12px;padding:6px 14px;border-bottom:1px solid var(--border);background:var(--surface);min-height:40px}
+.header h1{font-size:13px;font-weight:700;letter-spacing:1px;flex-shrink:0}
+.header .dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 2s infinite;flex-shrink:0}
 .header .dot.live{background:var(--green)}
+.header #statusText{font-size:11px;color:var(--muted)}
+.header #apiUrl{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-family:inherit;font-size:11px;min-width:200px}
+.header #apiKey{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-family:inherit;font-size:11px;flex:1;max-width:340px}
+.header #connectBtn{background:var(--accent);color:white;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600}
+.header #connectBtn:hover{opacity:0.9}
+.header #connectBtn.stop{background:var(--red)}
+.header .timer{font-size:14px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;flex-shrink:0}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-.timer{font-size:20px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
 
-.main{display:grid;grid-template-columns:220px 1fr 200px;height:calc(100vh - 49px)}
+/* Main 4-col grid: agents | content (metrics+graph) | feed-col | skills.
+   --chrome-h is set by JS based on header + control strip height. */
+.main{display:grid;grid-template-columns:200px minmax(420px, 1fr) 320px 200px;height:calc(100vh - var(--chrome-h, 80px));min-width:0}
 
-/* Skills panel */
-.skills{border-left:1px solid var(--border);overflow-y:auto;padding:8px}
+.skills{border-left:1px solid var(--border);overflow-y:auto;padding:8px;min-width:0}
 .skills h3{font-size:11px;color:var(--muted);text-transform:uppercase;padding:8px 8px 4px;letter-spacing:1px}
 .skill-row{padding:6px 10px;border-radius:4px;margin-bottom:2px;font-size:11px;display:flex;justify-content:space-between;align-items:center}
 .skill-row .skill-name{color:var(--text);font-weight:500}
 .skill-row .skill-stats{color:var(--muted);font-size:10px;text-align:right}
-.skill-row .skill-price{color:var(--cyan);font-size:10px}
 
-/* Agent panel */
-.agents{border-right:1px solid var(--border);overflow-y:auto;padding:8px}
+.agents{border-right:1px solid var(--border);overflow-y:auto;padding:8px;min-width:0}
 .agents h3{font-size:11px;color:var(--muted);text-transform:uppercase;padding:8px 8px 4px;letter-spacing:1px}
 .agent-card{padding:8px 10px;border-radius:6px;margin-bottom:2px;cursor:default;transition:background 0.2s}
 .agent-card:hover{background:rgba(99,102,241,0.08)}
@@ -37,32 +60,34 @@ body{font-family:'SF Mono','Fira Code',monospace;background:var(--bg);color:var(
 .agent-card .name .dot.frozen{background:var(--red);animation:pulse 1s infinite}
 .agent-card .name .dot.suspended{background:var(--yellow)}
 .agent-card .stats{font-size:10px;color:var(--muted);margin-top:2px}
-.agent-card .price{font-size:10px;color:var(--cyan)}
+.agent-card .rating{font-size:10px;margin-top:1px}
+.agent-card .rating .score{font-weight:600}
 
-/* Content area */
-.content{display:grid;grid-template-rows:1fr auto 1fr;gap:0;overflow:hidden}
+/* .content holds metrics (auto) + graph (fills rest). Feed lives in its own column .feed-col. */
+.content{display:grid;grid-template-rows:auto 1fr;gap:0;overflow:hidden;min-width:0}
 
-/* Network graph */
-.graph-area{position:relative;border-bottom:1px solid var(--border);overflow:hidden}
+.graph-area{position:relative;overflow:hidden}
 canvas{width:100%;height:100%}
 
-/* Metrics bar */
-.metrics{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--surface)}
-.metric{flex:1;padding:10px 16px;border-right:1px solid var(--border);text-align:center}
+.metrics{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.metric{flex:1;padding:6px 10px;border-right:1px solid var(--border);text-align:center;min-width:0}
 .metric:last-child{border-right:none}
-.metric .label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
-.metric .value{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.metric .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.metric .value{font-size:18px;font-weight:700;margin-top:1px;line-height:1.1;font-variant-numeric:tabular-nums}
 .metric .value.green{color:var(--green)}
 .metric .value.red{color:var(--red)}
 .metric .value.yellow{color:var(--yellow)}
-.metric .sub{font-size:10px;color:var(--muted)}
+.metric .sub{font-size:10px;color:var(--muted);margin-top:1px}
 
-/* Live feed */
-.feed{overflow-y:auto;padding:8px 12px}
-.feed-item{padding:6px 10px;border-radius:4px;margin-bottom:2px;font-size:12px;display:flex;align-items:center;gap:8px;animation:slideIn 0.3s ease}
+/* Feed lives in its own grid column to the right of .content */
+.feed-col{border-left:1px solid var(--border);border-right:1px solid var(--border);background:var(--bg);overflow-y:auto;display:flex;flex-direction:column;min-width:0}
+.feed-col-header{position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 12px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;z-index:1}
+.feed{overflow-y:auto;padding:6px 10px;flex:1}
+.feed-item{padding:5px 8px;border-radius:4px;margin-bottom:2px;font-size:12px;display:flex;align-items:flex-start;gap:6px;animation:slideIn 0.3s ease;line-height:1.4}
 @keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-.feed-item .time{color:var(--muted);font-size:10px;flex-shrink:0;width:60px}
-.feed-item .icon{font-size:14px;flex-shrink:0}
+.feed-item .time{color:var(--muted);font-size:10px;flex-shrink:0;width:46px;padding-top:1px}
+.feed-item .icon{font-size:13px;flex-shrink:0;padding-top:1px}
+.feed-item span:last-child{min-width:0;word-break:break-word}
 .feed-item.created{background:rgba(99,102,241,0.06)}
 .feed-item.completed{background:rgba(34,197,94,0.06)}
 .feed-item.accepted{background:rgba(34,197,94,0.1)}
@@ -71,44 +96,287 @@ canvas{width:100%;height:100%}
 .feed-item.frozen{background:rgba(239,68,68,0.1)}
 .feed-item.settlement{background:rgba(6,182,212,0.08)}
 
-/* Connection UI */
-.connect-bar{padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center}
-.connect-bar input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:4px;font-family:inherit;font-size:12px;flex:1}
-.connect-bar button{background:var(--accent);color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600}
-.connect-bar button:hover{opacity:0.9}
-.connect-bar button.stop{background:var(--red)}
+.scenario-btn{color:white;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;white-space:nowrap;font-family:inherit}
+.scenario-btn:hover{opacity:0.85}
+.scenario-btn.active{outline:2px solid white;outline-offset:1px}
+.ctrl-btn{background:var(--surface);color:var(--muted);border:1px solid var(--border);padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;white-space:nowrap;font-family:inherit}
+.ctrl-btn:hover{background:var(--border)}
+.ctrl-btn.stop-btn{background:var(--red);color:white;border-color:var(--red)}
+
+#onChainToggle:has(input:checked){background:rgba(6,182,212,0.12);border-color:var(--cyan);color:var(--cyan)}
+
+/* Control strip — single consolidated bar that replaces poolBar/scenarioBar/etc */
+#controlStrip{display:none;position:relative;border-bottom:1px solid var(--border);background:rgba(99,102,241,0.06)}
+#controlStrip .ctrl-row{display:flex;align-items:center;gap:8px;padding:6px 14px;flex-wrap:nowrap;min-height:38px}
+#controlStrip #scenarioToggle{background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 7px;border-radius:3px;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0;line-height:1}
+#controlStrip #scenarioToggle:hover{color:var(--text);background:var(--surface)}
+#controlStrip #scenarioSelect{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:4px;font-family:inherit;font-size:12px;min-width:220px;max-width:340px;cursor:pointer;flex-shrink:0}
+#controlStrip #runBtn{background:var(--accent);color:white;border:none;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0}
+#controlStrip #runBtn:disabled{opacity:0.4;cursor:not-allowed}
+#controlStrip #stopBtn{background:var(--red);color:white;border:none;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:none;flex-shrink:0}
+#controlStrip .ctrl-icon-btn{background:var(--surface);color:var(--muted);border:1px solid var(--border);padding:5px 9px;border-radius:4px;font-size:12px;cursor:pointer;font-family:inherit;flex-shrink:0;line-height:1}
+#controlStrip .ctrl-icon-btn:hover{background:var(--border);color:var(--text)}
+#controlStrip #onChainToggle{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);padding:4px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+#controlStrip #onChainToggle input{margin:0;cursor:pointer}
+#controlStrip #poolChip{display:flex;align-items:center;gap:6px;background:rgba(16,185,129,0.10);color:#10b981;border:1px solid rgba(16,185,129,0.4);padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap}
+#controlStrip #poolChip:hover{background:rgba(16,185,129,0.18)}
+#controlStrip #poolChip.unavailable{opacity:0.5}
+#controlStrip #scenarioPanel{padding:6px 14px 8px 50px;border-top:1px dashed rgba(255,255,255,0.06);font-size:11px;color:var(--muted)}
+#controlStrip #scenarioPanel.collapsed{display:none}
+#controlStrip #scenarioName{font-size:12px;font-weight:700;color:var(--accent);margin-bottom:2px}
+#controlStrip #scenarioDesc{font-size:11px;color:var(--muted);line-height:1.4}
+#controlStrip #scenarioMeta{font-size:10px;color:var(--muted);margin-top:3px}
+#controlStrip #scenarioParams{margin-top:6px;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.06);display:none}
+
+/* Pool popover (anchored to poolChip) */
+#poolPopover{display:none;position:absolute;top:42px;right:14px;background:var(--surface);border:1px solid rgba(16,185,129,0.4);border-radius:6px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,0.4);z-index:50;min-width:240px}
+#poolPopover .pp-title{font-size:10px;color:#10b981;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+#poolPopover .pp-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:var(--muted)}
+#poolPopover .pp-row label{flex:1}
+#poolPopover input[type=number]{width:60px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px;font-family:inherit;font-size:11px}
+#poolPopover #reseedBtn{background:#10b981;color:white;border:none;padding:6px 14px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;margin-top:6px}
+#poolPopover #reseedBtn:hover{opacity:0.9}
+#poolPopover #reseedBtn:disabled{opacity:0.4;cursor:not-allowed}
+
+/* Report modal */
+.modal-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-backdrop.show{display:flex}
+.modal{background:var(--bg);border:1px solid var(--border);border-radius:8px;max-width:800px;max-height:85vh;width:90%;overflow-y:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+.modal h2{font-size:18px;color:var(--accent);margin-bottom:6px}
+.modal h3{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px}
+.modal .verdict{font-size:13px;padding:10px 14px;border-radius:6px;margin:12px 0;border-left:3px solid var(--accent)}
+.modal .verdict.pass{background:rgba(34,197,94,0.08);border-left-color:var(--green)}
+.modal .verdict.warn{background:rgba(245,158,11,0.08);border-left-color:var(--yellow)}
+.modal .verdict.fail{background:rgba(239,68,68,0.08);border-left-color:var(--red)}
+.modal .stats-grid{display:grid;grid-template-columns:repeat(4, 1fr);gap:8px;margin-bottom:8px}
+.modal .stat{background:var(--surface);padding:10px;border-radius:4px;text-align:center}
+.modal .stat .v{font-size:18px;font-weight:700;color:var(--text)}
+.modal .stat .l{font-size:9px;color:var(--muted);text-transform:uppercase;margin-top:2px}
+.modal .check{display:flex;align-items:flex-start;gap:8px;padding:6px 0;font-size:12px;border-bottom:1px solid var(--border)}
+.modal .check .icon{font-weight:bold;flex-shrink:0;width:16px}
+.modal .check.pass .icon{color:var(--green)}
+.modal .check.warn .icon{color:var(--yellow)}
+.modal .check.fail .icon{color:var(--red)}
+.modal .check .cat{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;width:90px;flex-shrink:0}
+.modal .row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid var(--border)}
+.modal .row .name{color:var(--text)}
+.modal .row .v{color:var(--muted)}
+.modal-close{position:absolute;top:10px;right:14px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+.modal-close:hover{color:var(--text)}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 </head>
 <body>
 
-<div class="header">
+<!-- Single thin header: title, live dot, URL select, key, Connect, timer -->
+<header class="header">
   <h1>SLY MARKETPLACE</h1>
-  <div class="status">
-    <div class="dot" id="statusDot"></div>
-    <span id="statusText">Disconnected</span>
-    <div class="timer" id="timer">00:00</div>
-  </div>
-</div>
-
-<div class="connect-bar">
-  <input type="text" id="apiUrl" value="https://sandbox.getsly.ai" placeholder="API URL">
-  <input type="text" id="apiKey" placeholder="Platform Admin Key (PLATFORM_ADMIN_API_KEY)" style="flex:2">
+  <div class="dot" id="statusDot"></div>
+  <span id="statusText">Disconnected</span>
+  <span style="flex:1"></span>
+  <select id="apiUrl">
+    <option value="http://localhost:4000">Local</option>
+    <option value="https://sandbox.getsly.ai">Sandbox</option>
+    <option value="https://api.getsly.ai">Production</option>
+  </select>
+  <input type="text" id="apiKey" placeholder="Platform admin key">
   <button onclick="connect()" id="connectBtn">Connect</button>
-  <button onclick="loadTokens()" style="background:var(--surface);color:var(--muted);border:1px solid var(--border);padding:6px 10px;border-radius:4px;font-size:11px;cursor:pointer">Load Tokens</button>
-</div>
+  <button onclick="toggleTheme()" id="themeBtn" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px" title="Toggle light/dark mode">☀</button>
+  <span class="timer" id="timer">00:00</span>
+</header>
 
-<div id="scenarioBar" style="display:none;padding:8px 16px;background:rgba(99,102,241,0.08);border-bottom:1px solid var(--border)">
-  <div style="display:flex;justify-content:space-between;align-items:center">
-    <div>
-      <span style="font-size:13px;font-weight:700;color:var(--accent)" id="scenarioName">Select a scenario</span>
-      <span style="font-size:11px;color:var(--muted);margin-left:8px" id="scenarioDesc"></span>
-    </div>
-    <div id="scenarioButtons" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+<!-- Single consolidated control strip: replaces poolBar + scenarioBar + commentaryBar + milestonesBar + findingsBar -->
+<div id="controlStrip">
+  <!-- Row 1: scenario picker + run controls + pool chip (always one line) -->
+  <div class="ctrl-row">
+    <button id="scenarioToggle" onclick="toggleScenarioPanel()" title="Expand / collapse description + params">▼</button>
+    <select id="scenarioSelect" onchange="onScenarioPick()">
+      <option value="">— Select a scenario —</option>
+    </select>
+    <button id="runBtn" onclick="runSelectedScenario()" disabled>▶ Start</button>
+    <select id="modeSelect" title="LLM backend for agent brains" style="font-size:10px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-family:inherit">
+      <option value="openrouter" selected>🌐 OpenRouter (multi-model)</option>
+      <option value="api">🔶 Anthropic only</option>
+    </select>
+    <label title="Baseline: agents keep diverse models but lose all Sly layers — no reputation, no dynamic pricing, no buyer signals. The 'before Sly' condition." style="font-size:9px;color:var(--muted);display:flex;align-items:center;gap:3px;cursor:pointer">
+      <input type="checkbox" id="baselineToggle"> No Sly
+    </label>
+    <button id="stopBtn" onclick="stopScenario()">■ Stop</button>
+    <button onclick="resetRound()" title="Reset round — clear all data and start fresh" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit">🗑️ Clear</button>
+    <label id="onChainToggle" title="When enabled, scenarios settle real USDC on Base Sepolia via the treasury wallet.">
+      <input type="checkbox" id="enableOnChain">
+      <span>⛓</span>
+    </label>
+    <span style="flex:1;min-width:8px"></span>
+    <span id="scenarioTag" style="font-size:10px;color:var(--muted)"></span>
+    <button id="poolChip" onclick="togglePoolPopover(event)" title="Sim pool — click to re-seed">🤖 <span id="poolSummary">—</span></button>
+    <button id="templatesBtn" class="ctrl-icon-btn" onclick="openTemplatesModal()" title="Author scenario templates">📝</button>
+    <button id="historyBtn" class="ctrl-icon-btn" onclick="openRunHistory()" title="Run history">📊</button>
+  </div>
+  <!-- Row 2: collapsible description + params (only meaningful when scenario picked) -->
+  <div id="scenarioPanel" class="collapsed">
+    <div id="scenarioName">Select a scenario to see its description</div>
+    <div id="scenarioDesc"></div>
+    <div id="scenarioMeta"></div>
+    <div id="scenarioParams"></div>
+  </div>
+  <!-- Pool popover (anchored to poolChip top-right) -->
+  <div id="poolPopover" onclick="event.stopPropagation()">
+    <div class="pp-title">🤖 Sim pool — re-seed</div>
+    <div class="pp-row"><label>Honest</label><input type="number" id="poolHonest" min="0" max="20" value="3"></div>
+    <div class="pp-row"><label>Quality reviewer</label><input type="number" id="poolQuality" min="0" max="20" value="2"></div>
+    <div class="pp-row"><label>Rogue</label><input type="number" id="poolRogue" min="0" max="20" value="1"></div>
+    <div class="pp-row"><label>Whale</label><input type="number" id="poolWhale" min="0" max="5" value="0"></div>
+    <div class="pp-row"><label>Colluder</label><input type="number" id="poolColluder" min="0" max="10" value="0"></div>
+    <button id="reseedBtn" onclick="reseedPool()">⟳ Re-seed pool</button>
   </div>
 </div>
 
-<div id="commentaryBar" style="display:none;padding:6px 16px;background:rgba(251,191,36,0.06);border-bottom:1px solid var(--border);font-size:12px;color:var(--yellow)">
-  <span id="commentaryText"></span>
+<!-- Agent inspector slide-over -->
+<div id="agentInspectorBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:996" onclick="closeAgentInspector()"></div>
+<div id="agentInspectorPanel" style="display:none;position:fixed;top:0;right:0;bottom:0;width:420px;max-width:95vw;background:var(--bg);border-left:1px solid var(--border);box-shadow:-8px 0 32px rgba(0,0,0,0.4);z-index:997;overflow-y:auto;font-family:inherit">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+    <div style="font-size:14px;font-weight:700;color:var(--accent)">Agent Inspector</div>
+    <span style="flex:1"></span>
+    <button onclick="closeAgentInspector()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:14px">&times;</button>
+  </div>
+  <div id="agentInspectorBody" style="padding:16px 20px"><div style="color:var(--muted)">Click an agent node on the graph...</div></div>
+</div>
+
+<!-- Task detail slide-over panel -->
+<div id="taskDetailBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:998" onclick="closeTaskDetail()"></div>
+<div id="taskDetailPanel" style="display:none;position:fixed;top:0;right:0;bottom:0;width:560px;max-width:95vw;background:var(--bg);border-left:1px solid var(--border);box-shadow:-8px 0 32px rgba(0,0,0,0.4);z-index:999;overflow-y:auto;font-family:inherit">
+  <div style="position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;z-index:1">
+    <div style="min-width:0;flex:1">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">A2A Task</div>
+      <div id="taskDetailTitle" style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="">—</div>
+    </div>
+    <button onclick="closeTaskDetail()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:14px">×</button>
+  </div>
+  <div id="taskDetailBody" style="padding:14px 18px;font-size:12px;color:var(--text)">
+    <div style="color:var(--muted);font-style:italic">Loading…</div>
+  </div>
+</div>
+
+<!-- Scenario templates modal (Phase C) -->
+<div id="templatesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;width:95vw;max-width:1280px;height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5);overflow:hidden">
+    <!-- Header -->
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+      <div style="font-size:14px;font-weight:700;color:var(--accent)">📝 Scenario Templates</div>
+      <span id="tplStatus" style="font-size:11px;color:var(--muted);font-style:italic"></span>
+      <span style="flex:1"></span>
+      <input type="file" id="tplImportFile" accept=".md" style="display:none" onchange="importTemplateFromFile(event)">
+      <button onclick="document.getElementById('tplImportFile').click()" class="ctrl-btn" style="font-size:11px">📥 Import</button>
+      <button id="tplNewBtn" class="ctrl-btn" style="font-size:11px" onclick="toggleNewMenu(event)">+ New ▾</button>
+      <button onclick="closeTemplatesModal()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:14px">×</button>
+    </div>
+
+    <!-- New menu (anchored under the + New button) -->
+    <div id="tplNewMenu" style="display:none;position:absolute;top:50px;right:80px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,0.4);min-width:200px">
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:4px 8px">From</div>
+      <button class="tpl-new-item" onclick="newFromBlank()">📄 Blank template</button>
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:8px 8px 4px;border-top:1px dashed var(--border);margin-top:4px">Clone built-in</div>
+      <div id="tplNewClones"><!-- populated dynamically --></div>
+    </div>
+
+    <!-- Body: split layout -->
+    <div style="flex:1;display:grid;grid-template-columns:240px 1fr;min-height:0">
+      <!-- Left: list of templates -->
+      <div style="border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)">
+        <div id="tplListBuiltIn">
+          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:10px 12px 4px">Built-in</div>
+          <div id="tplListBuiltInItems"></div>
+        </div>
+        <div id="tplListDrafts">
+          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:10px 12px 4px;border-top:1px dashed var(--border);margin-top:4px">Drafts</div>
+          <div id="tplListDraftsItems"></div>
+        </div>
+      </div>
+
+      <!-- Right: editor + buttons + compile output -->
+      <div style="display:flex;flex-direction:column;min-width:0;min-height:0">
+        <!-- Toolbar -->
+        <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--surface);flex-shrink:0">
+          <input type="text" id="tplIdInput" placeholder="template_id (snake_case)" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:3px;font-family:inherit;font-size:11px;width:200px" disabled>
+          <span id="tplDirty" style="font-size:10px;color:var(--yellow);display:none">● unsaved</span>
+          <span style="flex:1"></span>
+          <button id="tplSaveBtn" class="ctrl-btn" style="font-size:11px;background:var(--accent);color:white;border-color:var(--accent)" onclick="saveTemplate()" disabled>💾 Save</button>
+          <button id="tplCompileBtn" class="ctrl-btn" style="font-size:11px" onclick="compileTemplate()" disabled>⚙ Compile</button>
+          <button id="tplRunBtn" class="ctrl-btn" style="font-size:11px;background:#10b981;color:white;border-color:#10b981" onclick="runTemplate()" disabled>▶ Run</button>
+          <button id="tplResetBtn" class="ctrl-btn" style="font-size:11px;display:none" onclick="resetBuiltInTemplate()" title="Restore the shipped default for this built-in">⟳ Reset</button>
+          <button id="tplExportBtn" class="ctrl-btn" style="font-size:11px" onclick="exportTemplate()" disabled>📤 Export</button>
+          <button id="tplDeleteBtn" class="ctrl-btn stop-btn" style="font-size:11px;display:none" onclick="deleteTemplate()">🗑 Delete</button>
+          <button id="tplAssistBtn" class="ctrl-btn" style="font-size:11px;background:#7c3aed;color:white;border-color:#7c3aed" onclick="toggleAssistPanel()">🧠 AI</button>
+        </div>
+
+        <!-- AI Assist panel (collapsible) -->
+        <div id="tplAssistPanel" style="display:none;border-bottom:1px solid var(--border);padding:8px 14px;background:rgba(124,58,237,0.06);flex-shrink:0">
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <textarea id="tplAssistInput" placeholder="Describe what you want — e.g. 'Create a scenario that tests price discovery with 5 sellers' or 'Make the whale reject anything below 90'" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:4px;font-family:inherit;font-size:11px;resize:vertical;min-height:36px;max-height:120px;outline:none" rows="2"></textarea>
+            <button id="tplAssistSubmit" class="ctrl-btn" style="font-size:11px;background:#7c3aed;color:white;border-color:#7c3aed;white-space:nowrap" onclick="submitAssist()">Generate</button>
+          </div>
+          <div id="tplAssistStatus" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
+        </div>
+
+        <!-- Editor area: CodeMirror replaces this textarea on first open -->
+        <div id="tplEditorWrap" style="flex:1;min-height:0;display:flex;flex-direction:column">
+          <textarea id="tplEditor" style="flex:1;width:100%;background:var(--bg);color:var(--text);border:none;padding:12px 14px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;resize:none;outline:none">Pick a template from the left, or click + New to create one.</textarea>
+        </div>
+
+        <!-- Compile output panel -->
+        <div id="tplCompileOutput" style="display:none;border-top:1px solid var(--border);padding:10px 14px;max-height:200px;overflow-y:auto;background:var(--surface);font-size:11px;flex-shrink:0"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.tpl-list-item{padding:8px 12px;cursor:pointer;font-size:12px;color:var(--text);border-left:2px solid transparent;display:flex;align-items:center;gap:6px}
+.tpl-list-item:hover{background:rgba(99,102,241,0.08)}
+.tpl-list-item.selected{background:rgba(99,102,241,0.15);border-left-color:var(--accent)}
+.tpl-list-item .tpl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tpl-list-item .tpl-block{font-size:9px;color:var(--muted);font-family:'SF Mono',monospace}
+.tpl-list-item .tpl-warn{color:var(--red);font-size:11px}
+.tpl-list-item .tpl-ok{color:var(--green);font-size:11px}
+.tpl-new-item{display:block;width:100%;text-align:left;background:transparent;border:none;color:var(--text);padding:6px 10px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:3px}
+.tpl-new-item:hover{background:rgba(99,102,241,0.12)}
+/* CodeMirror dark tweaks (when CM5 is loaded) */
+#tplEditorWrap .CodeMirror{flex:1 1 auto;min-height:0;height:auto !important;font-family:'SF Mono','Fira Code',monospace !important;font-size:12px !important;background:var(--bg) !important}
+.cm-s-dracula.CodeMirror{background:var(--bg) !important}
+.cm-s-dracula .CodeMirror-gutters{background:var(--surface) !important;border-right:1px solid var(--border) !important}
+.cm-s-dracula .CodeMirror-scroll{background:var(--bg) !important}
+</style>
+
+<!-- Run History Modal -->
+<div id="runHistoryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;width:95vw;max-width:1100px;height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5);overflow:hidden">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+      <div style="font-size:14px;font-weight:700;color:var(--accent)">📊 Run History</div>
+      <span id="runHistoryStatus" style="font-size:11px;color:var(--muted);font-style:italic"></span>
+      <span style="flex:1"></span>
+      <button id="runAllBtn" onclick="triggerRunAll()" class="ctrl-btn" style="font-size:11px;background:#10b981;color:white;border-color:#10b981">▶ Run All (21)</button>
+      <button onclick="closeRunHistory()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:14px">×</button>
+    </div>
+    <div id="runHistoryBody" style="flex:1;overflow-y:auto;padding:12px 18px">
+      <div style="color:var(--muted);font-style:italic">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<div id="reportModal" class="modal-backdrop">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" onclick="closeReport()">&times;</button>
+    <h2 id="reportTitle">Scenario Report</h2>
+    <div style="display:flex;gap:6px;margin:6px 0 8px;flex-wrap:wrap">
+      <button onclick="downloadReport('json')" class="ctrl-btn" style="background:var(--accent);color:white;border-color:var(--accent)">⬇ JSON</button>
+      <button onclick="downloadReport('md')" class="ctrl-btn" style="background:var(--accent);color:white;border-color:var(--accent)">⬇ Markdown</button>
+      <button onclick="downloadReport('log')" class="ctrl-btn">⬇ Full Log</button>
+      <button onclick="analyzeReport()" id="analyzeBtn" class="ctrl-btn" style="background:#10b981;color:white;border-color:#10b981">🧠 Analyze with LLM</button>
+    </div>
+    <div id="reportAnalysis" style="display:none;margin:8px 0;padding:10px 12px;background:rgba(16,185,129,0.06);border-left:3px solid #10b981;border-radius:4px;font-size:12px;color:var(--text)"></div>
+    <div id="reportContent" style="font-size:12px;color:var(--text)">Loading...</div>
+  </div>
 </div>
 
 <div class="main">
@@ -117,17 +385,45 @@ canvas{width:100%;height:100%}
     <div style="padding:12px;color:var(--muted);font-size:11px">Connect to load agents</div>
   </div>
   <div class="content">
-    <div class="graph-area">
-      <canvas id="graphCanvas"></canvas>
-    </div>
+    <!-- Metrics now sit ABOVE the graph (was: below) -->
     <div class="metrics">
       <div class="metric"><div class="label">Tasks</div><div class="value" id="mTasks">0</div><div class="sub" id="mTasksSub">0 active</div></div>
       <div class="metric"><div class="label">Completed</div><div class="value green" id="mCompleted">0</div><div class="sub" id="mCompletedSub">0%</div></div>
       <div class="metric"><div class="label">Volume</div><div class="value" id="mVolume">$0</div><div class="sub" id="mVolumeSub">0 mandates</div></div>
       <div class="metric"><div class="label">On-Chain</div><div class="value" style="color:var(--cyan)" id="mOnchain">0</div><div class="sub">tx hashes</div></div>
-      <div class="metric"><div class="label">Disputes</div><div class="value yellow" id="mDisputes">0</div><div class="sub" id="mDisputesSub">$0 escrowed</div></div>
+      <div class="metric"><div class="label">Escrow</div><div class="value yellow" id="mDisputes">0</div><div class="sub" id="mDisputesSub">$0 held</div></div>
       <div class="metric"><div class="label">Failed</div><div class="value red" id="mFailed">0</div><div class="sub" id="mFailedSub">0 rejected</div></div>
     </div>
+    <div class="graph-area" id="graphArea">
+      <canvas id="graphCanvas" style="width:100%;height:100%"></canvas>
+      <!-- Zoom controls overlay -->
+      <div id="graphControls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
+        <button onclick="cyFit()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);width:28px;height:28px;border-radius:4px;cursor:pointer;font-size:14px" title="Fit to view">⊡</button>
+        <button onclick="cyZoomIn()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);width:28px;height:28px;border-radius:4px;cursor:pointer;font-size:14px" title="Zoom in">+</button>
+        <button onclick="cyZoomOut()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);width:28px;height:28px;border-radius:4px;cursor:pointer;font-size:14px" title="Zoom out">−</button>
+      </div>
+      <!-- Node tooltip -->
+      <div id="nodeTooltip" style="display:none;position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:10px;color:var(--text);pointer-events:none;z-index:10;max-width:280px;box-shadow:0 4px 12px rgba(0,0,0,0.4)"></div>
+      <!-- Legend overlay -->
+      <div id="graphLegend" style="position:absolute;bottom:28px;left:8px;right:8px;display:flex;gap:12px;flex-wrap:wrap;font-size:9px;color:var(--muted);background:rgba(10,10,15,0.8);padding:4px 8px;border-radius:4px;pointer-events:none">
+        <span>⬤ Node size = task volume</span>
+        <span>Border: <span style="color:#10b981">green</span>=high rating, <span style="color:#ef4444">red</span>=low</span>
+        <span><span style="color:#6366f1">━━</span> active bid</span>
+        <span><span style="color:#22c55e">━━</span> completed</span>
+        <span><span style="color:#3f3f50">╌╌</span> lost bid</span>
+        <span><span style="color:#ef4444">╌✗╌</span> failed</span>
+        <span>★ = milestone</span>
+      </div>
+      <!-- Timeline scrubber (shown after Stop) -->
+      <div id="timelineScrubber" style="display:none;position:absolute;bottom:4px;left:8px;right:8px;z-index:5">
+        <input type="range" id="timelineSlider" min="0" max="100" value="100" style="width:100%;accent-color:var(--accent)" oninput="onTimelineScrub(this.value)">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted)"><span id="timelineStart">00:00</span><span id="timelineCurrent">—</span><span id="timelineEnd">00:00</span></div>
+      </div>
+    </div>
+  </div>
+  <!-- Feed is now its own column to the right of .content -->
+  <div class="feed-col">
+    <div class="feed-col-header">Live feed</div>
     <div class="feed" id="feed">
       <div style="padding:20px;color:var(--muted);text-align:center;font-size:12px">Connect to see live events</div>
     </div>
@@ -143,17 +439,14 @@ canvas{width:100%;height:100%}
 let connected = false;
 let eventSource = null;
 let pollInterval = null;
-let currentScenario = null;
-
-// Round scripts mapped to scenario names
-const SCENARIOS = {
-  rogue_injection: { script: '/tmp/r30-rogue.ts', color: 'var(--red)' },
-  collusion: { script: '/tmp/r33-collusion.ts', color: 'var(--yellow)' },
-  lemon_market: { script: '/tmp/r36-lemon-market.ts', color: 'var(--green)' },
-  cascading_default: { script: '/tmp/r37-cascading-default.ts', color: 'var(--cyan)' },
-};
 let startTime = null;
 let timerInterval = null;
+let resetCutoff = null;
+let currentScenario = null;
+let scenarioRunning = false;
+let storedAgentTokens = {};
+let scenarioCatalog = {}; // id -> scenario object (name, description, tag, duration, agents, color)
+
 const state = {
   agents: [],
   tasks: [],
@@ -161,48 +454,51 @@ const state = {
   transfers: [],
   events: [],
   metrics: { tasks: 0, completed: 0, failed: 0, volume: 0, onchain: 0, disputes: 0, escrowed: 0, rejected: 0, mandates: 0 },
-  edges: [], // {from, to, state, time}
+  edges: [],
+  // Per-agent ratings: { agentId: { totalScore, count } }
+  ratings: {},
+  // Individual review entries: { agentId, reviewerId, score, comment, action, time }
+  reviews: [],
+  // Per-pair stats: { "from->to": { count, completed, totalScore, disputed } }
+  pairStats: {},
+  // Live wallet balances: { agentId: balance }
+  walletBalances: {},
+  // External (non-Sly) agents discovered via federation: { id: { name, url, sent, recv } }
+  externalAgents: {},
+  // Pinned key findings — milestones from server (tier upgrades, freezes, cascades)
+  milestones: [],
 };
 
-// Agent name cache
 const agentNames = {};
-
 function N(id) { return agentNames[id] || (id || '?').slice(0, 8); }
 
-// Connect
+// ----- Connect -----
 async function connect() {
+  if (connected) { disconnect(); return; }
   const url = document.getElementById('apiUrl').value.trim();
   const key = document.getElementById('apiKey').value.trim();
-  if (!url) return;
+  if (!url || !key) return;
+  const headers = { 'Authorization': 'Bearer ' + key };
 
-  if (connected) { disconnect(); return; }
-
-  // Load initial data
   try {
-    const headers = key ? { 'Authorization': 'Bearer ' + key } : {};
-
-    // Load snapshot first (has agent names resolved from task participants)
-    const snapRes = await fetch(url + '/admin/round/snapshot?minutes=10', { headers });
+    // Load snapshot
+    const snapRes = await fetch(url + '/admin/round/snapshot?minutes=5', { headers });
     const snap = await snapRes.json();
     if (snap?.data) {
       state.tasks = snap.data.tasks || [];
       state.mandates = snap.data.mandates || [];
       state.transfers = snap.data.transfers || [];
-      if (snap.data.agentNames) {
-        Object.assign(agentNames, snap.data.agentNames);
-      }
+      if (snap.data.agentNames) Object.assign(agentNames, snap.data.agentNames);
     }
 
-    // Load all agents (for skills/wallets info)
+    // Load agents
     const mktRes = await fetch(url + '/admin/round/agents', { headers });
     const mkt = await mktRes.json();
     state.agents = mkt?.data || [];
-    // Merge agent names (agents endpoint has names for all loaded agents)
     state.agents.forEach(a => { if (a.name) agentNames[a.id] = a.name; });
 
-    // Build a combined agent list: start with agents endpoint, enrich with snapshot participants
+    // Merge task participants
     const allIds = new Set(state.agents.map(a => a.id));
-    // Add agents from tasks that aren't in the agents list
     state.tasks.forEach(t => {
       for (const id of [t.agent_id, t.client_agent_id]) {
         if (id && !allIds.has(id)) {
@@ -214,49 +510,143 @@ async function connect() {
 
     updateMetrics();
 
-    // Connect SSE — pass token as query param since EventSource doesn't support headers
+    // Connect SSE
     const sseUrl = url + '/admin/round/stream' + (key ? '?token=' + encodeURIComponent(key) : '');
     eventSource = new EventSource(sseUrl);
-    eventSource.onopen = () => {
+    eventSource.onopen = async () => {
       connected = true;
       document.getElementById('statusDot').classList.add('live');
       document.getElementById('statusText').textContent = 'Live';
       document.getElementById('connectBtn').textContent = 'Disconnect';
       document.getElementById('connectBtn').classList.add('stop');
-      document.getElementById('scenarioBar').style.display = 'block';
+      document.getElementById('controlStrip').style.display = 'block';
+      updateChromeHeight();
       startTime = Date.now();
       timerInterval = setInterval(updateTimer, 1000);
       document.getElementById('feed').innerHTML = '';
       addFeedItem('system', 'Connected to ' + url, 'connected');
 
-      // Load scenarios catalog from API
+      // Load scenario catalog into the dropdown.
+      // Pulls scripted scenarios from the API and (if reachable) LLM-driven
+      // real-mode scenarios from the marketplace-sim sidecar.
       try {
         const scenRes = await fetch(url + '/admin/round/scenarios', { headers });
         const scenData = await scenRes.json();
         const scenarios = scenData?.data || [];
-        const btns = document.getElementById('scenarioButtons');
-        btns.innerHTML = '';
-        scenarios.forEach(s => {
-          const btn = document.createElement('button');
-          btn.textContent = s.name;
-          btn.title = s.description + ' (' + s.duration + ', ' + s.agents + ')';
-          btn.style.cssText = 'background:' + s.color + ';color:white;border:none;padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;white-space:nowrap';
-          btn.onclick = () => executeScenario(s);
-          btns.appendChild(btn);
+        scenarioCatalog = {};
+
+        // Try to fetch sim sidecar scenarios — silently skip if not running.
+        let simScenarios = [];
+        try {
+          const sh = await fetch(url + '/admin/round/sim/health', { headers });
+          if (sh.ok) {
+            const ss = await fetch(url + '/admin/round/sim/scenarios', { headers });
+            const sj = await ss.json();
+            // Assign sub-tags to real scenarios so they group in the dropdown
+            // the same way the scripted ones do, instead of all landing in one
+            // flat "Real" bucket.
+            const realTagMap = {
+              competitive_review: 'real-competition',
+              cold_start: 'real-economics',
+              whale_dominance: 'real-economics',
+              reverse_auction: 'real-economics',
+              lemon_market: 'real-economics',
+              market_making: 'real-economics',
+              streaming_payments: 'real-economics',
+              recurring_subscription: 'real-economics',
+              multi_hop: 'real-economics',
+              cascading_default: 'real-systemic',
+              rogue_injection: 'real-adversarial',
+              velocity_attack: 'real-adversarial',
+              sybil_attack: 'real-adversarial',
+              reputation_laundering: 'real-adversarial',
+              front_running: 'real-adversarial',
+              kya_tier_escalation: 'real-governance',
+              dispute_escalation: 'real-governance',
+              cross_tenant: 'real-governance',
+              collusion: 'real-collusion',
+              adapted_collusion: 'real-collusion',
+              external_marketplace: 'real-federation',
+            };
+            simScenarios = (sj?.data || []).map(s => {
+              const baseId = (s.id || '').replace(/_real$/, '');
+              return {
+                ...s,
+                sim: true,
+                tag: realTagMap[baseId] || 'real-other',
+                color: '#10b981',
+                duration: '~2-3m',
+                agents: (s.requires || []).join(', '),
+                name: '\ud83e\udd16 ' + s.name,
+              };
+            });
+            if (simScenarios.length > 0) {
+              addFeedItem('system', simScenarios.length + ' real-mode (LLM) scenarios available via sim sidecar', 'created');
+              // Sim is reachable — pool chip is already in the control strip;
+              // populate it with current counts.
+              refreshPool();
+            }
+          }
+        } catch {}
+
+        const allScenarios = [...scenarios, ...simScenarios];
+        const select = document.getElementById('scenarioSelect');
+        // Keep the default placeholder as the first option
+        select.innerHTML = '<option value="">\u2014 Select a scenario \u2014</option>';
+        // Group scenarios by tag for clarity
+        const byTag = {};
+        allScenarios.forEach(s => {
+          scenarioCatalog[s.id] = s;
+          const tag = s.tag || 'other';
+          if (!byTag[tag]) byTag[tag] = [];
+          byTag[tag].push(s);
         });
-        if (scenarios.length > 0) {
-          addFeedItem('system', scenarios.length + ' scenarios available — click one to start', 'created');
+        const tagOrder = [
+          'real-competition', 'real-economics', 'real-adversarial', 'real-collusion',
+          'real-governance', 'real-systemic', 'real-federation', 'real-other',
+          'economics', 'competition', 'governance', 'adversarial', 'collusion', 'systemic', 'federation',
+        ];
+        const tagLabels = {
+          'real-competition': '\ud83e\udd16 Real — Competition',
+          'real-economics': '\ud83e\udd16 Real — Economics',
+          'real-adversarial': '\ud83e\udd16 Real — Adversarial',
+          'real-collusion': '\ud83e\udd16 Real — Collusion',
+          'real-governance': '\ud83e\udd16 Real — Governance',
+          'real-systemic': '\ud83e\udd16 Real — Systemic',
+          'real-federation': '\ud83e\udd16 Real — Federation',
+          'real-other': '\ud83e\udd16 Real — Other',
+          economics: 'Scripted — Economics',
+          competition: 'Scripted — Competition',
+          governance: 'Scripted — Governance',
+          adversarial: 'Scripted — Adversarial',
+          collusion: 'Scripted — Collusion',
+          systemic: 'Scripted — Systemic',
+          federation: 'Scripted — Federation',
+        };
+        const seenTags = new Set();
+        [...tagOrder, ...Object.keys(byTag)].forEach(tag => {
+          if (seenTags.has(tag) || !byTag[tag]) return;
+          seenTags.add(tag);
+          const group = document.createElement('optgroup');
+          group.label = tagLabels[tag] || tag.charAt(0).toUpperCase() + tag.slice(1);
+          byTag[tag].forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = s.name;
+            group.appendChild(opt);
+          });
+          select.appendChild(group);
+        });
+        if (allScenarios.length > 0) {
+          addFeedItem('system', allScenarios.length + ' scenarios available \u2014 pick one and click Start', 'created');
         }
       } catch {}
     };
 
-    // Handle all event types
+    // Handle event types
     ['status', 'message', 'acceptance', 'feedback', 'payment', 'webhook', 'timeout', 'error'].forEach(type => {
       eventSource.addEventListener(type, (e) => {
-        try {
-          const event = JSON.parse(e.data);
-          handleEvent(type, event);
-        } catch {}
+        try { handleEvent(type, JSON.parse(e.data)); } catch {}
       });
     });
 
@@ -266,18 +656,20 @@ async function connect() {
       document.getElementById('statusText').textContent = 'Reconnecting...';
     };
 
-    // Poll for snapshot updates every 3s
+    // Poll snapshot every 3s
     pollInterval = setInterval(async () => {
       try {
-        const r = await fetch(url + '/admin/round/snapshot?minutes=5', { headers });
+        const r = await fetch(url + '/admin/round/snapshot?minutes=10', { headers });
         const s = await r.json();
         if (s?.data) {
-          state.tasks = s.data.tasks || [];
-          state.mandates = s.data.mandates || [];
-          state.transfers = s.data.transfers || [];
-          // Merge agent names from snapshot
+          const allTasks = s.data.tasks || [];
+          const allMandates = s.data.mandates || [];
+          const allTransfers = s.data.transfers || [];
+          state.tasks = resetCutoff ? allTasks.filter(t => t.created_at >= resetCutoff) : allTasks;
+          state.mandates = resetCutoff ? allMandates.filter(m => m.created_at >= resetCutoff) : allMandates;
+          state.transfers = resetCutoff ? allTransfers.filter(t => t.created_at >= resetCutoff) : allTransfers;
           if (s.data.agentNames) Object.assign(agentNames, s.data.agentNames);
-          // Add new task participants to agent list
+          if (s.data.agentWallets) state.walletBalances = s.data.agentWallets;
           state.tasks.forEach(t => {
             for (const id of [t.agent_id, t.client_agent_id]) {
               if (id && !state.agents.some(a => a.id === id)) {
