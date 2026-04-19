@@ -84,3 +84,23 @@ COMMENT ON COLUMN tenants.beta_access_code_id IS 'The invite code used to create
 COMMENT ON COLUMN tenants.onboarded_via IS 'How this tenant was onboarded (direct_signup, beta_code, partner_code)';
 COMMENT ON COLUMN tenants.max_team_members IS 'Maximum team members allowed for this tenant';
 COMMENT ON COLUMN tenants.max_agents IS 'Maximum agents allowed for this tenant';
+
+-- ============================================================================
+-- RLS — admin-only tables. Platform staff operate on these through the
+-- service role (see /admin/beta/* routes). Lock everyone else out.
+-- ============================================================================
+
+ALTER TABLE beta_access_codes  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE beta_applications  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE beta_funnel_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_role_beta_access_codes"  ON beta_access_codes;
+DROP POLICY IF EXISTS "service_role_beta_applications"  ON beta_applications;
+DROP POLICY IF EXISTS "service_role_beta_funnel_events" ON beta_funnel_events;
+
+CREATE POLICY "service_role_beta_access_codes"
+  ON beta_access_codes  FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_beta_applications"
+  ON beta_applications  FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_beta_funnel_events"
+  ON beta_funnel_events FOR ALL TO service_role USING (true) WITH CHECK (true);

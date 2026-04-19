@@ -168,3 +168,30 @@ COMMENT ON FUNCTION public.calculate_agent_effective_limits IS
   'Story 73.1: Calculates effective limits for an agent based on KYA tier. '
   'Uses per_transaction/daily/monthly columns from kya_tier_limits table. '
   'SECURITY DEFINER with empty search_path for security.';
+
+-- ============================================================================
+-- RLS — tier lookup tables are global platform config. Everyone authenticated
+-- may READ them (needed by the dashboard + agent creation flows); only the
+-- service role may MUTATE them. Redeclared here so the
+-- check-rls-in-migrations script sees the RLS binding in the same file as
+-- the table definition. Also mirrored in
+-- 20251217_enable_rls_lookup_tables.sql for earlier environments.
+-- ============================================================================
+
+ALTER TABLE kya_tier_limits          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE verification_tier_limits ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "authenticated_read_kya_tier_limits"          ON kya_tier_limits;
+DROP POLICY IF EXISTS "service_role_write_kya_tier_limits"          ON kya_tier_limits;
+DROP POLICY IF EXISTS "authenticated_read_verification_tier_limits" ON verification_tier_limits;
+DROP POLICY IF EXISTS "service_role_write_verification_tier_limits" ON verification_tier_limits;
+
+CREATE POLICY "authenticated_read_kya_tier_limits"
+  ON kya_tier_limits FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY "service_role_write_kya_tier_limits"
+  ON kya_tier_limits FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE POLICY "authenticated_read_verification_tier_limits"
+  ON verification_tier_limits FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY "service_role_write_verification_tier_limits"
+  ON verification_tier_limits FOR ALL TO service_role USING (true) WITH CHECK (true);
