@@ -6,24 +6,33 @@
  * rating ring). Current reputation just averages raw scores — no
  * defense against mutual-inflation schemes.
  *
- * v1 computes three cheap signals over `a2a_task_feedback`:
+ * Signals over `a2a_task_feedback`:
  *
- *   - uniqueRaters       — distinct caller_agent_id rating this agent
- *   - topRaterShare      — top-1 rater's share of total ratings received
- *   - reciprocalRatio    — % of this agent's raters that this agent also rated
+ *   - uniqueRaters     distinct caller_agent_id rating this agent
+ *   - topRaterShare    top-1 rater's share of total ratings received
+ *   - reciprocalRatio  % of this agent's raters that this agent also rated
+ *   - ringCoefficient  graph-community signal: for each rater, what fraction
+ *                      of THEIR raters overlap with THIS agent's rater set.
+ *                      A value near 1 means the agent's raters form a closed
+ *                      subgraph (everyone in the group only rates each other).
+ *                      This catches ColluderBot-3-style rings that per-agent
+ *                      heuristics miss (3 distinct raters, but 2 of them are
+ *                      ring members, so each rater's own raters are mostly
+ *                      inside the same group).
  *
- * A ring is flagged when any of:
+ * Ring flagged when any of:
  *   - uniqueRaters <= 2 && totalRatings >= 2       (tight clique)
  *   - topRaterShare > 0.6 && uniqueRaters < 5      (dominated by one rater)
  *   - reciprocalRatio > 0.5 && uniqueRaters < 5    (mutual-rating pattern)
+ *   - ringCoefficient > 0.5 && uniqueRaters < 8    (closed subgraph)
  *
  * Flagged agents get their service_quality dimension capped at 600 (C tier
  * max). The raw signals are returned so the dashboard can surface the
  * "why" and link through to the raters.
  *
- * v2 will add graph-community detection (closed-clique discovery over the
- * full rating graph) and time-series spike detection; v1 is deliberately
- * a single agent lookup so it's cheap to compute on every reputation read.
+ * Future work: time-series spike detection for rating bombs; proper
+ * Louvain community detection over the full graph for platform-wide
+ * adversary mapping (today we only look one hop out from the target).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -35,7 +44,14 @@ export interface CollusionSignals {
   topRaterShare: number;
   /** % of this agent's raters that this agent also rated back, 0-1. */
   reciprocalRatio: number;
-  /** True when the ring-detection heuristics trip. */
+  /**
+   * Graph-community signal, 0-1. For each rater r, what fraction of r's own
+   * raters are also in this agent's rater set (or this agent itself)? The
+   * average across all raters. Near 1 = closed subgraph; near 0 = raters have
+   * independent social circles.
+   */
+  ringCoefficient: number;
+  /** True when any ring-detection heuristic trips. */
   flagged: boolean;
   /** Short human-readable reason when flagged (null otherwise). */
   reason: string | null;
@@ -49,6 +65,7 @@ export const EMPTY_COLLUSION: CollusionSignals = {
   uniqueRaters: 0,
   topRaterShare: 0,
   reciprocalRatio: 0,
+  ringCoefficient: 0,
   flagged: false,
   reason: null,
   topRaters: [],
@@ -107,7 +124,49 @@ export async function computeCollusionSignals(
   );
   const reciprocalRatio = uniqueRaters > 0 ? reciprocated.size / uniqueRaters : 0;
 
-  // 3. Apply the ring heuristics
+  // 3. Ring coefficient — graph-community signal. Only compute when this
+  // agent has a small-ish rater pool (3-10). Below 3 is already caught by
+  // per-agent heuristics; above 10 is large enough that closed-subgraph
+  // math stops being useful and the extra N queries aren't worth it.
+  let ringCoefficient = 0;
+  if (uniqueRaters >= 3 && uniqueRaters <= 10) {
+    // Community candidate = this agent + its raters. Ratings coming FROM
+    // members of this set TO a rater r that also come from other members
+    // indicate the rater's own social circle overlaps with this agent's.
+    const community = new Set<string>([agentId, ...raterIds]);
+
+    // Fetch raters-of-raters in one batch query (faster than per-rater).
+    const { data: raterEdges } = await supabase
+      .from('a2a_task_feedback')
+      .select('provider_agent_id, caller_agent_id')
+      .in('provider_agent_id', raterIds)
+      .not('caller_agent_id', 'is', null) as any;
+
+    const ratersOfRater = new Map<string, Set<string>>();
+    for (const e of (raterEdges ?? []) as Array<{ provider_agent_id: string; caller_agent_id: string }>) {
+      if (!ratersOfRater.has(e.provider_agent_id)) {
+        ratersOfRater.set(e.provider_agent_id, new Set());
+      }
+      ratersOfRater.get(e.provider_agent_id)!.add(e.caller_agent_id);
+    }
+
+    const overlaps: number[] = [];
+    for (const r of raterIds) {
+      const rr = ratersOfRater.get(r);
+      if (!rr || rr.size === 0) {
+        // Rater has no ratings of their own — no information, skip
+        continue;
+      }
+      let inter = 0;
+      for (const x of rr) if (community.has(x)) inter++;
+      overlaps.push(inter / rr.size);
+    }
+    ringCoefficient = overlaps.length > 0
+      ? overlaps.reduce((a, b) => a + b, 0) / overlaps.length
+      : 0;
+  }
+
+  // 4. Apply the ring heuristics (first match wins — specific before general)
   let flagged = false;
   let reason: string | null = null;
 
@@ -120,12 +179,16 @@ export async function computeCollusionSignals(
   } else if (reciprocalRatio > 0.5 && uniqueRaters < 5) {
     flagged = true;
     reason = `${Math.round(reciprocalRatio * 100)}% of raters rated back — mutual-rating pattern`;
+  } else if (ringCoefficient > 0.5 && uniqueRaters < 8) {
+    flagged = true;
+    reason = `${Math.round(ringCoefficient * 100)}% of raters' own raters are inside this agent's rating circle — closed subgraph`;
   }
 
   return {
     uniqueRaters,
     topRaterShare: Math.round(topRaterShare * 100) / 100,
     reciprocalRatio: Math.round(reciprocalRatio * 100) / 100,
+    ringCoefficient: Math.round(ringCoefficient * 100) / 100,
     flagged,
     reason,
     topRaters,

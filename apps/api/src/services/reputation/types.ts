@@ -14,6 +14,7 @@ export interface CollusionSignals {
   uniqueRaters: number;
   topRaterShare: number;
   reciprocalRatio: number;
+  ringCoefficient: number;
   flagged: boolean;
   reason: string | null;
   topRaters: string[];

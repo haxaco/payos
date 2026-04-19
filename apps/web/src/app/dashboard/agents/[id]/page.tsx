@@ -714,7 +714,7 @@ function ReputationCard({ agentId }: { agentId: string }) {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div>
               <div className="text-[10px] opacity-70 uppercase">Unique raters</div>
               <div className="tabular-nums font-medium">
@@ -731,6 +731,12 @@ function ReputationCard({ agentId }: { agentId: string }) {
               <div className="text-[10px] opacity-70 uppercase">Reciprocal</div>
               <div className="tabular-nums font-medium">
                 {Math.round(reputation.collusion.reciprocalRatio * 100)}%
+              </div>
+            </div>
+            <div title="Fraction of raters' own raters that are inside this agent's rating circle — high value = closed subgraph">
+              <div className="text-[10px] opacity-70 uppercase">Ring coef</div>
+              <div className="tabular-nums font-medium">
+                {Math.round((reputation.collusion.ringCoefficient ?? 0) * 100)}%
               </div>
             </div>
           </div>
