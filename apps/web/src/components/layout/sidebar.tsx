@@ -256,6 +256,7 @@ export function Sidebar() {
     { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark },
     { href: '/dashboard/reports', label: 'Reports', icon: FileText },
     { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: complianceCount || undefined },
+    { href: '/dashboard/disputes', label: 'Disputes', icon: Shield },
     { href: '/dashboard/workflows', label: 'Workflows', icon: GitBranch },
     { href: '/dashboard/fx', label: 'FX Rates', icon: TrendingUp },
     { href: '/dashboard/operations', label: 'Operations', icon: Activity },

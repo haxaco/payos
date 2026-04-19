@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useApiClient, useApiConfig } from '@/lib/api-client';
+import { useApiClient, useApiConfig, useApiFetch } from '@/lib/api-client';
 import Link from 'next/link';
 import { LobsterClaw } from '@/components/icons/lobster-claw';
 import {

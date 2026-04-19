@@ -16,7 +16,6 @@ import {
   Label,
 } from '@sly/ui';
 import type { Agent, AgentLimits } from '@sly/api-client';
-import { AvatarUpload } from './avatar-upload';
 
 interface ConfigureAgentDialogProps {
   agent: Agent;
@@ -88,17 +87,6 @@ export function ConfigureAgentDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-start gap-4">
-            <Label className="text-right mt-2">Avatar</Label>
-            <div className="col-span-3">
-              <AvatarUpload
-                agentId={agent.id}
-                agentName={agent.name}
-                currentUrl={(agent as any).avatarUrl ?? (agent as any).avatar_url ?? null}
-                size="md"
-              />
-            </div>
-          </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="agent-name" className="text-right">
               Name
