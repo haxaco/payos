@@ -2376,13 +2376,17 @@ async function killSwitchAgent(agentId) {
   const url = document.getElementById('apiUrl').value.trim();
   const key = document.getElementById('apiKey').value.trim();
   try {
-    const r = await fetch(url + '/v1/agents/' + encodeURIComponent(agentId) + '/kill-switch', {
+    // Use the admin-round proxy (permissive CORS) rather than /v1/agents/:id/kill-switch,
+    // which requires an Origin in the server's strict allowlist.
+    const r = await fetch(url + '/admin/round/kill-switch/' + encodeURIComponent(agentId), {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
     });
     if (r.ok) {
       const j = await r.json().catch(() => ({}));
-      const cancelled = typeof j.pendingCancelled === 'number' ? j.pendingCancelled : 0;
+      // Server wraps as { data: { suspended, pendingCancelled } }; also accept flat shape.
+      const payload = j?.data || j || {};
+      const cancelled = typeof payload.pendingCancelled === 'number' ? payload.pendingCancelled : 0;
       const suffix = cancelled > 0 ? ' (' + cancelled + ' pending cancelled)' : '';
       addFeedItem('warning', 'KILL SWITCH: ' + displayName + ' suspended' + suffix, 'rejected');
       // Optimistically flip local status so the list-card dot goes yellow now,

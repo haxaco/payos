@@ -10,6 +10,7 @@ import { streamSSE } from 'hono/streaming';
 import { platformAdminMiddleware } from '../middleware/platform-admin.js';
 import { createClient } from '../db/client.js';
 import { taskEventBus } from '../services/a2a/task-event-bus.js';
+import { logAudit } from '../utils/helpers.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -369,6 +370,80 @@ roundViewerRouter.post('/milestone', async (c) => {
     timestamp: new Date().toISOString(),
   });
   return c.json({ data: { text: body.text, agentId: body.agentId } });
+});
+
+/**
+ * POST /admin/round/kill-switch/:agentId
+ * Cross-tenant kill-switch activation for the live demo viewer.
+ *
+ * The canonical endpoint is `POST /v1/agents/:id/kill-switch` in routes/agents.ts,
+ * but that lives under the strict CORS allowlist. When the viewer is opened
+ * from a non-allowlisted origin (or with an origin the browser treats as
+ * cross-origin), the preflight fails with "Failed to fetch".
+ *
+ * This proxy has:
+ *   - Permissive CORS (same handler all other /admin/round/* endpoints use)
+ *   - Admin-key auth (platformAdminMiddleware applied at the router level)
+ *   - Identical side effects: status → 'suspended', pending transfers cancelled,
+ *     audit entry written.
+ *
+ * Body: {}  (agentId is in the URL)
+ * Returns: { suspended: true, pendingCancelled: number }
+ */
+roundViewerRouter.post('/kill-switch/:agentId', async (c) => {
+  const agentId = c.req.param('agentId');
+  if (!UUID_RE.test(agentId)) {
+    return c.json({ error: 'Invalid agentId (must be UUID)' }, 400);
+  }
+
+  const supabase = createClient(); // service role — bypasses RLS (admin-key protected upstream)
+
+  const { data: agent, error: fetchError } = await supabase
+    .from('agents')
+    .select('id, name, status, tenant_id')
+    .eq('id', agentId)
+    .maybeSingle();
+
+  if (fetchError || !agent) {
+    return c.json({ error: `Agent not found: ${agentId}` }, 404);
+  }
+
+  const { error: updateError } = await (supabase.from('agents') as any)
+    .update({ status: 'suspended', updated_at: new Date().toISOString() })
+    .eq('id', agentId);
+
+  if (updateError) {
+    return c.json({ error: `Failed to suspend agent: ${updateError.message}` }, 500);
+  }
+
+  const { data: cancelled } = await (supabase.from('transfers') as any)
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('agent_id', agentId)
+    .eq('tenant_id', (agent as { tenant_id: string }).tenant_id)
+    .eq('status', 'pending')
+    .select('id');
+
+  const pendingCancelled = cancelled?.length ?? 0;
+
+  // Audit log scoped to the agent's own tenant. Actor is the platform admin
+  // (logAudit's actorType is 'user' | 'agent' | 'system' — platform-admin
+  // activations map to 'system' since no tenant user performed it).
+  await logAudit(supabase, {
+    tenantId: (agent as { tenant_id: string }).tenant_id,
+    entityType: 'agent',
+    entityId: agentId,
+    action: 'kill_switch_activated',
+    actorType: 'system',
+    actorId: 'platform_admin',
+    actorName: 'platform_admin (live_viewer)',
+    metadata: {
+      agentName: (agent as { name: string }).name,
+      pendingTransfersCancelled: pendingCancelled,
+      activatedBy: 'live_round_viewer',
+    },
+  }).catch(() => { /* audit is best-effort */ });
+
+  return c.json({ data: { suspended: true, pendingCancelled } });
 });
 
 /**
