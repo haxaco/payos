@@ -147,7 +147,7 @@ sly/
 
 ### Authentication Flow
 
-The API supports three authentication methods (see `apps/api/src/middleware/auth.ts:76`):
+The API supports five authentication methods (see `apps/api/src/middleware/auth.ts:76`):
 
 1. **API Key Auth** (`pk_test_*` or `pk_live_*`)
    - Primary auth for partner integrations
@@ -168,7 +168,21 @@ The API supports three authentication methods (see `apps/api/src/middleware/auth
    - Validates agent status and KYA tier
    - Fallback to legacy `auth_client_id` for backwards compatibility
 
-**Important**: All `/v1/*` routes require authentication. Health/ready checks and auth routes are public.
+4. **Portal Token Auth** (`portal_*`) — Epic 65
+   - For customer-facing usage API access
+   - Scoped to specific operations (e.g., `usage:read`)
+
+5. **Ed25519 Session Token Auth** (`sess_*`) — Epic 72
+   - Issued via Ed25519 challenge-response handshake (private key never sent over wire)
+   - Short-lived (1 hour TTL), individually revocable
+   - Sets identical `RequestContext` as `agent_*` tokens — works on ALL endpoints
+   - Agent auto-generates Ed25519 key pair on creation (`generate_keypair: true`)
+   - Public endpoints: `POST /v1/agents/:id/challenge` → `POST /v1/agents/:id/authenticate`
+   - Key management: `POST /v1/agents/:id/auth-keys` (provision), `/rotate` (self-rotate), `DELETE` (revoke)
+   - Persistent SSE: `GET /v1/agents/:id/connect` — push events to connected agents (30s heartbeat, Last-Event-ID replay)
+   - See `docs/guides/onboarding/AGENT_AUTH_GUIDE.md` for full guide
+
+**Important**: All `/v1/*` routes require authentication. Health/ready checks, challenge/authenticate endpoints, and A2A discovery are public.
 
 ### Request Context
 
@@ -178,6 +192,7 @@ After authentication, `authMiddleware` sets `c.set('ctx', RequestContext)` conta
 - `userId`, `userRole`, `userName`: (for JWT auth)
 - `apiKeyId`, `apiKeyEnvironment`: (for API key auth)
 - `actorId`, `actorName`, `kyaTier`: (for agent auth)
+- `sessionBased`: true (for `sess_*` token auth — Epic 72, for audit differentiation)
 
 All route handlers access this via `c.get('ctx')` to enforce tenant isolation.
 

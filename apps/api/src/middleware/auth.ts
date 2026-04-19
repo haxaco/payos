@@ -25,6 +25,8 @@ export interface RequestContext {
   // For portal token auth (Epic 65)
   portalTokenId?: string;
   portalScopes?: string[];
+  // For session token auth (Epic 72)
+  sessionBased?: boolean;
 }
 
 declare module 'hono' {
@@ -603,6 +605,61 @@ export async function authMiddleware(c: Context, next: Next) {
 
     // Track first API call for beta funnel (fire-and-forget)
     trackFirstEvent(portalToken.tenant_id, 'first_api_call').catch(() => {});
+
+    return next();
+  }
+
+  // ============================================
+  // 5. Session Token Auth (sess_xxx) — Epic 72
+  // Ed25519 challenge-response issued session tokens.
+  // Sets identical RequestContext as agent_* tokens.
+  // ============================================
+  if (token.startsWith('sess_')) {
+    const { validateSession } = await import('../services/agent-auth/session.js');
+    const session = await validateSession(supabase, token);
+
+    if (!session) {
+      await logAuthAttempt(false, 'agent', null, null, ip, userAgent, 'Invalid or expired session token');
+      return c.json({ error: 'Invalid or expired session token' }, 401);
+    }
+
+    // Look up the agent (same query as agent_* auth)
+    const { data: agent, error: agentError } = await (supabase
+      .from('agents') as any)
+      .select('id, name, tenant_id, status, kya_tier, kya_status, parent_account_id, environment')
+      .eq('id', session.agentId)
+      .eq('tenant_id', session.tenantId)
+      .single();
+
+    if (agentError || !agent) {
+      await logAuthAttempt(false, 'agent', session.tenantId, session.agentId, ip, userAgent, 'Session agent not found');
+      return c.json({ error: 'Session agent not found' }, 401);
+    }
+
+    if (agent.status !== 'active') {
+      await logAuthAttempt(false, 'agent', agent.tenant_id, agent.id, ip, userAgent, `Agent status: ${agent.status}`);
+      return c.json({ error: 'Agent is not active', status: agent.status }, 403);
+    }
+
+    logAuthAttempt(true, 'agent', agent.tenant_id, agent.id, ip, userAgent).catch(() => {});
+
+    const ctx: RequestContext = {
+      tenantId: agent.tenant_id,
+      actorType: 'agent',
+      environment: agent.environment || 'test',
+      actorId: agent.id,
+      actorName: agent.name,
+      kyaTier: agent.kya_tier,
+      parentAccountId: agent.parent_account_id,
+      apiKeyEnvironment: agent.environment || 'test',
+      // Epic 72: flag for audit differentiation
+      sessionBased: true,
+    };
+
+    c.set('ctx', ctx);
+    c.set('agentRow', agent);
+
+    trackFirstEvent(agent.tenant_id, 'first_api_call').catch(() => {});
 
     return next();
   }

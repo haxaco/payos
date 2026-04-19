@@ -18,6 +18,8 @@ import { startRequestCounter, stopRequestCounter } from './services/ops/request-
 import { startPartitionManager, stopPartitionManager } from './workers/partition-manager.js';
 import { taskEventBus } from './services/a2a/task-event-bus.js';
 import { startSmartWalletSyncWorker, stopSmartWalletSyncWorker } from './workers/smart-wallet-sync.js';
+import { startConnectionCleanupWorker, stopConnectionCleanupWorker } from './workers/agent-connection-cleanup.js';
+import { startTaskBridge, stopTaskBridge } from './services/agent-auth/task-bridge.js';
 
 // Railway uses PORT, fallback to API_PORT for local dev
 const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
@@ -135,6 +137,12 @@ if (enableBatchSettlement) {
   batchSettlementWorker.start(batchInterval);
 }
 
+// Start agent connection cleanup worker - Epic 72
+startConnectionCleanupWorker(createClient());
+
+// Start TaskEventBus → AgentConnectionBus bridge - Epic 72
+startTaskBridge();
+
 // Start review timeout worker - Epic 69, Story 69.3
 let reviewTimeoutWorker: ReturnType<typeof getReviewTimeoutWorker> | null = null;
 if (enableReviewTimeout) {
@@ -176,6 +184,8 @@ const shutdown = async (signal: string) => {
   await stopRequestCounter();
   stopPartitionManager();
   stopSmartWalletSyncWorker();
+  stopConnectionCleanupWorker();
+  stopTaskBridge();
   process.exit(0);
 };
 
