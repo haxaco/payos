@@ -11,8 +11,39 @@ import { platformAdminMiddleware } from '../middleware/platform-admin.js';
 import { createClient } from '../db/client.js';
 import { taskEventBus } from '../services/a2a/task-event-bus.js';
 
-// UUID regex used by input validators on admin endpoints
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ─── Commentary ring buffer ────────────────────────────────────────────────
+// Comments and milestones from POST /comment + /milestone are normally pushed
+// to the SSE bus (taskEventBus) and consumed by live viewers. But the bus is
+// in-memory and ephemeral — if the viewer's SSE connection drops mid-round
+// (or hadn't subscribed yet), those events are lost forever.
+//
+// This ring buffer holds the last N events so the viewer can recover them at
+// report time via GET /admin/round/comments?since=<iso>. The buffer is bounded
+// (older entries are evicted) and process-local (no replication) — that's
+// fine because reports are generated within seconds of the round ending.
+interface BufferedNarrationEvent {
+  id: number;
+  timestamp: string;
+  kind: 'comment' | 'milestone';
+  text: string;
+  type?: string; // commentType for comments, 'milestone' for milestones
+  agentId?: string;
+  agentName?: string;
+  icon?: string;
+}
+const NARRATION_BUFFER_CAP = 1000;
+const narrationBuffer: BufferedNarrationEvent[] = [];
+let narrationEventId = 0;
+function bufferNarration(ev: Omit<BufferedNarrationEvent, 'id' | 'timestamp'>): void {
+  narrationBuffer.push({
+    id: ++narrationEventId,
+    timestamp: new Date().toISOString(),
+    ...ev,
+  });
+  while (narrationBuffer.length > NARRATION_BUFFER_CAP) narrationBuffer.shift();
+}
 
 const roundViewerRouter = new Hono();
 
@@ -20,7 +51,7 @@ const roundViewerRouter = new Hono();
 roundViewerRouter.use('*', async (c, next) => {
   c.header('Access-Control-Allow-Origin', c.req.header('Origin') || '*');
   c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-  c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Credentials', 'true');
   if (c.req.method === 'OPTIONS') return c.text('', 204);
   return next();
@@ -80,10 +111,10 @@ roundViewerRouter.get('/snapshot', async (c) => {
 
   const [tasksRes, mandatesRes, transfersRes] = await Promise.all([
     supabase.from('a2a_tasks')
-      .select('id, state, agent_id, client_agent_id, metadata, status_message, created_at, updated_at, webhook_status')
+      .select('id, state, agent_id, client_agent_id, metadata, status_message, created_at, updated_at, webhook_status, direction, remote_agent_url')
       .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(200),
     supabase.from('ap2_mandates')
-      .select('mandate_id, status, authorized_amount, agent_id, created_at')
+      .select('mandate_id, status, authorized_amount, used_amount, agent_id, created_at, metadata')
       .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(100),
     supabase.from('transfers')
       .select('id, amount, status, tx_hash, created_at')
@@ -108,12 +139,27 @@ roundViewerRouter.get('/snapshot', async (c) => {
     }
   }
 
+  // Fetch current wallet balances for all transacting agents
+  const agentWallets: Record<string, number> = {};
+  if (agentIdSet.size > 0) {
+    const { data: wallets } = await supabase.from('wallets')
+      .select('managed_by_agent_id, balance')
+      .in('managed_by_agent_id', Array.from(agentIdSet))
+      .eq('status', 'active');
+    for (const w of (wallets || [])) {
+      if (w.managed_by_agent_id) {
+        agentWallets[w.managed_by_agent_id] = (agentWallets[w.managed_by_agent_id] || 0) + Number(w.balance);
+      }
+    }
+  }
+
   return c.json({
     data: {
       tasks: tasksRes.data || [],
       mandates: mandatesRes.data || [],
       transfers: transfersRes.data || [],
       agentNames,
+      agentWallets,
       timestamp: new Date().toISOString(),
     },
   });
@@ -162,6 +208,30 @@ roundViewerRouter.get('/agents', async (c) => {
 });
 
 /**
+ * GET /admin/round/agent/:id
+ * Full agent profile with skills, wallets, on-chain identity — cross-tenant.
+ */
+roundViewerRouter.get('/agent/:id', async (c) => {
+  const id = c.req.param('id');
+  const supabase = createClient();
+
+  const [agentRes, skillsRes, walletsRes, feedbackRes] = await Promise.all([
+    supabase.from('agents').select('id, name, status, kya_tier, kya_status, description, type, erc8004_agent_id, model_family, processing_mode, total_volume, total_transactions, discoverable, created_at').eq('id', id).maybeSingle(),
+    supabase.from('agent_skills').select('skill_id, name, description, base_price, currency, tags, status, total_invocations, metadata').eq('agent_id', id).eq('status', 'active'),
+    supabase.from('wallets').select('id, wallet_address, balance, currency, network, status, name').eq('managed_by_agent_id', id),
+    supabase.from('a2a_task_feedback').select('id, direction, score, satisfaction, comment, created_at').or(`provider_agent_id.eq.${id},caller_agent_id.eq.${id}`).order('created_at', { ascending: false }).limit(10),
+  ]);
+
+  if (!agentRes.data) return c.json({ error: 'Agent not found' }, 404);
+  return c.json({ data: {
+    ...agentRes.data,
+    skills: skillsRes.data || [],
+    wallets: (walletsRes.data || []).map((w: any) => ({ ...w, balance: Number(w.balance) })),
+    recentFeedback: feedbackRes.data || [],
+  }});
+});
+
+/**
  * GET /admin/round/scenarios
  * List all available marketplace scenarios.
  */
@@ -179,6 +249,9 @@ roundViewerRouter.post('/execute', async (c) => {
   const body = await c.req.json();
   const scenarioId = body?.scenario;
   const agentTokens = body?.agentTokens || {};
+  const options = {
+    enableOnChain: body?.enableOnChain === true,
+  };
 
   if (!scenarioId) return c.json({ error: 'Missing scenario' }, 400);
 
@@ -186,13 +259,29 @@ roundViewerRouter.post('/execute', async (c) => {
 
   // Execute async — don't block the response
   const { executeScenario } = await import('../services/scenarios/registry.js');
-  executeScenario(scenarioId, agentTokens, apiBase).then(result => {
+  executeScenario(scenarioId, agentTokens, apiBase, options).then(result => {
     console.log(`[Scenario] ${scenarioId}: ${result.summary}`);
   }).catch(err => {
     console.error(`[Scenario] ${scenarioId} failed:`, err.message);
   });
 
-  return c.json({ data: { scenario: scenarioId, status: 'started' } });
+  return c.json({ data: { scenario: scenarioId, status: 'started', enableOnChain: options.enableOnChain } });
+});
+
+/**
+ * POST /admin/round/stop
+ * Stop a running scenario (or all).
+ */
+roundViewerRouter.post('/stop', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const scenarioId = body?.scenario;
+  const { stopScenario, stopAllScenarios } = await import('../services/scenarios/registry.js');
+  if (scenarioId) {
+    stopScenario(scenarioId);
+  } else {
+    stopAllScenarios();
+  }
+  return c.json({ data: { stopped: scenarioId || 'all' } });
 });
 
 /**

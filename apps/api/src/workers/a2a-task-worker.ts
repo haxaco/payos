@@ -195,8 +195,12 @@ export class A2ATaskWorker {
     // Supabase doesn't support FOR UPDATE SKIP LOCKED directly,
     // so we use an atomic update with a WHERE clause on processor_id IS NULL
     // R1: Exclude tasks in retry backoff (retry_after > now)
+    // Externally-managed tasks (metadata.externallyManaged === true) are owned
+    // by another process — typically the marketplace-sim validation harness or
+    // a polling agent backend — so the worker leaves them alone. They drive
+    // their own lifecycle via the public claim/complete/respond endpoints.
     const now = new Date().toISOString();
-    const { data: candidates } = await supabase
+    const { data: rawCandidates } = await supabase
       .from('a2a_tasks')
       .select('id, tenant_id, agent_id, context_id, state, mandate_id, client_agent_id, metadata')
       .eq('state', 'submitted')
@@ -204,7 +208,15 @@ export class A2ATaskWorker {
       .eq('direction', 'inbound')
       .or(`retry_after.is.null,retry_after.lte.${now}`)
       .order('created_at', { ascending: true })
-      .limit(5);
+      .limit(10);
+
+    // Filter out externally-managed tasks in JS — Supabase's .not() with JSON
+     // path is unreliable across versions. The metadata column is small enough
+    // that pulling 10 candidates and filtering in memory is cheap.
+    const candidates = (rawCandidates || []).filter((row: any) => {
+      const meta = row.metadata as Record<string, unknown> | null;
+      return meta?.externallyManaged !== true;
+    }).slice(0, 5);
 
     if (!candidates?.length) return null;
 
@@ -240,8 +252,14 @@ export class A2ATaskWorker {
         taskEventBus.emitTask(claimed.id, {
           type: 'status',
           taskId: claimed.id,
-          data: { state: 'working', workerId: this.workerId },
+          data: { state: 'working', workerId: this.workerId, clientAgentId: claimed.client_agent_id || null, providerAgentId: claimed.agent_id },
           timestamp: new Date().toISOString(),
+        }, {
+          tenantId: claimed.tenant_id,
+          agentId: claimed.agent_id,
+          actorType: 'worker',
+          fromState: 'submitted',
+          toState: 'working',
         });
         return claimed as ClaimedTask;
       }

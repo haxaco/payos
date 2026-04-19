@@ -901,13 +901,31 @@ export class A2ATaskProcessor {
     outcome: 'completed' | 'failed',
     overrideAmount?: number,
   ): Promise<void> {
-    const { data: mandate } = await this.supabase
+    // Read the mandate. NOTE: previously this destructured only `data` and
+    // silently returned on error, which produced a stranded-active-mandate
+    // bug under transient DB failures (mandate stayed active even though the
+    // task transitioned to terminal). We now surface read errors and let the
+    // caller decide what to do (callers in this file already wrap with
+    // try/catch and log a warning).
+    const { data: mandate, error: readError } = await this.supabase
       .from('ap2_mandates')
       .select('*')
       .eq('mandate_id', mandateId)
       .single();
 
-    if (!mandate || mandate.status !== 'active') return;
+    if (readError) {
+      this.log(taskId, 'error', `resolveSettlementMandate read failed for ${mandateId}: ${readError.message}`);
+      throw new Error(`Mandate read failed for ${mandateId}: ${readError.message}`);
+    }
+    if (!mandate) {
+      this.log(taskId, 'warn', `resolveSettlementMandate: mandate ${mandateId} not found`);
+      throw new Error(`Mandate not found: ${mandateId}`);
+    }
+    // Idempotent: if already in a terminal state, treat as success.
+    if (mandate.status !== 'active') {
+      this.log(taskId, 'info', `resolveSettlementMandate: mandate ${mandateId} already ${mandate.status} — no-op`);
+      return;
+    }
 
     if (outcome === 'completed') {
       const amount = overrideAmount ?? Number(mandate.authorized_amount);
@@ -1057,15 +1075,42 @@ export class A2ATaskProcessor {
       }, { tenantId: this.tenantId, agentId: mandate.metadata?.providerAgentId || '', actorType: 'system' });
 
     } else {
-      // Cancel mandate — no money moves
-      await this.supabase
+      // Cancel mandate — no money moves.
+      // Use a conditional UPDATE (status='active') as an optimistic lock so a
+      // concurrent caller can't double-cancel and so we get a clear signal if
+      // the row was already moved out of 'active' between our read and write.
+      const { data: cancelled, error: cancelError } = await this.supabase
         .from('ap2_mandates')
         .update({
           status: 'cancelled',
           cancelled_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', mandate.id);
+        .eq('id', mandate.id)
+        .eq('status', 'active')
+        .select('id, status')
+        .maybeSingle();
+
+      if (cancelError) {
+        this.log(taskId, 'error', `resolveSettlementMandate cancel failed for ${mandateId}: ${cancelError.message}`);
+        throw new Error(`Mandate cancel failed for ${mandateId}: ${cancelError.message}`);
+      }
+      if (!cancelled) {
+        // Row exists (we read it above) but the conditional update affected
+        // 0 rows — something flipped its status between our read and write.
+        // Re-read and verify it's now in a terminal state.
+        const { data: postRead } = await this.supabase
+          .from('ap2_mandates')
+          .select('status')
+          .eq('id', mandate.id)
+          .single();
+        if (postRead && postRead.status === 'active') {
+          // Still active — UPDATE genuinely failed to apply. Surface as an error.
+          this.log(taskId, 'error', `resolveSettlementMandate: mandate ${mandateId} still active after cancel UPDATE`);
+          throw new Error(`Mandate cancel did not apply: ${mandateId}`);
+        }
+        this.log(taskId, 'info', `resolveSettlementMandate: mandate ${mandateId} concurrently moved to ${postRead?.status} — no-op`);
+      }
 
       // Emit audit event for mandate cancellation
       const { taskEventBus: bus2 } = await import('./task-event-bus.js');

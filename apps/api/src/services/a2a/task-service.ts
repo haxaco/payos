@@ -85,8 +85,11 @@ export class A2ATaskService {
 
     // Propagate skillId from message metadata to task metadata
     // so the worker can create settlement mandates for priced skills.
+    // Also propagate externallyManaged so the worker knows to skip auto-processing
+    // when an external harness (e.g. marketplace-sim) drives the lifecycle.
     const taskMetadata: Record<string, unknown> = {};
     if (message.metadata?.skillId) taskMetadata.skillId = message.metadata.skillId;
+    if (message.metadata?.externallyManaged === true) taskMetadata.externallyManaged = true;
 
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
@@ -266,7 +269,7 @@ export class A2ATaskService {
     taskEventBus.emitTask(taskId, {
       type: 'status',
       taskId,
-      data: { state, statusMessage: statusMessage || null },
+      data: { state, statusMessage: statusMessage || null, clientAgentId: taskRow.client_agent_id || null, providerAgentId: taskRow.agent_id },
       timestamp: new Date().toISOString(),
     }, {
       tenantId: this.tenantId,

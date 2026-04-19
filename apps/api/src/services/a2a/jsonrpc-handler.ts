@@ -287,13 +287,25 @@ async function handleMessageSend(
     enrichedMetadata.skillId = extractedSkillId;
   }
 
+  // Allow externally-managed callers (e.g. marketplace-sim) to opt out of
+  // the background task worker by marking the task externally-managed.
+  // We honor this only when both the metadata flag and an authenticated
+  // caller agent are present, so anonymous traffic can't bypass processing.
+  const externallyManaged =
+    enrichedMetadata.externallyManaged === true && !!callerAgentId;
+  // For externally-managed tasks we also store the row as 'outbound' so
+  // older deployed workers (which filter on direction='inbound') leave it
+  // alone. The semantic meaning is "this task is driven from outside the
+  // platform's auto-processor" — true regardless of which workers see it.
+  const taskDirection: 'inbound' | 'outbound' = externallyManaged ? 'outbound' : 'inbound';
+
   const callbackUrl = configuration?.callbackUrl;
   const callbackSecret = configuration?.callbackSecret;
   const task = await taskService.createTask(
     agentId,
     { role, parts: message.parts, metadata: enrichedMetadata },
     resolvedContextId,
-    'inbound',
+    taskDirection,
     undefined,
     undefined,
     callbackUrl,

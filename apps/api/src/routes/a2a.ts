@@ -906,9 +906,32 @@ a2aRouter.get('/marketplace', async (c) => {
     .eq('status', 'active')
     .limit(200);
 
+  // Batch-fetch cached reputation scores for all active agents
+  const agentIds = (agents || []).map((a: any) => a.id);
+  const repMap: Record<string, { score: number; tier: string; confidence: string }> = {};
+  if (agentIds.length > 0) {
+    const { data: repRows } = await supabase
+      .from('reputation_scores')
+      .select('agent_id, unified_score, unified_tier, confidence')
+      .in('agent_id', agentIds);
+    for (const r of (repRows || [])) {
+      repMap[r.agent_id] = {
+        score: r.unified_score ?? 0,
+        tier: r.unified_tier ?? 'F',
+        confidence: r.confidence ?? 'none',
+      };
+    }
+  }
+
   const agentMap: Record<string, any> = {};
   for (const a of (agents || [])) {
-    agentMap[a.id] = { id: a.id, name: a.name, description: a.description, skills: [] };
+    agentMap[a.id] = {
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      skills: [],
+      reputation: repMap[a.id] || null,
+    };
   }
   for (const s of (skills || [])) {
     if (agentMap[s.agent_id]) {
@@ -1561,11 +1584,23 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
         overrideAmount = settlementAmount;
       }
 
-      // Resolve mandate (skip for disputes — funds stay held in escrow)
-      if (action === 'accept') {
-        await processor.resolveSettlementMandate(taskId, mandateId, 'completed', overrideAmount);
-      } else if (action === 'reject') {
-        await processor.resolveSettlementMandate(taskId, mandateId, 'failed');
+      // Resolve mandate (skip for disputes — funds stay held in escrow).
+      // We propagate any error to the client instead of swallowing it: a
+      // failed cancel that left the mandate stranded was the source of the
+      // long-standing "active mandate after task failed" bug.
+      try {
+        if (action === 'accept') {
+          await processor.resolveSettlementMandate(taskId, mandateId, 'completed', overrideAmount);
+        } else if (action === 'reject') {
+          await processor.resolveSettlementMandate(taskId, mandateId, 'failed');
+        }
+      } catch (mandateErr: any) {
+        console.error(`[A2A respond] mandate resolution failed for task=${taskId} mandate=${mandateId} action=${action}: ${mandateErr.message}`);
+        return c.json({
+          error: `Mandate ${action === 'accept' ? 'settlement' : 'cancellation'} failed: ${mandateErr.message}`,
+          code: 'MANDATE_RESOLUTION_FAILED',
+          mandateId,
+        }, 500);
       }
       // dispute: mandate stays active — handled below
     }
@@ -1622,7 +1657,10 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
         })
         .eq('id', taskId);
 
-      await taskService.updateTaskState(taskId, 'failed', `Disputed by caller: ${comment || 'No reason provided'}`);
+      // Use 'input-required' instead of 'failed' so disputes are NOT counted as
+      // platform failures in the report. The task stays in a resolvable state
+      // until the dispute is resolved via the disputes API.
+      await taskService.updateTaskState(taskId, 'input-required', `Disputed by caller: ${comment || 'No reason provided'}`);
     } else {
       await taskService.updateTaskState(taskId, 'failed', 'Rejected by caller');
     }
@@ -2196,6 +2234,64 @@ a2aRouter.post('/tasks/:taskId/cancel', async (c) => {
   });
 
   return c.json({ data: task });
+});
+
+/**
+ * POST /v1/a2a/tasks/:taskId/claim
+ * Provider claims a submitted task and moves it to 'working'.
+ *
+ * For agents that drive their own task lifecycle without a webhook (polling
+ * agents, in-process agents, validation harnesses) this is the missing
+ * counterpart to /complete. Caller must be the assigned agent and the task
+ * must be in 'submitted'.
+ */
+a2aRouter.post('/tasks/:taskId/claim', async (c) => {
+  const ctx = c.get('ctx');
+  const taskId = c.req.param('taskId');
+
+  if (!UUID_RE.test(taskId)) {
+    return c.json({ error: 'Invalid task ID format' }, 400);
+  }
+
+  const supabase = createClient();
+  const { data: task, error: fetchError } = await supabase
+    .from('a2a_tasks')
+    .select('id, state, tenant_id, agent_id')
+    .eq('id', taskId)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
+    .single();
+
+  if (fetchError || !task) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
+  if ((task as any).state !== 'submitted') {
+    return c.json({
+      error: `Task is in '${(task as any).state}' state. Only 'submitted' tasks can be claimed.`,
+    }, 400);
+  }
+
+  // Authorization: only the assigned agent may claim its own task.
+  if (ctx.actorType === 'agent' && ctx.actorId !== (task as any).agent_id) {
+    return c.json({ error: 'Agent can only claim tasks assigned to them' }, 403);
+  }
+
+  const taskService = new A2ATaskService(supabase, (task as any).tenant_id, getEnv(ctx) as 'test' | 'live');
+  const updated = await taskService.updateTaskState(taskId, 'working', 'Provider claimed task');
+
+  trackOp({
+    tenantId: ctx.tenantId,
+    operation: OpType.A2A_TASK_STATE_CHANGED,
+    subject: `a2a/task/${taskId}`,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
+    correlationId: c.get('requestId'),
+    success: true,
+    data: { fromState: 'submitted', toState: 'working' },
+  });
+
+  return c.json({ data: updated });
 });
 
 /**

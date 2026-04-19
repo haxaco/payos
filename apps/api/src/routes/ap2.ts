@@ -117,12 +117,60 @@ ap2.post('/mandates', async (c) => {
     throw new ValidationError(`settlement_rail must be one of: ${VALID_SETTLEMENT_RAILS.join(', ')}`);
   }
 
+  // ─── Per-agent mandate velocity limit (scales with KYA tier) ───────────
+  // Prevents rapid-fire mandate creation (velocity attacks). The limit scales
+  // with the agent's KYA tier: higher trust = higher throughput.
+  const VELOCITY_BY_TIER: Record<number, number> = { 0: 5, 1: 10, 2: 20, 3: 50 };
+  const baseVelocity = parseInt(process.env.AGENT_MANDATE_VELOCITY_LIMIT || '10', 10);
+  // Look up agent's KYA tier (already fetching agent below, but we need it now)
+  const { data: agentForVelocity } = await supabase
+    .from('agents')
+    .select('kya_tier')
+    .eq('id', agent_id)
+    .maybeSingle();
+  const agentTier = (agentForVelocity as any)?.kya_tier ?? 0;
+  const velocityLimit = VELOCITY_BY_TIER[agentTier] ?? baseVelocity;
+  const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
+  const { count: recentCount } = await supabase
+    .from('ap2_mandates')
+    .select('*', { count: 'exact', head: true })
+    .eq('agent_id', agent_id)
+    .gte('created_at', oneMinAgo);
+  if (typeof recentCount === 'number' && recentCount >= velocityLimit) {
+    return c.json(
+      { error: `Agent mandate velocity limit exceeded: ${recentCount} mandates in the last 60s (max ${velocityLimit}/min for tier ${agentTier}). Slow down.` },
+      429 as any,
+    );
+  }
+
+  // ─── KYA per-transaction amount check at mandate creation ──────────────
+  // Epic 73: Read tier limits from the DB (kya_tier_limits table) instead of
+  // hardcoding. T3 has per_transaction = 0 which means unlimited (no cap).
+  const { data: tierLimits } = await supabase
+    .from('kya_tier_limits')
+    .select('per_transaction')
+    .eq('tier', agentTier)
+    .maybeSingle();
+  const maxPerTx = Number(tierLimits?.per_transaction) || 20; // fallback to T0 default
+  if (maxPerTx > 0 && Number(authorized_amount) > maxPerTx) {
+    return c.json(
+      { error: `Mandate amount $${authorized_amount} exceeds KYA tier ${agentTier} per-transaction limit of $${maxPerTx}. Request a tier upgrade.` },
+      403 as any,
+    );
+  }
+
   // Look up agent name (cross-tenant: agent may be on a different tenant)
   const { data: agent } = await supabase
     .from('agents')
     .select('name, tenant_id')
     .eq('id', agent_id)
     .single();
+
+  // Optional: link the mandate to an existing A2A task. Mirrors what
+  // A2ATaskProcessor does internally — populates a2a_session_id on the
+  // mandate AND writes settlementMandateId onto the task metadata so the
+  // /complete + /respond flow can resolve the mandate without an extra round-trip.
+  const a2a_session_id: string | null = body.a2a_session_id || body.a2aSessionId || null;
 
   const { data: mandate, error } = await supabase
     .from('ap2_mandates')
@@ -142,12 +190,39 @@ ap2.post('/mandates', async (c) => {
       metadata: body.metadata || {},
       funding_source_id,
       settlement_rail,
+      a2a_session_id,
     })
     .select('*')
     .single();
 
   if (error) {
     throw new ValidationError(`Failed to create mandate: ${error.message}`);
+  }
+
+  // Write the mandate ID onto the task so /complete and /respond can find it.
+  // We update only when the caller actually owns / is participating in the task.
+  if (a2a_session_id) {
+    const { data: task } = await supabase
+      .from('a2a_tasks')
+      .select('metadata, agent_id, client_agent_id')
+      .eq('id', a2a_session_id)
+      .eq('environment', getEnv(ctx))
+      .maybeSingle();
+    if (task) {
+      const callerAgentId = ctx.actorType === 'agent' ? ctx.actorId : null;
+      const isParticipant =
+        !callerAgentId ||
+        callerAgentId === (task as any).client_agent_id ||
+        callerAgentId === (task as any).agent_id;
+      if (isParticipant) {
+        await supabase
+          .from('a2a_tasks')
+          .update({
+            metadata: { ...((task as any).metadata || {}), settlementMandateId: mandate_id },
+          })
+          .eq('id', a2a_session_id);
+      }
+    }
   }
 
   trackOp({
