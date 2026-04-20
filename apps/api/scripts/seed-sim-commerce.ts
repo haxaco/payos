@@ -199,6 +199,26 @@ async function seedX402Endpoints() {
       { onConflict: 'id' },
     );
 
+    // Ensure the merchant has a receiving USDC wallet. x402 /pay rejects with
+    // PROVIDER_WALLET_NOT_FOUND if this is missing.
+    const { data: existingWallet } = await sb
+      .from('wallets')
+      .select('id')
+      .eq('owner_account_id', accountId)
+      .eq('currency', 'USDC')
+      .eq('status', 'active')
+      .maybeSingle();
+    if (!existingWallet) {
+      await sb.from('wallets').insert({
+        tenant_id: TENANT_ID,
+        owner_account_id: accountId,
+        wallet_type: 'internal',
+        balance: 0,
+        currency: 'USDC',
+        status: 'active',
+      });
+    }
+
     for (const e of group.endpoints) {
       // Idempotency: delete existing rows matching (tenant, name, path), then insert.
       await sb.from('x402_endpoints').delete()

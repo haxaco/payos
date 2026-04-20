@@ -208,11 +208,11 @@ export async function runMerchantBuy(
           metadata: { simRound: scenarioId, cycle, source: 'marketplace_sim' },
         });
 
-        // Some ACP flows settle at create; if the checkout is already in a
-        // paid/completed state, we're done. Otherwise call /complete.
-        if (created.status !== 'completed') {
+        // /complete uses the UUID id (not our checkout_id string).
+        const createdId = (created as any).id;
+        if (createdId && created.status !== 'completed') {
           try {
-            await client.completeAcpCheckout(checkoutId, { shared_payment_token: 'sim-token-' + randomUUID().slice(0, 8) });
+            await client.completeAcpCheckout(createdId, { shared_payment_token: 'sim-token-' + randomUUID().slice(0, 8) });
           } catch { /* best-effort — some variants auto-settle */ }
         }
 
@@ -229,17 +229,27 @@ export async function runMerchantBuy(
           await adminClient.comment(`merchant_buy (ucp): ${merchant.name} has empty catalog — skipping`, 'alert');
           continue;
         }
-        const item = pick(catalog) as { name: string; unit_price_cents?: number };
+        const item = pick(catalog) as { id?: string; name: string; unit_price_cents?: number };
+        const priceCents = item.unit_price_cents ?? 0;
+        // UCP schema: line-item prices are INTEGER CENTS, not decimal USD.
+        // Top-level currency must be 3 chars — use 'USD' (the accounting
+        // currency); the Sly payment handler maps it to the USDC rail.
         const lineItems = [{
+          id: item.id || `sim-item-${randomUUID().slice(0, 8)}`,
           name: item.name,
           quantity: 1,
-          unit_price: (item.unit_price_cents ?? 0) / 100,
+          unit_price: priceCents,
+          total_price: priceCents,
         }];
-        const total = lineItems[0].unit_price;
+        const totalUsd = priceCents / 100;
 
         const checkout: any = await client.createUcpCheckout({
-          currency: 'USDC',
+          currency: 'USD',
           line_items: lineItems,
+          buyer: {
+            email: `${buyer.agentId.slice(0, 8)}@sim.agents.local`,
+            name: buyer.name,
+          },
           agent_id: buyer.agentId,
           checkout_type: merchant.type === 'hotel' || merchant.type === 'airline' || merchant.type === 'service' ? 'service' : 'physical',
           metadata: {
@@ -267,9 +277,9 @@ export async function runMerchantBuy(
         } catch { /* best-effort */ }
 
         completedTrades++;
-        totalVolume += total;
+        totalVolume += totalUsd;
         await adminClient.milestone(
-          `${PROTOCOL_ICON.ucp} ${buyer.name} booked "${item.name}" at ${merchant.name} ($${total.toFixed(2)})`,
+          `${PROTOCOL_ICON.ucp} ${buyer.name} booked "${item.name}" at ${merchant.name} ($${totalUsd.toFixed(2)})`,
           { agentId: buyer.agentId, agentName: buyer.name, icon: PROTOCOL_ICON.ucp },
         );
       } else if (config.protocol === 'x402') {

@@ -215,7 +215,7 @@ export async function runConcierge(
         const item = pick(catalog) as { id: string; name: string; unit_price_cents?: number; currency?: string };
         merchantCost = (item?.unit_price_cents ?? 0) / 100;
         const checkoutId = `sim_concierge_${cycle}_${randomUUID().slice(0, 8)}`;
-        await clients[concierge.agentId].createAcpCheckout({
+        const created: any = await clients[concierge.agentId].createAcpCheckout({
           checkout_id: checkoutId,
           agent_id: concierge.agentId,
           agent_name: concierge.name,
@@ -226,16 +226,30 @@ export async function runConcierge(
           currency: 'USDC',
           metadata: { simRound: scenarioId, cycle, onBehalfOf: buyer.agentId, concierge: true },
         });
-        try { await clients[concierge.agentId].completeAcpCheckout(checkoutId, { shared_payment_token: 'sim-' + randomUUID().slice(0, 8) }); } catch {}
+        const createdAcpId = created?.id;
+        if (createdAcpId) {
+          try { await clients[concierge.agentId].completeAcpCheckout(createdAcpId, { shared_payment_token: 'sim-' + randomUUID().slice(0, 8) }); } catch {}
+        }
         merchantOutcome = `bought "${item.name}" at ${merchant.name} ($${merchantCost.toFixed(2)})`;
       } else {
         const merchant = pick(merchants);
         const catalog = merchant?.catalog?.products || merchant?.catalog || [];
-        const item = pick(catalog) as { name: string; unit_price_cents?: number };
-        merchantCost = (item?.unit_price_cents ?? 0) / 100;
+        const item = pick(catalog) as { id?: string; name: string; unit_price_cents?: number };
+        const priceCents = item?.unit_price_cents ?? 0;
+        merchantCost = priceCents / 100;
         const checkout: any = await clients[concierge.agentId].createUcpCheckout({
-          currency: 'USDC',
-          line_items: [{ name: item.name, quantity: 1, unit_price: merchantCost }],
+          currency: 'USD',
+          line_items: [{
+            id: item.id || `sim-item-${randomUUID().slice(0, 8)}`,
+            name: item.name,
+            quantity: 1,
+            unit_price: priceCents,
+            total_price: priceCents,
+          }],
+          buyer: {
+            email: `${buyer.agentId.slice(0, 8)}@sim.agents.local`,
+            name: buyer.name,
+          },
           agent_id: concierge.agentId,
           checkout_type: 'service',
           metadata: { simRound: scenarioId, cycle, onBehalfOf: buyer.agentId, concierge: true, merchant_name: merchant.name },
