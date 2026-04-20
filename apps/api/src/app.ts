@@ -26,6 +26,7 @@ import connectedAccountsRouter from './routes/organization/connected-accounts.js
 import organizationOnboardingRouter from './routes/organization/onboarding.js';
 import apiKeysRouter from './routes/api-keys.js';
 import accountsRouter from './routes/accounts.js';
+import { merchantStatsOnAccountsRouter, merchantsAliasRouter } from './routes/merchants.js';
 import agentsRouter, { agentCardRouter } from './routes/agents.js';
 import transfersRouter from './routes/transfers.js';
 import internalTransfersRouter from './routes/internal-transfers.js';
@@ -346,6 +347,8 @@ v1.use('*', idempotencyMiddleware);
 // Mount route handlers
 v1.route('/context', contextRouter);
 v1.route('/accounts', accountsRouter);
+v1.route('/accounts', merchantStatsOnAccountsRouter); // GET /v1/accounts/:id/merchant-stats
+v1.route('/merchants', merchantsAliasRouter);         // Cleaner namespace alias for /v1/ucp/merchants
 v1.route('/agents', agentsRouter);
 // NOTE: Batch transfers must be mounted BEFORE /transfers to avoid route conflicts
 v1.route('/transfers/batch', batchTransfersRouter);
