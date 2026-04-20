@@ -112,6 +112,150 @@ merchantsAliasRouter.get('/', async (c) => {
   });
 });
 
+// ─── Merchant ratings ───────────────────────────────────────────────────
+// Agents write ratings; tenant users read aggregates + recent entries.
+
+const RATING_DIMS = ['navigation', 'price_accuracy', 'response_speed', 'fulfillment', 'error_clarity'] as const;
+type RatingDim = typeof RATING_DIMS[number];
+
+merchantsAliasRouter.post('/:id/ratings', async (c) => {
+  const ctx = c.get('ctx');
+  const accountId = c.req.param('id');
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  // Only agent-authed callers may rate.
+  if (ctx.actorType !== 'agent' || !ctx.actorId) {
+    return c.json({ error: 'Only agents can submit merchant ratings' }, 403);
+  }
+
+  // Accept any subset of the 5 dimensions. Each must be 1..5 if provided.
+  const dims: Partial<Record<RatingDim, number>> = {};
+  for (const k of RATING_DIMS) {
+    const v = body?.[k];
+    if (v === undefined || v === null) continue;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 1 || n > 5) {
+      return c.json({ error: `${k} must be an integer 1-5` }, 400);
+    }
+    dims[k] = n;
+  }
+  if (Object.keys(dims).length === 0) {
+    return c.json({ error: 'At least one rating dimension is required' }, 400);
+  }
+
+  const supabase = createClient();
+
+  // Verify the merchant exists in the caller's tenant.
+  const { data: merchant } = await (supabase.from('accounts') as any)
+    .select('id, subtype, metadata')
+    .eq('id', accountId)
+    .eq('tenant_id', ctx.tenantId)
+    .maybeSingle();
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404);
+  const isMerchant = merchant.subtype === 'merchant' || merchant.metadata?.pos_provider != null;
+  if (!isMerchant) return c.json({ error: 'Account is not a merchant' }, 404);
+
+  // Anti-spam gate: the rater must have actually transacted with this
+  // merchant. Check acp_checkouts + ucp_checkout_sessions + x402 transfers.
+  const [acpCountRes, ucpCountRes, txCountRes] = await Promise.all([
+    (supabase.from('acp_checkouts') as any).select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId)
+      .eq('agent_id', ctx.actorId)
+      .or(`merchant_account_id.eq.${accountId},merchant_id.eq.${merchant.metadata?.invu_merchant_id ?? ''}`),
+    (supabase.from('ucp_checkout_sessions') as any).select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId)
+      .eq('agent_id', ctx.actorId),
+    (supabase.from('transfers') as any).select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId)
+      .eq('to_account_id', accountId),
+  ]);
+  const didTransact = (acpCountRes.count || 0) + (ucpCountRes.count || 0) + (txCountRes.count || 0) > 0;
+  if (!didTransact) {
+    return c.json({ error: 'Agent has not transacted with this merchant' }, 403);
+  }
+
+  const { data: inserted, error } = await (supabase.from('merchant_ratings') as any)
+    .insert({
+      tenant_id: ctx.tenantId,
+      merchant_account_id: accountId,
+      rater_agent_id: ctx.actorId,
+      checkout_id: typeof body.checkout_id === 'string' ? body.checkout_id : null,
+      checkout_protocol: ['acp', 'ucp', 'x402'].includes(body.checkout_protocol) ? body.checkout_protocol : null,
+      ...dims,
+      comment: typeof body.comment === 'string' ? body.comment.slice(0, 2000) : null,
+    })
+    .select('id, created_at')
+    .single();
+
+  if (error) return c.json({ error: `Failed to insert rating: ${error.message}` }, 500);
+  return c.json({ data: inserted }, 201);
+});
+
+merchantsAliasRouter.get('/:id/ratings', async (c) => {
+  const ctx = c.get('ctx');
+  const accountId = c.req.param('id');
+  const limit = Math.max(1, Math.min(100, parseInt(c.req.query('limit') || '20', 10)));
+
+  const supabase = createClient();
+
+  // Verify tenant ownership.
+  const { data: merchant } = await (supabase.from('accounts') as any)
+    .select('id')
+    .eq('id', accountId)
+    .eq('tenant_id', ctx.tenantId)
+    .maybeSingle();
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404);
+
+  const [recentRes, allRes] = await Promise.all([
+    (supabase.from('merchant_ratings') as any)
+      .select('id, rater_agent_id, checkout_id, checkout_protocol, navigation, price_accuracy, response_speed, fulfillment, error_clarity, comment, created_at')
+      .eq('merchant_account_id', accountId)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    // Full set for averaging. For a very heavy merchant this could be large;
+    // 5000 is a reasonable cap for demo scale.
+    (supabase.from('merchant_ratings') as any)
+      .select('navigation, price_accuracy, response_speed, fulfillment, error_clarity')
+      .eq('merchant_account_id', accountId)
+      .limit(5000),
+  ]);
+
+  const recent = (recentRes.data || []) as any[];
+  const all = (allRes.data || []) as any[];
+
+  // Per-dim averages (nulls skipped).
+  const averages: Record<RatingDim, number | null> = {
+    navigation: null, price_accuracy: null, response_speed: null, fulfillment: null, error_clarity: null,
+  };
+  for (const dim of RATING_DIMS) {
+    const vals = all.map((r) => r[dim]).filter((v) => typeof v === 'number') as number[];
+    averages[dim] = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  }
+  const availableDims = (Object.values(averages) as Array<number | null>).filter((v) => v !== null) as number[];
+  const overallAverage = availableDims.length > 0 ? availableDims.reduce((a, b) => a + b, 0) / availableDims.length : null;
+
+  // Attach rater agent names.
+  const raterIds = Array.from(new Set(recent.map((r) => r.rater_agent_id)));
+  const raterNames: Record<string, string> = {};
+  if (raterIds.length > 0) {
+    const { data: agents } = await (supabase.from('agents') as any)
+      .select('id, name')
+      .in('id', raterIds);
+    for (const a of (agents || []) as any[]) raterNames[a.id] = a.name;
+  }
+  const recentWithNames = recent.map((r) => ({ ...r, rater_name: raterNames[r.rater_agent_id] || r.rater_agent_id.slice(0, 8) }));
+
+  return c.json({
+    data: {
+      averages,
+      overallAverage,
+      totalRatings: all.length,
+      recent: recentWithNames,
+    },
+  });
+});
+
 merchantsAliasRouter.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const accountId = c.req.param('id');

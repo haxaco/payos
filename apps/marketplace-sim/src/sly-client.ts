@@ -824,6 +824,44 @@ export class SlyClient {
     }
   }
 
+  /**
+   * Submit a merchant rating (agent-auth). Agent must have transacted with
+   * this merchant — the API enforces it. Fire-and-forget in scenarios
+   * (ratings shouldn't block the cycle), so caller can ignore the promise.
+   *
+   * Dimensions are 1-5 integers; any subset can be provided. At least one
+   * dimension is required.
+   */
+  async rateMerchant(
+    merchantAccountId: string,
+    dims: {
+      navigation?: number;
+      price_accuracy?: number;
+      response_speed?: number;
+      fulfillment?: number;
+      error_clarity?: number;
+    },
+    opts: { checkoutId?: string; checkoutProtocol?: 'acp' | 'ucp' | 'x402'; comment?: string } = {},
+  ): Promise<{ id: string } | null> {
+    try {
+      return await this.request(
+        `/v1/merchants/${encodeURIComponent(merchantAccountId)}/ratings`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ...dims,
+            checkout_id: opts.checkoutId,
+            checkout_protocol: opts.checkoutProtocol,
+            comment: opts.comment,
+          }),
+        },
+        'agent',
+      );
+    } catch {
+      return null;
+    }
+  }
+
   /** One-shot x402 payment — buyer pays for one request against a known endpoint. */
   async payX402(params: {
     endpointId: string;

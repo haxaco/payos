@@ -57,6 +57,31 @@ const PROTOCOL_ICON: Record<Protocol, string> = {
   x402: '\u26a1',      // ⚡
 };
 
+/**
+ * Build an operational rating based on what the agent observed during the
+ * purchase. Only dimensions the agent can honestly rate are populated:
+ *   - navigation: catalog was machine-readable with SKU/price/category (always 5 for seeded catalogs)
+ *   - price_accuracy: checkout price matched the catalog entry (5 when it matched, 3 when mismatched)
+ *   - response_speed: derived from elapsed ms
+ *   - fulfillment: 5 on successful settle, 1 on failure
+ */
+function ratingForPurchase(args: {
+  catalogPrice: number;
+  chargedPrice: number;
+  elapsedMs: number;
+  settled: boolean;
+}): { navigation: number; price_accuracy: number; response_speed: number; fulfillment: number } {
+  const { catalogPrice, chargedPrice, elapsedMs, settled } = args;
+  const priceMatches = Math.abs(catalogPrice - chargedPrice) < 0.01;
+  const speed = elapsedMs < 1000 ? 5 : elapsedMs < 3000 ? 4 : elapsedMs < 10000 ? 3 : 2;
+  return {
+    navigation: 5,
+    price_accuracy: priceMatches ? 5 : 3,
+    response_speed: speed,
+    fulfillment: settled ? 5 : 1,
+  };
+}
+
 export async function runMerchantBuy(
   ctx: ScenarioContext,
   opts: RunMerchantBuyOptions,
@@ -192,6 +217,7 @@ export async function runMerchantBuy(
         const total = items.reduce((s, i) => s + i.total_price, 0);
         const checkoutId = `sim_${scenarioId}_${cycle}_${randomUUID().slice(0, 8)}`;
 
+        const t0 = Date.now();
         const created = await client.createAcpCheckout({
           checkout_id: checkoutId,
           agent_id: buyer.agentId,
@@ -206,11 +232,16 @@ export async function runMerchantBuy(
 
         // /complete uses the UUID id (not our checkout_id string).
         const createdId = (created as any).id;
+        let settled = true;
         if (createdId && created.status !== 'completed') {
           try {
             await client.completeAcpCheckout(createdId, { shared_payment_token: 'sim-token-' + randomUUID().slice(0, 8) });
-          } catch { /* best-effort — some variants auto-settle */ }
+          } catch {
+            // best-effort — some variants auto-settle. Treat throw as unsettled.
+            settled = false;
+          }
         }
+        const elapsedMs = Date.now() - t0;
 
         completedTrades++;
         totalVolume += total;
@@ -228,6 +259,20 @@ export async function runMerchantBuy(
             currency: 'USDC',
           },
         );
+
+        // Operational rating — what the agent observed during this purchase.
+        // Merchant id is the account UUID (merchant.id from listMerchants).
+        // Catalog price = item unit_price (avg for the basket), charged =
+        // the checkout total / basket size. For multi-item baskets this is
+        // a simplification but good enough for "did the math match".
+        const catalogAvg = basket.reduce((s: number, p: any) => s + (p.unit_price_cents ?? 0) / 100, 0) / basket.length;
+        const chargedAvg = total / basket.length;
+        void client.rateMerchant(merchId, ratingForPurchase({
+          catalogPrice: catalogAvg,
+          chargedPrice: chargedAvg,
+          elapsedMs,
+          settled,
+        }), { checkoutId, checkoutProtocol: 'acp' });
       } else if (config.protocol === 'ucp') {
         const merchant = pick(merchants);
         const catalog = merchant?.catalog?.products || merchant?.catalog || [];
@@ -249,6 +294,7 @@ export async function runMerchantBuy(
         }];
         const totalUsd = priceCents / 100;
 
+        const t0 = Date.now();
         const checkout: any = await client.createUcpCheckout({
           currency: 'USD',
           line_items: lineItems,
@@ -278,9 +324,13 @@ export async function runMerchantBuy(
           });
         } catch { /* some flows don't require an instrument */ }
 
+        let settled = true;
         try {
           await client.completeUcpCheckout(checkoutId);
-        } catch { /* best-effort */ }
+        } catch {
+          settled = false;
+        }
+        const elapsedMs = Date.now() - t0;
 
         completedTrades++;
         totalVolume += totalUsd;
@@ -298,6 +348,13 @@ export async function runMerchantBuy(
             currency: 'USDC',
           },
         );
+
+        void client.rateMerchant(merchIdUcp, ratingForPurchase({
+          catalogPrice: totalUsd,
+          chargedPrice: totalUsd,
+          elapsedMs,
+          settled,
+        }), { checkoutId, checkoutProtocol: 'ucp' });
       } else if (config.protocol === 'x402') {
         const endpoint = pick(x402Endpoints);
         const price = Number(endpoint.base_price ?? endpoint.price ?? 0);
@@ -313,16 +370,24 @@ export async function runMerchantBuy(
           continue;
         }
 
-        await client.payX402({
-          endpointId: endpoint.id,
-          requestId: randomUUID(),
-          amount: price,
-          currency: 'USDC',
-          walletId,
-          method: endpoint.method || 'POST',
-          path: endpoint.path,
-          metadata: { simRound: scenarioId, cycle, source: 'marketplace_sim' },
-        });
+        const t0 = Date.now();
+        let settled = true;
+        try {
+          await client.payX402({
+            endpointId: endpoint.id,
+            requestId: randomUUID(),
+            amount: price,
+            currency: 'USDC',
+            walletId,
+            method: endpoint.method || 'POST',
+            path: endpoint.path,
+            metadata: { simRound: scenarioId, cycle, source: 'marketplace_sim' },
+          });
+        } catch (payErr) {
+          settled = false;
+          throw payErr; // propagate so the outer catch classifies suspension etc.
+        }
+        const elapsedMs = Date.now() - t0;
 
         completedTrades++;
         totalVolume += price;
@@ -341,6 +406,18 @@ export async function runMerchantBuy(
             currency: 'USDC',
           },
         );
+
+        // Rate the x402 endpoint's merchant account (the endpoint's owner).
+        // If we don't know the account_id we skip — rating requires it.
+        const endpointAccountId = (endpoint as any).account_id;
+        if (endpointAccountId) {
+          void client.rateMerchant(endpointAccountId, ratingForPurchase({
+            catalogPrice: price,
+            chargedPrice: price,
+            elapsedMs,
+            settled,
+          }), { checkoutProtocol: 'x402' });
+        }
       }
     } catch (e: any) {
       if (!handleSuspension(e, buyer)) {
