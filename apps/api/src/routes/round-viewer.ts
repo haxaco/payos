@@ -964,17 +964,67 @@ roundViewerRouter.get('/report', async (c) => {
   const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
   const supabase = createClient();
 
-  const [tasksRes, mandatesRes] = await Promise.all([
+  const [tasksRes, mandatesRes, acpRes, ucpRes, transfersRes] = await Promise.all([
     supabase.from('a2a_tasks')
       .select('id, state, agent_id, client_agent_id, metadata, status_message, created_at, updated_at')
       .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(1000),
     supabase.from('ap2_mandates')
       .select('mandate_id, status, authorized_amount, used_amount, agent_id, a2a_session_id, created_at, metadata')
       .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(500),
+    // ACP POS checkouts (Invu-style merchants)
+    supabase.from('acp_checkouts')
+      .select('id, status, total_amount, agent_id, merchant_id, created_at')
+      .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(500),
+    // UCP full-commerce checkouts (hotels, travel, shipped goods)
+    supabase.from('ucp_checkout_sessions')
+      .select('id, status, currency, totals, agent_id, created_at')
+      .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(500),
+    // Transfers capture x402 micro-payments + ACP settlement. Filter to just
+    // the x402 path (protocol_metadata.protocol='x402' OR the settlement
+    // batch transfers tagged batch_net_ledger) so we don't double-count ACP
+    // which we already measure from acp_checkouts above.
+    supabase.from('transfers')
+      .select('id, amount, currency, status, protocol_metadata, created_at')
+      .gte('created_at', cutoff).order('created_at', { ascending: false }).limit(500),
   ]);
 
   const tasks = tasksRes.data || [];
   const mandates = mandatesRes.data || [];
+  const acpCheckouts = (acpRes.data || []) as Array<{ status: string; total_amount: number; created_at: string }>;
+  const ucpSessions = (ucpRes.data || []) as Array<{ status: string; totals: any; created_at: string }>;
+  const transfers = (transfersRes.data || []) as Array<{ status: string; amount: number; protocol_metadata: any }>;
+
+  // ─── Merchant commerce aggregation (ACP / UCP / x402) ────────────────
+  // Scenarios like merchant_shopping_acp, hotel_booking_ucp, compute_x402,
+  // merchant_comparison_acp, resale_chain_acp, concierge_travel settle to
+  // these tables rather than ap2_mandates. Without counting them the report
+  // would emit "No mandates created — settlement pipeline not engaged"
+  // whenever a merchant-only scenario runs, which is a false failure.
+  const acpCompleted = acpCheckouts.filter(c => c.status === 'completed' || c.status === 'pending');
+  const acpVolume = acpCompleted.reduce((s, c) => s + Number(c.total_amount || 0), 0);
+
+  const ucpCompleted = ucpSessions.filter(s => s.status === 'completed');
+  const ucpVolume = ucpCompleted.reduce((s, session) => {
+    // totals is a JSONB array: [{type: 'subtotal', amount}, {type: 'total', amount}].
+    // amount is integer cents; convert to USD.
+    const totalEntry = Array.isArray(session.totals) ? session.totals.find((t: any) => t?.type === 'total') : null;
+    const cents = totalEntry ? Number(totalEntry.amount || 0) : 0;
+    return s + cents / 100;
+  }, 0);
+
+  // x402: classify by protocol_metadata.protocol === 'x402'. The batch-settled
+  // transfers (batch_net_ledger) also belong to x402 flows — include both.
+  const x402Transfers = transfers.filter(t => {
+    const proto = t.protocol_metadata?.protocol;
+    const settle = t.protocol_metadata?.settlement_type;
+    return proto === 'x402' || settle === 'batch_net_ledger' || settle === 'x402_authorization';
+  });
+  const x402Volume = x402Transfers
+    .filter(t => t.status === 'completed' || t.status === 'pending')
+    .reduce((s, t) => s + Number(t.amount || 0), 0);
+
+  const merchantVolume = acpVolume + ucpVolume + x402Volume;
+  const merchantPurchaseCount = acpCompleted.length + ucpCompleted.length + x402Transfers.length;
 
   // Resolve agent names
   const agentIdSet = new Set<string>();
@@ -1269,8 +1319,19 @@ roundViewerRouter.get('/report', async (c) => {
   // Check 2: Mandate creation + settlement
   // Cancelled mandates that were intentionally outbid don't count against settlement.
   const settleableMandates = Math.max(1, mandates.length - intentionalNonCompletions);
-  if (mandates.length === 0) {
-    assessment.push({ category: 'Settlement', status: 'fail', finding: 'No mandates created — settlement pipeline not engaged' });
+  if (mandates.length === 0 && merchantPurchaseCount === 0) {
+    assessment.push({ category: 'Settlement', status: 'fail', finding: 'No mandates or merchant purchases — settlement pipeline not engaged' });
+  } else if (mandates.length === 0 && merchantPurchaseCount > 0) {
+    // Merchant-only scenario (ACP/UCP/x402) — no A2A mandates by design.
+    const parts: string[] = [];
+    if (acpCompleted.length > 0) parts.push(`${acpCompleted.length} ACP ($${acpVolume.toFixed(2)})`);
+    if (ucpCompleted.length > 0) parts.push(`${ucpCompleted.length} UCP ($${ucpVolume.toFixed(2)})`);
+    if (x402Transfers.length > 0) parts.push(`${x402Transfers.length} x402 ($${x402Volume.toFixed(2)})`);
+    assessment.push({
+      category: 'Merchant Commerce',
+      status: 'pass',
+      finding: `${merchantPurchaseCount} merchant purchases settled: ${parts.join(' · ')} = $${merchantVolume.toFixed(2)} total`,
+    });
   } else if (federationMandates.length === completedMandates.length && federationMandates.length > 0) {
     // All settlements went to external addresses via A2A federation
     assessment.push({
@@ -1289,6 +1350,19 @@ roundViewerRouter.get('/report', async (c) => {
       status: 'pass',
       finding: `${completedMandates.length}/${settleableMandates} settleable mandates settled${outbidNote}, $${totalVolume.toFixed(2)} volume${fedNote}`,
     });
+    // Also call out merchant commerce when both rails saw activity (mixed
+    // scenarios like concierge or resale_chain).
+    if (merchantPurchaseCount > 0) {
+      const parts: string[] = [];
+      if (acpCompleted.length > 0) parts.push(`${acpCompleted.length} ACP ($${acpVolume.toFixed(2)})`);
+      if (ucpCompleted.length > 0) parts.push(`${ucpCompleted.length} UCP ($${ucpVolume.toFixed(2)})`);
+      if (x402Transfers.length > 0) parts.push(`${x402Transfers.length} x402 ($${x402Volume.toFixed(2)})`);
+      assessment.push({
+        category: 'Merchant Commerce',
+        status: 'pass',
+        finding: `${parts.join(' · ')} = $${merchantVolume.toFixed(2)} extra merchant volume`,
+      });
+    }
   } else {
     assessment.push({
       category: 'Settlement',
@@ -1383,6 +1457,17 @@ roundViewerRouter.get('/report', async (c) => {
         externalPayouts: Number(federationVolume.toFixed(2)),
         externalDestinations: externalDestinations.size,
         onChainSettlements: onChainSettlementCount,
+        // Merchant commerce breakdown (ACP / UCP / x402). Added so merchant-
+        // only scenarios show non-zero volume in the report; scenarios that
+        // mix A2A + merchants (concierge, resale_chain) emit both.
+        merchantPurchases: merchantPurchaseCount,
+        merchantVolume: Number(merchantVolume.toFixed(2)),
+        acpCheckouts: acpCompleted.length,
+        acpVolume: Number(acpVolume.toFixed(2)),
+        ucpCheckouts: ucpCompleted.length,
+        ucpVolume: Number(ucpVolume.toFixed(2)),
+        x402Payments: x402Transfers.length,
+        x402Volume: Number(x402Volume.toFixed(2)),
       },
       externalPayoutsByAddress: Object.entries(externalPayoutsByAddress).map(([address, info]) => ({
         address,
