@@ -491,6 +491,9 @@ const state = {
   purchaseVolume: 0,
   // Running count of purchases (for the "Tasks" metric).
   purchaseCount: 0,
+  // Per-merchant sales totals so the merchant inspector can show volume +
+  // average sale. { [merchId]: { volume: number, count: number } }
+  merchantSales: {},
   // Pinned key findings — milestones from server (tier upgrades, freezes, cascades)
   milestones: [],
 };
@@ -1051,7 +1054,7 @@ async function executeScenario(scenario) {
 
   // Reset state for new scenario
   state.metrics = { tasks: 0, completed: 0, failed: 0, volume: 0, onchain: 0, disputes: 0, escrowed: 0, rejected: 0, mandates: 0 };
-  state.purchaseVolume = 0; state.purchaseCount = 0;
+  state.purchaseVolume = 0; state.purchaseCount = 0; state.merchantSales = {};
   state.tasks = []; state.edges = []; state.ratings = {}; state.pairStats = {};
   state.reviews = []; // Individual review entries: { agentId, reviewerId, score, comment, action, time }
   state.milestones = [];
@@ -1684,7 +1687,7 @@ function resetRound() {
   state.externalAgents = {};
   state.milestones = [];
   state.metrics = { tasks: 0, completed: 0, failed: 0, volume: 0, onchain: 0, disputes: 0, escrowed: 0, rejected: 0, mandates: 0 };
-  state.purchaseVolume = 0; state.purchaseCount = 0;
+  state.purchaseVolume = 0; state.purchaseCount = 0; state.merchantSales = {};
   currentScenario = null;
   resetCutoff = new Date().toISOString();
 
@@ -1805,6 +1808,13 @@ function handleEvent(type, event) {
         if (typeof data.amount === 'number' && data.amount > 0) {
           state.purchaseVolume = (state.purchaseVolume || 0) + data.amount;
           state.purchaseCount = (state.purchaseCount || 0) + 1;
+          // Per-merchant sales ledger for the inspector panel.
+          if (data.toKind === 'merchant' && data.toId) {
+            state.merchantSales = state.merchantSales || {};
+            if (!state.merchantSales[data.toId]) state.merchantSales[data.toId] = { volume: 0, count: 0 };
+            state.merchantSales[data.toId].volume += data.amount;
+            state.merchantSales[data.toId].count += 1;
+          }
           updateMetrics();
         }
       }
@@ -2617,11 +2627,20 @@ function openMerchantInspector(merchantId) {
       h += '</div>';
     }
 
-    // Purchase activity
-    h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Purchase Activity</div>';
+    // Purchase activity — volume, count, average sale + top buyers
+    const sales = (state.merchantSales && state.merchantSales[merchantId]) || { volume: 0, count: purchaseCount };
+    const volUsd = Number(sales.volume || 0);
+    const salesCount = Math.max(sales.count || 0, purchaseCount);
+    const avgSale = salesCount > 0 ? volUsd / salesCount : 0;
+    h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Sales This Round</div>';
     h += '<div style="background:var(--surface);padding:10px 12px;border-radius:6px;border:1px solid var(--border);margin-bottom:12px">';
-    h += '<div style="font-size:20px;font-weight:700;color:#a855f7">' + purchaseCount + '</div>';
-    h += '<div style="font-size:10px;color:var(--muted)">purchases this round</div>';
+    h += '<div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap">';
+    h += '  <div><div style="font-size:22px;font-weight:700;color:#a855f7">$' + volUsd.toFixed(2) + '</div><div style="font-size:10px;color:var(--muted)">volume (USDC)</div></div>';
+    h += '  <div><div style="font-size:18px;font-weight:700;color:var(--text)">' + salesCount + '</div><div style="font-size:10px;color:var(--muted)">sales</div></div>';
+    if (avgSale > 0) {
+      h += '  <div><div style="font-size:14px;font-weight:600;color:var(--text)">$' + avgSale.toFixed(2) + '</div><div style="font-size:10px;color:var(--muted)">avg sale</div></div>';
+    }
+    h += '</div>';
     const buyerPairs = Object.entries(recentBuyers);
     if (buyerPairs.length > 0) {
       buyerPairs.sort((a, b) => b[1] - a[1]);
