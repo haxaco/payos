@@ -198,16 +198,21 @@ export async function runResaleChain(
         },
       );
 
-      // ─── 2. Reseller opens A2A offer to the end-buyer ────────────────
+      // ─── 2. Buyer opens an A2A order with the reseller ──────────────
+      // A2A semantics: client_agent_id = requestor, agent_id = worker. The
+      // reseller is the one doing the fulfillment work, so the task must be
+      // created BY the buyer and assigned TO the reseller — otherwise
+      // claimTask later 403s with "Agent can only claim tasks assigned to
+      // them" (same pattern as concierge.ts: buyer→concierge).
       const resalePrice = Math.round(merchantCost * markup * 100) / 100;
-      const pitch = `Resale offer: "${item.name}" (sourced from ${merchant.name}). Price $${resalePrice.toFixed(2)} (merchant cost $${merchantCost.toFixed(2)}, markup ×${markup.toFixed(2)}). Fulfillment on acceptance.`;
+      const orderPrompt = `Order for "${item.name}" from your resale inventory (sourced from ${merchant.name}). Agreed price $${resalePrice.toFixed(2)} (your cost $${merchantCost.toFixed(2)}, markup ×${markup.toFixed(2)}). Deliver and I'll release payment on acceptance.`;
       let taskId: string;
       try {
-        const created = await clients[reseller.agentId].createTask({
-          agentId: buyer.agentId,
+        const created = await clients[buyer.agentId].createTask({
+          agentId: reseller.agentId,
           message: {
             role: 'user',
-            parts: [{ type: 'text', text: pitch }],
+            parts: [{ type: 'text', text: orderPrompt }],
             metadata: {
               simRound: scenarioId,
               cycle,
@@ -222,9 +227,9 @@ export async function runResaleChain(
         });
         taskId = created.id;
       } catch (e: any) {
-        if (!(handleSuspension(e, reseller) || handleSuspension(e, buyer))) {
+        if (!(handleSuspension(e, buyer) || handleSuspension(e, reseller))) {
           await adminClient.comment(
-            `resale_chain: createTask failed ${reseller.name}→${buyer.name}: ${e.message}`,
+            `resale_chain: createTask failed ${buyer.name}→${reseller.name}: ${e.message}`,
             'alert',
           );
         }
