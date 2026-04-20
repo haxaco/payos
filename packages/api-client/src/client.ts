@@ -315,6 +315,37 @@ export class SlyClient {
       this.get<any>(`/accounts/${id}/merchant-stats`, params),
 
     /**
+     * Product CRUD on a merchant account's catalog. Owner/admin only.
+     */
+    addProduct: (
+      id: string,
+      product: {
+        name: string;
+        category: string;
+        unit_price_cents: number;
+        currency?: string;
+        sku?: string;
+        description?: string;
+      },
+    ) => this.post<any>(`/accounts/${id}/products`, product),
+
+    updateProduct: (
+      id: string,
+      productId: string,
+      patch: Partial<{
+        name: string;
+        category: string;
+        unit_price_cents: number;
+        currency: string;
+        sku: string;
+        description: string;
+      }>,
+    ) => this.patch<any>(`/accounts/${id}/products/${productId}`, patch),
+
+    deleteProduct: (id: string, productId: string) =>
+      this.delete<any>(`/accounts/${id}/products/${productId}`),
+
+    /**
      * Verify account (mock KYC/KYB)
      */
     verify: (id: string, tier: number) =>

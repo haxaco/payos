@@ -17,12 +17,99 @@
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { computeMerchantStats } from '../services/merchant-stats.js';
+import { addProduct, updateProduct, deleteProduct } from '../services/merchant-catalog.js';
 import type { RequestContext } from '../middleware/auth.js';
 
 // Routes attached under /v1/accounts (for the :id/merchant-stats path).
 export const merchantStatsOnAccountsRouter = new Hono<{ Variables: { ctx: RequestContext } }>();
+
+// ─── Product CRUD ──────────────────────────────────────────────────────
+// Operates on accounts.metadata.catalog.products. Owner/admin dashboard
+// users only — agents can't edit merchant catalogs.
+
+const productInputSchema = z.object({
+  name: z.string().min(1).max(255),
+  category: z.string().min(1).max(100),
+  unit_price_cents: z.number().int().min(0),
+  currency: z.string().min(3).max(10).optional(),
+  sku: z.string().max(100).optional(),
+  description: z.string().max(2000).optional(),
+});
+const productPatchSchema = productInputSchema.partial();
+
+function assertOwnerOrAdmin(ctx: RequestContext): { ok: true } | { ok: false; reason: string } {
+  if (ctx.actorType !== 'user') {
+    return { ok: false, reason: 'Only dashboard users can edit merchant catalogs (agents and API keys are rejected)' };
+  }
+  if (ctx.userRole !== 'owner' && ctx.userRole !== 'admin') {
+    return { ok: false, reason: 'Owner or admin role required to edit merchant catalogs' };
+  }
+  return { ok: true };
+}
+
+merchantStatsOnAccountsRouter.post('/:id/products', async (c) => {
+  const ctx = c.get('ctx');
+  const auth = assertOwnerOrAdmin(ctx);
+  if (!auth.ok) return c.json({ error: auth.reason }, 403);
+
+  const accountId = c.req.param('id');
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const parsed = productInputSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid product', details: parsed.error.format() }, 400);
+
+  const supabase = createClient();
+  try {
+    const product = await addProduct(supabase, accountId, ctx.tenantId, parsed.data);
+    return c.json({ data: product }, 201);
+  } catch (e: any) {
+    return c.json({ error: e.message || 'Failed to add product' }, 500);
+  }
+});
+
+merchantStatsOnAccountsRouter.patch('/:id/products/:productId', async (c) => {
+  const ctx = c.get('ctx');
+  const auth = assertOwnerOrAdmin(ctx);
+  if (!auth.ok) return c.json({ error: auth.reason }, 403);
+
+  const accountId = c.req.param('id');
+  const productId = c.req.param('productId');
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const parsed = productPatchSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid patch', details: parsed.error.format() }, 400);
+  if (Object.keys(parsed.data).length === 0) return c.json({ error: 'At least one field required' }, 400);
+
+  const supabase = createClient();
+  try {
+    const updated = await updateProduct(supabase, accountId, ctx.tenantId, productId, parsed.data);
+    if (!updated) return c.json({ error: 'Product not found' }, 404);
+    return c.json({ data: updated });
+  } catch (e: any) {
+    return c.json({ error: e.message || 'Failed to update product' }, 500);
+  }
+});
+
+merchantStatsOnAccountsRouter.delete('/:id/products/:productId', async (c) => {
+  const ctx = c.get('ctx');
+  const auth = assertOwnerOrAdmin(ctx);
+  if (!auth.ok) return c.json({ error: auth.reason }, 403);
+
+  const accountId = c.req.param('id');
+  const productId = c.req.param('productId');
+
+  const supabase = createClient();
+  try {
+    const ok = await deleteProduct(supabase, accountId, ctx.tenantId, productId);
+    if (!ok) return c.json({ error: 'Product not found' }, 404);
+    return c.json({ data: { deleted: true, productId } });
+  } catch (e: any) {
+    return c.json({ error: e.message || 'Failed to delete product' }, 500);
+  }
+});
 
 merchantStatsOnAccountsRouter.get('/:id/merchant-stats', async (c) => {
   const ctx = c.get('ctx');

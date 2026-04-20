@@ -532,52 +532,232 @@ function CommerceTab({ stats }: { stats: any }) {
 }
 
 function CatalogTab({ stats, accountId }: { stats: any; accountId: string }) {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState<{ mode: 'add' } | { mode: 'edit'; product: any } | null>(null);
+  const [deleting, setDeleting] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!stats) return <div className="p-8 text-center text-gray-500">Loading catalog…</div>;
   const products = stats?.merchant?.catalog?.products || [];
+
+  async function saveProduct(form: { name: string; category: string; price: string; sku: string; description: string }) {
+    setSaving(true);
+    setError(null);
+    try {
+      const unit_price_cents = Math.round(parseFloat(form.price) * 100);
+      if (!Number.isFinite(unit_price_cents) || unit_price_cents < 0) {
+        setError('Price must be a number ≥ 0');
+        setSaving(false);
+        return;
+      }
+      const payload = {
+        name: form.name.trim(),
+        category: form.category.trim(),
+        unit_price_cents,
+        sku: form.sku.trim() || undefined,
+        description: form.description.trim() || undefined,
+      };
+      if (editing && editing.mode === 'add') {
+        await api!.accounts.addProduct(accountId, payload);
+      } else if (editing && editing.mode === 'edit') {
+        await api!.accounts.updateProduct(accountId, editing.product.id, payload);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['account', accountId, 'merchant-stats'] });
+      setEditing(null);
+    } catch (e: any) {
+      setError(e?.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteProduct() {
+    if (!deleting) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api!.accounts.deleteProduct(accountId, deleting.id);
+      await queryClient.invalidateQueries({ queryKey: ['account', accountId, 'merchant-stats'] });
+      setDeleting(null);
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-      <div className="p-6 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Catalog ({products.length})</h3>
-        {/* Add Product button — CRUD wired in Phase 5 */}
-        <button
-          disabled
-          title="Product CRUD lands in Phase 5 of the merchant work"
-          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          + Add Product
-        </button>
-      </div>
-      {products.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">No products in the catalog yet.</div>
-      ) : (
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
-            <tr>
-              <th className="px-6 py-3 text-left">Name</th>
-              <th className="px-6 py-3 text-left">Category</th>
-              <th className="px-6 py-3 text-left">SKU</th>
-              <th className="px-6 py-3 text-right">Price</th>
-              <th className="px-6 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((p: any) => (
-              <tr key={p.id} className="border-t border-gray-100 dark:border-gray-900">
-                <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">{p.name}</td>
-                <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{p.category}</td>
-                <td className="px-6 py-3 text-xs font-mono text-gray-400">{p.sku || '—'}</td>
-                <td className="px-6 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                  ${((p.unit_price_cents ?? 0) / 100).toFixed(2)}
-                </td>
-                <td className="px-6 py-3 text-right">
-                  <span className="text-xs text-gray-400">Edit/Delete in Phase 5</span>
-                </td>
+    <>
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div className="p-6 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Catalog ({products.length})</h3>
+          <button
+            onClick={() => setEditing({ mode: 'add' })}
+            className="px-3 py-1.5 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+          >
+            + Add Product
+          </button>
+        </div>
+        {products.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No products in the catalog yet.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
+              <tr>
+                <th className="px-6 py-3 text-left">Name</th>
+                <th className="px-6 py-3 text-left">Category</th>
+                <th className="px-6 py-3 text-left">SKU</th>
+                <th className="px-6 py-3 text-right">Price</th>
+                <th className="px-6 py-3 text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {products.map((p: any) => (
+                <tr key={p.id} className="border-t border-gray-100 dark:border-gray-900">
+                  <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">{p.name}</td>
+                  <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{p.category}</td>
+                  <td className="px-6 py-3 text-xs font-mono text-gray-400">{p.sku || '—'}</td>
+                  <td className="px-6 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                    ${((p.unit_price_cents ?? 0) / 100).toFixed(2)}
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <button
+                      onClick={() => setEditing({ mode: 'edit', product: p })}
+                      className="text-xs font-medium text-blue-600 hover:underline mr-3"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setDeleting(p)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {editing && (
+        <ProductModal
+          initial={editing.mode === 'edit' ? editing.product : null}
+          onSave={saveProduct}
+          onClose={() => { setEditing(null); setError(null); }}
+          saving={saving}
+          error={error}
+        />
       )}
+      {deleting && (
+        <ConfirmModal
+          title={`Delete "${deleting.name}"?`}
+          message="This product will be removed from the merchant's catalog. Existing checkouts referencing it are not affected."
+          confirmLabel="Delete"
+          confirmClass="bg-red-600 hover:bg-red-700"
+          saving={saving}
+          error={error}
+          onConfirm={deleteProduct}
+          onCancel={() => { setDeleting(null); setError(null); }}
+        />
+      )}
+    </>
+  );
+}
+
+function ProductModal({
+  initial,
+  onSave,
+  onClose,
+  saving,
+  error,
+}: {
+  initial: any | null;
+  onSave: (form: { name: string; category: string; price: string; sku: string; description: string }) => void;
+  onClose: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [category, setCategory] = useState(initial?.category ?? '');
+  const [price, setPrice] = useState(initial ? String((initial.unit_price_cents ?? 0) / 100) : '');
+  const [sku, setSku] = useState(initial?.sku ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl max-w-md w-full p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          {initial ? 'Edit Product' : 'Add Product'}
+        </h3>
+        <div className="space-y-3">
+          <Field label="Name *"><input className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Field label="Category *"><input className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
+          <Field label="Price (USDC) *"><input type="number" min="0" step="0.01" className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+          <Field label="SKU"><input className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm" value={sku} onChange={(e) => setSku(e.target.value)} /></Field>
+          <Field label="Description"><textarea rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50">Cancel</button>
+          <button
+            onClick={() => onSave({ name, category, price, sku, description })}
+            disabled={saving || !name.trim() || !category.trim() || !price}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : initial ? 'Save Changes' : 'Add Product'}
+          </button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function ConfirmModal({
+  title,
+  message,
+  confirmLabel,
+  confirmClass,
+  saving,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmClass: string;
+  saving: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl max-w-sm w-full p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{title}</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">{message}</p>
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onCancel} disabled={saving} className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50">Cancel</button>
+          <button onClick={onConfirm} disabled={saving} className={`px-4 py-2 text-sm font-medium rounded-lg text-white ${confirmClass} disabled:opacity-50`}>
+            {saving ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">{label}</span>
+      {children}
+    </label>
   );
 }
 
