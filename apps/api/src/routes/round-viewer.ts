@@ -11,6 +11,7 @@ import { platformAdminMiddleware } from '../middleware/platform-admin.js';
 import { createClient } from '../db/client.js';
 import { taskEventBus } from '../services/a2a/task-event-bus.js';
 import { logAudit } from '../utils/helpers.js';
+import { computeMerchantStats } from '../services/merchant-stats.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -322,6 +323,22 @@ roundViewerRouter.get('/merchant/:id', async (c) => {
       ? rawCatalog.products
       : [];
 
+  // Agent-friendliness — 30-day window is plenty for a sim round and matches
+  // the dashboard default. Fail-soft: if the computation errors, just omit
+  // the friendliness block rather than 500-ing the inspector.
+  let friendliness: any = null;
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const stats = await computeMerchantStats(supabase, {
+      accountId,
+      cutoff,
+      tenantId,
+    });
+    friendliness = stats.friendliness;
+  } catch {
+    /* ignore — inspector still renders without the panel */
+  }
+
   return c.json({
     data: {
       id: account.id,
@@ -335,6 +352,7 @@ roundViewerRouter.get('/merchant/:id', async (c) => {
       pos_provider: account.metadata?.pos_provider,
       catalog: { products },
       endpoints: endpointsRes.data || [],
+      friendliness,
     },
   });
 });
