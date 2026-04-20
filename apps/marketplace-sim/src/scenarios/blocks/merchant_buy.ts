@@ -209,9 +209,17 @@ export async function runMerchantBuy(
 
         completedTrades++;
         totalVolume += total;
+        const merchId = String(merchant.id);
         await adminClient.milestone(
           `${PROTOCOL_ICON.acp} ${buyer.name} bought ${basket.length} items from ${merchant.name} ($${total.toFixed(2)})`,
-          { agentId: buyer.agentId, agentName: buyer.name, icon: PROTOCOL_ICON.acp },
+          {
+            agentId: buyer.agentId,
+            agentName: buyer.name,
+            icon: PROTOCOL_ICON.acp,
+            toId: 'merch:' + merchId,
+            toName: merchant.name,
+            toKind: 'merchant',
+          },
         );
       } else if (config.protocol === 'ucp') {
         const merchant = pick(merchants);
@@ -269,9 +277,17 @@ export async function runMerchantBuy(
 
         completedTrades++;
         totalVolume += totalUsd;
+        const merchIdUcp = String(merchant.id);
         await adminClient.milestone(
           `${PROTOCOL_ICON.ucp} ${buyer.name} booked "${item.name}" at ${merchant.name} ($${totalUsd.toFixed(2)})`,
-          { agentId: buyer.agentId, agentName: buyer.name, icon: PROTOCOL_ICON.ucp },
+          {
+            agentId: buyer.agentId,
+            agentName: buyer.name,
+            icon: PROTOCOL_ICON.ucp,
+            toId: 'merch:' + merchIdUcp,
+            toName: merchant.name,
+            toKind: 'merchant',
+          },
         );
       } else if (config.protocol === 'x402') {
         const endpoint = pick(x402Endpoints);
@@ -301,9 +317,18 @@ export async function runMerchantBuy(
 
         completedTrades++;
         totalVolume += price;
+        // x402 endpoints are owned by merchant accounts; use the endpoint id
+        // as the graph node id so each priced API gets its own square.
         await adminClient.milestone(
           `${PROTOCOL_ICON.x402} ${buyer.name} paid $${price.toFixed(2)} for "${endpoint.name}"`,
-          { agentId: buyer.agentId, agentName: buyer.name, icon: PROTOCOL_ICON.x402 },
+          {
+            agentId: buyer.agentId,
+            agentName: buyer.name,
+            icon: PROTOCOL_ICON.x402,
+            toId: 'merch:x402:' + String(endpoint.id),
+            toName: endpoint.name,
+            toKind: 'merchant',
+          },
         );
       }
     } catch (e: any) {

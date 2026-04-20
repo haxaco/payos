@@ -189,6 +189,7 @@ export async function runConcierge(
       // ─── 3. Concierge executes the merchant purchase ─────────────────
       let merchantOutcome = '';
       let merchantCost = 0;
+      let merchantTarget: { id: string; name: string } | null = null;
       if (config.protocol === 'x402') {
         const ep = pick(x402Endpoints);
         const price = Number(ep.base_price ?? 0);
@@ -209,6 +210,7 @@ export async function runConcierge(
         });
         merchantCost = price;
         merchantOutcome = `paid $${price.toFixed(2)} for "${ep.name}"`;
+        merchantTarget = { id: 'merch:x402:' + String(ep.id), name: ep.name || 'x402 endpoint' };
       } else if (config.protocol === 'acp') {
         const merchant = pick(merchants);
         const catalog = merchant?.catalog?.products || merchant?.catalog || [];
@@ -231,6 +233,7 @@ export async function runConcierge(
           try { await clients[concierge.agentId].completeAcpCheckout(createdAcpId, { shared_payment_token: 'sim-' + randomUUID().slice(0, 8) }); } catch {}
         }
         merchantOutcome = `bought "${item.name}" at ${merchant.name} ($${merchantCost.toFixed(2)})`;
+        merchantTarget = { id: 'merch:' + String(merchant.id), name: merchant.name };
       } else {
         const merchant = pick(merchants);
         const catalog = merchant?.catalog?.products || merchant?.catalog || [];
@@ -260,6 +263,7 @@ export async function runConcierge(
           try { await clients[concierge.agentId].completeUcpCheckout(checkoutId); } catch {}
         }
         merchantOutcome = `booked "${item.name}" at ${merchant.name} ($${merchantCost.toFixed(2)})`;
+        merchantTarget = { id: 'merch:' + String(merchant.id), name: merchant.name };
       }
 
       // ─── 4. Concierge completes the A2A task with the result ─────────
@@ -291,7 +295,14 @@ export async function runConcierge(
 
       await adminClient.milestone(
         `\u{1F9F3} ${buyer.name} used ${concierge.name} as concierge: ${merchantOutcome}`,
-        { agentId: concierge.agentId, agentName: concierge.name, icon: '\u{1F9F3}' },
+        {
+          agentId: concierge.agentId,
+          agentName: concierge.name,
+          icon: '\u{1F9F3}',
+          ...(merchantTarget
+            ? { toId: merchantTarget.id, toName: merchantTarget.name, toKind: 'merchant' as const }
+            : {}),
+        },
       );
     } catch (e: any) {
       const classified = handleSuspension(e, buyer) || handleSuspension(e, concierge);

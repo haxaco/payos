@@ -1760,6 +1760,27 @@ function handleEvent(type, event) {
           agentName: data.agentName || null,
           time: new Date().toISOString(),
         });
+        // Merchant-purchase milestones carry a `toKind==='merchant'` target.
+        // Ensure state.merchants has it, give agentNames[] a friendly label,
+        // and push an edge agentId → toId so the graph renders a purchase arrow.
+        if (data.toKind === 'merchant' && data.agentId && data.toId) {
+          const merchId = data.toId;
+          if (!state.merchants[merchId]) {
+            // Infer protocol from the id prefix. Merchants seeded via UCP use
+            // plain `merch:<uuid>`; x402 merchants are `merch:x402:<uuid>`.
+            const protocol = String(merchId).startsWith('merch:x402:') ? 'x402'
+              : String(data.icon || '').includes('\u{1F3E8}') ? 'ucp' : 'acp';
+            state.merchants[merchId] = {
+              id: merchId,
+              name: data.toName || merchId,
+              protocol,
+              synthetic: true,
+            };
+          }
+          agentNames[merchId] = data.toName || merchId;
+          addEdge(data.agentId, merchId, 'purchase');
+          renderAgents();
+        }
       }
       return;
     }
@@ -2913,18 +2934,34 @@ function drawGraph() {
     if (node.x == null || node._hidden) return;
     var r = node.radius || 20;
 
-    // Fill
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = node.bgColor || themeSurface;
-    ctx.fill();
+    // Shape: merchants are squares (to distinguish passive commerce entities
+    // from active A2A agents/circles). Agents remain circles.
+    if (node.isMerchant) {
+      var side = r * 1.8;
+      var x0 = node.x - side / 2;
+      var y0 = node.y - side / 2;
+      ctx.beginPath();
+      ctx.rect(x0, y0, side, side);
+      ctx.fillStyle = node.bgColor || themeSurface;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = node.borderColor || '#a855f7';
+      ctx.setLineDash([]);
+      ctx.stroke();
+    } else {
+      // Fill
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = node.bgColor || themeSurface;
+      ctx.fill();
 
-    // Border
-    ctx.lineWidth = node.isExternal ? 3 : 2;
-    ctx.strokeStyle = node.borderColor || '#6366f1';
-    if (node.isExternal) ctx.setLineDash([4, 3]); else ctx.setLineDash([]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+      // Border
+      ctx.lineWidth = node.isExternal ? 3 : 2;
+      ctx.strokeStyle = node.borderColor || '#6366f1';
+      if (node.isExternal) ctx.setLineDash([4, 3]); else ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Task count inside circle
     if (node.edgeCount > 0) {
@@ -3167,10 +3204,12 @@ function renderGraph() {
     var rating = state.ratings[id];
     var avgRating = rating ? Math.round(rating.totalScore / rating.count) : -1;
     var isExternal = String(id).startsWith('ext:');
+    var isMerchant = String(id).startsWith('merch:');
     var hasMilestone = (state.milestones || []).some(function (m) { return m.agentId === id; });
 
     var borderColor;
-    if (isExternal) borderColor = '#06b6d4';
+    if (isMerchant) borderColor = '#a855f7';  // purple — matches .dot.merchant
+    else if (isExternal) borderColor = '#06b6d4';
     else if (avgRating >= 80) borderColor = '#22c55e';
     else if (avgRating >= 50) borderColor = '#f59e0b';
     else if (avgRating >= 0) borderColor = '#ef4444';
@@ -3181,7 +3220,8 @@ function renderGraph() {
     var isLight = document.documentElement.classList.contains('light');
     var slyNodeBg = isLight ? '#e5e7eb' : '#2a2a3e';       // gray-200 / dark purple
     var externalNodeBg = isLight ? '#ccfbf1' : '#0e2a33';   // teal-100 / dark teal
-    var nodeBg = isExternal ? externalNodeBg : slyNodeBg;
+    var merchantNodeBg = isLight ? '#f3e8ff' : '#3b1f5c';   // purple-100 / dark purple
+    var nodeBg = isMerchant ? merchantNodeBg : (isExternal ? externalNodeBg : slyNodeBg);
 
     var existing = nodeMap[id];
     if (existing) {
@@ -3191,6 +3231,7 @@ function renderGraph() {
       existing.borderColor = borderColor;
       existing.bgColor = nodeBg;
       existing.isExternal = isExternal;
+      existing.isMerchant = isMerchant;
       existing.hasMilestone = hasMilestone;
       existing.avgRating = avgRating;
       existing.edgeCount = count;
@@ -3204,6 +3245,7 @@ function renderGraph() {
         borderColor: borderColor,
         bgColor: nodeBg,
         isExternal: isExternal,
+        isMerchant: isMerchant,
         hasMilestone: hasMilestone,
         avgRating: avgRating,
         edgeCount: count,
@@ -3219,7 +3261,10 @@ function renderGraph() {
   Object.keys(pairKeys).forEach(function (key) {
     var p = pairKeys[key];
     if (!agentIds.has(p.from) || !agentIds.has(p.to)) return;
-    var edgeColor = edgeStateColorMap[p.state] || edgeStateColorMap.working;
+    // Purchase edges (agent → merchant) get a distinct purple color matching
+    // the merchant nodes, so buy flows pop visually from the A2A task network.
+    var isPurchase = p.state === 'purchase' || String(p.to).startsWith('merch:');
+    var edgeColor = isPurchase ? '#a855f7' : (edgeStateColorMap[p.state] || edgeStateColorMap.working);
     var labelParts = [];
     if (p.count > 1) labelParts.push(p.count + '\u00d7');
     if (p.completed > 0 && p.totalScore > 0) labelParts.push(Math.round(p.totalScore / p.completed) + '/100');
@@ -3230,6 +3275,7 @@ function renderGraph() {
       count: p.count || 1,
       label: labelParts.join(' ') || '',
       pairState: p.state,
+      isPurchase: isPurchase,
     });
   });
   d3Links = updatedLinks;

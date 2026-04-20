@@ -542,7 +542,18 @@ export class SlyClient {
     );
   }
 
-  async milestone(text: string, opts: { agentId?: string; agentName?: string; icon?: string } = {}): Promise<void> {
+  async milestone(
+    text: string,
+    opts: {
+      agentId?: string;
+      agentName?: string;
+      icon?: string;
+      /** Target entity — for purchase milestones the viewer draws an agent→target edge. */
+      toId?: string;
+      toName?: string;
+      toKind?: 'merchant' | 'agent';
+    } = {},
+  ): Promise<void> {
     await this.request(
       '/admin/round/milestone',
       { method: 'POST', body: JSON.stringify({ text, ...opts }) },

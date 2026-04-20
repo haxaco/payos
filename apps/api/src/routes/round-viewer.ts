@@ -406,35 +406,49 @@ roundViewerRouter.get('/comments', async (c) => {
  * and attaches a star to the agent node on the graph). Intended for external
  * scenario runners like @sly/marketplace-sim that narrate rounds via public APIs.
  *
- * Body: { text: string, agentId?: string, agentName?: string, icon?: string }
+ * Body: {
+ *   text: string,
+ *   agentId?: string,
+ *   agentName?: string,
+ *   icon?: string,
+ *   // Purchase-milestone target — for merchant_buy / concierge / resale_chain
+ *   // scenarios. Viewer renders merchants as square graph nodes and draws a
+ *   // purchase edge from agentId → toId so the buy is visible on the graph.
+ *   toId?: string,
+ *   toName?: string,
+ *   toKind?: 'merchant' | 'agent',
+ * }
  */
 roundViewerRouter.post('/milestone', async (c) => {
   const body = await c.req.json();
   if (!body?.text) return c.json({ error: 'Missing text' }, 400);
-  // Persist to the ring buffer so post-run report fetches catch it.
-  bufferNarration({
-    kind: 'milestone',
+  const payload = {
     text: body.text,
-    type: 'milestone',
     agentId: body.agentId,
     agentName: body.agentName,
     icon: body.icon || '\u272e',
+    toId: body.toId,
+    toName: body.toName,
+    toKind: body.toKind,
+  };
+  // Persist to the ring buffer so post-run report fetches catch it.
+  bufferNarration({
+    kind: 'milestone',
+    type: 'milestone',
+    ...payload,
   });
   taskEventBus.emit('task:all', {
     type: 'status' as const,
     taskId: 'milestone:' + Date.now(),
     data: {
       state: 'commentary',
-      text: body.text,
       commentType: 'milestone',
       milestone: true,
-      agentId: body.agentId,
-      agentName: body.agentName,
-      icon: body.icon || '\u272e',
+      ...payload,
     },
     timestamp: new Date().toISOString(),
   });
-  return c.json({ data: { text: body.text, agentId: body.agentId } });
+  return c.json({ data: { text: body.text, agentId: body.agentId, toId: body.toId } });
 });
 
 /**

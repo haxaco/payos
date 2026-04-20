@@ -253,7 +253,14 @@ export async function runResaleChain(
 
       await adminClient.milestone(
         `\u{1F501} ${reseller.name} resold "${item.name}" (${merchant.name} → ${buyer.name}, margin $${(resalePrice - merchantCost).toFixed(2)})`,
-        { agentId: reseller.agentId, agentName: reseller.name, icon: '\u{1F501}' },
+        {
+          agentId: reseller.agentId,
+          agentName: reseller.name,
+          icon: '\u{1F501}',
+          toId: 'merch:' + String(merchant.id),
+          toName: merchant.name,
+          toKind: 'merchant',
+        },
       );
     } catch (e: any) {
       const classified = handleSuspension(e, reseller) || handleSuspension(e, buyer);
