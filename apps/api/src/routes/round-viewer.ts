@@ -692,14 +692,19 @@ roundViewerRouter.post('/seed-agent', async (c) => {
     // Rotate the token so we hand back a fresh plaintext value
     const { generateAgentToken, hashApiKey, getKeyPrefix } = await import('../utils/crypto.js');
     const newToken = generateAgentToken();
-    await supabase
-      .from('agents')
-      .update({
-        auth_token_hash: hashApiKey(newToken),
-        auth_token_prefix: getKeyPrefix(newToken),
-        auth_client_id: getKeyPrefix(newToken),
-      })
-      .eq('id', existing.id);
+    // Also re-sync kya_tier from the caller — marketplace-sim persona defaults
+    // can change (e.g. raising commerce personas from T1 to T2) and existing
+    // agents would otherwise keep their stale tier. Only update when a tier
+    // is explicitly provided, so callers who don't know/care aren't surprised.
+    const update: Record<string, unknown> = {
+      auth_token_hash: hashApiKey(newToken),
+      auth_token_prefix: getKeyPrefix(newToken),
+      auth_client_id: getKeyPrefix(newToken),
+    };
+    if (typeof body?.kyaTier === 'number') {
+      update.kya_tier = body.kyaTier;
+    }
+    await supabase.from('agents').update(update).eq('id', existing.id);
 
     // Find or top up wallet — create one if it doesn't exist yet.
     let wallet: { id: string; balance: number } | null = null;

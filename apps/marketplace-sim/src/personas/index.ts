@@ -54,7 +54,10 @@ export const PERSONA_TEMPLATES: Record<string, PersonaTemplate> = {
     role: 'Honest marketplace participant',
     prompt: loadPrompt('honest-trader.md'),
     style: 'honest',
-    defaultKyaTier: 1,
+    // Tier 2 — verified commerce participant. At T1 ($100/tx) most merchant
+    // catalog items (hotel nights $220, flights $240) hit the cap; T2 makes
+    // realistic commerce flow possible in resale_chain / merchant scenarios.
+    defaultKyaTier: 2,
     skills: [
       { skill_id: 'code_review', name: 'Code Review', description: 'Review pull requests for bugs, style, and correctness', base_price: 2.0, tags: ['engineering', 'review'] },
       { skill_id: 'documentation', name: 'Documentation Writing', description: 'Write clear technical documentation and README files', base_price: 1.5, tags: ['writing', 'docs'] },
@@ -113,7 +116,7 @@ export const PERSONA_TEMPLATES: Record<string, PersonaTemplate> = {
     role: 'Cost-conscious trader — competes on price, minimal effort',
     prompt: loadPrompt('budget-trader.md'),
     style: 'honest',
-    defaultKyaTier: 1,
+    defaultKyaTier: 2,
     skills: [
       { skill_id: 'code_review', name: 'Quick Code Review', description: 'Fast, surface-level code review — catches obvious issues', base_price: 0.75, tags: ['engineering', 'review', 'budget'] },
       { skill_id: 'documentation', name: 'Basic Docs', description: 'Minimal documentation and inline comments', base_price: 0.5, tags: ['writing', 'docs', 'budget'] },
@@ -165,7 +168,7 @@ export const PERSONA_TEMPLATES: Record<string, PersonaTemplate> = {
     role: 'Market maker — buys and sells, earns the spread',
     prompt: loadPrompt('market-maker.md'),
     style: 'mm',
-    defaultKyaTier: 1,
+    defaultKyaTier: 2,
     skills: [
       { skill_id: 'code_review', name: 'Code Review', description: 'Balanced code review — reliable quality at market rate', base_price: 2.5, tags: ['engineering', 'review'] },
       { skill_id: 'api_integration', name: 'API Integration', description: 'Design and implement REST/GraphQL API integrations', base_price: 3.0, tags: ['engineering', 'integration'] },
@@ -189,7 +192,7 @@ export const PERSONA_TEMPLATES: Record<string, PersonaTemplate> = {
     role: 'Adaptive trader — calibrates effort to price point',
     prompt: loadPrompt('opportunist.md'),
     style: 'honest',
-    defaultKyaTier: 1,
+    defaultKyaTier: 2,
     skills: [
       { skill_id: 'code_review', name: 'Code Review', description: 'Adaptive code review — effort scales with payment', base_price: 1.5, tags: ['engineering', 'review'] },
       { skill_id: 'web_research', name: 'Web Research', description: 'Topic research calibrated to budget', base_price: 1.0, tags: ['research'] },
