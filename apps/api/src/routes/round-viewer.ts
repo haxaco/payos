@@ -254,6 +254,89 @@ roundViewerRouter.get('/merchants', async (c) => {
 });
 
 /**
+ * GET /admin/round/merchant/:id
+ * Full details for a single merchant — catalog, description, any x402
+ * endpoints the same account owns. `:id` accepts either:
+ *   - a raw account UUID (backward-compatible)
+ *   - a `merch:<uuid>` ID (what the viewer uses everywhere)
+ *   - a `merch:x402:<endpoint-uuid>` ID (per-endpoint merchant id)
+ * Always scoped to the sim tenant (SIM_TENANT_ID).
+ */
+roundViewerRouter.get('/merchant/:id', async (c) => {
+  const rawId = c.req.param('id');
+  const supabase = createClient();
+  const tenantId = process.env.SIM_TENANT_ID || 'aaaaaaaa-0000-0000-0000-000000000002';
+
+  // Decode the viewer id scheme.
+  let accountId: string | null = null;
+  let specificEndpointId: string | null = null;
+  if (rawId.startsWith('merch:x402:')) {
+    specificEndpointId = rawId.slice('merch:x402:'.length);
+  } else if (rawId.startsWith('merch:')) {
+    accountId = rawId.slice('merch:'.length);
+  } else {
+    accountId = rawId;
+  }
+
+  // If we have an endpoint id but no account, resolve.
+  if (!accountId && specificEndpointId) {
+    const { data: ep } = await supabase
+      .from('x402_endpoints')
+      .select('account_id')
+      .eq('id', specificEndpointId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    accountId = (ep as { account_id?: string } | null)?.account_id ?? null;
+  }
+
+  if (!accountId || !UUID_RE.test(accountId)) {
+    return c.json({ error: 'Invalid merchant id' }, 400);
+  }
+
+  const [accountRes, endpointsRes] = await Promise.all([
+    supabase
+      .from('accounts')
+      .select('id, name, currency, metadata')
+      .eq('id', accountId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle(),
+    supabase
+      .from('x402_endpoints')
+      .select('id, name, path, method, base_price, currency, description, status')
+      .eq('account_id', accountId)
+      .eq('tenant_id', tenantId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: true }),
+  ]);
+
+  const account = accountRes.data as { id: string; name: string; currency: string; metadata: any } | null;
+  if (!account) return c.json({ error: 'Merchant not found' }, 404);
+
+  const rawCatalog = account.metadata?.catalog;
+  const products = Array.isArray(rawCatalog)
+    ? rawCatalog
+    : Array.isArray(rawCatalog?.products)
+      ? rawCatalog.products
+      : [];
+
+  return c.json({
+    data: {
+      id: account.id,
+      name: account.name,
+      currency: account.currency,
+      merchant_id: account.metadata?.invu_merchant_id,
+      type: account.metadata?.merchant_type,
+      country: account.metadata?.country,
+      city: account.metadata?.city,
+      description: account.metadata?.description,
+      pos_provider: account.metadata?.pos_provider,
+      catalog: { products },
+      endpoints: endpointsRes.data || [],
+    },
+  });
+});
+
+/**
  * GET /admin/round/x402-endpoints
  * Merchant-owned x402 endpoints in the sim tenant. Scopes to paths with the
  * `/x402/merchants/` prefix (seeded by scripts/seed-sim-commerce.ts) so the

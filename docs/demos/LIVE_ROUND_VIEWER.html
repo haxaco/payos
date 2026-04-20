@@ -249,6 +249,17 @@ canvas{width:100%;height:100%}
   <div id="agentInspectorBody" style="padding:16px 20px"><div style="color:var(--muted)">Click an agent node on the graph...</div></div>
 </div>
 
+<!-- Merchant inspector slide-over -->
+<div id="merchantInspectorBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:996" onclick="closeMerchantInspector()"></div>
+<div id="merchantInspectorPanel" style="display:none;position:fixed;top:0;right:0;bottom:0;width:460px;max-width:95vw;background:var(--bg);border-left:1px solid #a855f7;box-shadow:-8px 0 32px rgba(168,85,247,0.25);z-index:997;overflow-y:auto;font-family:inherit">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+    <div style="font-size:14px;font-weight:700;color:#a855f7">Merchant Inspector</div>
+    <span style="flex:1"></span>
+    <button onclick="closeMerchantInspector()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:14px">&times;</button>
+  </div>
+  <div id="merchantInspectorBody" style="padding:16px 20px"><div style="color:var(--muted)">Click a merchant to inspect...</div></div>
+</div>
+
 <!-- Task detail slide-over panel -->
 <div id="taskDetailBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:998" onclick="closeTaskDetail()"></div>
 <div id="taskDetailPanel" style="display:none;position:fixed;top:0;right:0;bottom:0;width:560px;max-width:95vw;background:var(--bg);border-left:1px solid var(--border);box-shadow:-8px 0 32px rgba(0,0,0,0.4);z-index:999;overflow-y:auto;font-family:inherit">
@@ -1995,7 +2006,7 @@ function renderAgents() {
         const detail = proto === 'x402'
           ? ('$' + (m.price || 0).toFixed(2) + ' · ' + (m.method || 'POST'))
           : ((m.type || 'merchant') + (m.city ? ' · ' + m.city : '') + (m.productCount ? ' · ' + m.productCount + ' items' : ''));
-        h += '<div class="agent-card merchant">';
+        h += '<div class="agent-card merchant" style="cursor:pointer" onclick="openMerchantInspector(\'' + String(m.id).replace(/'/g, "\\'") + '\')" title="Click to inspect">';
         h += '<div class="name"><div class="dot merchant"></div><span class="protocol">' + meta.icon + '</span> ' + escapeHtml(m.name) + '</div>';
         h += '<div class="stats">' + detail + '</div>';
         h += '</div>';
@@ -2542,6 +2553,137 @@ async function killSwitchAgent(agentId) {
 function closeAgentInspector() {
   document.getElementById('agentInspectorBackdrop').style.display = 'none';
   document.getElementById('agentInspectorPanel').style.display = 'none';
+}
+
+// ─── Merchant Inspector ────────────────────────────────────────────────────
+// Merchants are passive commerce entities (accounts with metadata.pos_provider
+// OR x402 endpoints). state.merchants already holds a summary record per
+// synthetic id; when the operator opens the inspector we pull the full record
+// from /admin/round/merchant/:id for catalog + linked endpoints + recent
+// purchase stats from state.edges.
+function openMerchantInspector(merchantId) {
+  document.getElementById('merchantInspectorBackdrop').style.display = 'block';
+  document.getElementById('merchantInspectorPanel').style.display = 'block';
+  const body = document.getElementById('merchantInspectorBody');
+  body.innerHTML = '<div style="color:var(--muted)">Loading merchant…</div>';
+
+  const m = state.merchants[merchantId] || { id: merchantId, name: agentNames[merchantId] || merchantId, protocol: 'unknown' };
+  const protoMeta = {
+    acp: { icon: '\u{1F354}', label: 'ACP (POS)', color: '#f97316' },
+    ucp: { icon: '\u{1F3E8}', label: 'UCP (Commerce)', color: '#3b82f6' },
+    x402: { icon: '\u26a1', label: 'x402 (Priced API)', color: '#eab308' },
+    unknown: { icon: '?', label: 'Unknown', color: 'var(--muted)' },
+  };
+  const meta = protoMeta[m.protocol] || protoMeta.unknown;
+
+  // Recent purchase activity — count edges where target matches this merchant.
+  const purchaseEdges = state.edges.filter(e => e.to === merchantId);
+  const purchaseCount = purchaseEdges.length;
+  const recentBuyers = {};
+  purchaseEdges.slice(-20).forEach(e => {
+    const n = agentNames[e.from] || e.from.slice(0, 8);
+    recentBuyers[n] = (recentBuyers[n] || 0) + 1;
+  });
+
+  // Build the modal body synchronously from what's in state; async-fetch
+  // extra detail (catalog / endpoints) below and merge it in when it arrives.
+  function renderBody(detail) {
+    const full = detail || {};
+    const catalog = (full.catalog && full.catalog.products) || (m.catalog && m.catalog.products) || [];
+    const endpoints = full.endpoints || [];
+    let h = '';
+
+    // Header + protocol badge + SHOP badge
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">';
+    h += '<div style="font-size:18px;font-weight:700;color:var(--text);flex:1">' + escapeHtml(m.name) + '</div>';
+    h += '<span style="background:' + meta.color + ';color:white;padding:4px 10px;border-radius:4px;font-size:10px;font-weight:700">' + meta.icon + ' ' + meta.label + '</span>';
+    h += '</div>';
+    h += '<div style="font-size:10px;color:var(--muted);margin-bottom:12px;font-family:monospace">' + merchantId + '</div>';
+
+    // Meta row (type / city / country / price for x402)
+    const metaLines = [];
+    if (m.type) metaLines.push(['Type', m.type]);
+    if (m.city || m.country) metaLines.push(['Location', [m.city, m.country].filter(Boolean).join(', ')]);
+    if (m.protocol === 'x402') {
+      if (typeof m.price === 'number') metaLines.push(['Price', '$' + m.price.toFixed(4) + ' USDC per call']);
+      if (m.method && m.path) metaLines.push(['Endpoint', m.method + ' ' + m.path]);
+    }
+    if (full.description) metaLines.push(['Description', full.description]);
+    if (metaLines.length > 0) {
+      h += '<div style="background:var(--surface);padding:10px 12px;border-radius:6px;border:1px solid var(--border);margin-bottom:12px;font-size:11px">';
+      for (const [k, v] of metaLines) {
+        h += '<div style="display:flex;margin-bottom:4px"><div style="width:90px;color:var(--muted)">' + escapeHtml(k) + '</div><div style="flex:1;color:var(--text)">' + escapeHtml(String(v)) + '</div></div>';
+      }
+      h += '</div>';
+    }
+
+    // Purchase activity
+    h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Purchase Activity</div>';
+    h += '<div style="background:var(--surface);padding:10px 12px;border-radius:6px;border:1px solid var(--border);margin-bottom:12px">';
+    h += '<div style="font-size:20px;font-weight:700;color:#a855f7">' + purchaseCount + '</div>';
+    h += '<div style="font-size:10px;color:var(--muted)">purchases this round</div>';
+    const buyerPairs = Object.entries(recentBuyers);
+    if (buyerPairs.length > 0) {
+      buyerPairs.sort((a, b) => b[1] - a[1]);
+      h += '<div style="margin-top:8px;font-size:10px;color:var(--muted)">Top buyers:</div>';
+      h += '<div style="margin-top:3px">';
+      for (const [name, n] of buyerPairs.slice(0, 6)) {
+        h += '<span style="display:inline-block;margin:2px 6px 2px 0;padding:2px 6px;background:rgba(168,85,247,0.15);border-radius:3px;font-size:10px">' + escapeHtml(name) + ' ×' + n + '</span>';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+
+    // Catalog (ACP/UCP) — list products
+    if (catalog.length > 0) {
+      h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Catalog (' + catalog.length + ' items)</div>';
+      h += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:12px;max-height:260px;overflow-y:auto">';
+      for (const p of catalog) {
+        const price = typeof p.unit_price_cents === 'number' ? '$' + (p.unit_price_cents / 100).toFixed(2) : '';
+        h += '<div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:baseline">';
+        h += '<div style="flex:1;min-width:0">';
+        h += '<div style="font-size:12px;color:var(--text);font-weight:500">' + escapeHtml(p.name || p.id || 'item') + '</div>';
+        if (p.category) h += '<div style="font-size:10px;color:var(--muted)">' + escapeHtml(p.category) + '</div>';
+        h += '</div>';
+        h += '<div style="font-size:11px;color:' + meta.color + ';font-weight:600">' + escapeHtml(price) + '</div>';
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
+    // x402 endpoints linked to the same account
+    if (endpoints.length > 0) {
+      h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">x402 Endpoints (' + endpoints.length + ')</div>';
+      h += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:12px">';
+      for (const ep of endpoints) {
+        h += '<div style="padding:8px 12px;border-bottom:1px solid var(--border)">';
+        h += '<div style="font-size:12px;color:var(--text);font-weight:500">\u26a1 ' + escapeHtml(ep.name) + '</div>';
+        h += '<div style="font-size:10px;color:var(--muted);font-family:monospace">' + escapeHtml(ep.method || 'POST') + ' ' + escapeHtml(ep.path || '') + '</div>';
+        if (typeof ep.base_price === 'number') {
+          h += '<div style="font-size:10px;color:' + meta.color + '">$' + ep.base_price.toFixed(4) + ' ' + escapeHtml(ep.currency || 'USDC') + ' per call</div>';
+        }
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
+    body.innerHTML = h;
+  }
+
+  // Render once with summary data, then fetch details.
+  renderBody(null);
+  const url = document.getElementById('apiUrl').value.trim();
+  const key = document.getElementById('apiKey').value.trim();
+  const headers = { 'Authorization': 'Bearer ' + key };
+  fetch(url + '/admin/round/merchant/' + encodeURIComponent(merchantId), { headers })
+    .then(r => r.ok ? r.json() : null)
+    .then(j => { if (j && j.data) renderBody(j.data); })
+    .catch(() => {});
+}
+
+function closeMerchantInspector() {
+  document.getElementById('merchantInspectorBackdrop').style.display = 'none';
+  document.getElementById('merchantInspectorPanel').style.display = 'none';
 }
 
 function escapeHtml(s) {
@@ -3163,8 +3305,13 @@ function setupCanvasInteraction() {
       var dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < (n.radius || 20) + 4 && dist < bestDist) { best = n; bestDist = dist; }
     });
-    if (best && typeof openAgentInspector === 'function') {
-      openAgentInspector(best.id);
+    if (best) {
+      // Merchant squares open the merchant inspector; agent circles open the agent inspector.
+      if (best.isMerchant && typeof openMerchantInspector === 'function') {
+        openMerchantInspector(best.id);
+      } else if (typeof openAgentInspector === 'function') {
+        openAgentInspector(best.id);
+      }
     }
   });
 }
