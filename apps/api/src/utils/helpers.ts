@@ -12,10 +12,12 @@ export function mapAccountFromDb(row: any): Account {
     id: row.id,
     tenantId: row.tenant_id,
     type: row.type,
+    subtype: row.subtype || null,
     name: row.name,
     email: row.email || undefined,
     country: row.country || undefined,
     currency: currency,
+    metadata: row.metadata || {},
     // Flat verification fields for client compatibility
     verificationTier: row.verification_tier || 0,
     verificationStatus: row.verification_status || 'unverified',

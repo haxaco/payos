@@ -308,6 +308,13 @@ export class SlyClient {
       this.get<PaginatedResponse<Stream>>(`/accounts/${id}/streams`, params),
 
     /**
+     * Merchant analytics — volume, top buyers, recent sales, x402 endpoints.
+     * 404s when the account exists but isn't a merchant (subtype !== 'merchant').
+     */
+    getMerchantStats: (id: string, params?: { minutes?: number }) =>
+      this.get<any>(`/accounts/${id}/merchant-stats`, params),
+
+    /**
      * Verify account (mock KYC/KYB)
      */
     verify: (id: string, tier: number) =>
@@ -1917,6 +1924,44 @@ export class SlyClient {
       getScopes: () =>
         this.get<{ data: { scope: string; description: string }[] }>('/ucp/identity/scopes'),
     },
+  };
+
+  /**
+   * Merchant-facing helpers — cleaner namespace than /ucp/merchants.
+   * List + detail mirror /ucp/merchants (backed by the same handlers);
+   * ratings are new (Phase 3 of the merchant work).
+   */
+  merchants = {
+    list: (params?: { type?: string; country?: string; search?: string; limit?: number; page?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.type) q.set('type', params.type);
+      if (params?.country) q.set('country', params.country);
+      if (params?.search) q.set('search', params.search);
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.page) q.set('page', String(params.page));
+      return this.get<any>(`/merchants${q.toString() ? `?${q.toString()}` : ''}`);
+    },
+    get: (id: string) => this.get<any>(`/merchants/${id}`),
+    /** List recent ratings + per-dim averages for a merchant. Tenant-auth. */
+    listRatings: (accountId: string, params?: { limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.limit) q.set('limit', String(params.limit));
+      return this.get<any>(`/merchants/${accountId}/ratings${q.toString() ? `?${q.toString()}` : ''}`);
+    },
+    /** Submit a merchant rating. Agent-auth — will 403 for tenant/API-key callers. */
+    submitRating: (
+      accountId: string,
+      body: {
+        navigation?: number;
+        price_accuracy?: number;
+        response_speed?: number;
+        fulfillment?: number;
+        error_clarity?: number;
+        checkout_id?: string;
+        checkout_protocol?: 'acp' | 'ucp' | 'x402';
+        comment?: string;
+      },
+    ) => this.post<any>(`/merchants/${accountId}/ratings`, body),
   };
 }
 

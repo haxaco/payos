@@ -29,10 +29,20 @@ export interface PaginationParams {
 export type AccountType = 'person' | 'business' | 'agent';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'suspended';
 
+/**
+ * Secondary classification for a business account. Present only when
+ * type='business' — 'merchant' means the account has a product catalog and
+ * can be transacted with via ACP/UCP/x402. null for people, agents, or
+ * unlabeled businesses.
+ */
+export type AccountSubtype = 'merchant' | 'standard';
+
 export interface Account {
   id: string;
   tenantId: string;
   type: AccountType;
+  /** Secondary classification (only set for type='business'). */
+  subtype?: AccountSubtype | null;
   name: string;
   email?: string;
   country?: string;
@@ -44,6 +54,8 @@ export interface Account {
   balanceAvailable: number;
   balanceInStreams: number;
   balanceBuffer: number;
+  /** Arbitrary tenant-owned JSON. Merchants use this for pos_provider, catalog, rating, etc. */
+  metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }

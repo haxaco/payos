@@ -20,6 +20,11 @@ import {
   CheckCircle,
   XCircle,
   Pause,
+  Store,
+  Package,
+  TrendingUp,
+  Zap,
+  Star,
 } from 'lucide-react';
 import type { Account, Agent, Stream, LedgerEntry, Transfer, Wallet as WalletData } from '@sly/api-client';
 import { useLocale } from '@/lib/locale';
@@ -28,7 +33,7 @@ import { formatCurrency } from '@sly/ui';
 import { ScreeningTab } from '@/components/dashboard/account-360/screening-tab';
 import { toast } from 'sonner';
 
-type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'wallets' | 'screening';
+type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'wallets' | 'screening' | 'commerce' | 'catalog' | 'endpoints' | 'ratings';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -50,6 +55,23 @@ export default function AccountDetailPage() {
 
   // Handle double-nested response
   const account = (accountResponse as any)?.data || accountResponse;
+  const isMerchant = account?.subtype === 'merchant';
+
+  // Merchant stats — only fetch when the account IS a merchant and user is
+  // on a merchant-specific tab. Graceful 404 when account exists but isn't a merchant.
+  const { data: merchantStatsResp } = useQuery({
+    queryKey: ['account', accountId, 'merchant-stats'],
+    queryFn: () => api!.accounts.getMerchantStats(accountId, { minutes: 43200 }), // 30 days
+    enabled: !!api && isMerchant && (activeTab === 'commerce' || activeTab === 'catalog' || activeTab === 'endpoints' || activeTab === 'overview'),
+  });
+  const merchantStats = (merchantStatsResp as any)?.data;
+
+  const { data: merchantRatingsResp } = useQuery({
+    queryKey: ['account', accountId, 'merchant-ratings'],
+    queryFn: () => api!.merchants.listRatings(accountId, { limit: 20 }),
+    enabled: !!api && isMerchant && (activeTab === 'ratings' || activeTab === 'overview'),
+  });
+  const merchantRatings = (merchantRatingsResp as any)?.data;
 
   // Agents tab: Only load when tab is active
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
@@ -198,9 +220,19 @@ export default function AccountDetailPage() {
   const agentsCount = agents.length;
   const walletsCount = (walletsCountData as any)?.pagination?.total || wallets.length;
 
+  const catalogCount = merchantStats?.merchant?.catalog?.products?.length ?? 0;
+  const endpointsCount = merchantStats?.endpoints?.length ?? 0;
+  const ratingsCount = merchantRatings?.totalRatings ?? 0;
+
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Wallet },
     { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactionsCount },
+    ...(isMerchant ? [
+      { id: 'commerce' as TabType, label: 'Commerce', icon: TrendingUp },
+      { id: 'catalog' as TabType, label: 'Catalog', icon: Package, count: catalogCount },
+      ...(endpointsCount > 0 ? [{ id: 'endpoints' as TabType, label: 'Endpoints', icon: Zap, count: endpointsCount }] : []),
+      { id: 'ratings' as TabType, label: 'Ratings', icon: Star, count: ratingsCount },
+    ] : []),
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
     { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agentsCount },
     { id: 'wallets' as TabType, label: 'Wallets', icon: Wallet, count: walletsCount },
@@ -243,7 +275,23 @@ export default function AccountDetailPage() {
             )}
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{account.name}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{account.name}</h1>
+              {isMerchant && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                  <Store className="h-3.5 w-3.5" />
+                  Merchant
+                  {account.metadata?.merchant_type && ` · ${account.metadata.merchant_type}`}
+                </span>
+              )}
+              {isMerchant && merchantRatings?.overallAverage != null && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                  {Number(merchantRatings.overallAverage).toFixed(1)}
+                  <span className="text-amber-500 dark:text-amber-500/70">/5</span>
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1">
                 <Mail className="h-4 w-4" />
@@ -406,6 +454,253 @@ export default function AccountDetailPage() {
       {activeTab === 'screening' && (
         <ScreeningTab />
       )}
+      {activeTab === 'commerce' && isMerchant && (
+        <CommerceTab stats={merchantStats} />
+      )}
+      {activeTab === 'catalog' && isMerchant && (
+        <CatalogTab stats={merchantStats} accountId={accountId} />
+      )}
+      {activeTab === 'endpoints' && isMerchant && (
+        <EndpointsTab stats={merchantStats} />
+      )}
+      {activeTab === 'ratings' && isMerchant && (
+        <RatingsTab ratings={merchantRatings} />
+      )}
+    </div>
+  );
+}
+
+// ─── Merchant tab components ──────────────────────────────────────────────
+
+function CommerceTab({ stats }: { stats: any }) {
+  if (!stats) return <div className="p-8 text-center text-gray-500">Loading commerce data…</div>;
+  const { volume, counts, topBuyers, recentSales } = stats;
+  return (
+    <div className="space-y-6">
+      {/* Volume breakdown */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatCard label="Total Volume (30d)" value={`$${Number(volume.total).toFixed(2)}`} sub={`${counts.total} purchases`} />
+        <StatCard label="ACP" icon="🍔" value={`$${Number(volume.acp).toFixed(2)}`} sub={`${counts.acp} checkouts`} />
+        <StatCard label="UCP" icon="🏨" value={`$${Number(volume.ucp).toFixed(2)}`} sub={`${counts.ucp} orders`} />
+        <StatCard label="x402" icon="⚡" value={`$${Number(volume.x402).toFixed(2)}`} sub={`${counts.x402} API calls`} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top buyers */}
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Top Buyers</h3>
+          {topBuyers?.length ? (
+            <div className="space-y-2">
+              {topBuyers.map((b: any) => (
+                <div key={b.agentId} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-900 last:border-0">
+                  <span className="font-medium text-gray-900 dark:text-white">{b.name}</span>
+                  <span className="flex items-center gap-3 text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">{b.sales} sales</span>
+                    <span className="font-semibold text-purple-600 dark:text-purple-400">${Number(b.spend).toFixed(2)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-gray-500 dark:text-gray-400 text-sm">No purchases yet in this window.</div>
+          )}
+        </div>
+
+        {/* Recent sales */}
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Sales</h3>
+          {recentSales?.length ? (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {recentSales.map((s: any, i: number) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-900 last:border-0 text-sm">
+                  <span className="flex items-center gap-2">
+                    <span>{s.protocol === 'acp' ? '🍔' : s.protocol === 'ucp' ? '🏨' : '⚡'}</span>
+                    <span className="text-gray-900 dark:text-white">{s.buyerName || '—'}</span>
+                    <span className="text-gray-500 dark:text-gray-400 truncate max-w-[180px]">{s.item}</span>
+                  </span>
+                  <span className="font-medium text-purple-600 dark:text-purple-400">${Number(s.amount).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-gray-500 dark:text-gray-400 text-sm">No sales yet.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatalogTab({ stats, accountId }: { stats: any; accountId: string }) {
+  if (!stats) return <div className="p-8 text-center text-gray-500">Loading catalog…</div>;
+  const products = stats?.merchant?.catalog?.products || [];
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div className="p-6 flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Catalog ({products.length})</h3>
+        {/* Add Product button — CRUD wired in Phase 5 */}
+        <button
+          disabled
+          title="Product CRUD lands in Phase 5 of the merchant work"
+          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          + Add Product
+        </button>
+      </div>
+      {products.length === 0 ? (
+        <div className="p-8 text-center text-gray-500">No products in the catalog yet.</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
+            <tr>
+              <th className="px-6 py-3 text-left">Name</th>
+              <th className="px-6 py-3 text-left">Category</th>
+              <th className="px-6 py-3 text-left">SKU</th>
+              <th className="px-6 py-3 text-right">Price</th>
+              <th className="px-6 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p: any) => (
+              <tr key={p.id} className="border-t border-gray-100 dark:border-gray-900">
+                <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">{p.name}</td>
+                <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{p.category}</td>
+                <td className="px-6 py-3 text-xs font-mono text-gray-400">{p.sku || '—'}</td>
+                <td className="px-6 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                  ${((p.unit_price_cents ?? 0) / 100).toFixed(2)}
+                </td>
+                <td className="px-6 py-3 text-right">
+                  <span className="text-xs text-gray-400">Edit/Delete in Phase 5</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function EndpointsTab({ stats }: { stats: any }) {
+  const endpoints = stats?.endpoints || [];
+  if (endpoints.length === 0) return <div className="p-8 text-center text-gray-500">This merchant has no x402 endpoints.</div>;
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div className="p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">x402 Endpoints ({endpoints.length})</h3>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
+          <tr>
+            <th className="px-6 py-3 text-left">Name</th>
+            <th className="px-6 py-3 text-left">Method / Path</th>
+            <th className="px-6 py-3 text-right">Price</th>
+            <th className="px-6 py-3 text-right">Calls</th>
+            <th className="px-6 py-3 text-right">Revenue</th>
+            <th className="px-6 py-3 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {endpoints.map((e: any) => (
+            <tr key={e.id} className="border-t border-gray-100 dark:border-gray-900">
+              <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">
+                <Link href={`/dashboard/agentic-payments/x402/endpoints/${e.id}`} className="text-amber-600 dark:text-amber-400 hover:underline">
+                  ⚡ {e.name}
+                </Link>
+              </td>
+              <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{e.method} {e.path}</td>
+              <td className="px-6 py-3 text-right">${Number(e.base_price).toFixed(4)}</td>
+              <td className="px-6 py-3 text-right">{e.total_calls ?? 0}</td>
+              <td className="px-6 py-3 text-right font-semibold">${Number(e.total_revenue).toFixed(2)}</td>
+              <td className="px-6 py-3">
+                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                  e.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800'
+                }`}>{e.status}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RatingsTab({ ratings }: { ratings: any }) {
+  if (!ratings) return <div className="p-8 text-center text-gray-500">Loading ratings…</div>;
+  const dims = [
+    { key: 'navigation', label: 'Catalog Navigation', help: 'Machine-readable catalog, clear SKUs/prices' },
+    { key: 'price_accuracy', label: 'Price Accuracy', help: 'Catalog price matches checkout price' },
+    { key: 'response_speed', label: 'Response Speed', help: 'Checkout completes quickly' },
+    { key: 'fulfillment', label: 'Fulfillment', help: 'Orders settle successfully' },
+    { key: 'error_clarity', label: 'Error Clarity', help: 'Failures include actionable detail' },
+  ];
+  return (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-baseline gap-4 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Agent Ratings</h3>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{ratings.totalRatings || 0} total</span>
+          {ratings.overallAverage != null && (
+            <span className="ml-auto text-2xl font-bold text-amber-500">★ {Number(ratings.overallAverage).toFixed(2)}<span className="text-sm text-gray-400">/5</span></span>
+          )}
+        </div>
+        <div className="space-y-3">
+          {dims.map(d => {
+            const avg = ratings.averages?.[d.key];
+            const pct = typeof avg === 'number' ? (avg / 5) * 100 : 0;
+            return (
+              <div key={d.key}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span title={d.help} className="text-gray-700 dark:text-gray-300">{d.label}</span>
+                  <span className="font-mono text-gray-600 dark:text-gray-400">
+                    {typeof avg === 'number' ? `${avg.toFixed(2)}/5` : '—'}
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-100 dark:bg-gray-900 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {ratings.recent?.length > 0 && (
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Ratings</h3>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {ratings.recent.map((r: any) => (
+              <div key={r.id} className="pb-3 border-b border-gray-100 dark:border-gray-900 last:border-0">
+                <div className="flex items-center justify-between mb-1 text-sm">
+                  <span className="font-medium text-gray-900 dark:text-white">{r.rater_name}</span>
+                  <span className="text-xs text-gray-400">{new Date(r.created_at).toLocaleString()}</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  {dims.map(d => r[d.key] != null && (
+                    <span key={d.key} title={d.label}>{d.label.split(' ')[0]}: <span className="font-semibold text-gray-700 dark:text-gray-300">{r[d.key]}/5</span></span>
+                  ))}
+                  {r.checkout_protocol && (
+                    <span className="ml-auto uppercase text-xs bg-gray-100 dark:bg-gray-900 px-2 py-0.5 rounded">{r.checkout_protocol}</span>
+                  )}
+                </div>
+                {r.comment && <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 italic">{r.comment}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, icon }: { label: string; value: string; sub?: string; icon?: string }) {
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
+        {icon && <span className="text-base">{icon}</span>}
+        {label}
+      </div>
+      <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+      {sub && <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{sub}</div>}
     </div>
   );
 }
