@@ -225,22 +225,30 @@ roundViewerRouter.get('/merchants', async (c) => {
     .not('metadata->pos_provider', 'is', null)
     .limit(100);
 
-  const merchants = (accounts || []).map((a: any) => ({
-    id: a.id,
-    name: a.name,
-    merchant_id: a.metadata?.invu_merchant_id,
-    type: a.metadata?.merchant_type,
-    country: a.metadata?.country,
-    city: a.metadata?.city,
-    currency: a.currency,
-    description: a.metadata?.description,
-    pos_provider: a.metadata?.pos_provider,
-    product_count: Array.isArray(a.metadata?.catalog)
-      ? a.metadata.catalog.length
-      : Array.isArray(a.metadata?.catalog?.products)
-        ? a.metadata.catalog.products.length
-        : 0,
-  }));
+  const merchants = (accounts || []).map((a: any) => {
+    const rawCatalog = a.metadata?.catalog;
+    // Catalog is stored either as a bare array of products or as an object
+    // { total_products, categories, products: [...] }. Normalize to the object
+    // shape so sim scenario blocks can do `catalog.products` uniformly.
+    const products = Array.isArray(rawCatalog)
+      ? rawCatalog
+      : Array.isArray(rawCatalog?.products)
+        ? rawCatalog.products
+        : [];
+    return {
+      id: a.id,
+      name: a.name,
+      merchant_id: a.metadata?.invu_merchant_id,
+      type: a.metadata?.merchant_type,
+      country: a.metadata?.country,
+      city: a.metadata?.city,
+      currency: a.currency,
+      description: a.metadata?.description,
+      pos_provider: a.metadata?.pos_provider,
+      product_count: products.length,
+      catalog: { products },
+    };
+  });
 
   return c.json({ data: merchants });
 });

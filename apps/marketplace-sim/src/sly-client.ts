@@ -616,7 +616,13 @@ export class SlyClient {
 
   // ─── Merchants & Commerce (ACP / UCP / x402) ───────────────────────────
 
-  /** List UCP-discoverable merchants (POS merchants with `metadata.pos_provider`). */
+  /**
+   * List UCP-discoverable merchants (POS merchants with `metadata.pos_provider`).
+   *
+   * Uses the admin-round proxy rather than /v1/ucp/merchants because admin
+   * auth doesn't set ctx.tenantId, which the /v1 handler requires for its
+   * per-tenant filter. The proxy is sim-tenant-scoped via SIM_TENANT_ID.
+   */
   async listMerchants(
     filters: { type?: string; country?: string; search?: string; limit?: number } = {},
   ): Promise<Array<{
@@ -631,26 +637,41 @@ export class SlyClient {
     pos_provider?: string;
     catalog?: { total_products: number; categories: string[]; products: any[] };
   }>> {
-    const q = new URLSearchParams();
-    if (filters.type) q.set('type', filters.type);
-    if (filters.country) q.set('country', filters.country);
-    if (filters.search) q.set('search', filters.search);
-    q.set('limit', String(filters.limit ?? 50));
-    const path = `/v1/ucp/merchants?${q.toString()}`;
     try {
-      const res: any = await this.request(path, { method: 'GET' }, 'admin');
-      return Array.isArray(res) ? res : (res?.merchants ?? res?.data ?? []);
+      const res: any = await this.request('/admin/round/merchants', { method: 'GET' }, 'admin');
+      const raw: any[] = Array.isArray(res) ? res : (res?.merchants ?? res?.data ?? []);
+      // The admin proxy doesn't apply /v1's filters server-side — do it here.
+      let list = raw;
+      if (filters.type) list = list.filter((m) => m.type === filters.type);
+      if (filters.country) list = list.filter((m) => m.country === filters.country);
+      if (filters.search) {
+        const needle = filters.search.toLowerCase();
+        list = list.filter((m) => (m.name || '').toLowerCase().includes(needle));
+      }
+      return filters.limit ? list.slice(0, filters.limit) : list;
     } catch {
       return [];
     }
   }
 
-  /** Get a single merchant with full catalog. */
+  /**
+   * Get a single merchant with full catalog. The admin proxy returns summary
+   * records without the catalog, so we join a direct query via /v1 fallback
+   * only when we already know the tenant (agent auth). Otherwise return the
+   * summary and let the caller inspect metadata.
+   */
   async getMerchant(merchantId: string): Promise<any | null> {
     try {
+      // Try the full-detail /v1 endpoint first (requires tenant context).
       return await this.request(`/v1/ucp/merchants/${encodeURIComponent(merchantId)}`, { method: 'GET' }, 'admin');
     } catch {
-      return null;
+      // Fallback: find it in the admin-proxy list.
+      try {
+        const list = await this.listMerchants({ limit: 100 });
+        return list.find((m) => m.id === merchantId || m.merchant_id === merchantId) || null;
+      } catch {
+        return null;
+      }
     }
   }
 
@@ -729,7 +750,12 @@ export class SlyClient {
     );
   }
 
-  /** List x402 priced endpoints (compute/content/API catalog). */
+  /**
+   * List x402 priced endpoints (compute/content/API catalog).
+   *
+   * Same story as listMerchants — admin auth needs the /admin/round/* proxy
+   * because /v1/x402/endpoints filters by ctx.tenantId.
+   */
   async listX402Endpoints(
     filters: { status?: string; accountId?: string; limit?: number } = {},
   ): Promise<Array<{
@@ -737,17 +763,19 @@ export class SlyClient {
     name?: string;
     path?: string;
     method?: string;
+    base_price?: number;
     price?: number;
     currency?: string;
     account_id?: string;
+    status?: string;
   }>> {
-    const q = new URLSearchParams();
-    if (filters.status) q.set('status', filters.status);
-    if (filters.accountId) q.set('account_id', filters.accountId);
-    q.set('limit', String(filters.limit ?? 50));
     try {
-      const res: any = await this.request(`/v1/x402/endpoints?${q.toString()}`, { method: 'GET' }, 'admin');
-      return Array.isArray(res) ? res : (res?.endpoints ?? res?.data ?? []);
+      const res: any = await this.request('/admin/round/x402-endpoints', { method: 'GET' }, 'admin');
+      const raw: any[] = Array.isArray(res) ? res : (res?.endpoints ?? res?.data ?? []);
+      let list = raw;
+      if (filters.status) list = list.filter((e) => e.status === filters.status);
+      if (filters.accountId) list = list.filter((e) => e.account_id === filters.accountId);
+      return filters.limit ? list.slice(0, filters.limit) : list;
     } catch {
       return [];
     }
