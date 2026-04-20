@@ -12,7 +12,7 @@ import { getAP2MandateService } from '../services/ap2/index.js';
 import { ValidationError } from '../middleware/error.js';
 import { randomUUID } from 'crypto';
 import { createClient } from '../db/client.js';
-import { sanitizeSearchInput, getEnv } from '../utils/helpers.js';
+import { sanitizeSearchInput, getEnv, assertAgentActive } from '../utils/helpers.js';
 import { LimitService } from '../services/limits.js';
 import { 
   createSpendingPolicyService,
@@ -88,6 +88,14 @@ ap2.post('/mandates', async (c) => {
   }
   if (!mandate_type || !['intent', 'cart', 'payment'].includes(mandate_type)) {
     throw new ValidationError('mandate_type must be one of: intent, cart, payment');
+  }
+
+  // Kill-switch enforcement: both parties must be active.
+  //   - Provider (agent_id / payee): a suspended agent can't be paid.
+  //   - Caller (buyer, when agent-authed): a suspended agent can't initiate.
+  await assertAgentActive(supabase, agent_id, 'provider');
+  if (ctx.actorType === 'agent' && ctx.actorId && ctx.actorId !== agent_id) {
+    await assertAgentActive(supabase, ctx.actorId, 'buyer');
   }
 
   // Validate optional funding_source_id

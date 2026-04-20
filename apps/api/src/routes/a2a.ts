@@ -21,7 +21,7 @@ import { taskEventBus } from '../services/a2a/task-event-bus.js';
 import type { A2AJsonRpcRequest, A2APart, A2ATaskState, A2AConfiguration } from '../services/a2a/types.js';
 import { normalizeParts, DEFAULT_ACCEPTANCE_POLICY } from '../services/a2a/types.js';
 import { verifyApiKey } from '../utils/crypto.js';
-import { getEnv } from '../utils/helpers.js';
+import { getEnv, assertAgentActive } from '../utils/helpers.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
 import { validateProcessingConfig } from '../utils/processing-config-validation.js';
@@ -1193,6 +1193,9 @@ a2aRouter.post('/tasks', async (c) => {
     return c.json({ error: 'agentId is required for local tasks' }, 400);
   }
 
+  // Kill-switch enforcement: target agent must be active.
+  await assertAgentActive(supabase, body.agentId, 'target');
+
   const task = await taskService.createTask(
     body.agentId,
     body.message,
@@ -1509,6 +1512,13 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     return c.json({
       error: `Task is in '${task.state}' state. Only 'input-required' tasks can be responded to.`,
     }, 400);
+  }
+
+  // Kill-switch enforcement: a suspended agent can't respond. Applies only to
+  // agent-authed callers — user/API-key callers may still respond on behalf
+  // of a tenant.
+  if (ctx.actorType === 'agent' && ctx.actorId) {
+    await assertAgentActive(supabase, ctx.actorId, 'responding');
   }
 
   const taskTenantId = task.tenant_id as string;
@@ -1935,6 +1945,11 @@ a2aRouter.post('/tasks/:taskId/rate', async (c) => {
   const supabase = createClient();
   const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
+  // Kill-switch enforcement: suspended agents can't rate.
+  if (ctx.actorType === 'agent' && ctx.actorId) {
+    await assertAgentActive(supabase, ctx.actorId, 'rating');
+  }
+
   // Verify task exists — no tenant filter since A2A tasks are cross-tenant
   const { data: task } = await (supabase.from('a2a_tasks') as any)
     .select('id, agent_id, client_agent_id, state, tenant_id')
@@ -2276,6 +2291,9 @@ a2aRouter.post('/tasks/:taskId/claim', async (c) => {
   if (ctx.actorType === 'agent' && ctx.actorId !== (task as any).agent_id) {
     return c.json({ error: 'Agent can only claim tasks assigned to them' }, 403);
   }
+
+  // Kill-switch enforcement: assigned agent must be active.
+  await assertAgentActive(supabase, (task as any).agent_id, 'assigned');
 
   const taskService = new A2ATaskService(supabase, (task as any).tenant_id, getEnv(ctx) as 'test' | 'live');
   const updated = await taskService.updateTaskState(taskId, 'working', 'Provider claimed task');

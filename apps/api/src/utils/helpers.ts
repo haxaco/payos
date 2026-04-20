@@ -311,6 +311,51 @@ export async function logAudit(
 }
 
 // ============================================
+// AGENT-STATUS GUARD
+// ============================================
+
+/**
+ * Reject the request if the agent is not in the 'active' state.
+ *
+ * Callers: any endpoint that lets an agent take an action or receive new
+ * work — task creation, claim, respond, rate, mandate creation, etc.
+ *
+ * The kill switch sets `agents.status = 'suspended'`. Before this helper was
+ * added, only POST /a2a/:agentId checked status — so killed buyers kept
+ * posting /v1/a2a/tasks + /v1/ap2/mandates and killed sellers receiving work
+ * via /v1/a2a/tasks never got -32004. Point-of-enforcement fix.
+ *
+ * The throw uses ForbiddenError (HTTP 403) with the literal "suspended" in
+ * the message so the marketplace-sim's isSuspensionError() classifier picks
+ * it up and adds the agent to its killed set.
+ *
+ * @param agentId  Agent UUID to check
+ * @param role     Optional role hint ("buyer", "seller", "target", …) for
+ *                 clearer error messages
+ * @returns        The agent row (id, status, tenant_id, environment) so
+ *                 callers that already need it can skip a second fetch
+ */
+export async function assertAgentActive(
+  supabase: SupabaseClient,
+  agentId: string,
+  role?: string,
+): Promise<{ id: string; status: string; tenant_id: string; environment: string }> {
+  const { ForbiddenError, NotFoundError } = await import('../middleware/error.js');
+  const { data, error } = await supabase
+    .from('agents')
+    .select('id, status, tenant_id, environment')
+    .eq('id', agentId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to check agent status: ${error.message}`);
+  if (!data) throw new NotFoundError('Agent', agentId);
+  if ((data as any).status !== 'active') {
+    const label = role ? `${role} agent` : 'Agent';
+    throw new ForbiddenError(`${label} is suspended (status=${(data as any).status}). Cannot proceed.`);
+  }
+  return data as any;
+}
+
+// ============================================
 // VALIDATION HELPERS
 // ============================================
 

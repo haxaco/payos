@@ -59,6 +59,12 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
 .agent-card .name .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
 .agent-card .name .dot.frozen{background:var(--red);animation:pulse 1s infinite}
 .agent-card .name .dot.suspended{background:var(--yellow)}
+/* Entity-type indicators (Sly=default green, External A2A=cyan, Merchant=purple) */
+.agent-card .name .dot.external{background:var(--cyan)}
+.agent-card .name .dot.merchant{background:#a855f7}
+.agent-card.merchant{border-left:2px solid #a855f7}
+/* Protocol icon next to merchant name (🍔 ACP / 🏨 UCP / ⚡ x402) */
+.agent-card .name .protocol{font-size:10px;opacity:0.85}
 .agent-card .stats{font-size:10px;color:var(--muted);margin-top:2px}
 .agent-card .rating{font-size:10px;margin-top:1px}
 .agent-card .rating .score{font-weight:600}
@@ -2167,13 +2173,18 @@ async function openAgentInspector(agentId) {
   const isSuspended = agent?.status === 'suspended' || agent?.status === 'frozen';
 
   let h = '';
+  // Prominent suspended banner — top of the modal so the kill is unmistakable.
+  if (isSuspended) {
+    h += '<div style="background:var(--red);color:white;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-weight:600;display:flex;align-items:center;gap:8px">';
+    h += '<span style="font-size:16px">⚡</span>';
+    h += '<span>AGENT SUSPENDED — kill switch activated. All new task/mandate/rating requests will be refused by the API.</span>';
+    h += '</div>';
+  }
   // Header + Kill Switch
   h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">';
   h += '<div style="font-size:16px;font-weight:700;color:var(--text);flex:1">' + escapeHtml(name) + '</div>';
   if (!isSuspended) {
     h += '<button onclick="killSwitchAgent(\'' + agentId + '\')" style="background:var(--red);color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit" title="Suspend this agent immediately">⚡ Kill Switch</button>';
-  } else {
-    h += '<span style="background:var(--red);color:white;padding:4px 10px;border-radius:4px;font-size:10px">SUSPENDED</span>';
   }
   h += '</div>';
   h += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">' + agentId + '</div>';
@@ -2390,11 +2401,13 @@ async function killSwitchAgent(agentId) {
       const suffix = cancelled > 0 ? ' (' + cancelled + ' pending cancelled)' : '';
       addFeedItem('warning', 'KILL SWITCH: ' + displayName + ' suspended' + suffix, 'rejected');
       // Optimistically flip local status so the list-card dot goes yellow now,
-      // without waiting for the next /admin/round/agents poll.
+      // without waiting for the next /admin/round/agents poll. Mutate BOTH the
+      // sidebar pool AND any cached copy the modal might have re-read, then
+      // re-render both surfaces.
       const ag = state.agents.find(a => a.id === agentId);
       if (ag) ag.status = 'suspended';
       renderAgents();
-      openAgentInspector(agentId); // Refresh the panel
+      openAgentInspector(agentId); // Re-render the modal with the SUSPENDED banner.
     } else {
       const j = await r.json().catch(() => ({}));
       addFeedItem('error', 'Kill switch failed: ' + (j.error || r.status), 'rejected');
@@ -3082,13 +3095,20 @@ function renderGraph() {
     else if (avgRating >= 0) borderColor = '#ef4444';
     else borderColor = '#6366f1';
 
+    // Theme-aware node backgrounds. Light mode needs light fills so the dark
+    // label text (var(--text) → near-black in light) remains readable.
+    var isLight = document.documentElement.classList.contains('light');
+    var slyNodeBg = isLight ? '#e5e7eb' : '#2a2a3e';       // gray-200 / dark purple
+    var externalNodeBg = isLight ? '#ccfbf1' : '#0e2a33';   // teal-100 / dark teal
+    var nodeBg = isExternal ? externalNodeBg : slyNodeBg;
+
     var existing = nodeMap[id];
     if (existing) {
       // Update properties, keep position
       existing.label = name.length > 14 ? name.slice(0, 12) + '..' : name;
       existing.radius = radius;
       existing.borderColor = borderColor;
-      existing.bgColor = isExternal ? '#0e2a33' : '#2a2a3e';
+      existing.bgColor = nodeBg;
       existing.isExternal = isExternal;
       existing.hasMilestone = hasMilestone;
       existing.avgRating = avgRating;
@@ -3101,7 +3121,7 @@ function renderGraph() {
         label: name.length > 14 ? name.slice(0, 12) + '..' : name,
         radius: radius,
         borderColor: borderColor,
-        bgColor: isExternal ? '#0e2a33' : '#2a2a3e',
+        bgColor: nodeBg,
         isExternal: isExternal,
         hasMilestone: hasMilestone,
         avgRating: avgRating,
@@ -3213,6 +3233,10 @@ function toggleTheme() {
   if (btn) btn.textContent = isLight ? '🌙' : '☀';
   // Persist preference
   try { localStorage.setItem('sly-viewer-theme', isLight ? 'light' : 'dark'); } catch {}
+  // Re-render the graph so node backgrounds flip to match the new theme
+  // (existing nodes carry a cached bgColor computed at render time).
+  try { if (typeof renderGraph === 'function') renderGraph(); } catch {}
+  try { if (typeof renderAgents === 'function') renderAgents(); } catch {}
 }
 // Restore saved theme
 try {
