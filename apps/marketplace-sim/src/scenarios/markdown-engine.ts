@@ -29,6 +29,8 @@ import type { ScenarioDefinition, ScenarioContext, ScenarioResult, ParamSpec, Po
 import type { PersonaStyle } from '../processors/types.js';
 import { runBakeOff, type BakeOffConfig } from './blocks/bake_off.js';
 import { runMerchantBuy, type MerchantBuyConfig } from './blocks/merchant_buy.js';
+import { runConcierge, type ConciergeConfig } from './blocks/concierge.js';
+import { runResaleChain, type ResaleChainConfig } from './blocks/resale_chain.js';
 import { runOneToOne, type OneToOneConfig } from './blocks/one_to_one.js';
 import { runRingTrade, type RingTradeConfig } from './blocks/ring_trade.js';
 import { runMultiHop, type MultiHopConfig } from './blocks/multi_hop.js';
@@ -36,7 +38,7 @@ import { runDoubleAuction, type DoubleAuctionConfig } from './blocks/double_auct
 import type { TemplateRow } from '../templates/store.js';
 
 /** Building blocks the engine knows how to dispatch. */
-export const KNOWN_BLOCKS = ['bake_off', 'one_to_one', 'ring_trade', 'multi_hop', 'double_auction', 'merchant_buy'] as const;
+export const KNOWN_BLOCKS = ['bake_off', 'one_to_one', 'ring_trade', 'multi_hop', 'double_auction', 'merchant_buy', 'concierge', 'resale_chain'] as const;
 export type KnownBlock = typeof KNOWN_BLOCKS[number];
 
 export function isKnownBlock(s: string | null | undefined): s is KnownBlock {
@@ -140,6 +142,16 @@ export function buildScenarioFromTemplate(template: TemplateRow): ScenarioDefini
           scenarioId: template.template_id,
           config: blockConfig as unknown as MerchantBuyConfig,
         });
+      case 'concierge':
+        return runConcierge(ctx, {
+          scenarioId: template.template_id,
+          config: blockConfig as unknown as ConciergeConfig,
+        });
+      case 'resale_chain':
+        return runResaleChain(ctx, {
+          scenarioId: template.template_id,
+          config: blockConfig as unknown as ResaleChainConfig,
+        });
       default:
         throw new Error(
           `Template "${template.template_id}" uses unknown buildingBlock "${buildingBlock}". Available: ${KNOWN_BLOCKS.join(', ')}`,
@@ -229,6 +241,20 @@ export async function dryRunTemplate(template: TemplateRow, ctx: ScenarioContext
       await runMerchantBuy(ctx, {
         scenarioId: template.template_id,
         config: blockConfig as unknown as MerchantBuyConfig,
+        dryRun: true,
+      });
+      return;
+    case 'concierge':
+      await runConcierge(ctx, {
+        scenarioId: template.template_id,
+        config: blockConfig as unknown as ConciergeConfig,
+        dryRun: true,
+      });
+      return;
+    case 'resale_chain':
+      await runResaleChain(ctx, {
+        scenarioId: template.template_id,
+        config: blockConfig as unknown as ResaleChainConfig,
         dryRun: true,
       });
       return;

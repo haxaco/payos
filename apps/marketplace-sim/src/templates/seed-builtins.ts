@@ -1278,6 +1278,65 @@ Agents discover priced x402 endpoints in the marketplace, pick one, and pay for 
 one-shot /v1/x402/pay flow. Shows agents consuming metered API services without a full HTTP 402 dance.
 `;
 
+const CONCIERGE_TRAVEL = `---
+id: concierge_travel
+name: Agent Concierge (UCP — travel agent pattern)
+buildingBlock: concierge
+requires: [whale, quality-reviewer]
+pool: { whale: 1, quality: 1, honest: 1 }
+params:
+  - { key: cycleSleepMs, type: int, label: Sleep between cycles (ms), default: 3000, min: 500, max: 8000, step: 100 }
+analyzerHints: |
+  Buyer agent sends a travel request via A2A to a concierge agent; concierge books UCP travel merchants on the
+  buyer's behalf and completes the A2A task with the booking reference. EXPECTED: each cycle creates an A2A
+  task + an AP2 mandate + a ucp_checkouts row, all linked via metadata.onBehalfOf. Flag only: stuck tasks,
+  missing merchants, suspended concierges still acting.
+blockConfig:
+  protocol: ucp
+  conciergeFeeUsdc: 0.50
+  defaults:
+    cycleSleepMs: 3000
+    buyerStyles: [whale, honest]
+    conciergeStyles: [quality-reviewer, mm]
+---
+
+# Agent Concierge (UCP)
+
+A buyer asks a concierge agent to book travel on their behalf. Concierge fulfills against UCP merchants (hotels,
+airlines, services), charges a fee on top of merchant cost, completes the A2A task with the booking reference.
+Demonstrates agents as autonomous travel agents — buyer never touches the merchant directly.
+`;
+
+const RESALE_CHAIN = `---
+id: resale_chain_acp
+name: Resale Arbitrage (ACP → A2A peer)
+buildingBlock: resale_chain
+requires: [whale, honest]
+pool: { whale: 1, mm: 1, honest: 2 }
+params:
+  - { key: cycleSleepMs, type: int, label: Sleep between cycles (ms), default: 3000, min: 500, max: 8000, step: 100 }
+analyzerHints: |
+  A reseller agent sources products from ACP merchants and resells them to peer agents via A2A at a 25% markup.
+  EXPECTED: each cycle creates an acp_checkouts row (reseller buys) + an A2A task between reseller and buyer +
+  an AP2 mandate for the marked-up price. Margin = resalePrice - merchantCost. Flag only: stuck tasks, merchant
+  refusals, buyer mandate rejections (kya limits).
+blockConfig:
+  sourceProtocol: acp
+  markup: 1.25
+  defaults:
+    cycleSleepMs: 3000
+    resellerStyles: [whale, mm]
+    buyerStyles: [honest]
+---
+
+# Resale Arbitrage
+
+Reseller agent discovers merchants via UCP, buys a product via ACP, then offers the same product at a 25%
+markup to peer agents via A2A. The peer funds the purchase via AP2 mandate, reseller delivers with the
+merchant's receipt as proof-of-fulfillment. Shows agents running micro-supply-chains: they're both customers
+(to merchants) and sellers (to peers) in the same cycle.
+`;
+
 export const BUILT_INS: BuiltInTemplate[] = [
   {
     template_id: 'competitive_review_real',
@@ -1428,6 +1487,18 @@ export const BUILT_INS: BuiltInTemplate[] = [
     name: 'Compute & Content Purchase (x402 — pay-per-request APIs)',
     building_block: 'merchant_buy',
     markdown: COMPUTE_X402,
+  },
+  {
+    template_id: 'concierge_travel',
+    name: 'Agent Concierge (UCP — travel agent pattern)',
+    building_block: 'concierge',
+    markdown: CONCIERGE_TRAVEL,
+  },
+  {
+    template_id: 'resale_chain_acp',
+    name: 'Resale Arbitrage (ACP → A2A peer)',
+    building_block: 'resale_chain',
+    markdown: RESALE_CHAIN,
   },
 ];
 
