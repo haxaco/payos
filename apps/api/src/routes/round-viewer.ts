@@ -543,6 +543,9 @@ roundViewerRouter.post('/milestone', async (c) => {
     amount: typeof body.amount === 'number' ? body.amount : undefined,
     currency: body.currency,
     considered: Array.isArray(body.considered) ? body.considered : undefined,
+    // Optional edge styling hint — viewer uses this to render governance
+    // rejections as red "failed" edges instead of silently dropping them.
+    edgeState: typeof body.edgeState === 'string' ? body.edgeState : undefined,
   };
   // Persist to the ring buffer so post-run report fetches catch it.
   bufferNarration({

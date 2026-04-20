@@ -574,6 +574,12 @@ export class SlyClient {
        * comparisons" + "won comparisons" to compute market share.
        */
       considered?: Array<{ toId: string; toName: string; price?: number; rating?: number }>;
+      /**
+       * When drawing a graph edge (toKind='agent'|'merchant'), override the
+       * default edge style. 'rejected' renders a red dashed edge — use for
+       * governance blocks so operators see the mandate was refused, not lost.
+       */
+      edgeState?: 'rejected';
     } = {},
   ): Promise<void> {
     await this.request(

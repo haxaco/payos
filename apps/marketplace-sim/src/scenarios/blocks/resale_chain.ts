@@ -277,10 +277,27 @@ export async function runResaleChain(
           );
         }
       } catch (e: any) {
-        if (!(handleSuspension(e, buyer) || handleSuspension(e, reseller))) {
-          await adminClient.comment(
-            `resale_chain: createMandate failed ${buyer.name}→${reseller.name} ($${resalePrice.toFixed(2)}): ${e.message}`,
-            'alert',
+        const suspended = handleSuspension(e, buyer) || handleSuspension(e, reseller);
+        if (!suspended) {
+          // A tier-limit rejection (or other governance gate) IS the platform
+          // working — surface it on the graph with a distinct rejected edge +
+          // 🛡 icon so operators see the block rather than a quiet drop.
+          // Any non-suspension failure is governance-adjacent; we treat them
+          // uniformly here.
+          const reason = /tier|limit|velocity|kya|exceed/i.test(String(e.message))
+            ? 'governance block'
+            : 'rejected';
+          await adminClient.milestone(
+            `\u{1F6E1} ${reason}: ${buyer.name} → ${reseller.name} mandate for $${resalePrice.toFixed(2)} rejected (${e.message})`,
+            {
+              agentId: buyer.agentId,
+              agentName: buyer.name,
+              icon: '\u{1F6E1}',
+              toId: reseller.agentId,
+              toName: reseller.name,
+              toKind: 'agent',
+              edgeState: 'rejected',
+            },
           );
         }
         continue;

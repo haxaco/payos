@@ -1786,6 +1786,16 @@ function handleEvent(type, event) {
           agentName: data.agentName || null,
           time: new Date().toISOString(),
         });
+        // Agent-to-agent milestones (e.g. governance-block 🛡 rejections
+        // from resale_chain when a buyer's mandate is refused). Draw a
+        // distinctive edge so the operator can see the block without
+        // digging through the feed — "governance working" is a first-class
+        // visible outcome, not an absence.
+        if (data.toKind === 'agent' && data.agentId && data.toId) {
+          const edgeState = data.edgeState === 'rejected' ? 'failed' : 'working';
+          addEdge(data.agentId, data.toId, edgeState);
+          renderAgents();
+        }
         // Merchant-purchase milestones carry a `toKind==='merchant'` target.
         // Ensure state.merchants has it, give agentNames[] a friendly label,
         // and push an edge agentId → toId so the graph renders a purchase arrow.
