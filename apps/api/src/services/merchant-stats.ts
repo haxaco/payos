@@ -11,6 +11,15 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  lintCatalog,
+  computeReliability,
+  computeLatency,
+  computePriceAccuracy,
+  probeManifest,
+  composeFriendliness,
+  type FriendlinessResult,
+} from './merchant-friendliness.js';
 
 export interface MerchantStatsInput {
   accountId: string;
@@ -38,6 +47,8 @@ export interface MerchantStatsResult {
   topBuyers: Array<{ agentId: string; name: string; sales: number; spend: number }>;
   recentSales: Array<{ protocol: 'acp' | 'ucp' | 'x402'; amount: number; buyerName: string | null; at: string; item: string }>;
   endpoints: Array<{ id: string; name: string; path: string; method: string; base_price: number; total_calls: number; total_revenue: number; status: string }>;
+  /** Agent-Friendliness Index — intentional design signals (distinct from commercial performance). */
+  friendliness: FriendlinessResult;
   /** Discovery + abandonment: how often agents looked at this merchant without buying. */
   discovery: {
     views: number;
@@ -86,6 +97,17 @@ export async function computeMerchantStats(
     funnel: { views: 0, checkouts: 0, completed: 0, abandoned: 0 },
     abandonedCarts: { count: 0, value: 0, recent: [] as any[] },
   };
+  const emptyFriendliness: FriendlinessResult = {
+    score: null,
+    breakdown: {
+      catalog: { score: null, detail: {} },
+      reliability: { score: null, detail: {} },
+      price_accuracy: { score: null, detail: {} },
+      latency: { score: null, detail: {} },
+      manifest: { score: null, detail: {} },
+    },
+    weights: { catalog: 0, reliability: 0, price_accuracy: 0, latency: 0, manifest: 0 },
+  };
   const empty: MerchantStatsResult = {
     merchant: null,
     isMerchant: false,
@@ -94,6 +116,7 @@ export async function computeMerchantStats(
     topBuyers: [],
     recentSales: [],
     endpoints: [],
+    friendliness: emptyFriendliness,
     discovery: emptyDiscovery,
   };
   if (!accountRow) return empty;
@@ -199,8 +222,15 @@ export async function computeMerchantStats(
   if (tenantId) epQuery = epQuery.eq('tenant_id', tenantId);
   epQuery = epQuery.order('created_at', { ascending: true }).limit(50);
 
-  const [acpRes, ucpRes, txRes, epRes, viewsRes, abandonedAcpRes] = await Promise.all([
-    acpQuery, ucpQuery, txQuery, epQuery, viewsQuery, abandonedAcpQuery,
+  // Ratings for price_accuracy friendliness signal.
+  const ratingsQuery = (supabase.from('merchant_ratings') as any)
+    .select('price_accuracy')
+    .eq('merchant_account_id', accountId)
+    .not('price_accuracy', 'is', null)
+    .limit(5000);
+
+  const [acpRes, ucpRes, txRes, epRes, viewsRes, abandonedAcpRes, ratingsRes] = await Promise.all([
+    acpQuery, ucpQuery, txQuery, epQuery, viewsQuery, abandonedAcpQuery, ratingsQuery,
   ]);
 
   const acpRows = (acpRes.data || []) as any[];
@@ -209,6 +239,7 @@ export async function computeMerchantStats(
   const epRows = (epRes.data || []) as any[];
   const viewsRows = (viewsRes.data || []) as any[];
   const abandonedAcpRows = (abandonedAcpRes.data || []) as any[];
+  const ratingRows = (ratingsRes.data || []) as any[];
 
   // Filter UCP sessions to those addressed to this merchant via metadata.
   const ucpMine = ucpRows.filter((s: any) => {
@@ -374,6 +405,37 @@ export async function computeMerchantStats(
     },
   };
 
+  // ─── 8. Agent-Friendliness Index ──────────────────────────────────────
+  // Signals measure intentional design quality — separate from the commercial
+  // metrics above (volume, conversion). A merchant with a great catalog +
+  // fast checkout is "friendly" even if no-one's bought yet.
+  const catalogSignal = lintCatalog(products);
+  const reliabilitySignal = computeReliability({
+    acpRows,
+    ucpRows: ucpMine,
+    x402Rows: x402Tx,
+    abandonedCount: abandoned,
+  });
+  const latencySignal = computeLatency(acpRows);
+  const priceAccAvg = ratingRows.length > 0
+    ? ratingRows.reduce((s, r: any) => s + Number(r.price_accuracy || 0), 0) / ratingRows.length
+    : null;
+  const priceAccuracySignal = computePriceAccuracy(priceAccAvg, ratingRows.length);
+  // Manifest: probe only for merchants that advertise one in metadata. Keeps
+  // hosted merchants as N/A (weight redistributes automatically).
+  const manifestUrl = typeof accountRow.metadata?.manifest_url === 'string'
+    ? accountRow.metadata.manifest_url
+    : null;
+  const manifestSignal = await probeManifest(manifestUrl);
+
+  const friendliness = composeFriendliness({
+    catalog: catalogSignal,
+    reliability: reliabilitySignal,
+    price_accuracy: priceAccuracySignal,
+    latency: latencySignal,
+    manifest: manifestSignal,
+  });
+
   return {
     merchant,
     isMerchant: true,
@@ -382,6 +444,7 @@ export async function computeMerchantStats(
     topBuyers,
     recentSales,
     endpoints,
+    friendliness,
     discovery,
   };
 }
