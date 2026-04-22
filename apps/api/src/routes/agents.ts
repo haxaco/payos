@@ -1444,20 +1444,34 @@ agents.get('/:id/transactions', async (c) => {
       protocol: 'acp',
       fee_amount: 0,
     })),
-    ...([...(agentTransfers || []), ...walletTransfers]).map((t: any) => ({
-      id: t.id,
-      type: t.type as string,
-      status: t.status,
-      currency: t.currency,
-      amount: parseFloat(t.amount) || 0,
-      order_id: null,
-      created_at: t.created_at,
-      description: t.description || `${t.type} transfer`,
-      from_account_name: t.from_account_name || null,
-      to_account_name: t.to_account_name || null,
-      protocol: t.protocol_metadata?.protocol || t.type || null,
-      fee_amount: parseFloat(t.fee_amount) || 0,
-    })),
+    ...([...(agentTransfers || []), ...walletTransfers]).map((t: any) => {
+      const pm = t.protocol_metadata || {};
+      // External x402 rows have null from/to_account_id — surface the on-chain
+      // destination + chain so the dashboard can render a counterparty.
+      const isExternal = pm.direction === 'external';
+      return {
+        id: t.id,
+        type: t.type as string,
+        status: t.status,
+        currency: t.currency,
+        amount: parseFloat(t.amount) || 0,
+        order_id: null,
+        created_at: t.created_at,
+        description: t.description || `${t.type} transfer`,
+        from_account_name: t.from_account_name || null,
+        to_account_name: t.to_account_name || null,
+        protocol: pm.protocol || t.type || null,
+        fee_amount: parseFloat(t.fee_amount) || 0,
+        // New: external x402 context (null for all non-external rows).
+        external: isExternal ? {
+          from_address: pm.from_address || null,
+          to_address: pm.to_address || null,
+          chain_id: pm.chain_id || null,
+          settlement_network: t.settlement_network || null,
+          tx_hash: t.tx_hash || null,
+        } : null,
+      };
+    }),
     ...(a2aTasks || []).map((t: any) => {
       const linkedTransfer = t.transfer_id ? a2aTransferAmounts.get(t.transfer_id) : undefined;
       const isProvider = t.direction === 'inbound';

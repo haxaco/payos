@@ -448,6 +448,16 @@ export class SlyClient {
       this.get<any>(`/agents/${id}/wallet`),
 
     /**
+     * Provision (or fetch existing) secp256k1 EVM signing key for the agent.
+     * Idempotent — returns the existing key when one already exists.
+     */
+    provisionEvmKey: (id: string) =>
+      this.post<{ keyId: string; ethereumAddress: string; publicKey: string; created: boolean }>(
+        `/agents/${id}/evm-keys`,
+        {},
+      ),
+
+    /**
      * Freeze agent wallet
      */
     freezeWallet: (id: string) =>

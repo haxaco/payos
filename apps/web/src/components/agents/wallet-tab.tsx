@@ -160,6 +160,9 @@ export function WalletTab({ agentId }: WalletTabProps) {
         <ContractPolicyConfig wallet={walletData} agentId={agentId} />
       </div>
 
+      {/* External x402 signing address — agent's EOA for paying external services */}
+      <X402EoaCard agentId={agentId} />
+
       {/* Counterparty Exposures */}
       <ExposuresTable exposures={exposuresData || []} isLoading={exposuresLoading} />
 
@@ -938,6 +941,167 @@ function NumberInput({
           className={prefix ? 'pl-7' : ''}
         />
       </div>
+    </div>
+  );
+}
+
+// ─── External x402 EOA Card ─────────────────────────────
+// Shows the agent's secp256k1 signing address used for paying external
+// x402-protected services (e.g. agentic.market listings). Separate from
+// the Circle custodial wallet above — these funds live on-chain and must
+// be topped up by sending USDC directly to this address on Base.
+
+const USDC_BASE_MAINNET = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+async function fetchOnchainUsdc(addr: string): Promise<number | null> {
+  try {
+    const data = `0x70a08231000000000000000000000000${addr.slice(2).toLowerCase()}`;
+    const res = await fetch('https://mainnet.base.org', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'eth_call',
+        params: [{ to: USDC_BASE_MAINNET, data }, 'latest'],
+      }),
+    });
+    const json = await res.json();
+    if (!json.result) return null;
+    return parseInt(json.result, 16) / 1e6;
+  } catch {
+    return null;
+  }
+}
+
+function X402EoaCard({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+
+  // Idempotent — returns existing key if present, creates one only on first call.
+  const { data: keyData, isLoading: keyLoading } = useTanstackQuery({
+    queryKey: ['agent-evm-key', agentId],
+    queryFn: async () => {
+      if (!api) return null;
+      const raw: any = await api.agents.provisionEvmKey(agentId);
+      return raw?.data || raw;
+    },
+    enabled: !!api,
+    staleTime: 60_000,
+  });
+
+  const eoa: string | null = keyData?.ethereumAddress || null;
+
+  const { data: onchainUsdc, isLoading: balanceLoading, refetch: refetchBalance } = useTanstackQuery({
+    queryKey: ['agent-eoa-onchain-usdc', eoa],
+    queryFn: () => (eoa ? fetchOnchainUsdc(eoa) : Promise.resolve(null)),
+    enabled: !!eoa,
+    refetchInterval: 30_000,
+  });
+
+  const provisionMutation = useMutation({
+    mutationFn: async () => {
+      if (!api) throw new Error('API not initialized');
+      const raw: any = await api.agents.provisionEvmKey(agentId);
+      return raw?.data || raw;
+    },
+    onSuccess: () => {
+      toast.success('EVM signing key provisioned');
+      queryClient.invalidateQueries({ queryKey: ['agent-evm-key', agentId] });
+    },
+    onError: (err: any) => toast.error(err.message || 'Failed to provision key'),
+  });
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">External x402 Signing Address</h3>
+        <Badge variant="outline">EOA · Base mainnet</Badge>
+      </div>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        This is the on-chain address the agent uses to pay external x402 services (e.g. agentic.market).
+        Separate from the Circle custodial wallet — fund it by sending USDC on the Base network.
+      </p>
+
+      {keyLoading ? (
+        <div className="h-20 bg-gray-100 dark:bg-gray-900 rounded-lg animate-pulse" />
+      ) : !eoa ? (
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            No EVM key provisioned yet.
+          </div>
+          <Button
+            size="sm"
+            onClick={() => provisionMutation.mutate()}
+            disabled={provisionMutation.isPending}
+          >
+            {provisionMutation.isPending ? 'Provisioning…' : 'Provision key'}
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+              <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">Address</div>
+              <div className="flex items-center justify-between gap-2">
+                <code className="font-mono text-sm text-gray-900 dark:text-white truncate">{truncateAddress(eoa)}</code>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => copyToClipboard(eoa)}
+                    className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
+                    title="Copy full address"
+                  >
+                    <Copy className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+                  </button>
+                  <a
+                    href={`https://basescan.org/address/${eoa}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline px-1.5"
+                  >
+                    ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">On-chain USDC</div>
+                <button
+                  onClick={() => refetchBalance()}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  disabled={balanceLoading}
+                >
+                  {balanceLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+              <div className="text-2xl font-semibold text-gray-900 dark:text-white">
+                {balanceLoading && onchainUsdc == null
+                  ? '…'
+                  : onchainUsdc == null
+                    ? '—'
+                    : formatCurrency(onchainUsdc, 'USDC')}
+              </div>
+              <div className="text-xs text-gray-400 mt-0.5">Live from Base mainnet RPC</div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-blue-900 dark:text-blue-200">
+                <div className="font-medium mb-1">How to fund this address</div>
+                <div className="text-blue-800 dark:text-blue-300">
+                  Send USDC on the <strong>Base</strong> network to the address above.
+                  Ethereum-mainnet withdrawals will lose most of the amount in gas fees.
+                  No ETH needed — x402 facilitators sponsor settlement gas.
+                </div>
+                <div className="mt-2 text-xs text-blue-700 dark:text-blue-400">
+                  The EOA <em>cannot</em> be refunded via the Circle custodial wallet — those two are isolated.
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

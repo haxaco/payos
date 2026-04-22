@@ -2366,6 +2366,10 @@ function ActivityTab({ agentId }: { agentId: string }) {
       currency: tx.currency || 'USDC',
       recipient: tx.to_account_name || undefined,
       reference: tx.id?.slice(0, 12),
+      // External x402: agent paid an on-chain address outside the Sly ledger.
+      externalAddress: tx.external?.to_address || undefined,
+      settlementNetwork: tx.external?.settlement_network || undefined,
+      txHash: tx.external?.tx_hash || undefined,
     },
   }));
 
