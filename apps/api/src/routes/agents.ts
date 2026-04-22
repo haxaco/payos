@@ -2838,7 +2838,9 @@ agents.post('/:id/x402-sign', async (c) => {
   // on-chain settlement is tracked separately (tx_hash + completed_at set by a
   // reconciler if the signed auth is later submitted).
   try {
-    await (supabase.from('transfers') as any).insert({
+    // supabase-js resolves with `{ data, error }` on DB rejection instead of
+    // throwing — the try/catch alone isn't enough; we must check `.error` too.
+    const { error: ledgerErr } = await (supabase.from('transfers') as any).insert({
       tenant_id: ctx.tenantId,
       environment: getEnv(ctx),
       type: 'x402',
@@ -2851,7 +2853,7 @@ agents.post('/:id/x402-sign', async (c) => {
       amount: amountUsdc,
       currency: 'USDC',
       description: `external x402 auth — ${to}`,
-      initiator_wallet_address: keyRecord.ethereum_address,
+      settlement_network: chainIdNum === 8453 ? 'base' : chainIdNum === 84532 ? 'base-sepolia' : `eip155:${chainIdNum}`,
       protocol_metadata: {
         protocol: 'x402',
         direction: 'external',
@@ -2866,9 +2868,17 @@ agents.post('/:id/x402-sign', async (c) => {
         signature_prefix: String(signed.signature).slice(0, 18),
       },
     });
+    if (ledgerErr) {
+      console.error('[x402-sign] ledger insert failed', ledgerErr);
+      return c.json({
+        error: 'Failed to record signed authorization; signature not returned',
+        code: 'LEDGER_WRITE_FAILED',
+        details: ledgerErr.message,
+      }, 500);
+    }
   } catch (ledgerErr: any) {
-    // Refuse to hand back a signature we can't account for.
-    console.error('[x402-sign] ledger insert failed', ledgerErr);
+    // Network-level failures that DO throw (e.g. Supabase unreachable).
+    console.error('[x402-sign] ledger insert threw', ledgerErr);
     return c.json({
       error: 'Failed to record signed authorization; signature not returned',
       code: 'LEDGER_WRITE_FAILED',
