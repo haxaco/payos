@@ -1,0 +1,66 @@
+---
+title: "Rollback"
+description: "Code rollback, migration rollback, data rollback."
+---
+
+## Code rollback
+
+Fastest path when a deploy broke something.
+
+**Vercel UI:**
+1. Deployments tab
+2. Find the last known good deploy
+3. Click → Promote to Production
+4. Takes ~30 seconds to take effect
+
+**CLI:**
+```bash
+vercel promote <DEPLOYMENT_URL> --scope=sly
+```
+
+<Warning>
+If the broken deploy included a migration, rolling back code alone doesn't revert the migration. See [migration rollback](#migration-rollback).
+</Warning>
+
+## Migration rollback
+
+Migrations are append-only. "Rollback" means a **new migration** that undoes the prior one.
+
+1. Write the inverse SQL: `20260425_revert_my_change.sql`
+2. Open a PR — get fast review (this is incident-path work)
+3. Merge + deploy
+4. Apply migration
+
+**If the migration dropped a column or table**: restore from backup (see [database recovery](/runbooks/database-recovery)).
+
+## Feature flag rollback
+
+Fastest for code that has a flag around it. Toggle the flag off in the control plane; code path goes dormant immediately.
+
+If you touched prod and didn't use a flag, and rollback requires 30 seconds instead of instant — that's okay. The lesson: next time, flag it.
+
+## Data rollback
+
+**Never edit data manually in prod.** Process:
+
+1. Identify the bad data (SQL query, not `SELECT *`)
+2. Write a migration that fixes it
+3. Test in staging against a snapshot
+4. Review + deploy
+5. Apply
+
+The one exception: a single partner's incident that requires operator intervention. In that case, one engineer writes, another reviews the SQL before execution. Both initial-log the operation in the incident channel.
+
+## What NOT to do
+
+- **Don't `git push --force` on main.** Ever. If you merged a bad PR, revert with a normal merge commit.
+- **Don't edit a prior merged migration.** Always write a new one.
+- **Don't drop tables in prod.** Rename instead; drop only after you're sure no one's querying.
+- **Don't ignore a failing CI check.** `--no-verify` is a "destroy your afternoon" setting.
+
+## Post-rollback
+
+1. Incident channel update: "Rolled back to deploy X. Investigating."
+2. Confirm metrics recovered (latency, error rate, queue depth)
+3. Status page update
+4. Root-cause analysis begins

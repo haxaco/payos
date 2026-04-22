@@ -1,0 +1,1606 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sly API (internal)",
+    "description": "The Agentic Economy Platform — stablecoin payments, agent wallets, multi-protocol commerce, and AI agent orchestration.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Sly",
+      "url": "https://getsly.ai",
+      "email": "support@getsly.ai"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.getsly.ai/v1",
+      "description": "Production"
+    },
+    {
+      "url": "https://sandbox.getsly.ai/v1",
+      "description": "Sandbox"
+    }
+  ],
+  "paths": {
+    "/v1/x402/endpoints": {
+      "post": {
+        "tags": [
+          "x402"
+        ],
+        "summary": "Register an x402 endpoint",
+        "description": "Register an API endpoint that will accept x402 micropayments. Returns a payment address and asset details to advertise in 402 responses.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateX402EndpointInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Endpoint registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/X402Endpoint"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate path+method",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "x402"
+        ],
+        "summary": "List x402 endpoints",
+        "description": "List all x402 endpoints registered by your tenant.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "paused",
+                "disabled"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "account_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of endpoints",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/X402Endpoint"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pagination"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/x402/endpoints/{id}": {
+      "get": {
+        "tags": [
+          "x402"
+        ],
+        "summary": "Get x402 endpoint",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Endpoint detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/X402Endpoint"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "x402"
+        ],
+        "summary": "Update x402 endpoint",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateX402EndpointInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated endpoint",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/X402Endpoint"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "x402"
+        ],
+        "summary": "Delete x402 endpoint",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "force",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Endpoint has transaction history; add ?force=true to confirm",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ucp/tokens": {
+      "post": {
+        "tags": [
+          "UCP"
+        ],
+        "summary": "Create a UCP checkout token",
+        "description": "A merchant creates a UCP token representing an order. The token is returned to the buyer who exchanges it for settlement via their preferred rail.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUCPTokenInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/UCPToken"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Merchant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/acp/checkouts": {
+      "post": {
+        "tags": [
+          "ACP"
+        ],
+        "summary": "Create an ACP checkout session",
+        "description": "Opens an Agentic Commerce Protocol checkout session. The returned client_secret is used to complete payment with the chosen payment method.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateACPCheckoutInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Checkout created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ACPCheckout"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Merchant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ap2/mandates": {
+      "post": {
+        "tags": [
+          "AP2"
+        ],
+        "summary": "Create an AP2 mandate",
+        "description": "A mandate is a signed authorization that lets an agent spend on behalf of an account within defined scope. The returned mandate_jwt can be presented at any AP2-compliant merchant.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAP2MandateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Mandate created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AP2Mandate"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account or agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/a2a/marketplace": {
+      "get": {
+        "tags": [
+          "A2A"
+        ],
+        "summary": "Search the A2A agent marketplace",
+        "description": "Find agents offering a given skill, ranked by reputation, price, or recency. Public via the non-authed /a2a/marketplace mount; this authed version carries tenant context for personalized ranking.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "skill",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 5
+            },
+            "required": false,
+            "name": "min_rating",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "max_price",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "online",
+                "offline",
+                "any"
+              ],
+              "default": "any"
+            },
+            "required": false,
+            "name": "availability",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reputation_desc",
+                "price_asc",
+                "recency_desc"
+              ],
+              "default": "reputation_desc"
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/A2AAgentCardSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "tags": [
+          "MCP"
+        ],
+        "summary": "MCP JSON-RPC request",
+        "description": "Invoke an MCP method (tools/list, tools/call, resources/list, resources/read). Follows the Model Context Protocol JSON-RPC spec.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key (pk_test_* or pk_live_*), JWT session, agent token (agent_*), Ed25519 session (sess_*), or portal token (portal_*)."
+      }
+    },
+    "schemas": {
+      "X402VolumeDiscount": {
+        "type": "object",
+        "properties": {
+          "threshold": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "priceMultiplier": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "threshold",
+          "priceMultiplier"
+        ]
+      },
+      "X402Endpoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "DELETE",
+              "PATCH",
+              "ANY"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "basePrice": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "USDC",
+              "EURC"
+            ]
+          },
+          "volumeDiscounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/X402VolumeDiscount"
+            },
+            "default": []
+          },
+          "paymentAddress": {
+            "type": "string"
+          },
+          "assetAddress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "network": {
+            "type": "string"
+          },
+          "totalCalls": {
+            "type": "integer"
+          },
+          "totalRevenue": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "disabled"
+            ]
+          },
+          "webhookUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "accountId",
+          "name",
+          "path",
+          "method",
+          "basePrice",
+          "currency",
+          "paymentAddress",
+          "network",
+          "totalCalls",
+          "totalRevenue",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "details": {},
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "CreateX402EndpointInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^\\/"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "DELETE",
+              "PATCH",
+              "ANY"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "basePrice": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "minimum": 0.0001,
+            "maximum": 999999
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "USDC",
+              "EURC"
+            ],
+            "default": "USDC"
+          },
+          "volumeDiscounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/X402VolumeDiscount"
+            }
+          },
+          "webhookUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "network": {
+            "type": "string",
+            "default": "base-mainnet"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "method",
+          "accountId",
+          "basePrice"
+        ]
+      },
+      "UpdateX402EndpointInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "basePrice": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "minimum": 0.0001,
+            "maximum": 999999
+          },
+          "volumeDiscounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/X402VolumeDiscount"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "disabled"
+            ]
+          },
+          "webhookUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "UCPToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "JWS-signed token to return to the buyer"
+          },
+          "total": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "settlement_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "settled",
+              "expired",
+              "cancelled"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "total",
+          "currency",
+          "expires_at",
+          "settlement_url",
+          "status"
+        ]
+      },
+      "UCPItem": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "unit_price": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "quantity",
+          "unit_price",
+          "currency"
+        ]
+      },
+      "UCPSettlementPrefs": {
+        "type": "object",
+        "properties": {
+          "accepted_rails": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "usdc",
+                "ach",
+                "card",
+                "wire",
+                "pix",
+                "spei"
+              ]
+            }
+          },
+          "settlement_window": {
+            "type": "string",
+            "enum": [
+              "instant",
+              "T+0",
+              "T+1",
+              "T+2"
+            ],
+            "default": "T+1"
+          }
+        },
+        "required": [
+          "accepted_rails"
+        ]
+      },
+      "CreateUCPTokenInput": {
+        "type": "object",
+        "properties": {
+          "merchant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UCPItem"
+            },
+            "minItems": 1
+          },
+          "settlement_preferences": {
+            "$ref": "#/components/schemas/UCPSettlementPrefs"
+          },
+          "expires_in": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 86400,
+            "default": 900
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "merchant_id",
+          "items",
+          "settlement_preferences"
+        ]
+      },
+      "ACPCheckout": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "pending_payment",
+              "paid",
+              "fulfilled",
+              "failed",
+              "expired",
+              "cancelled"
+            ]
+          },
+          "total": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "total",
+          "currency",
+          "expires_at"
+        ]
+      },
+      "ACPItem": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "unit_price": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "quantity",
+          "unit_price",
+          "currency"
+        ]
+      },
+      "ACPAddress": {
+        "type": "object",
+        "properties": {
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 2
+          }
+        },
+        "required": [
+          "line1",
+          "city",
+          "postal_code",
+          "country"
+        ]
+      },
+      "CreateACPCheckoutInput": {
+        "type": "object",
+        "properties": {
+          "merchant_id": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ACPItem"
+            },
+            "minItems": 1
+          },
+          "shipping_address": {
+            "$ref": "#/components/schemas/ACPAddress"
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "card",
+              "bank",
+              "stablecoin"
+            ],
+            "default": "card"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "merchant_id",
+          "items"
+        ]
+      },
+      "AP2MandateScope": {
+        "type": "object",
+        "properties": {
+          "max_per_tx": {
+            "type": "string"
+          },
+          "max_per_day": {
+            "type": "string"
+          },
+          "max_per_month": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "allowed_merchant_categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_merchants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocked_merchants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "max_per_tx",
+          "max_per_day",
+          "max_per_month",
+          "currency"
+        ]
+      },
+      "AP2Mandate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "cancelled",
+              "revoked",
+              "expired"
+            ]
+          },
+          "mandate_jwt": {
+            "type": "string",
+            "description": "Ed25519-signed JWT; verifiable offline"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AP2MandateScope"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "mandate_jwt",
+          "scope",
+          "expires_at",
+          "created_at"
+        ]
+      },
+      "CreateAP2MandateInput": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AP2MandateScope"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "account_id",
+          "agent_id",
+          "scope",
+          "expires_at"
+        ]
+      },
+      "A2AAgentCardSummary": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pricing_summary": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "string"
+              },
+              "max": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "min",
+              "max"
+            ]
+          },
+          "reputation": {
+            "type": "object",
+            "properties": {
+              "rating": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "completed_tasks": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "rating",
+              "completed_tasks"
+            ]
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline"
+            ]
+          }
+        },
+        "required": [
+          "agent_id",
+          "name",
+          "skills",
+          "availability"
+        ]
+      },
+      "MCPResponse": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "enum": [
+              "2.0"
+            ]
+          },
+          "result": {},
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              },
+              "data": {}
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "id"
+        ]
+      },
+      "MCPRequest": {
+        "type": "object",
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "enum": [
+              "2.0"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "initialize",
+              "tools/list",
+              "tools/call",
+              "resources/list",
+              "resources/read"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "required": [
+          "jsonrpc",
+          "method",
+          "id"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}

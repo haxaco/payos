@@ -1,0 +1,80 @@
+---
+title: "Deployment"
+description: "Ship code to preview, promote to prod, roll back."
+---
+
+## Normal deploy flow
+
+1. **PR opened** → Vercel auto-deploys a preview URL
+2. **CI passes** (`docs-spec`, `typescript-check`, `rls-check`, tests)
+3. **Review** — at least one approval
+4. **Merge to main** → Vercel builds prod
+5. **Auto-promote** — `main` deploys auto-promote to `api.getsly.ai`, `app.getsly.ai`, `docs.getsly.ai`
+
+## Canary / rolling release
+
+Significant risk? Use a rolling release:
+
+1. Merge to main → prod build artifact ready
+2. In Vercel dashboard → Rolling Release → start at 5%
+3. Monitor error rate, latency, user reports
+4. Ramp to 25% → 50% → 100% over 1-2 hours
+5. Abort + rollback on any anomaly
+
+Rolling releases are the default for:
+- Migration-adjacent code changes
+- Auth/middleware changes
+- Changes to the critical transfer path
+- Webhook delivery changes
+
+## Rolling back code
+
+Vercel dashboard → Deployments → find the last known good → Promote to Production.
+
+Takes ~30 seconds. Don't overthink it.
+
+## Rolling back migrations
+
+Migrations are append-only. If a migration caused the issue:
+
+1. Revert the migration in code (new migration that undoes the change)
+2. Deploy through the normal flow
+3. **For destructive migrations** — restore from backup (see [database recovery](/runbooks/database-recovery))
+
+## Pre-deploy checklist for high-risk changes
+
+- [ ] Change reviewed by a second engineer with context
+- [ ] Integration tests pass
+- [ ] Manual test in staging
+- [ ] Rollback plan documented in PR description
+- [ ] On-call notified of the deploy
+- [ ] Feature flag in place (if applicable) for instant disable
+
+## Preview URLs for partner testing
+
+Every PR gets a preview URL. Partners integrating a new feature can test against it before it merges. Preview URLs last 30 days.
+
+To share: copy URL from Vercel dashboard → send with partner-specific test credentials.
+
+## Environment variables
+
+`vercel env pull .env.local` syncs envs locally. See [env-vars runbook](https://vercel.com/docs/projects/environment-variables) if you need Vercel-specific details.
+
+Adding a new env:
+1. Add to `.env.example` in the repo (never the value — just the key)
+2. Add in Vercel dashboard for each environment (dev, preview, production)
+3. Rerun `vercel env pull` locally
+4. Document in this runbook if it's operationally significant
+
+## Communication during deploys
+
+- Non-critical: no announcement needed
+- Critical path / possibly visible: post in `#eng-deploys` Slack with "deploying X"
+- Production incident risk: coordinate with on-call
+
+## Deployment freezes
+
+Planned freezes are posted in `#eng-deploys` with 24h notice. Typical causes:
+- Customer launch event
+- On-call staffing gaps (holidays)
+- Infrastructure vendor maintenance windows

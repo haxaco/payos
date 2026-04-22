@@ -1,0 +1,118 @@
+---
+title: "Database + RLS"
+description: "How Row-Level Security enforces multi-tenancy, and the rules every engineer must follow."
+---
+
+## The threat model
+
+Sly is a multi-tenant payments platform. A bug that leaks one tenant's data to another is career-ending — both for us and for our partners. RLS is our primary defense.
+
+## RLS policy convention
+
+Every table has `tenant_id UUID NOT NULL` and a policy:
+
+```sql
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON accounts
+  USING (tenant_id = current_setting('request.jwt.claims', true)::json->>'tenant_id'::uuid);
+```
+
+When a user queries via their Supabase JWT, RLS restricts them to their tenant's rows. They cannot SELECT / INSERT / UPDATE / DELETE anyone else's data.
+
+## The service role caveat
+
+The API uses the **service role** key (`SUPABASE_SERVICE_ROLE_KEY`), which **bypasses RLS**. This is intentional — the API serves agent + API key traffic where the JWT doesn't naturally carry tenant claims.
+
+But bypassing RLS means **application code must enforce tenant filtering**. The pattern:
+
+```ts
+// CORRECT
+const { data } = await supabase
+  .from('accounts')
+  .select('*')
+  .eq('tenant_id', ctx.tenantId);
+
+// WRONG — leaks all tenants
+const { data } = await supabase.from('accounts').select('*');
+```
+
+**Every query must include `.eq('tenant_id', ctx.tenantId)`.** Every one. No exceptions.
+
+## The `check:rls` audit
+
+A script scans the codebase for Supabase queries without tenant filters:
+
+```bash
+pnpm --filter @sly/api check:rls
+```
+
+Runs in CI. Every PR must pass. Hand-waving past a warning is banned.
+
+The script catches:
+- Queries that skip `.eq('tenant_id', ...)`
+- Queries that use `.or(...)` in a way that drops tenant filtering
+- Writes that don't set `tenant_id` on insert
+
+## Environment scoping
+
+Nearly every table also has `environment` (`test` / `live`). Production integrations require both filters:
+
+```ts
+await supabase
+  .from('transfers')
+  .select('*')
+  .eq('tenant_id', ctx.tenantId)
+  .eq('environment', getEnv(ctx));  // derived from API key prefix
+```
+
+A test key calling a live query returns zero rows, not a 401. Good practice is to also validate `ctx.apiKeyEnvironment === expectedEnv` before issuing queries that could be environment-mixed.
+
+## RLS for user-JWT traffic (dashboard)
+
+Dashboard users come in via Supabase Auth JWT. For these, RLS is active — the JWT carries `tenant_id` and `role` as claims, and policies enforce them server-side.
+
+This is why dashboard users CAN see their tenant's data without explicit filtering in app code (RLS catches it). But for consistency, dashboard-facing routes ALSO filter explicitly.
+
+## Adding new tables
+
+Template:
+
+```sql
+-- apps/api/supabase/migrations/YYYYMMDD_my_new_table.sql
+
+CREATE TABLE my_new_table (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  environment TEXT NOT NULL CHECK (environment IN ('test','live')),
+  -- columns...
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX ON my_new_table (tenant_id, environment);
+
+ALTER TABLE my_new_table ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON my_new_table
+  FOR ALL
+  USING (tenant_id::text = current_setting('request.jwt.claims', true)::json->>'tenant_id');
+
+-- Always add an index on tenant_id; RLS does a filter scan without it.
+```
+
+Then:
+1. `pnpm --filter @sly/api check:rls` passes locally
+2. Apply migration manually or via Supabase CLI
+3. Add query helpers in `apps/api/src/routes/*.ts` that always include tenant filters
+
+## Common foot-guns
+
+- **`supabase.rpc(...)`** — stored procedures don't inherit RLS from the caller. Every RPC must SECURITY-DEFINER-check tenant inside its body.
+- **Cross-table joins** — a query joining table A (filtered) to table B (not filtered) leaks B. Filter both sides.
+- **`.or()` clauses** — `.or('a.eq.1,b.eq.2')` doesn't preserve outer `.eq('tenant_id', ...)` in all cases. Hand-wrap with `.and()` if needed.
+- **Raw SQL in migrations** — bypasses the ORM entirely. Double-check any `DELETE` / `UPDATE` you write doesn't scan across tenants.
+
+## Testing
+
+Integration tests (`INTEGRATION=true pnpm test:integration`) run against a real Supabase instance and include tests that specifically attempt cross-tenant reads. They MUST fail. If they start passing, we have a leak.

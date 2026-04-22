@@ -1,0 +1,135 @@
+---
+title: "Streams"
+description: "Continuous per-second payment flows with buffers, runways, and programmable termination."
+---
+
+A **stream** is a continuous flow of money between two wallets, denominated in a rate per unit time. Unlike [transfers](/core-concepts/transfers), which are discrete events, streams accrue value every second.
+
+Streams are ideal for:
+
+- **Payroll / contractor pay** — the recipient withdraws earned balance on their own schedule
+- **Subscriptions** — cancel any moment, get refunded for unused time
+- **Service-tier SLAs** — pay-per-millisecond for AI inference, compute, bandwidth
+- **Agent-to-agent retainers** — one agent pays another to keep availability
+
+## Anatomy
+
+```
+┌─────────────────┐
+│ Sender wallet   │
+│  (wrapped       │
+│   funds)        │
+└────────┬────────┘
+         │ flows at rate
+         ▼
+┌─────────────────┐        ┌─────────────────┐
+│ Stream          │──────▶ │ Recipient       │
+│  • flow_rate    │        │  balance        │
+│  • buffer       │        │  (withdrawable) │
+│  • runway       │        └─────────────────┘
+└─────────────────┘
+```
+
+Key numbers on every stream:
+
+- **`flow_rate`** — amount per second (e.g. `"0.00005"` USDC = $0.00005/s ≈ $4.32/day)
+- **`wrapped_balance`** — sender's locked-up funds powering the stream
+- **`buffer`** — reserved slack to prevent accidental underrun
+- **`runway_seconds`** — time until the wrapped balance runs out at current flow rate
+- **`recipient_balance`** — accrued, withdrawable by the recipient
+
+## Create a stream
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/streams \
+  -H "Authorization: Bearer pk_test_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_wallet_id": "wal_sender_...",
+    "to_wallet_id": "wal_recipient_...",
+    "flow_rate": "0.00005",
+    "currency": "USDC",
+    "initial_deposit": "1000.00",
+    "buffer": "50.00"
+  }'
+```
+
+This locks $1000 into the stream, starts flowing at $0.00005/s, and keeps a $50 buffer. The recipient accrues ~$4.32/day and can withdraw at any point.
+
+## Recipient withdraws
+
+```bash
+curl -X POST https://api.getsly.ai/v1/streams/str_.../withdraw \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "amount": "10.00" }'  # omit to withdraw all accrued
+```
+
+Withdrawal creates a `stream_withdraw` transfer into the recipient's wallet.
+
+## Top up or adjust
+
+```bash
+# Add more funds
+curl -X POST /v1/streams/str_.../topup -d '{ "amount": "500.00" }'
+
+# Change flow rate (reflective of new runway)
+curl -X PATCH /v1/streams/str_... -d '{ "flow_rate": "0.0001" }'
+```
+
+## Pause and resume
+
+```bash
+curl -X POST /v1/streams/str_.../pause
+curl -X POST /v1/streams/str_.../resume
+```
+
+Paused streams don't accrue. Wrapped funds remain locked until cancellation.
+
+## Cancel
+
+```bash
+curl -X POST /v1/streams/str_.../cancel
+```
+
+- Accrued balance transfers to the recipient
+- Unused wrapped funds return to the sender
+- The stream record remains for audit
+
+## Runway and alerts
+
+When `runway_seconds` drops below a threshold, Sly fires a `stream_alert` webhook and pushes a `stream_alert` SSE event to any connected agents that manage the stream:
+
+```json
+{
+  "event": "stream_alert",
+  "severity": "warning",
+  "stream_id": "str_...",
+  "runway_seconds": 3600,
+  "message": "Stream will exhaust in 1 hour"
+}
+```
+
+Severity levels: `warning` (<24h), `critical` (<1h), `exhausted` (runway=0).
+
+## Agent permissions
+
+When an agent creates or manages a stream, their wallet policy grants them granular permissions:
+
+- `streams:create` — open new streams
+- `streams:modify` — change flow rate, topup
+- `streams:pause` — pause/resume
+- `streams:terminate` — cancel
+
+See [wallet policies](/agents/wallet-policies) for how to scope these.
+
+## Why streams over periodic transfers
+
+| | Stream | Batch of transfers |
+|---|---|---|
+| Granularity | Per-second | Per period (daily/weekly/monthly) |
+| Refunds | Automatic (cancel returns unused) | Manual (via refunds API) |
+| Gas / fees | Paid once on wrap | Paid per transfer |
+| Recipient cash flow | Continuous | Lumpy |
+| Auditability | Every second is on-ledger | Per-transfer |
+
+For anything ongoing, prefer a stream.

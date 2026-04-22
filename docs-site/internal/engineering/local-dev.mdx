@@ -1,0 +1,119 @@
+---
+title: "Local development setup"
+description: "From zero to running API + dashboard in 10 minutes."
+---
+
+## Prerequisites
+
+- Node.js 20+ (22 works; 18 is deprecated)
+- pnpm 9+
+- A Supabase project you can connect to (dev or your own)
+- Google Cloud `gcloud auth` if you need GCP-backed integrations
+
+## Clone + install
+
+```bash
+git clone git@github.com:sly-ai/platform.git
+cd platform
+pnpm install
+```
+
+## Environment
+
+Create `.env` at the repo root:
+
+```bash
+cp .env.example .env
+```
+
+Required:
+
+```env
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_ANON_KEY=<anon_key>
+SUPABASE_SERVICE_ROLE_KEY=<service_role_key>   # REQUIRED
+API_PORT=4000
+NODE_ENV=development
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` is non-optional — the API bypasses RLS for server-side operations and relies on application-level tenant filtering (see [database + RLS](/engineering/database-rls)).
+
+## Build shared packages first
+
+```bash
+pnpm build
+```
+
+Order matters: `packages/types`, `packages/utils`, `packages/cards` must be built before apps can import them. `pnpm build` walks the topological order.
+
+## Start services
+
+```bash
+# API server (http://localhost:4000)
+pnpm --filter @sly/api dev
+
+# Next.js dashboard (http://localhost:3000) — NEVER use payos-ui/
+pnpm --filter @sly/web dev
+
+# Scanner (http://localhost:4100)
+pnpm --filter @sly/scanner dev
+
+# Everything at once
+pnpm dev
+```
+
+<Warning>
+`payos-ui/` is **deprecated** — don't touch it. All frontend work goes in `apps/web/`.
+</Warning>
+
+## Seed demo data
+
+```bash
+pnpm --filter @sly/api seed:db
+```
+
+Creates a demo tenant with accounts, agents, transfers, streams. Demo API key: `pk_test_demo_fintech_key_12345`.
+
+## Verify
+
+```bash
+curl http://localhost:4000/health
+curl http://localhost:4000/v1/context \
+  -H "Authorization: Bearer pk_test_demo_fintech_key_12345"
+```
+
+## Running tests
+
+```bash
+pnpm test:unit                      # fast, no DB
+INTEGRATION=true pnpm test:integration  # hits live Supabase
+pnpm --filter @sly/api test tests/unit/helpers.test.ts
+```
+
+## Regenerating OpenAPI specs
+
+After editing routes in `apps/api/src/routes/openapi/*.ts`:
+
+```bash
+pnpm --filter @sly/api generate:openapi
+```
+
+Specs land in `docs-site/public/api-reference/openapi.json` and `docs-site/internal/api-reference/openapi.json`.
+
+## Running docs portals locally
+
+```bash
+# Public
+cd docs-site/public && mintlify dev
+
+# Internal (in another terminal)
+cd docs-site/internal && mintlify dev --port 3002
+```
+
+## Common setup issues
+
+- **Build fails** — `pnpm build` again. Shared packages must be built before apps.
+- **Tests fail with import errors** — same; rebuild packages.
+- **RLS errors in integration tests** — need `INTEGRATION=true` and a real Supabase connection.
+- **Supabase connection refused** — check `SUPABASE_URL` doesn't have trailing slash.

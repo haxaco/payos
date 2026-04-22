@@ -1,0 +1,47 @@
+---
+title: "Sly Internal Documentation"
+description: "Engineering reference, runbooks, and architecture for the Sly platform."
+---
+
+<Warning>
+**Internal documentation.** This portal contains architecture details, runbooks, and security controls not meant for external distribution. Access is limited to Sly staff via Google Workspace SSO.
+</Warning>
+
+This is the staff-facing documentation portal. It mirrors the [public docs](https://docs.getsly.ai) and adds:
+
+- **Internal API reference** — admin routes, dashboard-internal endpoints, and everything not surfaced externally
+- **Architecture** — how the monorepo is organized, where code lives, why
+- **Runbooks** — deploys, incidents, on-call procedures
+- **Protocol internals** — implementation notes, gotchas, and historical context
+- **Scanner** — the demand intelligence service (not in public docs yet)
+- **Compliance & security** — KYC/KYB flows, sanctions screening, data retention
+
+## Where things live
+
+| Topic | Section |
+|---|---|
+| I'm new to the codebase | [Local dev setup](/engineering/local-dev) → [Monorepo layout](/engineering/monorepo-layout) |
+| I'm debugging a prod issue | [Incident response](/runbooks/incident-response) → [Debugging reference](/debugging/overview) |
+| I'm adding a new API route | [Conventions](/engineering/conventions) → [Auth middleware](/engineering/auth-middleware) → [Database + RLS](/engineering/database-rls) |
+| I'm on call | [On-call runbook](/runbooks/on-call) |
+| I'm onboarding a new partner | [Public docs](https://docs.getsly.ai) + [Support runbook](/runbooks/overview) |
+
+## Content ownership
+
+Code documentation is owned by the team that owns the code:
+
+- **`apps/api`** → platform team
+- **`apps/web`** → frontend team
+- **`apps/scanner`** → growth team
+- **`packages/*`** → platform team
+- **Runbooks** → SRE / on-call rotation
+- **Compliance & security** → compliance officer
+
+PRs that modify routes must update the narrative docs in the same PR. Schema changes propagate automatically via `@hono/zod-openapi`, so the API reference stays in sync without manual work.
+
+## Finding things fast
+
+- **API endpoint behavior** → [API Reference](/api-reference/openapi) tab
+- **"Why does this work this way?"** → [Protocol internals](/protocol-internals/ucp) or [Architecture](/engineering/architecture)
+- **"What's the on-call process?"** → [Runbooks](/runbooks/overview)
+- **"Where's the test/dev environment?"** → [Local dev](/engineering/local-dev)

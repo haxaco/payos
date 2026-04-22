@@ -1,0 +1,114 @@
+---
+title: "Incident response"
+description: "First-30-minute playbook for Sev 1 and Sev 2 incidents."
+---
+
+An incident is anything causing production failures affecting partners. The goal is **stop the bleeding fast**, then investigate.
+
+## First 30 minutes
+
+<Steps>
+  <Step title="Acknowledge">
+    Acknowledge the page in PagerDuty. This signals other responders that someone is on it.
+  </Step>
+
+  <Step title="Assess severity">
+    - **Sev 1**: Production down, money at risk, data leak, auth bypass
+    - **Sev 2**: Degraded; significant subset of partners affected
+    - **Sev 3**: Single-partner or single-flow, workaround exists
+    - Go higher if unsure. De-escalate if later warranted.
+  </Step>
+
+  <Step title="Start an incident channel">
+    Create `#incident-YYYYMMDD-short-desc` in Slack. Add the on-call, affected-area owners, and (for Sev 1) leadership.
+  </Step>
+
+  <Step title="Post to status page">
+    - Sev 1 — within 5 minutes
+    - Sev 2 — within 15 minutes
+    - Draft the update in the incident channel first for sanity-check, then post.
+  </Step>
+
+  <Step title="Stabilize">
+    First instinct should be to stop the damage, not diagnose.
+    - Can we roll back recent deploy? Do it.
+    - Can we disable the failing path via feature flag? Do it.
+    - Can we drain traffic / take something offline? Do it.
+    Diagnosis happens after the bleeding stops.
+  </Step>
+
+  <Step title="Investigate">
+    - Check [status dashboards](/runbooks/overview#key-dashboards)
+    - Check recent deploys in Vercel
+    - Check recent migrations in `apps/api/supabase/migrations/`
+    - Check external provider status (Circle, Stripe, Persona, Supabase)
+    - Pull recent error traces (request IDs from partner reports are gold)
+  </Step>
+
+  <Step title="Update status page on resolution path">
+    Every 30 minutes on Sev 1; every hour on Sev 2. Even if the update is "still investigating."
+  </Step>
+</Steps>
+
+## Common first moves
+
+### API returning 500s broadly
+
+1. Check Vercel — any failed deployment auto-rollback?
+2. Check Supabase — database outage?
+3. Last-resort: roll back to last known good deploy
+
+### Transfers stuck in `processing`
+
+1. Check rail status (Circle, bank wire provider)
+2. Check scheduled-transfers worker (is it even running?)
+3. Check webhook delivery (are we receiving settlement callbacks?)
+4. If rail issue: pin an incident to it, wait for resolution
+5. If worker issue: restart + investigate
+
+### Webhook deliveries failing
+
+1. Check webhook worker queue depth
+2. Check target endpoint status (partner's problem?)
+3. If our side: look at recent webhook code changes
+
+### Auth broadly failing
+
+1. Supabase Auth status?
+2. JWT cache stale after deploy? Restart API pods
+3. Key rotation gone wrong? Check `api_keys` table for recent changes
+
+### Cross-tenant data leak (Sev 1 critical)
+
+1. **Disable the affected endpoint immediately** via feature flag or ops toggle
+2. Pull the exact query, identify the missing `tenant_id` filter
+3. Hotfix → rolling release 5% → monitor → ramp
+4. Post-incident: document in [`docs/incidents/`](https://github.com/sly-ai/platform/tree/main/docs/incidents)
+5. Notify affected tenants within 72 hours per compliance policy
+
+## Escalation
+
+| Role | When to escalate | Contact |
+|---|---|---|
+| Platform lead | Sev 1 or unclear scope | Slack DM + phone |
+| CTO | Sev 1 or public-facing message needed | phone |
+| Legal | Data leak, sanctions issue, regulatory | email + Slack |
+| Compliance | KYC/AML related | email |
+
+Escalate early; de-escalate if it turns out smaller.
+
+## During the incident
+
+- **Someone drives, others follow.** One incident commander, everyone else does what they say.
+- **Log everything in the channel.** "Running X, ETA Y." Builds the timeline automatically.
+- **Don't deploy experimental fixes to prod.** Test in preview first unless the alternative is worse than the experiment.
+- **No heroics.** If you need help, say so. The goal is resolution, not credit.
+
+## After the incident
+
+1. Incident commander opens a postmortem doc in `docs/incidents/YYYY-MM-DD-short-desc.md`
+2. Timeline from the Slack channel → doc
+3. Postmortem meeting within 5 business days (blameless)
+4. Action items assigned with owners and due dates
+5. Public summary on status page for Sev 1 / Sev 2 within 7 business days
+6. Runbook updated with lessons learned

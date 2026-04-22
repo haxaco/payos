@@ -1,0 +1,77 @@
+---
+title: "Onboard an account"
+description: "Create a business or person account and take it through KYC/KYB."
+---
+
+An [account](/core-concepts/accounts) represents a person or business in your tenant. Every agent and wallet belongs to one. Here's how to create and verify one end-to-end.
+
+## 1. Create the account record
+
+```ts
+const account = await sly.accounts.create({
+  type: 'business',
+  name: 'Acme Robotics',
+  email: 'ops@acme.example',
+  metadata: { internal_id: 'cust_abc' },
+});
+// account.id = 'acc_...'
+```
+
+Accounts start at KYC/KYB tier 0 — created but not verified. Low spending caps apply until verification completes.
+
+## 2. Start verification
+
+```ts
+const verification = await sly.accounts.startVerification(account.id, {
+  provider: 'persona',              // or 'stripe_identity', 'custom'
+  redirect_url: 'https://yourapp.example/kyc-complete',
+});
+// verification.url — where to send the user
+```
+
+Redirect the end-user's browser to `verification.url`. They complete the flow (upload docs, take a selfie, etc.); Persona redirects back to your `redirect_url` on completion.
+
+## 3. Listen for the verified event
+
+```ts
+// Webhook payload
+{
+  "type": "account.verified",
+  "data": {
+    "account": { "id": "acc_...", "verification_status": "verified", "kyc_tier": 2 }
+  }
+}
+```
+
+Until you see this event, don't enable the account for high-value operations — its cap is still tier-0.
+
+## 4. Optional: on-chain identity
+
+If the account owns agents that transact on-chain:
+
+```ts
+await sly.accounts.registerErc8004(account.id, { chain: 'base' });
+```
+
+Mints an on-chain identity tied to the account; child agents inherit the attestation chain.
+
+## Sandbox shortcuts
+
+In sandbox:
+
+- Verification approves instantly without real documents
+- Tier can be set directly: `sly.accounts.update(id, { kyc_tier: 2 })`
+- No actual Persona calls are made
+
+This lets you exercise your post-verification logic without waiting on a live KYC flow.
+
+## Common pitfalls
+
+- **Treating an unverified account as ready.** Tier 0 caps are intentionally low. If your product needs higher amounts immediately, gate account creation behind verification.
+- **Embedding verification URLs.** The `verification.url` is single-use and time-limited (~30 min). Don't cache it — generate on demand.
+- **Forgetting to store the ID.** You'll need `account.id` for every downstream operation (agent creation, wallet creation, transfers).
+
+## Next
+
+- [Register an agent](/guides/register-agent) — attach an AI actor to this account
+- [Core concepts → Accounts](/core-concepts/accounts) — data model reference

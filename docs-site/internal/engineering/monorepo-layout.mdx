@@ -1,0 +1,96 @@
+---
+title: "Monorepo layout"
+description: "Where things live and why."
+---
+
+```
+platform/
+├── apps/
+│   ├── api/              # Hono API (port 4000) — the main product
+│   ├── web/              # Next.js dashboard (port 3000) ← ACTIVE UI
+│   ├── scanner/          # Demand intelligence service (port 4100)
+│   └── design-kitchen/   # Internal design prototyping
+├── packages/
+│   ├── sdk/              # @sly_ai/sdk — npm-published SDK
+│   ├── cli/              # @sly_ai/cli — npm-published CLI
+│   ├── mcp-server/       # @sly_ai/mcp-server — npm-published MCP
+│   ├── api-client/       # Internal typed API client (used by web)
+│   ├── types/            # @sly/types — shared types
+│   ├── utils/            # @sly/utils — shared utilities
+│   ├── cards/            # @sly/cards — Visa VIC / Mastercard integrations
+│   ├── ui/               # @sly/ui — shared React components
+│   └── db/               # @sly/db — migration utilities
+├── docs/                 # Internal engineering & product docs (source material)
+├── docs-site/
+│   ├── public/           # docs.getsly.ai (Mintlify)
+│   └── internal/         # internal-docs.getsly.ai (Mintlify, SSO-gated)
+├── payos-ui/             # ⚠️ DEPRECATED, do not touch
+├── turbo.json
+├── pnpm-workspace.yaml
+└── package.json
+```
+
+## Package naming conventions
+
+- **`@sly_ai/*`** — npm-published packages (SDK, CLI, MCP server). Underscores because `@sly/*` was taken.
+- **`@sly/*`** — internal workspace-only packages. Never published to npm.
+
+## Dependency direction
+
+```
+apps depend on packages. packages don't depend on apps.
+apps don't depend on each other.
+packages can depend on other packages (acyclic).
+
+Typical chains:
+  apps/api      → @sly/types, @sly/utils, @sly/cards, @sly_ai/sdk
+  apps/web      → @sly/types, @sly/ui, @sly/api-client
+  apps/scanner  → @sly/types, @sly/utils
+  @sly_ai/sdk   → @sly/types
+  @sly_ai/cli   → @sly_ai/sdk
+  @sly_ai/mcp-server → @sly_ai/sdk
+```
+
+If you're tempted to import `apps/web` from `apps/api`: stop. Extract the shared code into `packages/*` first.
+
+## Build order
+
+Turbo handles ordering from `turbo.json`. Topo order (simplified):
+
+1. `packages/types`
+2. `packages/utils`, `packages/cards`, `packages/db`
+3. `packages/ui`, `packages/api-client`
+4. `packages/sdk`
+5. `packages/cli`, `packages/mcp-server`
+6. `apps/*`
+
+`pnpm build` walks this automatically. Specific rebuilds:
+
+```bash
+pnpm build --filter=@sly/types
+pnpm build --filter=@sly/api
+pnpm build --filter=./apps/*
+```
+
+## Where to put new code
+
+| You're building | It goes in |
+|---|---|
+| New API endpoint | `apps/api/src/routes/` |
+| New OpenAPI-migrated endpoint | `apps/api/src/routes/openapi/` |
+| Dashboard UI | `apps/web/` |
+| Scanner probe / analyzer | `apps/scanner/src/` |
+| Shared type | `packages/types/src/` |
+| Shared React component | `packages/ui/src/` |
+| New SDK feature | `packages/sdk/src/` |
+| New CLI command | `packages/cli/src/commands/` |
+| MCP tool | `packages/mcp-server/src/tools/` |
+
+When in doubt, look at existing examples in the target directory first.
+
+## Conventions
+
+- All internal packages use `"type": "module"` — ESM only
+- All packages use `tsup` for builds, `vitest` for tests, `eslint` + `typescript` for lint/typecheck
+- `.js` extensions are required on imports (ESM rule) — `import { foo } from './bar.js'` even when source is `bar.ts`
+- All internal packages publish `.d.ts` alongside `.js` via `tsup --dts`

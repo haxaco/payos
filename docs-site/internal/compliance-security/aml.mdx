@@ -1,0 +1,66 @@
+---
+title: "AML"
+description: "Anti-money-laundering signals and SAR workflow."
+---
+
+AML (Anti-Money Laundering) covers ongoing transaction monitoring beyond point-in-time KYC.
+
+## Signals we monitor
+
+- **Velocity anomalies** — sudden spike in transaction count or volume
+- **Structuring** — amounts deliberately just below reporting thresholds
+- **Jurisdictional risk** — traffic to/from high-risk corridors
+- **Behavior drift** — agent behavior suddenly changing vs. baseline
+- **Counterparty clustering** — repeated transfers between same small set of parties
+- **Cash-equivalent conversion** — stablecoin → fiat rapidly after deposit
+
+Scoring combines these into a risk score per transaction and per account. High scores flag for review.
+
+## Automated actions
+
+| Score | Action |
+|---|---|
+| 0–30 | Normal — allow |
+| 31–60 | Enhanced logging — allow |
+| 61–80 | Hold for compliance review (non-blocking for small amounts) |
+| 81+ | Reject — `HIGH_RISK_TRANSACTION` |
+
+Thresholds configurable per tenant.
+
+## Suspicious Activity Report (SAR)
+
+If investigation confirms suspicious patterns:
+1. Compliance officer reviews full context
+2. SAR drafted per FinCEN template (or equivalent in other jurisdictions)
+3. Filed with the appropriate regulator
+4. Internal record kept with full trail
+5. **Do NOT notify the account holder** — tipping off is itself a violation
+
+SAR timelines: within 30 days of detection (US), varies by jurisdiction.
+
+## Dashboards
+
+- Risk score distribution (per day)
+- Top-N highest-risk accounts
+- SAR queue
+- Resolved hits by category
+
+All live in the internal compliance dashboard.
+
+## Role-scoping
+
+Only compliance role can:
+- See unredacted SAR content
+- Approve / reject soft holds at tier 2+
+- Override a hard-block decision
+
+Regular staff see counts and categories only.
+
+## Audit and regulators
+
+Full audit trail for every decision. Regulators can request:
+- All SARs filed in a window
+- All sanctions hits and resolutions
+- All account freezes with reasoning
+
+Prepared export: `sly compliance export --since 2026-01-01 --format fincen`.

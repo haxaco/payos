@@ -1,0 +1,34 @@
+---
+title: "Background workers"
+description: "Long-running processes that back async platform behavior."
+---
+
+See [engineering/background-workers](/engineering/background-workers) for the full engineering reference. This page is the service-oriented view.
+
+## Deployed workers
+
+| Worker | Responsibility | Env flag |
+|---|---|---|
+| scheduled-transfers | Execute `scheduled_at` transfers | `SCHEDULED_TRANSFERS_ENABLED` |
+| webhook-delivery | Deliver + retry webhook events | `WEBHOOK_WORKER_ENABLED` |
+| stream-monitor | Emit stream runway alerts | `STREAM_MONITOR_ENABLED` |
+
+Workers run in a separate process cluster from the HTTP API (both on Vercel Fluid Compute, separate deployments).
+
+## Health & metrics
+
+Each worker emits:
+- Iteration duration
+- Queue depth
+- Per-item latency
+- Error rate
+
+Surfaced in the internal Grafana dashboard (link in [runbooks](/runbooks/overview)).
+
+## Failure modes
+
+- **Queue depth growing** — worker slower than incoming; scale horizontally or fix bottleneck
+- **Double execution** — idempotency broken on an item; fix + clean up duplicates
+- **Worker not running** — env flag missing; check deployment config
+
+See incident response runbook for escalation paths.

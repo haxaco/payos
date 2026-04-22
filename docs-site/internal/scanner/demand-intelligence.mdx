@@ -1,0 +1,82 @@
+---
+title: "Demand intelligence"
+description: "Turning scans into actionable signal."
+---
+
+Demand intelligence sits on top of the scanner. Raw scan results answer "is this merchant agent-ready?" — demand intel answers "where is the demand for agentic commerce coming from?"
+
+## Files
+
+`apps/scanner/src/demand/`
+
+- `intelligence.ts` — aggregation + trend analysis
+- `synthetic-tests.ts` — simulated agent shopping (see [synthetic-tests](/scanner/synthetic-tests))
+- `observatory.ts` — real-agent traffic observations
+- `telemetry.ts` — signals feed
+
+## Signal types
+
+### Readiness signals
+- Merchant newly adopted a protocol
+- Merchant degraded (removed a capability)
+- Merchant first scan (new to the corpus)
+
+### Traffic signals
+- Real AI user-agent observed hitting a merchant
+- Volume growing/declining
+- New agent types observed
+
+### Synthetic test results
+- Agent successfully completed checkout
+- Agent blocked at specific friction point
+- Merchant added a new friction
+
+### Cohort signals
+- Category rollup: "how many SaaS merchants are UCP-enabled"
+- Geography rollup: "Brazilian merchants adopting AP2"
+- Size rollup: "mid-market vs. enterprise adoption curve"
+
+## Output: demand briefs
+
+`GET /v1/scanner/demand/brief` returns a summary:
+
+```json
+{
+  "window": "last_30d",
+  "total_merchants_scanned": 48112,
+  "newly_ready": 312,
+  "newly_degraded": 41,
+  "hot_categories": [
+    { "category": "saas", "adoption_delta": 0.08 },
+    { "category": "ecommerce_marketplaces", "adoption_delta": 0.05 }
+  ],
+  "hot_geographies": [...],
+  "top_prospects": [...]
+}
+```
+
+## Prospects
+
+"Top prospects" is the sales-ready output:
+1. Merchant has partial protocol support (not fully agentic yet)
+2. Real agent traffic observed (demand present)
+3. Competitor in the same category has gone fully agentic (external pressure)
+4. Tier / size makes them a plausible Sly customer
+
+Scored, ranked, surfaced to sales.
+
+## Heat map
+
+`GET /v1/scanner/demand/heat-map` — geographic / category grid with adoption + traffic overlaid. Surfaces where pockets of demand are emerging.
+
+## Trend
+
+`GET /v1/scanner/trend/:metric?window=30d` — time series for any metric (protocol adoption, category adoption, agent traffic, readiness distribution).
+
+## Privacy
+
+We scan public information only. Traffic observations come from user-agent analysis — we never identify specific buyers. All outputs are aggregate unless the merchant explicitly opted in to individual attribution.
+
+## Performance
+
+Aggregation queries run on materialized views refreshed every 15 minutes. Prospects scoring runs hourly. Heat maps rebuilt daily.

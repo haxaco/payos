@@ -1,0 +1,73 @@
+---
+title: "Environments"
+description: "Test and live environments, sandbox hosts, and the rules for each."
+---
+
+Sly runs two isolated environments. Your data, keys, and agents in one environment are invisible to the other.
+
+## Test (sandbox) vs. Live
+
+| | Test | Live |
+|---|---|---|
+| **Base URL** | `https://sandbox.getsly.ai/v1` | `https://api.getsly.ai/v1` |
+| **API key prefix** | `pk_test_*` | `pk_live_*` |
+| **Agent token prefix** | `agent_test_*` | `agent_live_*` |
+| **Money** | Fake (Base Sepolia stablecoin, mock cards) | Real |
+| **KYC/KYB** | Simulated (instant approval) | Real third-party verification |
+| **Rate limits** | Generous (1,000 req/min) | Standard (100 req/min) |
+| **Webhook delivery** | Delivered, marked test | Delivered, marked live |
+| **Settlement** | Instant mock | Real settlement windows |
+
+<Note>
+**Test and live are fully isolated.** Test agents cannot see live accounts. Test transfers do not affect live balances. This includes webhooks, exports, and reports.
+</Note>
+
+## Discovering which environment you're in
+
+Every response includes an `X-Environment` header:
+
+```
+X-Environment: test
+```
+
+And every API key self-identifies by prefix:
+
+```bash
+# Test key → sandbox
+pk_test_abc123...
+
+# Live key → production
+pk_live_xyz789...
+```
+
+## Sandbox conveniences
+
+Only available in test:
+
+- **Instant KYC/KYB** — any `verify` endpoint approves immediately.
+- **Faucet funding** — agents can call `/v1/wallets/:id/fund` to self-credit test stablecoin.
+- **Skip approval** — payments marked `requires_approval` auto-approve after 2 seconds.
+- **Webhook playground** — replay any event to your local tunnel via `/v1/webhooks/:id/replay`.
+- **Mock settlement** — scheduled transfers execute every 30 seconds instead of the 60-second live cadence.
+
+## Going live
+
+1. Complete organization KYB at [app.getsly.ai/settings/compliance](https://app.getsly.ai/settings/compliance).
+2. A Sly operator reviews (typically <24 hours).
+3. Live API keys unlock in the dashboard.
+4. Swap `pk_test_*` → `pk_live_*` and `sandbox.getsly.ai` → `api.getsly.ai`. Nothing else in your code changes.
+
+<Warning>
+Before going live, run the full [sandbox testing checklist](/guides/sandbox-testing) — especially webhook signature verification. Every production incident we've seen at onboarding is either a webhook-signature bug or a rate-limit-retry loop.
+</Warning>
+
+## Using both at once
+
+If you run test and live traffic from the same server (common for customer-support tooling that needs to inspect both), route by the caller's API key prefix rather than by URL. The SDK does this for you:
+
+```ts
+import { Sly } from '@sly_ai/sdk';
+
+// Client picks the correct base URL from the key prefix
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+```

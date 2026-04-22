@@ -1,0 +1,77 @@
+---
+title: "Database migrations"
+description: "How to add, review, and roll out schema changes."
+---
+
+Migrations live in `apps/api/supabase/migrations/` and `packages/db/migrations/`. Naming convention: `YYYYMMDD_description.sql`.
+
+## Adding a migration
+
+1. Create file: `apps/api/supabase/migrations/20260425_my_change.sql`
+2. Write the SQL — idempotent where possible (`IF NOT EXISTS`, `OR REPLACE`)
+3. Include RLS policies for any new table (see [database + RLS](/engineering/database-rls))
+4. Run `pnpm --filter @sly/api check:rls` — passes or you've missed something
+5. Apply locally via Supabase CLI or manual SQL session
+6. Test rollback path mentally — can this be undone cleanly?
+
+## Idempotent patterns
+
+```sql
+-- Adding a column
+ALTER TABLE accounts
+  ADD COLUMN IF NOT EXISTS verification_tier INT DEFAULT 0 NOT NULL;
+
+-- Creating an index
+CREATE INDEX IF NOT EXISTS accounts_tenant_env
+  ON accounts (tenant_id, environment);
+
+-- Adding a constraint — use DO block for conditional
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'positive_amount') THEN
+    ALTER TABLE transfers ADD CONSTRAINT positive_amount CHECK (amount > 0);
+  END IF;
+END $$;
+```
+
+## Breaking changes
+
+Avoid. When unavoidable, split into three migrations deployed in order:
+
+1. **Additive** — add new column / table with default values
+2. **Dual-write period** — app writes both old and new; deploy for 1+ release
+3. **Drop old** — remove the now-unused column / table
+
+This gives us safe rollback at every step.
+
+## Migrations that affect RLS
+
+Changes to RLS policies are high-risk. Extra discipline:
+
+- Test in sandbox first
+- Include a negative test: "user from tenant A should NOT see tenant B's new data"
+- Have a second engineer review
+- Apply during low-traffic window
+
+## Applying migrations in production
+
+Never via psql prompt. Process:
+
+1. Merge migration to main
+2. CI applies via Supabase CLI or via our migration runner
+3. Verify schema matches expectations (`pnpm --filter @sly/api check:rls`)
+4. Deploy application code that uses the new schema
+
+## Rolling back
+
+For additive migrations: drop what you added.
+
+For destructive ones: restore from backup. Which is why we have daily backups and test the restore quarterly.
+
+## Seed data
+
+`apps/api/scripts/seed-*.ts` scripts populate demo data. They're idempotent (safe to re-run) and run against `test` environment only.
+
+## Looking back
+
+See commit history on `apps/api/supabase/migrations/` for examples. The full migration log is the authoritative historical record.

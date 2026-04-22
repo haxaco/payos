@@ -1,0 +1,85 @@
+---
+title: "Scanner analyzers"
+description: "Cross-cutting analysis beyond per-protocol probing."
+---
+
+## Files
+
+`apps/scanner/src/analyzers/`
+
+- `structured-data.ts` — JSON-LD, microdata, schema.org, OpenGraph extraction
+- `accessibility.ts` — basic a11y signals (alt tags, ARIA, semantic HTML)
+- `checkout-friction.ts` — measures how agent-friendly the checkout is
+- `meta.ts` — meta tags, canonical, robots directives
+- `scoring.ts` — combines everything into 0-100 readiness score
+
+## What each finds
+
+### structured-data.ts
+Extracts:
+- `<script type="application/ld+json">` — JSON-LD; common schemas: Product, Offer, Organization, BreadcrumbList
+- `<meta property="og:*">` — OpenGraph
+- `<meta name="twitter:*">` — Twitter card
+- Microdata (`itemprop`) — legacy but still common
+- RDFa (rare)
+
+Output includes the raw structured data + a count of product/offer entities.
+
+### accessibility.ts
+Binary checks:
+- HTML uses semantic elements (`<nav>`, `<main>`, `<footer>`)
+- Images have `alt`
+- Interactive elements have ARIA labels
+- Forms have `<label>` elements
+- Color contrast (if CSS analyzable)
+
+Output: a11y score 0-100.
+
+### checkout-friction.ts
+Heuristics for "can an agent check out here?":
+- Guest checkout available?
+- Forced account creation?
+- CAPTCHA on checkout?
+- Payment form → iframe (possibly tokenized, agent-hostile) vs. inline?
+- Shipping form complexity (field count)
+
+Output: friction score 0-100 (low = good).
+
+### meta.ts
+Declared intent signals:
+- `<meta name="robots" content="noai">` — opts out of AI crawling
+- `<meta name="ai-policy">` — explicit AI interaction policy if declared
+- `<meta name="agentic-commerce">` — capability advertisement
+- `robots.txt` AI-specific directives
+
+### scoring.ts
+Aggregates:
+
+```
+readiness_score = 
+    0.35 * protocol_signal_score  (how many agentic protocols supported)
+  + 0.20 * structured_data_score  (schema.org completeness)
+  + 0.20 * (100 - checkout_friction_score)
+  + 0.10 * accessibility_score
+  + 0.15 * meta_opt_in_score
+```
+
+Weights tuneable in `packages/utils/src/readiness-score.ts`.
+
+## Analyzer contract
+
+```ts
+export interface AnalyzerResult {
+  score?: number;  // 0-100
+  findings: string[];  // factual observations
+  data: unknown;  // raw extracted data
+}
+
+export async function analyze(html: string, url: string): Promise<AnalyzerResult>;
+```
+
+## Gotchas
+
+- **HTML we can't parse** — minified, obfuscated, or SPA-rendered (no pre-rendered content). In those cases, scoring falls back to "unknown" rather than zero.
+- **Structured data with errors** — JSON-LD that's malformed is common. Record as a finding; don't let it break the scan.
+- **Framework fingerprinting** — we detect frameworks (Shopify, Next.js, etc.) but don't score based on them directly. Avoid "Shopify = agentic-ready" anti-patterns.

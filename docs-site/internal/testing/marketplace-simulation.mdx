@@ -1,0 +1,45 @@
+---
+title: "Marketplace simulation"
+description: "End-to-end test where Claude subagents act as real marketplace agents."
+---
+
+The marketplace simulation exercises the full agentic stack: multiple AI agents (Claude Code subagents) act as buyers and sellers on `sandbox.getsly.ai`, sending tasks, completing work, rating counterparties, and settling payments on-chain (Base Sepolia).
+
+## Why
+
+Unit and integration tests catch regressions in any one component. They don't catch emergent bugs in the *interaction* between agents — collusion, price discovery failures, dispute edge cases, runaway spending. For those, we need agents that actually behave like agents.
+
+## How it runs
+
+Each simulation round:
+1. Spawn N Claude Code subagents with agent tokens for distinct sandbox agents
+2. Each subagent has a role (buyer, seller with specific skills, treasury bot)
+3. They run autonomously for 10-30 minutes, sending tasks, responding, rating
+4. Transcripts + metrics are captured for review
+
+See `CLAUDE.md` section "Marketplace Testing" and prior round memory in the internal team notes.
+
+## When to run
+
+- **Before a major protocol change** — especially A2A, AP2, wallet policies
+- **After auth changes** — confirms agents can still authenticate end-to-end
+- **Exploratory** — when a new feature touches multi-agent behavior
+
+## Round report
+
+Each round produces a report documenting:
+- Which agents participated
+- Tasks sent / completed / failed / disputed
+- Total volume settled
+- Bugs discovered (filed as GitHub issues)
+- Emergent behavior worth noting
+
+Reports live in `docs/reports/round-N/`.
+
+## Red-team rounds
+
+Planned: adversarial rounds where one or more subagents are instructed to probe governance — try to exceed limits, collude with peers, adapt pricing against competitors. Purpose: stress-test policy enforcement under active manipulation.
+
+## Running a round
+
+Don't run directly — use the Claude Code subagent workflow described in team memory. Running the simulation harness manually bypasses the actual test surface.

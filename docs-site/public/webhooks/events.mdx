@@ -1,0 +1,132 @@
+---
+title: "Event catalog"
+description: "Every webhook event type Sly emits."
+---
+
+Subscribe to whichever subset you need — you pay no cost for unused events, but narrower subscriptions reduce noise in your handler.
+
+## Transfers
+
+| Event | Fires when |
+|---|---|
+| `transfer.created` | A transfer object is created (not yet executed) |
+| `transfer.processing` | Transfer submitted to the settlement rail |
+| `transfer.completed` | Transfer finalized |
+| `transfer.failed` | Rail rejected or compliance blocked |
+| `transfer.refunded` | A completed transfer was refunded |
+| `transfer.cancelled` | Cancelled from `pending` state |
+
+Payload: `{ "transfer": { full transfer object } }`
+
+## Streams
+
+| Event | Fires when |
+|---|---|
+| `stream.created` | New stream opened |
+| `stream.modified` | Flow rate or buffer changed |
+| `stream.paused` | Stream paused |
+| `stream.resumed` | Stream resumed |
+| `stream.cancelled` | Stream terminated |
+| `stream.alert` | Runway crosses warning/critical/exhausted threshold |
+
+Payload: `{ "stream": {...}, "alert": { "severity": "warning" | "critical" | "exhausted", "runway_seconds": N } }` (for alerts)
+
+## Agents
+
+| Event | Fires when |
+|---|---|
+| `agent.created` | New agent registered |
+| `agent.tier_upgraded` | KYA tier changed (0→1, 1→2, etc.) |
+| `agent.key_rotated` | Ed25519 key rotated |
+| `agent.key_revoked` | Ed25519 key revoked |
+| `agent.frozen` | Wallet policy freeze triggered |
+| `agent.unfrozen` | Freeze lifted |
+| `agent.revoked` | Agent permanently terminated |
+
+## Approvals
+
+| Event | Fires when |
+|---|---|
+| `approval.requested` | New approval created (action required) |
+| `approval.approved` | Approver approved |
+| `approval.rejected` | Approver rejected |
+| `approval.escalated` | Escalated to higher role |
+| `approval.expired` | Timeout passed with no decision |
+
+## Protocols
+
+| Event | Fires when |
+|---|---|
+| `ucp.token_issued` | New UCP token created |
+| `ucp.settlement_completed` | UCP token settled |
+| `acp.checkout_completed` | ACP session paid |
+| `acp.checkout_fulfilled` | Merchant marked fulfilled |
+| `ap2.mandate_created` | New mandate |
+| `ap2.mandate_executed` | Mandate execution |
+| `ap2.mandate_revoked` | Mandate revoked |
+| `x402.payment_completed` | x402 payment settled |
+| `a2a.task_received` | Peer sent a task |
+| `a2a.task_completed` | Task deliverable submitted |
+| `a2a.task_rated` | Counterparty rated the task |
+| `a2a.task_disputed` | Dispute opened |
+| `mpp.session_opened` | MPP session started |
+| `mpp.payment_completed` | MPP payment executed |
+
+## Quotes
+
+| Event | Fires when |
+|---|---|
+| `quote.created` | New FX quote issued |
+| `quote.expired` | Unused quote expired |
+| `quote.consumed` | Quote used on a transfer |
+
+## Disputes
+
+| Event | Fires when |
+|---|---|
+| `dispute.opened` | New chargeback/dispute filed |
+| `dispute.evidence_requested` | Provider requested supporting evidence |
+| `dispute.won` | Ruled in your favor |
+| `dispute.lost` | Ruled against you |
+| `dispute.withdrawn` | Buyer withdrew |
+
+## Compliance
+
+| Event | Fires when |
+|---|---|
+| `account.verified` | KYC/KYB verification approved |
+| `account.rejected` | Verification rejected |
+| `compliance.alert` | Sanctions hit or high-risk signal |
+| `compliance.review_required` | Manual review queued |
+
+## System
+
+| Event | Fires when |
+|---|---|
+| `webhook.test` | Triggered by `POST /v1/webhooks/:id/test` |
+| `webhook.failing` | Your endpoint has failed 10+ consecutive deliveries |
+
+## Subscribe
+
+```bash
+# Subscribe to multiple events
+curl -X POST https://api.getsly.ai/v1/webhooks \
+  -d '{
+    "url": "https://hooks.example.com/sly",
+    "events": ["transfer.*", "stream.alert", "approval.requested"]
+  }'
+
+# Wildcards supported (transfer.*, agent.*, etc.)
+# Subscribe to everything with "*"
+```
+
+## Available events API
+
+Programmatic list:
+
+```bash
+curl https://api.getsly.ai/v1/webhooks/events \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Returns the full list of event types + their payload schemas — useful if you're building a dashboard that lets users pick what to subscribe to.

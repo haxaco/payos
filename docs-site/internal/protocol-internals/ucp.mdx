@@ -1,0 +1,58 @@
+---
+title: "UCP internals"
+description: "Implementation notes and gotchas for the Unified Commerce Protocol."
+---
+
+Sly-native. Broadest compatibility; default protocol when no other is specified.
+
+## File map
+
+- `apps/api/src/routes/ucp.ts` — core settle + token endpoints
+- `apps/api/src/routes/ucp-checkout.ts` — full cart checkout flow
+- `apps/api/src/routes/ucp-orders.ts` — order tracking + fulfillment events
+- `apps/api/src/routes/ucp-identity.ts` — buyer identity linking
+- `apps/api/src/routes/ucp-merchants.ts` — merchant catalog
+- `apps/api/src/routes/ucp-schemas.ts` — JSON schemas served publicly
+- `apps/api/src/routes/well-known-ucp.ts` — capability advertisement
+- `apps/api/src/routes/webhooks/ucp.ts` — incoming settlement webhooks
+
+## Token format
+
+UCP tokens are JWS-signed JWTs. Payload includes:
+
+```json
+{
+  "tid": "ucp_tok_...",
+  "merchant_id": "mer_...",
+  "items": [...],
+  "total": "49.00",
+  "currency": "USD",
+  "settlement_prefs": ["usdc", "ach", "card"],
+  "exp": 1713800900,
+  "iat": 1713800000,
+  "iss": "api.getsly.ai"
+}
+```
+
+Signing: Ed25519 via HSM-held key. Verification: any consumer with the public key can verify without our server.
+
+## Settlement flow gotchas
+
+- **Token expires, buyer still tries to settle** — return `400 TOKEN_EXPIRED`. Don't silently fail.
+- **Two buyers try to settle same token** — first wins, second gets `409 ALREADY_SETTLED`. Token state is tracked in `ucp_tokens.status`.
+- **Rail chosen by buyer not supported by merchant** — validate against `settlement_prefs` before executing.
+- **Settlement succeeds but webhook to merchant fails** — settlement is final; merchant webhook retries. Merchant must be idempotent (assume they already saw the event).
+
+## Migration to OpenAPIHono
+
+Planned (`apps/api/src/routes/openapi/ucp.ts`). Roughly 28 endpoints across the sub-routers. Largest migration of the six protocols.
+
+## Known issues
+
+- **Multi-currency orders** — currently require separate tokens per currency. Eventually: one token spans multi-currency baskets.
+- **Partial settlement** — not supported. Token is all-or-nothing. Multi-item baskets with per-item settlement are planned.
+
+## Related
+
+- Public docs: [UCP protocol page](https://docs.getsly.ai/protocols/ucp)
+- PRD: [`docs/prd/epics/`](https://github.com/sly-ai/platform/tree/main/docs/prd/epics) — search "ucp"

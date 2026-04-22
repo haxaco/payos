@@ -1,0 +1,91 @@
+---
+title: "Scanner overview"
+description: "Agentic commerce demand intelligence — how it works end-to-end."
+---
+
+The Scanner is a standalone service that scans merchant websites, analyzes their agentic-commerce readiness, and powers demand intelligence (which merchants are ready, which are adjacent, trend over time).
+
+## Pipeline
+
+```
+Input URL
+   │
+   ▼
+┌─────────────────────┐
+│  HTTP fetch         │  (undici, no browser)
+│  + robots.txt check │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  Probes             │  One per protocol
+│  • UCP              │  Detect capability advertisement
+│  • ACP              │
+│  • x402             │
+│  • AP2              │
+│  • MCP              │
+│  • NLWeb            │
+│  • Visa VIC         │
+│  • Mastercard       │
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  Analyzers          │  Cross-cutting
+│  • Structured data  │
+│  • Accessibility    │
+│  • Checkout friction│
+│  • Meta + schema.org│
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  Scoring            │  packages/utils/readiness-score.ts
+│  → Readiness 0-100  │
+└─────────┬───────────┘
+          │
+          ▼
+  Persisted to Supabase
+   • scans table
+   • protocol_detections
+   • structured_data
+```
+
+## Three operational modes
+
+See [services/scanner](/services/scanner) for the service view. Three consumer modes:
+
+1. **API** — `POST /v1/scanner/scan` — single-domain on-demand
+2. **Batch CSV** — `POST /v1/scanner/scan/batch` — 1k domains in ~5-8 min
+3. **MCP** — 19 tools for Claude Desktop / agent runtimes
+
+## Key tables
+
+- `scanner_scans` — scan results
+- `scanner_protocol_detections` — per-protocol hits per scan
+- `scanner_structured_data` — JSON-LD, schema.org, OG, microdata findings
+- `scanner_demand_signals` — derived intelligence signals
+- `scanner_agent_tests` — synthetic agent-shopping test results
+- `scanner_agent_observations` — real-agent traffic observed on the merchant
+
+Migrations under `packages/db/migrations/` — `020_scanner_tables.sql`, `021_demand_intelligence.sql`, `022_agent_shopping_tests.sql`.
+
+## Tech
+
+- Hono HTTP
+- undici for fetch
+- cheerio for HTML parsing
+- p-limit for concurrency
+- csv-parse for batch
+- @modelcontextprotocol/sdk for MCP
+
+**No Puppeteer.** Lightweight HTTP probing only — no browser automation. This is deliberate; merchants should be able to expose capability via static signals (`.well-known/ucp`, JSON-LD, schema.org) without needing a running frontend.
+
+## See also
+
+- [scanner/probes](/scanner/probes)
+- [scanner/analyzers](/scanner/analyzers)
+- [scanner/demand-intelligence](/scanner/demand-intelligence)
+- [scanner/mcp-tools](/scanner/mcp-tools)
+- [scanner/synthetic-tests](/scanner/synthetic-tests)
+- PRD: `docs/prd/epics/epic-56-agentic-commerce-demand-scanner.md`

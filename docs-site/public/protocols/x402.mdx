@@ -1,0 +1,162 @@
+---
+title: "x402 (HTTP 402 micropayments)"
+description: "Coinbase's revival of HTTP 402 Payment Required for per-request API monetization."
+---
+
+x402 is a protocol from Coinbase that repurposes the long-reserved `HTTP 402 Payment Required` status code for micropayment flows. The pattern:
+
+1. Client calls a protected endpoint
+2. Server responds `402 Payment Required` with a payment quote
+3. Client pays (typically stablecoin, on-chain)
+4. Client retries with a payment proof
+5. Server verifies and returns the real response
+
+This enables **pay-per-request** API monetization with no sign-up, no API keys, no subscriptions. Ideal for machine-to-machine commerce where agents discover and pay for APIs at runtime.
+
+## The request/response dance
+
+**First call — no payment:**
+```http
+GET /api/expensive-inference HTTP/1.1
+Host: inference.example.com
+```
+
+**Server response:**
+```http
+HTTP/1.1 402 Payment Required
+Content-Type: application/json
+X-Payment-Required: true
+
+{
+  "price": "0.05",
+  "currency": "USDC",
+  "network": "base",
+  "receiver": "0xreceiver...",
+  "payment_request_id": "x402_pr_...",
+  "expires_in": 60
+}
+```
+
+**Client pays via Sly:**
+```bash
+curl -X POST https://api.getsly.ai/v1/x402/pay \
+  -H "Authorization: Bearer agent_..." \
+  -d '{
+    "payment_request_id": "x402_pr_...",
+    "from_wallet_id": "wal_..."
+  }'
+```
+
+Response:
+```json
+{
+  "id": "x402_pay_...",
+  "proof": "0xproof...",
+  "tx_hash": "0xsettlement...",
+  "amount": "0.05",
+  "currency": "USDC"
+}
+```
+
+**Client retries with proof:**
+```http
+GET /api/expensive-inference HTTP/1.1
+Host: inference.example.com
+X-Payment-Proof: 0xproof...
+```
+
+**Server verifies and responds:**
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{ "inference_result": { ... } }
+```
+
+## The SDK shortcut
+
+The SDK wraps all of this into one call:
+
+```ts
+import { Sly } from '@sly_ai/sdk';
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+
+// Automatic 402 handling — retries with proof once paid
+const result = await sly.x402.fetch('https://inference.example.com/api/expensive-inference', {
+  walletId: 'wal_...',
+});
+```
+
+Under the hood: catch 402, parse quote, call `/v1/x402/pay`, retry with `X-Payment-Proof`.
+
+## Serving x402 endpoints (API provider side)
+
+Register your x402 endpoint so Sly can facilitate payments:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/x402/endpoints \
+  -d '{
+    "url": "https://inference.example.com/api/expensive-inference",
+    "price": "0.05",
+    "currency": "USDC",
+    "network": "base",
+    "receiver_wallet_id": "wal_...",
+    "rate_card": [
+      { "path": "/api/expensive-inference", "price": "0.05" },
+      { "path": "/api/cheap-lookup", "price": "0.001" }
+    ]
+  }'
+```
+
+When a client pays, Sly settles on-chain to `receiver_wallet_id` and issues the `payment_proof` that the API will verify.
+
+## Verifying proofs (API provider side)
+
+When your server receives a request with `X-Payment-Proof`:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/x402/verify \
+  -d '{
+    "proof": "0xproof...",
+    "expected_price": "0.05",
+    "expected_currency": "USDC"
+  }'
+```
+
+Returns `{ "valid": true, "payment_id": "..." }` or a failure reason. The SDK and Sly server-side middleware handle this for you.
+
+## x402 facilitator (sandbox only)
+
+Sandbox endpoints have a test facilitator that issues mock proofs without real on-chain settlement:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/x402/facilitator/pay \
+  -d '{ "amount": "0.05", "currency": "USDC" }'
+```
+
+Production traffic uses the Coinbase-operated facilitator on Base mainnet.
+
+## x402 bridge
+
+Sly includes an **x402 → Circle bridge** for tenants that want to accept x402 payments but settle in fiat. Bridges are configured per-endpoint.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/x402/pay` | Execute payment for an x402 quote |
+| `POST /v1/x402/verify` | Verify a payment proof |
+| `POST /v1/x402/endpoints` | Register an x402-priced API endpoint |
+| `GET /v1/x402/endpoints` | List registered endpoints |
+| `GET /v1/x402/analytics/*` | Payment and usage metrics |
+| `POST /v1/x402/facilitator/*` | Sandbox facilitator (testing only) |
+| `POST /v1/x402/bridge/*` | On-chain → fiat bridging |
+
+## When to use x402
+
+- You run an API and want **per-call** monetization (not subscriptions)
+- Consumers are **agents** that discover and pay for APIs at runtime — no sign-up flow
+- Price points are too low for traditional billing (fractions of a cent per call)
+- You want **crypto-native settlement** with no card networks in the loop
+
+For traditional subscriptions, use UCP or AP2.

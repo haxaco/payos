@@ -1,0 +1,169 @@
+---
+title: "Webhook verification"
+description: "Verify Sly webhook signatures in any language."
+---
+
+Every webhook Sly sends is HMAC-signed. You MUST verify the signature before trusting the payload — otherwise an attacker could POST forged events to your endpoint.
+
+## The header
+
+Sly includes two headers on every delivery:
+
+```
+X-Sly-Signature: t=1713800000,v1=sha256_hmac_hex...
+X-Sly-Event-Id: evt_...
+```
+
+- `t` — Unix timestamp of signing
+- `v1` — HMAC-SHA256 signature of `{timestamp}.{raw_body}` using your webhook secret
+
+## Verification algorithm
+
+```
+1. Split the X-Sly-Signature header into t and v1
+2. Reject if t is older than 5 minutes (replay protection)
+3. Compute HMAC-SHA256(key=webhook_secret, message=`{t}.{raw_body}`)
+4. Constant-time compare against v1
+```
+
+## Node.js (with SDK)
+
+```ts
+import { verifyWebhook } from '@sly_ai/sdk';
+
+app.post('/webhooks/sly', express.raw({ type: '*/*' }), (req, res) => {
+  try {
+    const event = verifyWebhook(
+      req.body,
+      req.headers['x-sly-signature'] as string,
+      process.env.SLY_WEBHOOK_SECRET!
+    );
+    // event is fully typed
+    handleEvent(event);
+    res.status(200).end();
+  } catch (e) {
+    res.status(400).end();
+  }
+});
+```
+
+`verifyWebhook` throws on any failure (stale, malformed, or bad signature).
+
+## Node.js (manual, no SDK)
+
+```ts
+import crypto from 'node:crypto';
+
+function verify(rawBody: Buffer, header: string, secret: string): boolean {
+  const parts = Object.fromEntries(header.split(',').map(p => p.split('=')));
+  const timestamp = parseInt(parts.t, 10);
+  const signature = parts.v1;
+
+  if (Math.abs(Date.now() / 1000 - timestamp) > 300) return false;
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('hex');
+
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+```
+
+<Warning>
+**Use the raw body.** If your framework parses JSON before handing it to you, re-serialization will change whitespace and break the signature. Register the webhook route with a raw-body parser or read from the stream directly.
+</Warning>
+
+## Python
+
+```python
+import hmac
+import hashlib
+import time
+
+def verify(raw_body: bytes, header: str, secret: str) -> bool:
+    parts = dict(p.split('=') for p in header.split(','))
+    timestamp = int(parts['t'])
+    signature = parts['v1']
+
+    if abs(time.time() - timestamp) > 300:
+        return False
+
+    expected = hmac.new(
+        secret.encode(),
+        f'{timestamp}.{raw_body.decode()}'.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, signature)
+```
+
+## Go
+
+```go
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "strconv"
+    "strings"
+    "time"
+)
+
+func Verify(rawBody []byte, header, secret string) bool {
+    parts := map[string]string{}
+    for _, p := range strings.Split(header, ",") {
+        kv := strings.SplitN(p, "=", 2)
+        parts[kv[0]] = kv[1]
+    }
+    ts, _ := strconv.ParseInt(parts["t"], 10, 64)
+    if abs(time.Now().Unix()-ts) > 300 {
+        return false
+    }
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write([]byte(fmt.Sprintf("%d.%s", ts, rawBody)))
+    expected := hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(expected), []byte(parts["v1"]))
+}
+```
+
+## Ruby
+
+```ruby
+require 'openssl'
+
+def verify(raw_body, header, secret)
+  parts = header.split(',').map { |p| p.split('=', 2) }.to_h
+  timestamp = parts['t'].to_i
+  return false if (Time.now.to_i - timestamp).abs > 300
+  expected = OpenSSL::HMAC.hexdigest('SHA256', secret, "#{timestamp}.#{raw_body}")
+  OpenSSL::Utils.fixed_length_secure_compare(expected, parts['v1'])
+end
+```
+
+## Where to find your secret
+
+From the dashboard: **Settings → Webhooks → [endpoint] → Secret**. Or from the API:
+
+```bash
+curl https://api.getsly.ai/v1/webhooks/wh_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+## Rotating secrets
+
+Create a new secret before rotating:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../rotate-secret \
+  -d '{ "strategy": "overlap", "overlap_seconds": 300 }'
+```
+
+Overlap mode accepts both old and new secrets for `overlap_seconds`. Deploy the new secret during the overlap, verify, then let the old one expire.
+
+## Common pitfalls
+
+- **Parsing the body before verifying.** Most frameworks do this by default. Opt out for the webhook route.
+- **Timing-unsafe comparison.** Always use `crypto.timingSafeEqual` / `hmac.compare_digest` / `fixed_length_secure_compare`.
+- **Clock drift.** If your server clock is more than 5 minutes off, every webhook will fail verification. Use NTP.
+- **Stripping headers at the proxy.** Check your reverse proxy or WAF isn't removing `X-Sly-*` headers.

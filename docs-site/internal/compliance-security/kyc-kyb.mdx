@@ -1,0 +1,87 @@
+---
+title: "KYC / KYB"
+description: "Know Your Customer / Know Your Business — provider, flow, and failure modes."
+---
+
+## Provider
+
+Primary: **Persona** (identity verification). Integrated via `apps/api/src/services/kyc/persona.ts`.
+
+Backup / specific cases: Stripe Identity (for Stripe-connected merchants).
+
+## Flow
+
+1. Account created → tier 0 (no verification)
+2. Partner / dashboard triggers `POST /v1/accounts/:id/verify`
+3. Persona inquiry created; returns a redirect URL
+4. Partner redirects end-user to Persona
+5. User completes (doc upload, selfie, etc.)
+6. Persona webhooks → `/webhooks/persona` in our API
+7. On approval: account transitions to `verified`, tier set per verification level
+8. On rejection: account stays at tier 0; partner sees `verification_status = 'rejected'`
+
+## Tiers
+
+- **Tier 0** — no verification
+- **Tier 1** — self-declared, email + name only
+- **Tier 2** — Persona "database verification" (gov ID lookup + selfie match)
+- **Tier 3** — Tier 2 + enterprise review (manual document review for large amounts)
+
+## Enterprise review (tier 3)
+
+Kicks in automatically when:
+- Account requests limit > tier 2 cap
+- Sanctions screening returns soft hit
+- Specific high-risk flags from Persona
+
+Flows into an internal review queue. Compliance officer reviews within 48h. Outcome: approve → tier 3, reject → back to tier 2.
+
+## Sanctions screening
+
+Separate from KYC. `apps/api/src/services/kyc/screening.ts` runs:
+- OFAC SDN list
+- EU sanctions
+- UK sanctions
+- UN sanctions
+
+Checks on:
+- Account creation (name + DoB/DOI)
+- Every transfer (sender + recipient)
+- Mandate creation and execution
+
+On hit:
+- Soft hit → queue for review (transaction held)
+- Hard hit → reject, escalate to compliance immediately
+
+Hits logged to `screening_hits` for audit.
+
+## Data retention
+
+Persona holds the documents. Sly holds only the verification outcome (tier, reference ID, key facts) — no raw IDs, no selfies.
+
+PII in Sly:
+- Legal name, email, phone
+- Date of birth (account, optional)
+- Billing address (for cards)
+- Account numbers (pix, CLABE, IBAN, SWIFT)
+
+Retention: 7 years post account closure (regulatory requirement). After 7 years, automated deletion.
+
+## Sandbox behavior
+
+In test, Persona calls are mocked — verification approves instantly without uploading anything. This is intentional (we can't ask every tester for a real passport), but means sandbox testing doesn't exercise the Persona flow end-to-end. Live-only smoke test required before production launch.
+
+## Failure modes
+
+- **Persona outage** — account stays in `pending_verification`. Verification can be re-triggered once Persona recovers.
+- **Webhook loss** — we learn the verification completed via our polling fallback (every 5 min).
+- **User abandons flow** — Persona expires inquiry after 48h. Account returns to tier 0.
+
+## When to escalate to compliance
+
+- Sanctions hit
+- Persona flags suspected fraud (forged docs, face mismatch)
+- Unusual behavior post-verification (e.g. account immediately drained)
+- Subpoena or regulatory request
+
+Contact: compliance@getsly.ai or `#compliance` Slack.

@@ -1,0 +1,149 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Sly",
+  "description": "The Agentic Economy Platform — stablecoin payments, agent wallets, and multi-protocol commerce for AI agents.",
+  "colors": {
+    "primary": "#2563EB",
+    "light": "#60A5FA",
+    "dark": "#1E40AF"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.jpeg",
+    "href": "https://getsly.ai"
+  },
+  "navbar": {
+    "links": [
+      { "label": "Dashboard", "href": "https://app.getsly.ai" },
+      { "label": "Status", "href": "https://status.getsly.ai" }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get API Keys",
+      "href": "https://app.getsly.ai/signup"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/slyagentic",
+      "github": "https://github.com/sly-ai",
+      "linkedin": "https://www.linkedin.com/company/sly-ai"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "get-started/overview",
+              "get-started/environments",
+              "get-started/sign-up",
+              "get-started/quickstart"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "authentication/overview",
+              "authentication/api-keys",
+              "authentication/agent-tokens",
+              "authentication/ed25519-sessions",
+              "authentication/portal-tokens",
+              "authentication/jwt-sessions"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core-concepts/tenants",
+              "core-concepts/accounts",
+              "core-concepts/agents",
+              "core-concepts/wallets",
+              "core-concepts/transfers",
+              "core-concepts/streams",
+              "core-concepts/quotes",
+              "core-concepts/environments"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/onboard-account",
+              "guides/register-agent",
+              "guides/cross-border-transfer",
+              "guides/start-money-stream",
+              "guides/receive-webhooks",
+              "guides/sandbox-testing"
+            ]
+          },
+          {
+            "group": "Protocols",
+            "pages": [
+              "protocols/overview",
+              "protocols/decision-tree",
+              "protocols/ucp",
+              "protocols/acp",
+              "protocols/ap2",
+              "protocols/x402",
+              "protocols/a2a",
+              "protocols/mcp"
+            ]
+          },
+          {
+            "group": "Agent Platform",
+            "pages": [
+              "agents/overview",
+              "agents/kya-tiers",
+              "agents/wallet-policies",
+              "agents/ed25519-keypair-auth",
+              "agents/persistent-sse",
+              "agents/a2a-agent-card",
+              "agents/mcp-tool-catalog",
+              "agents/kill-switch",
+              "agents/approval-workflows"
+            ]
+          },
+          {
+            "group": "SDKs & Tools",
+            "pages": [
+              "sdks/overview",
+              "sdks/node-sdk",
+              "sdks/cli",
+              "sdks/mcp-server",
+              "sdks/webhook-verification"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "webhooks/overview",
+              "webhooks/events",
+              "webhooks/signature-verification",
+              "webhooks/replay",
+              "webhooks/local-testing"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/rate-limits",
+              "resources/error-codes",
+              "resources/changelog",
+              "resources/status",
+              "resources/support"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "api-reference/openapi.json"
+      }
+    ]
+  }
+}

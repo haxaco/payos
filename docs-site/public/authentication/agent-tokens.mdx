@@ -1,0 +1,122 @@
+---
+title: "Agent tokens"
+description: "agent_* bearer tokens for AI agents — simple auth to get started."
+---
+
+Agent tokens are the simplest way to authenticate an AI agent. They work exactly like API keys — a long-lived string sent in the `Authorization: Bearer` header — but scoped to one agent rather than the whole tenant.
+
+<Note>
+**For production agents, upgrade to [Ed25519 sessions](/authentication/ed25519-sessions).** Agent tokens are great for prototypes and simple deployments; Ed25519 gives you short-lived sessions, replay protection, and per-session revocation.
+</Note>
+
+## Token format
+
+```
+agent_test_Lp3xRk9WmNvQj2TbDfE4YhCsV7Z1...
+│   │      └─ random suffix
+│   └──────── environment prefix
+└──────────── "agent_"
+```
+
+## Obtain a token
+
+When you [create an agent](/core-concepts/agents), Sly returns a token as part of the response:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/agents \
+  -H "Authorization: Bearer pk_test_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_account_id": "acc_...",
+    "name": "Payables Bot",
+    "kya_tier": 1
+  }'
+```
+
+Response includes:
+
+```json
+{
+  "data": {
+    "id": "agt_...",
+    "name": "Payables Bot",
+    "kya_tier": 1,
+    ...
+  },
+  "credentials": {
+    "token": "agent_test_Lp3xRk9WmNvQj2...",
+    "warning": "SAVE THIS TOKEN NOW — it will never be shown again!"
+  }
+}
+```
+
+<Warning>
+The token is shown **once**. Store it securely immediately.
+</Warning>
+
+## Use the token
+
+Exactly like an API key:
+
+```bash
+curl https://sandbox.getsly.ai/v1/wallets \
+  -H "Authorization: Bearer agent_test_Lp3xRk9WmNvQj2..."
+```
+
+The server populates a `RequestContext` identifying the actor as this agent — so:
+
+- Transfers default to this agent as the initiator
+- Balances show this agent's wallet
+- Spending is enforced against this agent's [wallet policy](/agents/wallet-policies) and [KYA tier limits](/agents/kya-tiers)
+
+## Rotate a token
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agents/$AGENT_ID/rotate-token \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+Response returns a new `agent_*` token. The old token is invalidated immediately.
+
+## Revoke a token
+
+Delete the agent or freeze it:
+
+```bash
+# Freeze (token becomes non-functional, agent record preserved)
+curl -X POST https://api.getsly.ai/v1/agents/$AGENT_ID/freeze \
+  -H "Authorization: Bearer $API_KEY"
+
+# Delete (permanent)
+curl -X DELETE https://api.getsly.ai/v1/agents/$AGENT_ID \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+## When agent tokens are enough
+
+- **Prototyping and local dev** — fastest path to a working agent
+- **Trusted environments** — agent runs on your own server, not user machines
+- **Low-value scopes** — read-only agents, monitoring agents, observability collectors
+- **Backwards compatibility** — existing agents don't need to migrate
+
+## When to upgrade to Ed25519 sessions
+
+- **Production** — real money, real merchant traffic
+- **Agent runs on customer hardware** — keypair never leaves the machine
+- **You need replay protection** — sessions bound to nonces
+- **You need granular revocation** — kill one session without rotating the token
+- **You want push events** — `sess_*` tokens unlock the [persistent SSE channel](/agents/persistent-sse)
+
+See [Ed25519 sessions](/authentication/ed25519-sessions) for the upgrade path. Migration requires zero changes to route code — both methods produce identical `RequestContext`.
+
+## Comparison with API keys
+
+Agent tokens and API keys both send a long-lived secret in the header. The differences:
+
+| | Agent token (`agent_*`) | API key (`pk_*`) |
+|---|---|---|
+| Actor | One specific agent | Whole tenant |
+| Scope enforcement | Per-agent policy + KYA tier | Scope list + tenant |
+| KYA tier applies | Yes | No |
+| Wallet policy applies | Yes | No |
+| Typical lifespan | Weeks-months, rotated per agent lifecycle | Months-years, rotated per security policy |

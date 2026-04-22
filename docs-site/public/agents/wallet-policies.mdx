@@ -1,0 +1,182 @@
+---
+title: "Wallet policies"
+description: "Per-agent spending rules enforced at execution time."
+---
+
+A **wallet policy** is the runtime spending rule set attached to an agent. While [KYA tiers](/agents/kya-tiers) set the ceiling of what an agent *could* spend, wallet policies define what it actually *may* spend — merchant allowlists, per-merchant caps, time-of-day rules, kill-switch triggers.
+
+Policies are enforced on every spending request, before execution. Any violation returns `403 POLICY_VIOLATION` with a specific reason code.
+
+## Policy shape
+
+```json
+{
+  "id": "pol_...",
+  "agent_id": "agt_...",
+  "frozen": false,
+  "global_limits": {
+    "per_tx": "500.00",
+    "daily": "2000.00",
+    "monthly": "10000.00",
+    "currency": "USDC"
+  },
+  "merchant_rules": [
+    {
+      "merchant_id": "mer_github",
+      "action": "allow",
+      "per_tx_cap": "100.00"
+    },
+    {
+      "merchant_category": "gambling",
+      "action": "block"
+    }
+  ],
+  "velocity_rules": [
+    {
+      "window": "1h",
+      "max_count": 5
+    }
+  ],
+  "time_rules": [
+    {
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "hours": "09:00-18:00",
+      "timezone": "America/New_York"
+    }
+  ],
+  "approval_threshold": {
+    "amount": "250.00",
+    "approver_role": "admin"
+  },
+  "kill_switch": {
+    "operators": ["ops@acme.example"],
+    "contacts": ["+1-555-..."],
+    "notification_channels": ["slack", "sms"]
+  }
+}
+```
+
+## Read a policy
+
+```bash
+curl https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/policy \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+## Update a policy
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/policy \
+  -d '{
+    "global_limits": { "daily": "5000.00" },
+    "merchant_rules": [
+      { "merchant_id": "mer_github", "action": "allow", "per_tx_cap": "500.00" }
+    ]
+  }'
+```
+
+## Evaluate a policy before attempting
+
+Before an agent tries to spend, it can dry-run policy evaluation:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/evaluate-policy \
+  -d '{
+    "merchant_id": "mer_github",
+    "amount": "49.00",
+    "currency": "USD"
+  }'
+```
+
+Response:
+
+```json
+{
+  "decision": "allow",
+  "reasons": [
+    { "rule": "merchant_rules", "action": "allow", "detail": "mer_github allowed, under per_tx_cap" },
+    { "rule": "global_limits", "action": "allow", "detail": "under daily cap" },
+    { "rule": "velocity_rules", "action": "allow", "detail": "2/5 in 1h window" }
+  ]
+}
+```
+
+Or:
+
+```json
+{
+  "decision": "require_approval",
+  "reasons": [
+    { "rule": "approval_threshold", "detail": "Amount $300 exceeds threshold $250" }
+  ],
+  "next_step": "POST /v1/approvals"
+}
+```
+
+## Rule types
+
+### Global limits
+Hard caps on total spending per transaction, day, month. Always enforced regardless of merchant.
+
+### Merchant rules
+Allow- or block-list specific merchants or merchant categories. First matching rule wins. Fall-through behavior configurable (`default_action`: `allow` or `block`).
+
+### Velocity rules
+Rate-limit transactions: "at most N in window W". Useful for abuse prevention.
+
+```json
+{ "window": "10m", "max_count": 3 }    // no more than 3 in 10 minutes
+{ "window": "1d", "max_amount": "1000.00" }   // no more than $1000/day
+```
+
+### Time rules
+Permit spending only during defined windows. Outside the window → `POLICY_VIOLATION`.
+
+### Approval threshold
+Any transaction over `amount` doesn't execute directly — it creates an approval request that a human (with `approver_role`) must confirm. See [approval workflows](/agents/approval-workflows).
+
+### Kill-switch
+Named humans can instantly freeze the wallet (`POST /v1/agent-wallets/:id/freeze`). Policy includes who they are and how to reach them, so incident response doesn't require Sly support involvement.
+
+## Freeze and unfreeze
+
+```bash
+# Freeze — policy-level kill
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/freeze \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "reason": "Suspected compromise" }'
+
+# Unfreeze
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/unfreeze \
+  -d '{ "acknowledgment": "Incident resolved, tickets filed" }'
+```
+
+Freeze is distinct from [Ed25519 key revocation](/agents/ed25519-keypair-auth#revoke-a-key):
+
+- **Freeze** — spending blocked, auth still works (agent can still read, observe, coordinate)
+- **Revoke** — auth blocked (agent cannot authenticate at all)
+
+Use freeze first in incidents; reserve revocation for confirmed compromise.
+
+## Exposures (projected spending)
+
+For scenario planning:
+
+```bash
+curl "https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/exposures?horizon=24h" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Returns active mandates, open streams, and scheduled transfers within the horizon with their cumulative projected spend. Useful for treasury forecasting.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/agent-wallets/:id/policy` | Read policy |
+| `POST /v1/agent-wallets/:id/policy` | Update policy |
+| `POST /v1/agent-wallets/:id/evaluate-policy` | Dry-run evaluation |
+| `POST /v1/agent-wallets/:id/freeze` | Freeze spending |
+| `POST /v1/agent-wallets/:id/unfreeze` | Resume spending |
+| `GET /v1/agent-wallets/:id/evaluations` | Audit log of past evaluations |
+| `GET /v1/agent-wallets/:id/exposures` | Projected future spend |

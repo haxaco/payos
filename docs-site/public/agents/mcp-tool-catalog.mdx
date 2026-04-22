@@ -1,0 +1,197 @@
+---
+title: "MCP tool catalog"
+description: "Every Sly capability as an MCP tool — schemas, examples, Claude Desktop install."
+---
+
+The `@sly_ai/mcp-server` package exposes the full Sly API as MCP tools. Install it into Claude Desktop, Cursor, or any MCP-compatible client and the agent instantly has access to accounts, agents, wallets, transfers, streams, protocols, and more.
+
+## Install
+
+**Claude Desktop:**
+
+```bash
+npx @sly_ai/mcp-server install
+```
+
+This edits your Claude Desktop config. Restart Claude; the Sly tools appear in the tool catalog.
+
+**Other clients (manual):**
+
+```json
+{
+  "mcpServers": {
+    "sly": {
+      "command": "npx",
+      "args": ["@sly_ai/mcp-server", "run"],
+      "env": {
+        "SLY_API_KEY": "pk_live_..."
+      }
+    }
+  }
+}
+```
+
+## Remote HTTP MCP
+
+If your runtime prefers HTTP over stdio:
+
+```bash
+# JSON-RPC POST
+curl -X POST https://api.getsly.ai/mcp \
+  -H "Authorization: Bearer agent_..." \
+  -d '{ "jsonrpc":"2.0", "method":"tools/list", "id":1 }'
+```
+
+Or SSE streaming for long-running tools:
+
+```bash
+curl -N -H "Authorization: Bearer agent_..." https://api.getsly.ai/mcp
+```
+
+## Tool categories
+
+Tools are grouped by resource. All respect the calling agent's [KYA tier](/agents/kya-tiers) and [wallet policy](/agents/wallet-policies).
+
+### Accounts
+
+| Tool | Purpose |
+|---|---|
+| `sly_create_account` | Create person or business account |
+| `sly_list_accounts` | List accounts (paginated) |
+| `sly_get_account` | Get account by ID |
+| `sly_update_account` | Update metadata or contact |
+
+### Agents
+
+| Tool | Purpose |
+|---|---|
+| `sly_create_agent` | Create agent under a parent account |
+| `sly_list_agents` | List agents |
+| `sly_get_agent` | Get agent by ID |
+| `sly_delete_agent` | Delete / revoke |
+| `sly_verify_agent` | Start verification flow for a tier upgrade |
+| `sly_get_agent_limits` | Read effective KYA limits |
+| `sly_get_agent_transactions` | Paginated history |
+
+### Wallets
+
+| Tool | Purpose |
+|---|---|
+| `sly_create_wallet` | Create an account wallet |
+| `sly_list_wallets` | List wallets |
+| `sly_get_wallet` | Get wallet by ID |
+| `sly_get_wallet_balance` | Balance available + pending |
+| `sly_wallet_deposit` | Internal deposit (from another Sly wallet) |
+| `sly_wallet_withdraw` | Withdraw to external rail |
+| `sly_wallet_test_fund` | Sandbox faucet |
+
+### Agent wallets + policies
+
+| Tool | Purpose |
+|---|---|
+| `sly_agent_wallet_get` | Get agent wallet |
+| `sly_agent_wallet_fund` | Fund from parent account |
+| `sly_agent_wallet_set_policy` | Update policy |
+| `sly_agent_wallet_evaluate_policy` | Dry-run a spending decision |
+| `sly_agent_wallet_get_evaluations` | Audit log of past evaluations |
+| `sly_agent_wallet_get_exposures` | Projected future spend |
+| `sly_agent_wallet_freeze` | Kill-switch (spending) |
+| `sly_agent_wallet_unfreeze` | Resume |
+
+### Transfers & settlement
+
+| Tool | Purpose |
+|---|---|
+| `sly_create_settlement` | Create a settlement |
+| `sly_get_settlement_quote` | FX quote |
+| `sly_get_settlement_status` | Poll settlement |
+
+### Protocol tools
+
+**UCP:** `sly_ucp_create_checkout`, `sly_ucp_get_checkout`, `sly_ucp_update_checkout`, `sly_ucp_complete_checkout`, `sly_ucp_cancel_checkout`, `sly_ucp_list_checkouts`, `sly_ucp_batch_checkout`, `sly_ucp_batch_complete`, `sly_ucp_add_payment_instrument`, `sly_ucp_add_fulfillment_event`, `sly_ucp_cancel_order`, `sly_ucp_update_order_status`, `sly_ucp_get_order`, `sly_ucp_list_orders`, `sly_ucp_discover`
+
+**ACP:** `sly_acp_create_checkout`, `sly_acp_get_checkout`, `sly_acp_complete_checkout`, `sly_acp_list_checkouts`, `sly_acp_batch_checkout`
+
+**AP2:** `sly_ap2_create_mandate`, `sly_ap2_get_mandate`, `sly_ap2_list_mandates`, `sly_ap2_update_mandate`, `sly_ap2_execute_mandate`, `sly_ap2_cancel_mandate`
+
+**x402:** `sly_x402_create_endpoint`, `sly_x402_get_endpoint`, `sly_x402_list_endpoints`, `sly_x402_pay`, `sly_x402_verify`, `sly_agent_x402_sign`
+
+**A2A:** `sly_a2a_send_task`, `sly_a2a_get_task`, `sly_a2a_list_tasks`, `sly_a2a_discover_agent`
+
+**MPP:** `sly_mpp_open_session`, `sly_mpp_get_session`, `sly_mpp_list_sessions`, `sly_mpp_close_session`, `sly_mpp_pay`, `sly_mpp_verify_receipt`, `sly_mpp_list_transfers`
+
+### Governance + compliance
+
+| Tool | Purpose |
+|---|---|
+| `sly_explain_rejection` | Explain why a prior attempt was blocked |
+| `sly_escalate_to_human` | Route to approval workflow |
+| `sly_request_limit_increase` | Ask for a temporary limit bump |
+| `sly_open_dispute` | Open a transaction dispute |
+
+### Agent funding (sandbox helpers)
+
+| Tool | Purpose |
+|---|---|
+| `sly_agent_fund_eoa` | Fund agent's externally-owned account |
+| `sly_agent_refill_faucet` | Refill sandbox faucet |
+| `sly_agent_evm_key_provision` | Provision a fresh EVM keypair for the agent |
+
+## Example invocation
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "sly_create_transfer",
+    "arguments": {
+      "from_wallet_id": "wal_source",
+      "to_wallet_id": "wal_dest",
+      "amount": "42.00",
+      "currency": "USDC",
+      "idempotency_key": "tx_2026-04-22_001"
+    }
+  },
+  "id": 42
+}
+```
+
+Response (success):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [{
+      "type": "text",
+      "text": "{ \"transfer_id\": \"tx_...\", \"status\": \"pending\", ... }"
+    }]
+  },
+  "id": 42
+}
+```
+
+## Permission filtering
+
+The MCP server only exposes tools the calling agent/credentials can actually invoke. An agent at KYA Tier 0 won't see tools that require Tier 2 even if they're installed — reducing confusion for the LLM and preventing wasted tool calls.
+
+## Scanner MCP (separate server)
+
+The [Scanner service](/api-reference/openapi) has its own MCP server with 19 tools for merchant readiness intelligence:
+
+```bash
+npx @sly_ai/scanner-mcp install
+```
+
+Tools include `scan_merchant`, `batch_scan`, `get_readiness_report`, `get_protocol_adoption`, `get_heat_map`, `find_best_prospects`, `compare_merchants`, `generate_snapshot`, and `run_agent_shopping_test`.
+
+## For agent authors
+
+If you're building an agent that uses MCP tools: the server automatically translates the LLM's natural-language tool calls into Sly API requests. You don't write HTTP code — you write good prompts, and the model picks the right tool from the catalog.
+
+Good practice:
+
+1. Give the agent your intended purpose in the system prompt (e.g. "You help pay supplier invoices. Use the Sly tools to check balances and send transfers.")
+2. The agent will autonomously pick among the tools
+3. Wallet policies enforce what's actually allowed — so even a confused LLM can't send a $10k transfer from an agent with a $500/day cap

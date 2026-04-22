@@ -1,0 +1,57 @@
+---
+title: "Testing"
+description: "Unit, integration, and marketplace-simulation testing."
+---
+
+<CardGroup cols={2}>
+  <Card title="Unit tests" href="/testing/unit-tests">
+    Fast, mocked, no external deps.
+  </Card>
+  <Card title="Integration tests" href="/testing/integration-tests">
+    Real Supabase, real API, real RLS.
+  </Card>
+  <Card title="Marketplace simulation" href="/testing/marketplace-simulation">
+    End-to-end agent marketplace exercise.
+  </Card>
+</CardGroup>
+
+## What to write when
+
+- **Helper function, service, error path** → unit test
+- **Route handler, RLS policy, cross-table query** → integration test
+- **Multi-agent interactive flow** → marketplace simulation
+
+## Commands
+
+```bash
+pnpm test                       # all
+pnpm test:unit                  # unit only (fast)
+INTEGRATION=true pnpm test:integration  # live Supabase
+pnpm test:coverage              # coverage report
+pnpm --filter @sly/api test tests/unit/helpers.test.ts  # specific file
+```
+
+## Setup
+
+`apps/api/tests/setup.ts` configures vitest with a 10s timeout, global fixtures, and test helpers (`createTestTenant`, `createTestAgent`, etc.).
+
+Integration tests require `INTEGRATION=true` plus valid Supabase creds. They SHOULD fail without them — don't silently skip.
+
+## Discipline
+
+- Every PR touching routes gets unit tests for the new paths
+- Every PR touching RLS gets an integration test that attempts cross-tenant access
+- Every PR touching workers gets a test that exercises the idempotency guarantee
+- Every PR that fixes a bug adds a regression test (the one that would have caught it)
+
+## CI
+
+- `typescript-check` — strict typecheck
+- `rls-check` — scan for queries missing tenant filters
+- `docs-spec` — OpenAPI spec regeneration + validation
+- Unit tests on every PR
+- Integration tests on PRs labeled `integration`, nightly for all
+
+## Sandbox as a test environment
+
+For exploratory testing (not automated), the sandbox (`sandbox.getsly.ai`) is a live environment with real protocol flows, mock money, and faucet-funded wallets. Use it to validate changes that touch multiple services (payments + webhooks + agents) before merging.

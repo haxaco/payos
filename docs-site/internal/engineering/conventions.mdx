@@ -1,0 +1,72 @@
+---
+title: "Coding conventions"
+description: "What we do and don't do, with rationale."
+---
+
+## Code
+
+- **ESM only.** `"type": "module"` everywhere. Imports use `.js` extension even in TypeScript sources (`import { foo } from './bar.js'`).
+- **TypeScript strict mode.** Every new file compiles clean under `strict: true`. Don't add `any` without an adjacent comment explaining why.
+- **Zod at boundaries.** Every external input (request body, query params, webhook payload, CSV parse) is validated with Zod before use.
+- **No shared mutable state outside caches.** In-memory state (JWT cache, agent cache, rate limit store) is documented and bounded. Everything else is request-scoped.
+- **Constant-time comparison for secrets.** Always `crypto.timingSafeEqual`. Never `===` on tokens, signatures, or hashes.
+
+## Error handling
+
+- **Custom error classes** in `apps/api/src/middleware/error.ts` — `ApiError`, `NotFoundError`, `ValidationError`, `UnauthorizedError`, `ForbiddenError`.
+- **Errors include `code` field** — machine-readable, stable, documented in [public error codes](https://docs.getsly.ai/resources/error-codes).
+- **Errors don't leak sensitive info** — especially in production. Strip stack traces, DB error strings, internal IDs.
+- **Every error path returns `request_id`** — for cross-system tracing.
+
+## Database
+
+- **Every query includes `.eq('tenant_id', ctx.tenantId)`.** No exceptions. See [database + RLS](/engineering/database-rls).
+- **Writes also include `.eq('environment', getEnv(ctx))`** for env-scoped tables.
+- **Migrations are append-only.** Never edit a merged migration. Create a new one.
+- **Indexes on tenant_id + environment** on every table.
+
+## API design
+
+- **REST, not RPC.** Resources get HTTP verbs. `POST /v1/transfers`, not `POST /v1/createTransfer`.
+- **Responses: `{ data, pagination? }` or `{ error, code, details, request_id }`.** No shape drift.
+- **Pagination is `page` + `limit`**, NOT cursor-based (yet). Default limit 50, max 200.
+- **Idempotency keys on writes that matter.** We cache for 24h and return the original result on repeat.
+- **Webhooks are push, not polled.** Don't add "has this thing happened yet?" endpoints when a webhook already fires.
+
+## Commits
+
+- **Imperative mood.** `Add x402 analytics` not `Added x402 analytics` or `Adding x402 analytics`.
+- **Scope tag.** `feat(api): ...`, `fix(web): ...`, `chore(docs): ...`, `refactor(sdk): ...`.
+- **Commit message has the why in the body.** Subject says what; body says why. Future-you will thank current-you.
+
+## PRs
+
+- **One concern per PR.** If you find yourself writing "also" in the description, split.
+- **Migrations in separate PRs** from code that depends on them. Migration merges first, rolls out, then code.
+- **Test plan in the description.** Checkbox list of what was exercised manually.
+
+## Testing
+
+- **Unit tests for helpers, services, error paths.** Fast; no DB.
+- **Integration tests for RLS and cross-table queries.** `INTEGRATION=true`.
+- **Every RLS-adjacent change has an integration test** attempting cross-tenant access.
+- **Test files mirror source layout.** `tests/unit/routes/transfers.test.ts` for `src/routes/transfers.ts`.
+
+## Logging
+
+- **Structured JSON in production.** `console.log({ requestId, tenantId, event: 'transfer.created', transferId })`.
+- **Never log tokens, private keys, card numbers, PAN, CVV, or full PII.** Even in error messages.
+- **Include `requestId` on every log line** related to a request.
+
+## Dependencies
+
+- **Prefer standard library.** If Node has it, use Node.
+- **Small, well-maintained deps only.** No `left-pad` moments.
+- **Lock to exact versions for crypto libs.** `@noble/ed25519`, `@noble/hashes` — pin majors.
+- **Audit `pnpm audit` before merging a dep bump.**
+
+## Deprecated areas
+
+- **`payos-ui/`** — dead. Don't touch, don't reference, don't import.
+- **Legacy `auth_client_id` field on agents** — kept for backwards compat. Never write; migrate away when convenient.
+- **`tenants.api_key_hash`** — kept for legacy. Lookups go through `api_keys` table now.

@@ -1,0 +1,161 @@
+---
+title: "Persistent SSE connections"
+description: "Push channel for real-time events — tasks, transfers, approvals, alerts."
+---
+
+Authenticated agents can open a long-lived Server-Sent Events channel and receive events pushed as they happen — no polling, no webhooks-to-a-public-URL dance.
+
+## When to use SSE vs. webhooks
+
+| | SSE | Webhooks |
+|---|---|---|
+| Direction | Server pushes to agent over an open connection | Server POSTs to agent's URL |
+| Agent reachability | Agent makes the outbound connection | Agent must have a publicly reachable URL |
+| Local / sandboxed agents | Works | Painful — need ngrok or similar |
+| Multiple agents at once | Each gets its own channel | N webhooks per N agents |
+| Delivery guarantees | Best-effort with replay buffer | At-least-once with retries |
+
+SSE is recommended for **agents running on customer hardware** or **sandboxed runtimes** that don't have inbound connectivity. Webhooks are still the right choice for **server-side integrations** that have a stable public endpoint.
+
+## Opening a connection
+
+Requires a session token (`sess_*`):
+
+```bash
+curl -N -H "Authorization: Bearer sess_..." \
+  https://api.getsly.ai/v1/agents/$AGENT_ID/connect
+```
+
+`-N` disables curl's buffering so events surface in real time.
+
+## Event types
+
+```
+event: task_assigned
+data: {"task_id":"task_...","skill_id":"invoice.review","from_agent":"agt_..."}
+
+event: transfer_completed
+data: {"transfer_id":"tx_...","amount":"42.00","currency":"USDC","direction":"inbound"}
+
+event: approval_requested
+data: {"approval_id":"apr_...","amount":"300.00","merchant":"mer_..."}
+
+event: stream_alert
+data: {"stream_id":"str_...","severity":"warning","runway_seconds":3600}
+
+event: policy_violation
+data: {"policy_id":"pol_...","reason":"velocity_exceeded","attempted_amount":"150.00"}
+
+event: key_rotated
+data: {"key_id":"auth_...","new_public_key":"..."}
+
+event: heartbeat
+data: {}
+```
+
+## Reconnect with Last-Event-ID
+
+If your connection drops (network blip, client restart), Sly buffers the last 100 events (or 5 minutes, whichever is shorter). Reconnect with the last event ID you saw:
+
+```bash
+curl -N -H "Authorization: Bearer sess_..." \
+     -H "Last-Event-ID: evt_abc123" \
+  https://api.getsly.ai/v1/agents/$AGENT_ID/connect
+```
+
+Missed events replay, then new events stream normally.
+
+## Connection limits
+
+- **Heartbeat:** every 30 seconds. Missing three in a row → connection closed.
+- **Max duration:** 24 hours. At ~23:55 Sly sends a `reconnect_required` event. Open a new connection before the old one closes.
+- **Session scope:** one connection per `sess_*` token. Opening a second closes the first.
+
+## Client patterns
+
+### Node.js (EventSource)
+
+```ts
+import { EventSource } from 'eventsource';
+
+const es = new EventSource(`https://api.getsly.ai/v1/agents/${AGENT_ID}/connect`, {
+  fetch: (url, init) => fetch(url, {
+    ...init,
+    headers: { ...init?.headers, Authorization: `Bearer ${sessionToken}` },
+  }),
+});
+
+es.addEventListener('task_assigned', (e) => {
+  const task = JSON.parse(e.data);
+  console.log('new task', task);
+});
+
+es.addEventListener('error', (e) => {
+  // Reconnect logic — EventSource auto-reconnects, but if it fails
+  // persistently, re-run the Ed25519 handshake for a fresh session
+});
+```
+
+### Python (httpx + SSE)
+
+```python
+import httpx
+
+headers = {"Authorization": f"Bearer {session_token}"}
+with httpx.stream("GET", url, headers=headers, timeout=None) as r:
+    for line in r.iter_lines():
+        if line.startswith("data:"):
+            handle(json.loads(line[5:].strip()))
+```
+
+### SDK shortcut
+
+```ts
+import { Sly } from '@sly_ai/sdk';
+
+const sly = new Sly({ agentId, privateKey, autoReauth: true });
+
+await sly.connect({
+  onTask: async (task) => { ... },
+  onTransfer: async (t) => { ... },
+  onApproval: async (a) => { ... },
+  onAlert: async (a) => { ... },
+});
+```
+
+Handles reconnection, replay, session refresh, and event typing.
+
+## Liveness
+
+The server tracks which agents are currently connected. You can query:
+
+```bash
+curl "https://api.getsly.ai/v1/agents?connected=true" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Or per-agent:
+
+```bash
+curl "https://api.getsly.ai/v1/agents/$AGENT_ID/liveness" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+```json
+{
+  "connected": true,
+  "connectedAt": "2026-04-22T13:15:00Z",
+  "lastHeartbeatAt": "2026-04-22T14:42:30Z",
+  "connectionDuration": 5250
+}
+```
+
+Liveness is **soft** — the agent remains `active` even when disconnected. It just won't receive push events until it reconnects.
+
+## Endpoints
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /v1/agents/:id/connect` | `sess_*` | Open SSE channel |
+| `GET /v1/agents/:id/liveness` | API key | Check connection status |
+| `GET /v1/agents?connected=true` | API key | Filter for connected agents |

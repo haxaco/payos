@@ -1,0 +1,60 @@
+---
+title: "MCP internals"
+description: "Model Context Protocol server — stdio + HTTP transports."
+---
+
+## Files
+
+- `apps/api/src/routes/mcp.ts` — HTTP transport (3 endpoints)
+- `packages/mcp-server/` — stdio transport for Claude Desktop
+
+## Transports
+
+- **POST `/mcp`** — JSON-RPC request/response
+- **GET `/mcp`** — SSE streaming (for long-running tools)
+- **DELETE `/mcp/:session_id`** — close session
+
+All three route through the same tool catalog. Transport is just framing.
+
+## Tool registration
+
+Tools are defined in `packages/mcp-server/src/tools/*.ts`. One file per resource. Each tool declares:
+
+```ts
+export const createAccountTool: Tool = {
+  name: 'sly_create_account',
+  description: '...',
+  inputSchema: { /* JSON Schema */ },
+  handler: async (args, context) => { /* calls Sly SDK */ },
+};
+```
+
+The server collects all tools at startup and serves them via `tools/list`.
+
+## Permission filtering
+
+At `tools/list` time, the server inspects the calling credentials (from MCP session context) and filters the catalog:
+- API key → all tools permitted for the key's scope
+- Agent token → only agent-scoped tools
+- Low KYA tier → high-value tools hidden
+
+Keeps the LLM's tool catalog focused.
+
+## Scanner MCP
+
+Separate server — `apps/scanner/src/mcp/`. 19 tools. Shipped as `@sly_ai/scanner-mcp`. See [scanner/mcp-tools](/scanner/mcp-tools).
+
+## Gotchas
+
+- **Stdio server keeps running across restarts of Claude Desktop** — update to a new version requires `killall node` for stubborn instances.
+- **HTTP SSE buffering** — some proxies buffer SSE and break streaming tools. Our production setup sets `X-Accel-Buffering: no`.
+- **Tool response format** — MCP expects `content: [{ type: 'text', text: '...' }]`. JSON stringifying is handled by a wrapper; don't return raw objects.
+
+## Migration
+
+The HTTP transport endpoints are small (3 total). Migration to `@hono/zod-openapi` is trivial but low-priority — the stdio server is the main surface.
+
+## Related
+
+- Public docs: [MCP protocol page](https://docs.getsly.ai/protocols/mcp), [MCP tool catalog](https://docs.getsly.ai/agents/mcp-tool-catalog)
+- MCP spec: https://modelcontextprotocol.io/

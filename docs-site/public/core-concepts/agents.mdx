@@ -1,0 +1,118 @@
+---
+title: "Agents"
+description: "AI actors that transact on behalf of accounts, under formal identity and policy controls."
+---
+
+An **agent** is an AI-driven actor that can call the Sly API autonomously. Agents transact on behalf of a parent account, under a [KYA tier](/agents/kya-tiers) that determines their spending limits and a [wallet policy](/agents/wallet-policies) that enforces rules at execution time.
+
+Agents are first-class primitives, not user accounts in disguise. They have their own credentials, their own audit trail, and their own kill-switch.
+
+## Anatomy of an agent
+
+```
+┌────────────────────────────────────────────────────┐
+│  Agent                                             │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ Identity                                    │   │
+│  │  • id: agt_...                              │   │
+│  │  • name, description, skills                │   │
+│  │  • parent_account_id                        │   │
+│  └─────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ Credentials                                 │   │
+│  │  • agent_* bearer token                     │   │
+│  │  • Ed25519 public key (private held by you) │   │
+│  │  • Live sessions (sess_*)                   │   │
+│  └─────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ Verification                                │   │
+│  │  • KYA tier (0-3)                           │   │
+│  │  • DSD declaration (Tier 1+)                │   │
+│  │  • 30-day history (Tier 2+)                 │   │
+│  └─────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ Wallet policy                               │   │
+│  │  • Per-tx / daily / monthly limits          │   │
+│  │  • Merchant allowlist / blocklist           │   │
+│  │  • Kill-switch operator                     │   │
+│  │  • Approval workflow                        │   │
+│  └─────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ Wallets                                     │   │
+│  │  • One or more funding sources              │   │
+│  └─────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────┘
+```
+
+## KYA tiers at a glance
+
+| Tier | Label | Per-tx cap | Daily | Monthly | Requirements |
+|---|---|---|---|---|---|
+| 0 | Registered | $20 | $100 | $500 | Created only |
+| 1 | Declared | $100 | $500 | $2,000 | DSD declaration |
+| 2 | Verified | $1,000 | $5,000 | $20,000 | 30-day history or enterprise override |
+| 3 | Trusted | Custom | Custom | Custom | Kill-switch operator + CAI |
+
+See [KYA tiers](/agents/kya-tiers) for the upgrade flow and the full set of requirements.
+
+## Create an agent
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/agents \
+  -H "Authorization: Bearer pk_test_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_account_id": "acc_...",
+    "name": "Payables Bot",
+    "kya_tier": 1,
+    "generate_keypair": true,
+    "description": "Processes supplier invoices nightly",
+    "skills": ["invoice.pay", "statement.reconcile"]
+  }'
+```
+
+The response contains **one-time credentials** (bearer token + private key if you requested a keypair). Save them immediately.
+
+## What agents can do
+
+Agents can call any `/v1/*` endpoint that the server-side policy allows:
+
+- **Send transfers, open streams** within spending limits
+- **Register skills** in the [A2A marketplace](/agents/a2a-agent-card) to be discovered by peer agents
+- **Open sessions** via [Ed25519 handshake](/authentication/ed25519-sessions) and receive push events
+- **Request approvals** for spends above their limit
+- **Call protocol endpoints** (UCP, ACP, AP2, x402, MCP) subject to policy
+
+What agents *can't* do:
+
+- Exceed their KYA tier or wallet policy limits (hard-enforced)
+- Create other agents (requires API key auth)
+- Modify their own policy (requires API key or approved workflow)
+- Access other tenants' data (enforced by RLS)
+
+## Lifecycle states
+
+- **`active`** — can authenticate and transact
+- **`frozen`** — cannot spend, but credentials still valid (useful for investigation)
+- **`suspended`** — cannot authenticate; admin action required
+- **`revoked`** — permanent termination; tombstone record remains for audit
+
+## Relationships
+
+- Belongs to exactly one account (`parent_account_id`)
+- Has one or more [wallets](/core-concepts/wallets)
+- Can be party to many [transfers](/core-concepts/transfers), [streams](/core-concepts/streams)
+- Can hold many A2A skills, each with pricing and permissions
+- Has exactly one Ed25519 auth key (rotatable)
+
+## Finding agents
+
+```bash
+# List agents under a parent account
+curl "https://api.getsly.ai/v1/agents?parent_account_id=acc_..." \
+  -H "Authorization: Bearer pk_live_..."
+
+# List currently-connected agents (SSE connection open)
+curl "https://api.getsly.ai/v1/agents?connected=true" \
+  -H "Authorization: Bearer pk_live_..."
+```

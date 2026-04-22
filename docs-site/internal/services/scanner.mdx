@@ -1,0 +1,73 @@
+---
+title: "apps/scanner"
+description: "Demand intelligence service — merchant readiness scanning."
+---
+
+The Scanner scans merchant websites for agentic commerce readiness. Not yet in public docs — internal + sales-led for now.
+
+## Purpose
+
+- Scan a merchant domain for UCP, ACP, x402, AP2, MCP, NLWeb, Visa VIC, Mastercard capability
+- Analyze structured data, accessibility, checkout friction
+- Compute a readiness score
+- Power demand intelligence: where is agentic commerce growing, which merchants are ready
+
+See PRD: [`docs/prd/epics/epic-56-agentic-commerce-demand-scanner.md`](https://github.com/sly-ai/platform/blob/main/docs/prd/epics/epic-56-agentic-commerce-demand-scanner.md).
+
+## Three operational modes
+
+1. **API on-demand** — `POST /v1/scanner/scan` → 2-5s response
+2. **CSV batch upload** — `POST /v1/scanner/scan/batch` → 10-20 concurrent, ~5-8 min for 1k merchants
+3. **MCP for Claude** — 19 tools via stdio, exposed as `@sly_ai/scanner-mcp`
+
+## Deployment
+
+Port 4100 internally. Deployed on Vercel Fluid Compute.
+
+## Stack
+
+- **Hono** — HTTP framework
+- **undici** — HTTP client
+- **cheerio** — HTML parsing (no Puppeteer; lightweight probing only)
+- **p-limit** — concurrency control
+- **csv-parse** — batch upload
+- **@modelcontextprotocol/sdk** — MCP server
+- **@supabase/supabase-js** — persistence
+
+## Structure
+
+```
+apps/scanner/src/
+├── probes/       # Protocol detection
+├── analyzers/    # Structured data, accessibility, checkout friction
+├── queue/        # Batch processor (p-limit)
+├── demand/       # Demand intelligence, synthetic tests, observatory
+├── mcp/          # MCP server + 19 tool definitions
+├── routes/       # Hono API routes
+├── db/           # Supabase helpers
+└── index.ts      # Hono entry
+```
+
+## MCP tools (overview)
+
+See [scanner/mcp-tools](/scanner/mcp-tools) for the full list.
+
+## Routes
+
+- `/v1/scanner/scan` — single-domain scan
+- `/v1/scanner/scan/batch` — CSV batch
+- `/v1/scanner/tests` — synthetic agent shopping tests
+- `/v1/scanner/prospects` — opportunity scoring
+- `/v1/scanner/reports` — readiness snapshots
+- `/v1/scanner/observatory` — agent activity
+- `/v1/scanner/traffic` — agent traffic analytics
+
+## Why not in public docs
+
+The scanner's UX is currently sales-led (internal team runs scans on behalf of prospects). Self-serve requires:
+
+- Rate limiting per tenant (scans are expensive)
+- UI for batch upload
+- Reporting surface for the buyer (usually a growth / sales eng)
+
+When those land, we'll move scanner docs to the public portal.

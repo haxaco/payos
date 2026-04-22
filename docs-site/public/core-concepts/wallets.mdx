@@ -1,0 +1,101 @@
+---
+title: "Wallets"
+description: "Fund-holding primitives attached to accounts and agents."
+---
+
+A **wallet** is the thing that actually holds money in Sly. Every transfer moves funds between wallets; every stream flows from a wallet; every balance query reads a wallet.
+
+Wallets belong to either an account (parent wallets) or an agent (agent wallets). The distinction matters for policy enforcement:
+
+- **Account wallets** — policy set at the account level; typically funded from the outside (bank wire, on-ramp) and used to pay humans or other businesses.
+- **Agent wallets** — policy set at the agent level; funded from a parent account wallet or from earnings; spending is gated by [KYA tier](/agents/kya-tiers) + [wallet policy](/agents/wallet-policies).
+
+## Wallet shape
+
+```json
+{
+  "id": "wal_...",
+  "owner_type": "agent",     // or "account"
+  "owner_id": "agt_...",     // or "acc_..."
+  "currency": "USDC",
+  "balance_available": "1250.50",
+  "balance_pending": "75.00",
+  "network": "base-sepolia", // live: base / polygon / solana / etc.
+  "address": "0x...",        // on-chain address (for stablecoin wallets)
+  "status": "active",
+  "policy_id": "pol_..."     // agent wallets only
+}
+```
+
+## Supported currencies and networks
+
+| Currency | Networks (live) | Networks (sandbox) |
+|---|---|---|
+| USDC | Base, Polygon, Solana, Ethereum | Base Sepolia |
+| USDT | Ethereum, Polygon, Tron | Sepolia |
+| EURC | Base, Ethereum | Base Sepolia |
+| Fiat (USD, EUR, GBP, …) | N/A (off-chain ledger) | N/A |
+
+When creating a wallet you specify the currency; the network is selected based on your tenant's configuration (live: cheapest confirmed settlement for the currency; sandbox: always a testnet).
+
+## Create an account wallet
+
+```bash
+curl -X POST https://api.getsly.ai/v1/wallets \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "owner_type": "account",
+    "owner_id": "acc_...",
+    "currency": "USDC"
+  }'
+```
+
+Agent wallets are created automatically when you create an agent. You can add additional wallets later via `POST /v1/agent-wallets`.
+
+## Fund a wallet
+
+**Live:**
+- Bank wire or card on-ramp via [funding](/api-reference/openapi) endpoints
+- Internal transfer from another wallet
+- Incoming transfer from a peer account
+
+**Sandbox:**
+- Faucet — `POST /v1/wallets/:id/fund` credits test tokens instantly
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/wallets/wal_.../fund \
+  -H "Authorization: Bearer pk_test_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "amount": "1000.00" }'
+```
+
+## Read balances
+
+```bash
+curl https://api.getsly.ai/v1/wallets/wal_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+`balance_available` reflects what you can spend now. `balance_pending` includes amounts held by in-flight transfers (debited from available but not yet settled).
+
+## Freeze and unfreeze
+
+For incident response:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/wallets/wal_.../freeze \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Suspicious activity investigation" }'
+```
+
+Frozen wallets cannot spend. Incoming transfers still land (funds can arrive). Unfreezing requires the same API key scope.
+
+## Wallet policies (agent wallets only)
+
+Agent wallets carry a policy that enforces spending rules at the moment of transaction. See [wallet policies](/agents/wallet-policies) for the full shape.
+
+## On-chain details
+
+For stablecoin wallets, Sly custodies the private key on your behalf (or — for advanced tenants — integrates with your MPC custody provider). Every wallet has a public address, and every on-chain movement is observable in the block explorer.

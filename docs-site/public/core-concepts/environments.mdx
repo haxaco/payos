@@ -1,0 +1,34 @@
+---
+title: "Environments (test vs. live)"
+description: "Full data isolation between sandbox and production."
+---
+
+Sly runs two logically separate environments:
+
+| | Test (sandbox) | Live (production) |
+|---|---|---|
+| Base URL | `https://sandbox.getsly.ai/v1` | `https://api.getsly.ai/v1` |
+| API key prefix | `pk_test_*` | `pk_live_*` |
+| Agent token prefix | `agent_test_*` | `agent_live_*` |
+
+Everything else — accounts, agents, wallets, transfers, streams, webhooks, events, exports — is fully isolated between them. They share *nothing* at the data layer except your tenant identity.
+
+## What isolation means concretely
+
+- A test account cannot receive a live transfer, or vice versa
+- Webhooks sent for test events use your test webhook URLs; live events use live URLs
+- Data exports download test or live, never mixed
+- Reports aggregate over one environment at a time
+
+## Key prefix mismatch
+
+- Test keys against `api.getsly.ai` → 401
+- Live keys against `sandbox.getsly.ai` → 401
+
+The SDK handles this for you — it picks the correct base URL from the key prefix.
+
+## When you can cross boundaries
+
+There's only one place test and live overlap: **organization identity**. Your tenant, your team members, your branding — those are shared. But any data that represents actual activity is environment-scoped.
+
+See [Get Started → Environments](/get-started/environments) for the full comparison including rate limits, KYC behavior, and faucet access.

@@ -1,0 +1,38 @@
+---
+title: "x402 internals"
+description: "HTTP 402 micropayments — implementation notes."
+---
+
+## Files
+
+- `apps/api/src/routes/x402-payments.ts` — core pay / verify (20 endpoints)
+- `apps/api/src/routes/x402-endpoints.ts` — endpoint registry (5 endpoints)
+- `apps/api/src/routes/x402-analytics.ts` — metrics (3 endpoints)
+- `apps/api/src/routes/x402-facilitator.ts` — sandbox facilitator (3 endpoints)
+- `apps/api/src/routes/x402-bridge.ts` — on-chain → Circle bridge (2 endpoints)
+- `apps/api/src/routes/openapi/x402.ts` — **migrated to @hono/zod-openapi** (PoC)
+
+## Facilitator
+
+Production x402 payments flow through the Coinbase-operated facilitator on Base mainnet. We verify proofs offline; Coinbase handles on-chain settlement. No direct blockchain RPC calls from our API.
+
+Sandbox uses our own mock facilitator (`apps/api/src/routes/x402-facilitator.ts`) — issues test proofs without real settlement. Don't accidentally test against the mock in production.
+
+## Bridge
+
+For tenants that want to accept x402 but settle in fiat: `x402-bridge` converts incoming stablecoin to the tenant's Circle account. Fee disclosed at bridge config time.
+
+## Gotchas
+
+- **Proof freshness** — proofs must be used within 60 seconds of issue. Clock skew > 30s causes widespread verification failures. Our server uses NTP.
+- **Price changes mid-request** — if `basePrice` changes between 402 and pay, which price wins? The price quoted in the 402 response, always. Honor it even if the registry price has since changed.
+- **Volume discounts** — applied at pay time by looking up total calls for the requesting wallet. Race condition: two simultaneous calls both see pre-discount count. We accept this (can't lock across HTTP).
+
+## Migration status
+
+**First protocol migrated** to `@hono/zod-openapi`. See `apps/api/src/routes/openapi/x402.ts`. The endpoints registry sub-module is done as a PoC; pay/verify and analytics are planned.
+
+## Related
+
+- Public docs: [x402 protocol page](https://docs.getsly.ai/protocols/x402)
+- x402 whitepaper: https://www.x402.org/x402-whitepaper.pdf

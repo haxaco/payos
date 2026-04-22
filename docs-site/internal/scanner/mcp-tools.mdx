@@ -1,0 +1,85 @@
+---
+title: "Scanner MCP tools"
+description: "19 tools exposed to Claude for demand intelligence workflows."
+---
+
+The scanner has its own MCP server (separate from `@sly_ai/mcp-server`), published as `@sly_ai/scanner-mcp`. Install:
+
+```bash
+npx @sly_ai/scanner-mcp install
+```
+
+## Files
+
+- `apps/scanner/src/mcp/server.ts` — MCP server
+- `apps/scanner/src/mcp/tools.ts` — tool definitions
+- `apps/scanner/src/mcp/handlers.ts` — handler logic
+
+## Tools
+
+### Scan operations (5)
+
+| Tool | Purpose |
+|---|---|
+| `scan_merchant` | Scan a single domain |
+| `batch_scan` | Batch CSV or array of domains |
+| `get_batch_progress` | Progress of an in-flight batch |
+| `get_scan_results` | Fetch scan by ID |
+| `search_scans` | Query by filters |
+
+### Demand analysis (4)
+
+| Tool | Purpose |
+|---|---|
+| `get_demand_stats` | Overall numbers |
+| `get_demand_brief` | Ready-to-read narrative |
+| `get_checkout_demand` | Category-specific checkout demand |
+| `get_agent_activity` | Real-agent observations |
+
+### Readiness reports (5)
+
+| Tool | Purpose |
+|---|---|
+| `get_readiness_report` | Per-merchant detailed report |
+| `get_protocol_adoption` | Protocol-by-protocol adoption curves |
+| `get_heat_map` | Geographic / category grid |
+| `find_best_prospects` | Sales-ready candidate list |
+| `compare_merchants` | Side-by-side comparison |
+
+### Snapshots + trends (2)
+
+| Tool | Purpose |
+|---|---|
+| `generate_snapshot` | Point-in-time archive |
+| `get_trend` | Time-series for any metric |
+
+### Testing (3)
+
+| Tool | Purpose |
+|---|---|
+| `run_agent_shopping_test` | Kick off a synthetic test |
+| `get_test_results` | Fetch test results |
+| `get_traffic_monitor` | Real-time agent traffic observations |
+
+## Auth
+
+Tools require an API key with scanner scope. Set `SLY_API_KEY` in the MCP config.
+
+## Permission filtering
+
+Same pattern as the main Sly MCP — tools filtered by calling credentials. Scanner currently doesn't have tiered access; either you have scanner scope or you don't.
+
+## Usage from Claude
+
+Typical sales-prep workflow Claude can execute:
+
+1. `find_best_prospects` — "Top 20 mid-market SaaS merchants in Brazil with growing agent traffic"
+2. For each: `get_readiness_report` — full writeup
+3. `compare_merchants` — against the buyer's existing customers
+4. `generate_snapshot` — archive the point-in-time view
+
+No human writes SQL; Claude composes the tools.
+
+## Monitoring
+
+Scanner MCP calls are logged with `requestId`, latency, and tool name. Surfaced in the internal MCP dashboard.
