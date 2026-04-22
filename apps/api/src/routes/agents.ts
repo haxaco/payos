@@ -1323,14 +1323,17 @@ agents.get('/:id/transactions', async (c) => {
 
   const { data: acpCheckouts, count: acpTotal } = await acpQuery.range(offset, offset + limit - 1);
 
-  // Fetch transfers initiated by this agent (AP2 mandate executions, etc.)
-  // Exclude ACP-type transfers to avoid duplicating data already fetched above
+  // Fetch transfers initiated by this agent (AP2 mandate executions, external
+  // x402 signs, etc.). We match on `initiated_by_id = agent.id` regardless of
+  // `initiated_by_type`: agent UUIDs are globally unique, so a tenant-key call
+  // that set `initiated_by_id` to the agent's UUID (e.g. /x402-sign) is still
+  // "this agent's activity" from the caller's perspective.
+  // Exclude ACP-type transfers to avoid duplicating data already fetched above.
   let transferQuery = supabase
     .from('transfers')
-    .select('id, type, status, currency, amount, description, created_at, from_account_id, to_account_id, from_account_name, to_account_name, fee_amount, protocol_metadata', { count: 'exact' })
+    .select('id, type, status, currency, amount, description, created_at, from_account_id, to_account_id, from_account_name, to_account_name, fee_amount, protocol_metadata, settlement_network, tx_hash', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
     .eq('environment', getEnv(ctx))
-    .eq('initiated_by_type', 'agent')
     .eq('initiated_by_id', id)
     .not('type', 'eq', 'acp')
     .order('created_at', { ascending: false });
@@ -1359,7 +1362,7 @@ agents.get('/:id/transactions', async (c) => {
   if (agentWalletIds.length > 0) {
     let walletTxQuery = supabase
       .from('transfers')
-      .select('id, type, status, currency, amount, description, created_at, from_account_id, to_account_id, from_account_name, to_account_name, fee_amount, protocol_metadata', { count: 'exact' })
+      .select('id, type, status, currency, amount, description, created_at, from_account_id, to_account_id, from_account_name, to_account_name, fee_amount, protocol_metadata, settlement_network, tx_hash', { count: 'exact' })
       .eq('tenant_id', ctx.tenantId)
       .eq('environment', getEnv(ctx))
       .eq('type', 'x402')
