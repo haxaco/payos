@@ -1358,6 +1358,90 @@ export function createMcpServer(
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
+      case 'agent_x402_wallet': {
+        const { agentId } = args as { agentId: string };
+        // One call gets us the EOA (idempotent — returns existing key if present).
+        const keyRes: any = await ctx.sly.request(`/v1/agents/${agentId}/evm-keys`, {
+          method: 'POST',
+          body: '{}',
+        });
+        const eoa: string | undefined = keyRes?.data?.ethereumAddress || keyRes?.ethereumAddress;
+        if (!eoa) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({
+              provisioned: false,
+              note: 'No EVM key could be provisioned. This agent may not be active, or the API rejected the request.',
+              rawKeyResponse: keyRes,
+            }, null, 2) }],
+          };
+        }
+        // Second call fetches the agent row so we can pick the right chain.
+        const agentRes: any = await ctx.sly.request(`/v1/agents/${agentId}`);
+        const envField: string | undefined = agentRes?.data?.environment || agentRes?.environment;
+        const agentEnv: 'live' | 'test' = envField === 'live' ? 'live' : 'test';
+
+        const chainConfig = agentEnv === 'live'
+          ? {
+              chainId: 8453,
+              network: 'base',
+              rpc: 'https://mainnet.base.org',
+              usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+              explorer: 'https://basescan.org',
+            }
+          : {
+              chainId: 84532,
+              network: 'base-sepolia',
+              rpc: 'https://sepolia.base.org',
+              usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+              explorer: 'https://sepolia.basescan.org',
+            };
+
+        // Query on-chain USDC balance directly — bypasses any internal-ledger
+        // mirror so the user sees the real number.
+        const callData = '0x70a08231' + '0'.repeat(24) + eoa.slice(2).toLowerCase();
+        let balanceUsdc: number | null = null;
+        let balanceError: string | null = null;
+        try {
+          const res = await fetch(chainConfig.rpc, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0', id: 1, method: 'eth_call',
+              params: [{ to: chainConfig.usdc, data: callData }, 'latest'],
+            }),
+          });
+          const j: any = await res.json();
+          if (j?.result) {
+            balanceUsdc = parseInt(j.result, 16) / 1e6;
+          } else {
+            balanceError = j?.error?.message || 'no result';
+          }
+        } catch (e: any) {
+          balanceError = e?.message || String(e);
+        }
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify({
+            provisioned: true,
+            address: eoa,
+            environment: agentEnv,
+            chain: {
+              id: chainConfig.chainId,
+              network: chainConfig.network,
+              explorerUrl: `${chainConfig.explorer}/address/${eoa}`,
+            },
+            onchainUsdc: balanceUsdc,
+            usdcContract: chainConfig.usdc,
+            balanceError,
+            note: balanceUsdc === 0
+              ? `EOA has 0 USDC on ${chainConfig.network}. To fund: send USDC on the Base network (not Ethereum) to the address above.`
+              : balanceUsdc === null
+                ? 'Could not read on-chain balance — check balanceError field.'
+                : `Spendable USDC on ${chainConfig.network}: ${balanceUsdc}`,
+          }, null, 2) }],
+        };
+      }
+
       case 'agent_x402_sign': {
         const { agentId, to, value, chainId, validBefore, validAfter, nonce } = args as {
           agentId: string;

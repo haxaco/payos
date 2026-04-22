@@ -1724,6 +1724,17 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'agent_x402_wallet',
+    description: 'Get the agent\'s x402 signing wallet — the EVM EOA used to pay external x402-protected endpoints. Returns the address, environment-appropriate chain (Base mainnet for live agents, Base Sepolia for test), and the LIVE on-chain USDC balance queried directly from the chain RPC. Use this to answer "what\'s my balance?" — the old agent_wallet_get tool only sees Circle custodial wallets and returns null for x402-only agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'UUID of the agent' },
+      },
+      required: ['agentId'],
+    },
+  },
+  {
     name: 'agent_x402_sign',
     description: 'Sign an EIP-3009 transferWithAuthorization payload using the agent\'s managed EVM key. Returns a spec-compliant signature that any x402 facilitator can verify. Use this to pay EXTERNAL x402-protected endpoints (as opposed to x402_pay which is for Sly\'s internal marketplace API).',
     inputSchema: {
