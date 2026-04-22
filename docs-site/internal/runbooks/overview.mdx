@@ -1,0 +1,63 @@
+---
+title: "Runbooks"
+description: "Operational playbooks for deploys, incidents, and on-call."
+---
+
+Runbooks are the operational knowledge the on-call rotation reaches for when something's wrong. Keep them honest: after every incident, update the runbook with what actually worked.
+
+## The runbook index
+
+<CardGroup cols={2}>
+  <Card title="Deployment" href="/runbooks/deployment">
+    How to ship, promote, roll back.
+  </Card>
+  <Card title="Incident response" href="/runbooks/incident-response">
+    First-30-minute playbook when something's on fire.
+  </Card>
+  <Card title="On-call" href="/runbooks/on-call">
+    Rotation, tools, escalation paths.
+  </Card>
+  <Card title="Rollback" href="/runbooks/rollback">
+    Code + migration rollback procedures.
+  </Card>
+  <Card title="Database recovery" href="/runbooks/database-recovery">
+    PITR, backups, restore rehearsals.
+  </Card>
+</CardGroup>
+
+## Key dashboards
+
+- **API latency** — internal Grafana (link with corp SSO)
+- **Webhook delivery health** — Grafana
+- **Worker queue depth** — Grafana
+- **Per-tenant activity** — internal dashboard
+- **Supabase metrics** — Supabase console
+- **Vercel deployments** — Vercel dashboard
+
+## Paging
+
+- **Sev 1** — Production down or money at risk. On-call pages immediately.
+- **Sev 2** — Degraded; some flows failing. On-call notified, response within 2h.
+- **Sev 3** — Non-blocking bug with workaround.
+- **Sev 4** — Feature request / question.
+
+Defined in detail at [support SLAs](https://docs.getsly.ai/resources/support).
+
+## Status page
+
+Public status page at `status.getsly.ai`. Incident updates flow from our incident tooling to the status page automatically. If you're on-call, posting to the status page is part of response — partners depend on it.
+
+## Post-incident
+
+Every Sev 1 and Sev 2 gets:
+
+- Timeline document (who did what when)
+- Blameless retrospective within 5 business days
+- Public postmortem within 7 business days (Sev 1 and 2 only)
+- Runbook update if the incident revealed a gap
+
+Postmortems live at `status.getsly.ai/history` (public-facing summaries) and in `docs/incidents/` internally (full timelines).
+
+## When a runbook is missing or wrong
+
+Open a PR. Runbooks are the most-used internal docs; quality matters more than finding it aesthetic. Update the step that tripped you up, add the command you wished was there, remove the step that no longer applies.

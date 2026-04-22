@@ -1,0 +1,50 @@
+---
+title: "Tenants"
+description: "Your organization in Sly. The root of every data isolation boundary."
+---
+
+A **tenant** is an organization that uses Sly — a fintech partner, a marketplace, an agent platform. Your tenant is created when you sign up; every account, agent, wallet, transfer, stream, and webhook you create belongs to it.
+
+## What tenants give you
+
+- **Data isolation.** Row-Level Security in the database ensures you cannot see another tenant's data under any circumstances. This is enforced at the database layer, not in application code.
+- **Independent credentials.** API keys, agent tokens, webhook endpoints, and team members are scoped to your tenant.
+- **Independent billing.** Usage is aggregated per tenant.
+- **Independent environments.** Each tenant has its own `test` and `live` slices of data — agents you create in test are never visible to live, and vice versa.
+
+## Tenant identity
+
+Every authenticated request resolves to a `tenantId`. You can read it back from `GET /v1/context`:
+
+```bash
+curl https://api.getsly.ai/v1/context \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+```json
+{
+  "tenant_id": "ten_...",
+  "environment": "live",
+  "actor_type": "api_key",
+  "api_key_id": "key_..."
+}
+```
+
+## Managing the tenant
+
+Organization-level operations live at `/v1/organization/*`:
+
+- **Members** — invite, remove, change roles (`owner`, `admin`, `member`, `viewer`)
+- **Protocols** — enable/disable agentic commerce protocols for your tenant
+- **Compliance** — KYB status, license docs, beneficial ownership
+
+These are dashboard-oriented surfaces; you'll rarely call them from a server integration.
+
+## What you do NOT see across tenants
+
+- Accounts, agents, wallets belonging to other tenants
+- Transfers where your tenant isn't party
+- Webhook deliveries for other tenants
+- Events, exports, reports
+
+This is absolute — there is no "admin view" that crosses tenants, even for your own support staff.

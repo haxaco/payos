@@ -26,6 +26,7 @@ import {
   Zap,
   Star,
   Banknote,
+  Gauge,
 } from 'lucide-react';
 import type { Account, Agent, Stream, LedgerEntry, Transfer, Wallet as WalletData } from '@sly/api-client';
 import { useLocale } from '@/lib/locale';
@@ -34,7 +35,7 @@ import { formatCurrency } from '@sly/ui';
 import { ScreeningTab } from '@/components/dashboard/account-360/screening-tab';
 import { toast } from 'sonner';
 
-type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'wallets' | 'screening' | 'commerce' | 'catalog' | 'endpoints' | 'ratings' | 'payouts';
+type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'wallets' | 'screening' | 'commerce' | 'catalog' | 'endpoints' | 'ratings' | 'payouts' | 'friendliness';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -63,7 +64,7 @@ export default function AccountDetailPage() {
   const { data: merchantStatsResp } = useQuery({
     queryKey: ['account', accountId, 'merchant-stats'],
     queryFn: () => api!.accounts.getMerchantStats(accountId, { minutes: 43200 }), // 30 days
-    enabled: !!api && isMerchant && (activeTab === 'commerce' || activeTab === 'catalog' || activeTab === 'endpoints' || activeTab === 'overview'),
+    enabled: !!api && isMerchant && (activeTab === 'commerce' || activeTab === 'catalog' || activeTab === 'endpoints' || activeTab === 'overview' || activeTab === 'friendliness'),
   });
   const merchantStats = (merchantStatsResp as any)?.data;
 
@@ -230,6 +231,7 @@ export default function AccountDetailPage() {
     { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactionsCount },
     ...(isMerchant ? [
       { id: 'commerce' as TabType, label: 'Commerce', icon: TrendingUp },
+      { id: 'friendliness' as TabType, label: 'Friendliness', icon: Gauge },
       { id: 'catalog' as TabType, label: 'Catalog', icon: Package, count: catalogCount },
       ...(endpointsCount > 0 ? [{ id: 'endpoints' as TabType, label: 'Endpoints', icon: Zap, count: endpointsCount }] : []),
       { id: 'ratings' as TabType, label: 'Ratings', icon: Star, count: ratingsCount },
@@ -292,6 +294,17 @@ export default function AccountDetailPage() {
                   {Number(merchantRatings.overallAverage).toFixed(1)}
                   <span className="text-amber-500 dark:text-amber-500/70">/5</span>
                 </span>
+              )}
+              {isMerchant && merchantStats?.friendliness?.score != null && (
+                <button
+                  onClick={() => setActiveTab('friendliness')}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full transition-opacity hover:opacity-80 ${friendlinessChipClass(merchantStats.friendliness.score)}`}
+                  title="Agent-Friendliness Index — click for breakdown"
+                >
+                  <Gauge className="h-3.5 w-3.5" />
+                  {merchantStats.friendliness.score}
+                  <span className="opacity-70">/100</span>
+                </button>
               )}
             </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -470,6 +483,9 @@ export default function AccountDetailPage() {
       )}
       {activeTab === 'payouts' && isMerchant && (
         <PayoutsTab accountId={accountId} />
+      )}
+      {activeTab === 'friendliness' && isMerchant && (
+        <FriendlinessTab stats={merchantStats} />
       )}
     </div>
   );
@@ -867,6 +883,126 @@ function EndpointsTab({ stats }: { stats: any }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function friendlinessChipClass(score: number): string {
+  if (score >= 80) return 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300';
+  if (score >= 60) return 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300';
+  if (score >= 40) return 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300';
+  return 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300';
+}
+
+function friendlinessBarClass(score: number): string {
+  if (score >= 80) return 'bg-emerald-500';
+  if (score >= 60) return 'bg-sky-500';
+  if (score >= 40) return 'bg-amber-500';
+  return 'bg-rose-500';
+}
+
+function FriendlinessTab({ stats }: { stats: any }) {
+  if (!stats) return <div className="p-8 text-center text-gray-500">Loading friendliness data…</div>;
+  const f = stats.friendliness;
+  if (!f) return <div className="p-8 text-center text-gray-500">Friendliness index not available.</div>;
+
+  const signals: Array<{ key: string; label: string; help: string }> = [
+    { key: 'catalog', label: 'Catalog Structure', help: 'SKU, price, currency, category on every product' },
+    { key: 'reliability', label: 'Reliability', help: 'Completed ÷ attempted checkouts' },
+    { key: 'price_accuracy', label: 'Price Accuracy', help: 'Rating-derived: catalog price matches checkout' },
+    { key: 'latency', label: 'Latency', help: 'p95 ACP create→complete (log-linear, <1s = 100, >30s = 0)' },
+    { key: 'manifest', label: 'Manifest Compliance', help: 'Valid JSON at the merchant manifest URL' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Headline score */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Gauge className="h-5 w-5 text-purple-500" />
+              Agent-Friendliness Index
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
+              Measures the <em>design</em> signals this merchant controls — catalog quality, reliability, latency,
+              price accuracy, manifest. Independent of whether agents happen to be buying today (commercial
+              performance lives on the Commerce tab).
+            </p>
+          </div>
+          <div className="text-right">
+            {f.score != null ? (
+              <>
+                <div className={`text-5xl font-bold ${f.score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : f.score >= 60 ? 'text-sky-600 dark:text-sky-400' : f.score >= 40 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  {f.score}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">/ 100</div>
+              </>
+            ) : (
+              <div className="text-sm text-gray-500">No measurable signals</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Per-signal breakdown */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 space-y-4">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Signal Breakdown</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">Effective weights after N/A redistribution</span>
+        </div>
+        {signals.map((s) => {
+          const sig = f.breakdown[s.key];
+          const weight = f.weights?.[s.key] ?? 0;
+          const isNA = sig?.score == null;
+          return (
+            <div key={s.key} className="space-y-1">
+              <div className="flex items-baseline justify-between text-sm">
+                <div>
+                  <span className="font-medium text-gray-900 dark:text-white">{s.label}</span>
+                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{s.help}</span>
+                </div>
+                <div className="flex items-center gap-3 font-mono">
+                  {isNA ? (
+                    <span className="text-gray-400 dark:text-gray-500 text-xs uppercase tracking-wider">N/A</span>
+                  ) : (
+                    <span className={`font-semibold ${sig.score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : sig.score >= 60 ? 'text-sky-600 dark:text-sky-400' : sig.score >= 40 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{sig.score}</span>
+                  )}
+                  <span className="text-xs text-gray-400 dark:text-gray-500 w-12 text-right">
+                    {weight > 0 ? `${(weight * 100).toFixed(0)}%` : '—'}
+                  </span>
+                </div>
+              </div>
+              <div className="h-2 bg-gray-100 dark:bg-gray-900 rounded-full overflow-hidden">
+                {!isNA && (
+                  <div
+                    className={`h-full ${friendlinessBarClass(sig.score)} transition-all`}
+                    style={{ width: `${sig.score}%` }}
+                  />
+                )}
+              </div>
+              {sig?.issues && sig.issues.length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+                  {sig.issues.map((iss: string, idx: number) => (
+                    <li key={idx}>• {iss}</li>
+                  ))}
+                </ul>
+              )}
+              {isNA && sig?.detail?.note && (
+                <p className="text-xs text-gray-400 dark:text-gray-500">{sig.detail.note}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Raw detail */}
+      <details className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">Raw detail</summary>
+        <pre className="mt-3 text-xs text-gray-600 dark:text-gray-400 overflow-auto max-h-96">
+          {JSON.stringify(f.breakdown, null, 2)}
+        </pre>
+      </details>
     </div>
   );
 }

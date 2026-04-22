@@ -1,0 +1,108 @@
+---
+title: "CLI"
+description: "@sly_ai/cli — terminal tool for ops, scripts, and CI."
+---
+
+The Sly CLI is a thin terminal shell over the Node SDK. Use it for ops, scripting, CI/CD, and anywhere you'd reach for `curl`.
+
+## Install
+
+```bash
+npm install -g @sly_ai/cli
+# or
+pnpm add -g @sly_ai/cli
+```
+
+Verify:
+
+```bash
+sly --version
+```
+
+## Authenticate
+
+Environment variables:
+
+```bash
+export SLY_API_KEY=pk_test_...   # or pk_live_*
+# Optional: explicit URL override
+export SLY_API_URL=https://api.getsly.ai
+```
+
+Your key prefix (`pk_test_` vs `pk_live_`) auto-selects the correct base URL.
+
+## Command groups
+
+| Group | Description |
+|---|---|
+| `sly accounts` | Manage person / business accounts |
+| `sly agents` | Create agents, Ed25519 keys, skills |
+| `sly wallets` | Balances, funding (sandbox), freeze/unfreeze |
+| `sly agent-wallets` | Agent-scoped wallet + policies |
+| `sly merchants` | UCP merchant catalog |
+| `sly settlement` | Settlement windows, rules, reconciliation |
+| `sly x402` | x402 endpoints, facilitator, bridge |
+| `sly acp` | ACP checkouts |
+| `sly ap2` | AP2 mandates |
+| `sly ucp` | UCP tokens, settlements |
+| `sly mpp` | MPP sessions |
+| `sly a2a` | A2A tasks, marketplace, skills |
+| `sly support` | Open a support ticket |
+| `sly env` | Inspect or swap environment |
+
+Each group follows a consistent CRUD pattern. Use `sly <group> --help` for sub-commands.
+
+## Quick examples
+
+```bash
+# List accounts
+sly accounts list
+
+# Create a business account
+sly accounts create --type business --name "Acme Robotics" --email ops@acme.example
+
+# Create an agent with auto-generated keypair
+sly agents create --account acc_... --name "Payables Bot" --tier 1 --generate-keypair
+
+# Send a transfer
+sly wallets transfer --from wal_source --to wal_dest --amount 42.00 --currency USDC
+
+# Fund a sandbox wallet
+sly wallets fund --wallet wal_... --amount 1000.00
+
+# List connected agents (SSE active)
+sly agents list --connected
+
+# Send an A2A task
+sly a2a send --to agt_peer_... --skill invoice.review --message "Please review attached PO"
+```
+
+## JSON output
+
+Default output is human-friendly tables. `--json` gives scriptable output:
+
+```bash
+sly accounts list --json | jq '.[] | select(.type == "business")'
+```
+
+## Exit codes
+
+- `0` — success
+- `1` — missing credentials or configuration
+- `2` — API returned a 4xx
+- `3` — API returned a 5xx or network error
+
+Safe for `set -e` pipelines.
+
+## Environment management
+
+```bash
+sly env show    # current settings
+sly env ping    # connectivity test
+```
+
+## See also
+
+- [CLI README](https://www.npmjs.com/package/@sly_ai/cli) on npm
+- [Node SDK](/sdks/node-sdk) — the CLI wraps this
+- Full command reference: `sly --help`

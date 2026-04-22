@@ -1,0 +1,80 @@
+---
+title: "Data retention"
+description: "What we keep, how long, and how to delete."
+---
+
+## Categories
+
+| Data | Retention | Rationale |
+|---|---|---|
+| Transaction records | 7 years post-completion | Regulatory (FinCEN, equivalents) |
+| KYC outcome (tier, reference) | 7 years post-account-closure | Regulatory |
+| KYC documents | Not stored (Persona holds) | Minimize PII surface |
+| Sanctions hits + resolutions | 7 years | Regulatory audit |
+| Webhook delivery records | 30 days | Debugging; enough for replay |
+| Audit log | 2 years | Investigation + compliance |
+| Session tokens (sess_*) | Expired TTL; purged after | No retention value |
+| API key hashes | While active + 90 days post-revocation | Forensic capacity |
+| Agent Ed25519 public keys | While active + indefinite audit | Identity attestation chain |
+| Account metadata | While active + 7 years | Regulatory |
+
+## PII we store
+
+- Legal name
+- Email
+- Phone (optional)
+- Date of birth (optional)
+- Billing address (cards)
+- Bank account numbers (for fiat settlement)
+
+Never stored:
+- ID photos, selfies, document scans (Persona holds)
+- Card PAN, CVV, expiry (tokenized via Visa / Mastercard)
+
+## Deletion
+
+### Customer-initiated
+
+Per GDPR / CCPA / equivalent, accounts can request deletion:
+1. Via dashboard or direct request to privacy@
+2. Compliance reviews (is a legal hold in effect?)
+3. If clear: hard delete on `accounts`, `wallets`, `personal_info` tables
+4. Audit log entry ("right to erasure invoked") retained for 7 years — doesn't contain PII, just the fact + timestamp
+5. 30 days before physical row deletion (grace period)
+
+### Automated expiry
+
+Nightly job:
+- Webhook delivery records > 30 days → delete
+- Expired sess_* tokens → delete
+- Revoked API keys > 90 days old → delete
+
+See `apps/api/scripts/nightly-cleanup.ts`.
+
+## Legal hold
+
+If a regulator, law enforcement, or legal counsel issues a hold:
+- Stop all automated deletion for the subject data
+- Mark `legal_hold = true` on affected records
+- Document in internal hold register
+- Lift hold only with written confirmation from legal
+
+Unauthorized deletion during a legal hold is a fireable offense.
+
+## Backups
+
+Backup retention (90 days weekly, 1 year monthly) means deleted data persists in backups beyond the live deletion. When a customer requests deletion:
+1. Live data deleted as above
+2. Backup retention period elapses naturally
+3. After full retention window, the data is gone everywhere
+
+This window is disclosed in the privacy policy.
+
+## Regional data residency
+
+Customers in specific regions (EU, specifically) may require data-residency commitments:
+- Primary storage: Supabase region configured per-tenant
+- Backups: same region
+- Logs: aggregator region
+
+Verify `tenants.data_residency` before onboarding regulated customers.

@@ -1,0 +1,99 @@
+---
+title: "Replay"
+description: "Re-send past events during incident recovery or after endpoint changes."
+---
+
+Sometimes your webhook endpoint missed events — deployment outage, certificate expiry, a bug that ate valid deliveries. Sly retains the last 30 days of events and lets you replay them.
+
+## List past deliveries
+
+```bash
+curl "https://api.getsly.ai/v1/webhooks/wh_.../deliveries?status=failed&since=2026-04-20" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Filters:
+- `status` — `delivered`, `failed`, `pending`
+- `event_type` — filter by type (`transfer.completed`, `approval.requested`, etc.)
+- `since`, `until` — time window
+
+Response:
+
+```json
+{
+  "data": [
+    {
+      "id": "del_...",
+      "event_id": "evt_...",
+      "event_type": "transfer.completed",
+      "status": "failed",
+      "attempts": 8,
+      "last_attempt_at": "2026-04-21T09:22:00Z",
+      "last_response_code": 500,
+      "last_response_body": "Internal Server Error"
+    }
+  ],
+  "pagination": { ... }
+}
+```
+
+## Replay a single delivery
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../deliveries/del_.../replay \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Re-sends the exact event to the webhook URL, with the same signature and headers. The replayed delivery gets a **new** `X-Sly-Delivery-Id` but the **same** `X-Sly-Event-Id` — so your idempotency logic on the receiving side works correctly.
+
+## Bulk replay
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../replay \
+  -d '{
+    "since": "2026-04-20T00:00:00Z",
+    "until": "2026-04-21T00:00:00Z",
+    "event_types": ["transfer.completed", "transfer.failed"],
+    "only_failed": true
+  }'
+```
+
+Schedules a replay batch; deliveries go out rate-limited at 10/sec to avoid overwhelming your endpoint.
+
+## Replay to a different URL
+
+Useful for testing a new endpoint version against real traffic:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../replay \
+  -d '{
+    "since": "2026-04-20T00:00:00Z",
+    "override_url": "https://staging.example.com/webhooks/sly"
+  }'
+```
+
+The override URL signature uses the **current** webhook's secret, not the staging endpoint's. Set up matching secrets to verify.
+
+## Idempotency matters here
+
+Replayed events carry the original `event_id`. If your handler is idempotent, replays are safe — a replayed `transfer.completed` for a transfer you already marked complete will be a no-op.
+
+If your handler isn't idempotent, replay can re-trigger side effects (duplicate emails, duplicate ledger entries). Fix idempotency first; replay second.
+
+## Auto-disable on persistent failure
+
+If 10+ consecutive deliveries fail, Sly automatically:
+
+1. Emits a `webhook.failing` event to any other active webhooks
+2. Alerts the dashboard
+3. After 1 hour of continued failures, pauses the subscription
+
+Paused subscriptions accumulate events in the replay store. Fix the underlying issue, then bulk-replay to recover:
+
+```bash
+# Re-enable
+curl -X POST /v1/webhooks/wh_.../resume
+
+# Replay missed events
+curl -X POST /v1/webhooks/wh_.../replay -d '{ "since": "2026-04-20T00:00:00Z" }'
+```

@@ -1,0 +1,136 @@
+---
+title: "Ed25519 keypair auth"
+description: "Key lifecycle, storage, rotation, and recovery for agent cryptographic identity."
+---
+
+This page covers the **key management** side of Ed25519 auth — provisioning, storing, rotating, and recovering agent keys. For the handshake flow itself, see [Ed25519 session tokens](/authentication/ed25519-sessions).
+
+## Why keypairs
+
+Agent tokens (`agent_*`) are shared secrets. If one leaks, anyone with the string has the agent's full authority until someone manually rotates it.
+
+Ed25519 keypairs invert this: the agent holds a private key that never leaves its process; the Sly API holds only the public key. Each session is established by signing a server-issued nonce. Compromised *sessions* are revocable; compromised *keys* require a new keypair.
+
+## Provisioning
+
+Two paths:
+
+**At agent creation** (recommended — you only see the private key once):
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agents \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ ..., "generate_keypair": true }'
+```
+
+**For an existing agent:**
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agents/$AGENT_ID/auth-keys \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Both return the full key pair on success:
+
+```json
+{
+  "keyId": "auth_abcdef01_12345678",
+  "publicKey": "<base64 Ed25519 public key>",
+  "privateKey": "<base64 Ed25519 private key>",
+  "algorithm": "ed25519",
+  "warning": "SAVE THIS PRIVATE KEY NOW — it will never be shown again!"
+}
+```
+
+## Storing the private key
+
+The private key is a base64-encoded 32-byte Ed25519 seed. Handle it like any high-value secret:
+
+- **Secrets manager** (AWS Secrets Manager, HashiCorp Vault, GCP Secret Manager)
+- **Environment variable injected at boot**, never logged
+- **Hardware-backed storage** for high-value agents (YubiKey, AWS KMS, Google Titan)
+
+**Never:**
+- Commit to source control
+- Log in any form
+- Send through any external service for "help decoding"
+- Store alongside the corresponding public key on the same system (defeats the air-gap)
+
+## Rotation
+
+Self-rotation is the recommended discipline. Rotate:
+
+- Every N days (your risk tolerance — monthly is common for Tier 2+, weekly for Tier 3)
+- On suspicion of compromise
+- On staff changes (if an engineer who had access left)
+- On platform-level alerts (`key_rotated` or abnormal-use SSE events)
+
+Signed-proof rotation — agent rotates itself without an API key holder:
+
+```ts
+import * as ed25519 from '@noble/ed25519';
+
+const message = new TextEncoder().encode(`rotate:${AGENT_ID}`);
+const proof = Buffer.from(
+  await ed25519.signAsync(message, currentPrivateKey)
+).toString('base64');
+
+const res = await fetch(`https://api.getsly.ai/v1/agents/${AGENT_ID}/auth-keys/rotate`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ proof }),
+});
+const { privateKey: newPrivateKey } = await res.json();
+```
+
+Atomic effect:
+1. Old key marked `rotated`
+2. **All active sessions under the old key are revoked**
+3. New key pair generated
+4. New private key returned (once)
+
+## Revocation (kill-switch)
+
+For confirmed compromise:
+
+```bash
+curl -X DELETE https://api.getsly.ai/v1/agents/$AGENT_ID/auth-keys \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Instant effect:
+- Auth key revoked
+- All active `sess_*` tokens invalidated
+- Agent cannot authenticate until a new key is provisioned
+
+Unlike [wallet freeze](/agents/wallet-policies#freeze-and-unfreeze) (spending blocked, auth works), revocation blocks **all API access**.
+
+## Recovery when you lose the private key
+
+If you lost the private key and haven't rotated yet:
+
+1. Call `DELETE /v1/agents/:id/auth-keys` using an API key (not the lost agent creds)
+2. Call `POST /v1/agents/:id/auth-keys` to provision a fresh pair
+3. Save the new private key carefully this time
+4. Update your agent deployment with the new key
+
+The agent record, history, KYA tier, and wallet policies are preserved. Only the crypto material changes.
+
+## Best practices
+
+- **One private key per agent per environment.** Test and live keypairs are separate.
+- **Generate keys at agent creation, not later.** Shrinks the window where the agent exists but can't yet authenticate via Ed25519.
+- **Monitor the `key_rotated` webhook / SSE event.** If you see it unexpectedly, treat as incident.
+- **Pre-provision replacement keys for critical agents.** Standby keypair you can swap in fast during an incident.
+- **Rotate on a schedule.** Don't wait for incidents.
+
+## Endpoint reference
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /v1/agents/:id/auth-keys` | API key | Provision new keypair |
+| `GET /v1/agents/:id/auth-keys` | API key | List current (public key only) |
+| `POST /v1/agents/:id/auth-keys/rotate` | Signed proof | Self-rotate |
+| `DELETE /v1/agents/:id/auth-keys` | API key | Revoke all keys |
+| `POST /v1/agents/:id/challenge` | Public | Handshake step 1 |
+| `POST /v1/agents/:id/authenticate` | Public | Handshake step 2 |

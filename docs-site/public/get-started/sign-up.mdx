@@ -1,0 +1,87 @@
+---
+title: "Sign up & get API keys"
+description: "Create your Sly account and provision sandbox credentials."
+---
+
+<Steps>
+  <Step title="Create an organization">
+    Head to [app.getsly.ai/signup](https://app.getsly.ai/signup). Sign up with your work email — Google Workspace domains get SSO automatically.
+
+    After sign-up you'll land on your organization dashboard. Every piece of data in Sly is tenant-scoped to this organization.
+  </Step>
+
+  <Step title="Provision a sandbox API key">
+    From the dashboard, go to **Settings → API Keys → Create key**.
+
+    Choose environment **Test**. Give the key a name (e.g. `local-dev`, `staging-server`). Optionally scope it to a subset of resources.
+
+    <Warning>
+    You'll see the full key **once**. Copy it into your password manager or `.env` file immediately. Sly stores only a hash — there's no "show key" button later.
+    </Warning>
+
+    The key looks like:
+    ```
+    pk_test_rNq7VwK9PaZ8Jj2mXdQeY1R4hF3tC6sL
+    ```
+  </Step>
+
+  <Step title="Verify the key">
+    Confirm your key works against the sandbox:
+
+    ```bash
+    curl https://sandbox.getsly.ai/v1/context \
+      -H "Authorization: Bearer pk_test_..."
+    ```
+
+    Expected response:
+    ```json
+    {
+      "tenant_id": "ten_...",
+      "environment": "test",
+      "actor_type": "api_key"
+    }
+    ```
+
+    If you get a 401, double-check the header format — it must be `Authorization: Bearer <key>`, not `Authorization: <key>`.
+  </Step>
+
+  <Step title="Install an SDK (optional but recommended)">
+    <CodeGroup>
+      ```bash Node.js
+      npm install @sly_ai/sdk
+      ```
+
+      ```bash CLI
+      npm install -g @sly_ai/cli
+      sly auth login
+      ```
+
+      ```bash MCP (Claude Desktop)
+      npx @sly_ai/mcp-server install
+      ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Next: make a real call
+
+Head to the [quickstart](/get-started/quickstart) to create your first account and send a test transfer.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="I get 401 Unauthorized">
+    Three common causes:
+    - Missing `Bearer` prefix in the `Authorization` header
+    - Using a test key against the live URL (or vice versa)
+    - Key was revoked in the dashboard — check Settings → API Keys
+  </Accordion>
+
+  <Accordion title="I get 403 Forbidden">
+    Your key is valid but scoped away from the resource you called. Re-check the scopes you selected when creating the key, or create a full-access dev key for local development.
+  </Accordion>
+
+  <Accordion title="I lost my key">
+    Keys cannot be recovered — revoke the old one (Settings → API Keys → Revoke) and issue a new one. Rotating keys is a one-click operation and doesn't invalidate webhooks or agent tokens.
+  </Accordion>
+</AccordionGroup>

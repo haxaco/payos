@@ -1,0 +1,180 @@
+---
+title: "Receive webhooks"
+description: "Subscribe, verify, and handle Sly events in your application."
+---
+
+This is the fast-path guide to getting webhooks working end-to-end. Reference docs: [webhooks overview](/webhooks/overview), [event catalog](/webhooks/events), [signature verification](/webhooks/signature-verification).
+
+## 1. Set up a route
+
+In Node/Express:
+
+```ts
+import express from 'express';
+const app = express();
+
+app.post('/webhooks/sly',
+  express.raw({ type: '*/*' }),  // raw body — critical
+  async (req, res) => {
+    // verify + handle
+  }
+);
+```
+
+<Warning>
+Use a raw-body parser on the webhook route. If your framework auto-parses JSON, re-serialization breaks the signature. See [local testing](/webhooks/local-testing) for framework-specific setup.
+</Warning>
+
+## 2. Create a subscription
+
+```ts
+const wh = await sly.webhooks.create({
+  url: 'https://api.yourapp.example/webhooks/sly',
+  events: [
+    'transfer.completed',
+    'transfer.failed',
+    'stream.alert',
+    'approval.requested',
+  ],
+  description: 'Production payments worker',
+});
+
+// wh.secret — SAVE THIS (shown once)
+process.env.SLY_WEBHOOK_SECRET = wh.secret;
+```
+
+## 3. Verify signatures
+
+```ts
+import { verifyWebhook } from '@sly_ai/sdk';
+
+app.post('/webhooks/sly', express.raw({ type: '*/*' }), (req, res) => {
+  let event;
+  try {
+    event = verifyWebhook(
+      req.body,
+      req.headers['x-sly-signature'] as string,
+      process.env.SLY_WEBHOOK_SECRET!,
+    );
+  } catch {
+    return res.status(400).end();
+  }
+
+  // event is typed — handle it
+  handle(event);
+  res.status(200).end();
+});
+```
+
+See [signature verification](/webhooks/signature-verification) for manual implementations in Python, Go, Ruby.
+
+## 4. Dedupe with event_id
+
+Deliveries can repeat (at-least-once semantics). Always check:
+
+```ts
+async function handle(event) {
+  if (await seenEvents.has(event.id)) return;
+  await seenEvents.add(event.id, { ttl: '48h' });
+  await processEvent(event);
+}
+```
+
+Any fast key-value store works (Redis, Postgres with an index).
+
+## 5. Ack fast, process async
+
+Respond in < 1 second:
+
+```ts
+app.post('/webhooks/sly', ..., async (req, res) => {
+  // verify
+  await queue.enqueue(event);  // background worker processes
+  res.status(200).end();
+});
+```
+
+Sly's delivery timeout is 15s but a slow endpoint triggers exponential backoff and, eventually, auto-pause.
+
+## 6. Handle specific events
+
+```ts
+async function processEvent(event) {
+  switch (event.type) {
+    case 'transfer.completed':
+      await markInvoicePaid(event.data.transfer);
+      break;
+
+    case 'transfer.failed':
+      await notifyOps(event.data.transfer);
+      break;
+
+    case 'stream.alert':
+      const { stream, alert } = event.data;
+      if (alert.severity === 'warning') await topUpStream(stream);
+      if (alert.severity === 'critical') await pageOps(stream);
+      break;
+
+    case 'approval.requested':
+      await postToSlack(event.data.approval);
+      break;
+  }
+}
+```
+
+## 7. Test locally
+
+Two options:
+
+**Tunnel to localhost** with ngrok or Cloudflare Tunnel:
+```bash
+ngrok http 3000
+# use the ngrok URL as the webhook URL
+```
+
+**Fire a test delivery** from Sly:
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/webhooks/wh_.../test
+```
+
+See [local testing](/webhooks/local-testing) for more.
+
+## 8. Monitor delivery health
+
+```ts
+const deliveries = await sly.webhooks.listDeliveries(wh.id, {
+  status: 'failed',
+  since: '2026-04-20',
+});
+
+if (deliveries.data.length > 0) {
+  // something's wrong — inspect
+}
+```
+
+Or check the webhook detail page in the dashboard — it shows the last 100 deliveries with status and response bodies.
+
+## 9. Recovery after downtime
+
+If you had an outage and missed events, replay them:
+
+```ts
+await sly.webhooks.bulkReplay(wh.id, {
+  since: '2026-04-20T00:00:00Z',
+  only_failed: true,
+});
+```
+
+See [replay](/webhooks/replay).
+
+## Checklist before production
+
+- [ ] Webhook URL is HTTPS, not HTTP
+- [ ] Route uses a raw-body parser
+- [ ] Signatures are verified with `timingSafeEqual`
+- [ ] Event IDs are deduplicated
+- [ ] Handler acks in < 1 second, processes async
+- [ ] Failures are alerted (monitor `webhook.failing` event)
+- [ ] Webhook secret stored in a secrets manager, not source
+- [ ] Rotation procedure documented
+- [ ] Replay procedure tested in sandbox

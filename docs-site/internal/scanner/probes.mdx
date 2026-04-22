@@ -1,0 +1,96 @@
+---
+title: "Scanner probes"
+description: "Per-protocol capability detection."
+---
+
+Probes are the detection layer. Each protocol has a dedicated probe that inspects a merchant URL and reports whether and how the site supports that protocol.
+
+## Files
+
+`apps/scanner/src/probes/`
+
+- `ucp.ts` — UCP probe
+- `acp.ts` — ACP probe
+- `x402.ts` — x402 probe
+- `ap2.ts` — AP2 probe
+- `mcp.ts` — MCP probe
+- `nlweb.ts` — NLWeb probe (Google's natural-language-web spec)
+- `visa-vic.ts` — Visa Intelligent Commerce
+- `mastercard.ts` — Mastercard Agent Pay
+
+## Probe contract
+
+Every probe exports:
+
+```ts
+export interface ProbeResult {
+  detected: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  version?: string;
+  endpoints_found?: string[];
+  evidence: string[];  // URLs, excerpts, schema refs
+  errors?: string[];
+}
+
+export async function probe(url: string, ctx: ProbeContext): Promise<ProbeResult>;
+```
+
+## What each probe looks for
+
+### UCP
+- `/.well-known/ucp` (200 OK + valid JSON)
+- JSON-LD `@type: UCPMerchant`
+- Meta tag `ucp:enabled`
+- Response headers announcing UCP support
+
+### ACP
+- `/.well-known/agentic-commerce` (200 OK)
+- Stripe Connect integration markers
+- ACP-specific schema.org extensions
+
+### x402
+- Returns `HTTP 402` on a probe endpoint
+- `X-Payment-Required` header
+- Links in the 402 response body pointing to payment-required docs
+
+### AP2
+- `/.well-known/ap2-merchant`
+- Google AP2 badge markers
+- JWKS endpoint for mandate verification
+
+### MCP
+- `/mcp` responds to `tools/list` JSON-RPC
+- `.well-known/mcp-servers`
+
+### NLWeb
+- `.well-known/nlweb` or meta tags
+
+### Visa VIC / Mastercard
+- Specific partner API endpoints (discovered via Visa / Mastercard merchant registry)
+
+## Concurrency
+
+Probes are independent per-protocol. For a single merchant, all probes run in parallel (via `Promise.all`).
+
+For batch scans, per-merchant work runs through `p-limit` at 10-20 concurrent to avoid hammering any single target.
+
+## Rate limiting downstream
+
+We respect `robots.txt`. If `robots.txt` disallows our user agent, we skip.
+
+We never send more than 1 request per second to a single origin. Probes with multiple endpoints space requests out.
+
+## Adding a new probe
+
+1. New file `apps/scanner/src/probes/<protocol>.ts`
+2. Export `probe(url, ctx)` matching the contract
+3. Register in `apps/scanner/src/probes/index.ts`
+4. Add tests in `apps/scanner/tests/probes/<protocol>.test.ts`
+5. Update the readiness-score weighting in `packages/utils/src/readiness-score.ts`
+
+## Gotchas
+
+- **Cloudflare / WAF blocking our user agent** — set user agent to `Sly Scanner (getsly.ai)` and respect 429s
+- **Redirect loops** — max 5 redirects; then give up
+- **SSL errors** — some merchants have expired certs; treat as probe failure, not hard error
+- **HTML parsing on non-HTML responses** — check content-type before handing to cheerio

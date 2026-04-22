@@ -1,0 +1,38 @@
+---
+title: "In-flight epics"
+description: "Pointer to active PRD work."
+---
+
+Active and recent epics live in [`docs/prd/epics/`](https://github.com/sly-ai/platform/tree/main/docs/prd/epics). There are 59+ epic files; the ones currently in-flight are worth reading if you're touching related code.
+
+## How to find active epics
+
+```bash
+# List recently modified epic files
+git log --since="30 days ago" --name-only --pretty=format: docs/prd/epics/ | sort -u
+```
+
+Or check the Epic Dashboard in `docs/prd/PayOS_PRD_Master.md`.
+
+## Current focus areas (2026-Q2)
+
+Pulled from the dashboard:
+
+- **Epic 56** — Agentic Commerce Demand Scanner
+- **Epic 72** — Agent keypair auth (largely complete)
+- **Epic 65** — Portal tokens (launched)
+- **Epic 60** — A2A agent onboarding + skills
+- **Epic 62** — Escrow orchestration
+- **Epic 64** — Openclaw governance skill
+- **Epic 71** — MPP integration
+- **Epic 76** — X / Twitter SSO
+
+For each: read the epic file for context before making non-trivial changes to the area.
+
+## Why this page is thin
+
+Epic docs change frequently and belong in the PRD tree, not mirrored here. The authoritative source is `docs/prd/epics/`. This internal portal page exists so the nav has an entry; treat it as a pointer, not content.
+
+## Adding an entry
+
+If an epic has implementation notes worth persisting across the epic's lifetime, create a dedicated page under `internal/protocol-internals/` or `internal/engineering/` and link from the epic doc. Epics themselves should stay in the PRD tree.

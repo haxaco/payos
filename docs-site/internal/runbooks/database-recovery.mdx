@@ -1,0 +1,62 @@
+---
+title: "Database recovery"
+description: "Point-in-time recovery, backups, and restore rehearsals."
+---
+
+Supabase (our Postgres host) takes automatic backups. But recovery is a skill you practice, not a button you hope works.
+
+## Backup cadence
+
+- **Continuous WAL shipping** — up to the last few minutes
+- **Daily snapshots** — retained 30 days
+- **Weekly archives** — retained 90 days
+- **Monthly archives** — retained 1 year
+
+Configured in the Supabase project console.
+
+## When to restore
+
+- **Accidentally dropped column / table** — restore from the last snapshot before the drop
+- **Bad migration that corrupted data** — point-in-time recovery to just before
+- **Malicious action** — PITR + forensic hold
+- **Regional outage** — Supabase handles failover automatically
+
+## Point-in-time recovery (PITR)
+
+1. Identify the exact timestamp where data was still good
+2. Open Supabase console → Database → Backups → Point-in-time recovery
+3. Restore to a **new** project (never over production)
+4. Verify data integrity on the new project
+5. Cut over:
+   - Update `SUPABASE_URL` in Vercel env
+   - Deploy
+   - Smoke test
+   - Update DNS if needed
+6. Keep the old project alive for 7 days (forensic window) before deleting
+
+## Restore rehearsals
+
+Quarterly, we practice a recovery:
+
+1. Pick a random prior backup
+2. Restore to a new Supabase project
+3. Verify data shape matches production schema
+4. Run a subset of integration tests against it
+5. Document any surprises in a post-exercise note
+
+If it's been > 3 months since the last rehearsal, schedule one.
+
+## Partial table restore
+
+Not supported natively. Workaround:
+
+1. Restore the full snapshot to a scratch project
+2. `pg_dump --table=specific_table` from the scratch
+3. Import into prod (after careful review)
+
+## After a recovery
+
+1. Postmortem — what caused the need for recovery?
+2. Update the runbook with any gaps the exercise revealed
+3. Update the migration process if recovery traced back to a bad migration
+4. Communicate to partners if the recovery affected their data

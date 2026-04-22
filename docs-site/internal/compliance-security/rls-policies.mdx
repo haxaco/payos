@@ -1,0 +1,71 @@
+---
+title: "RLS policies"
+description: "Catalog of Row-Level Security policies and audit guidance."
+---
+
+Every table in our Postgres has an RLS policy. This page is the high-level catalog; the authoritative source is `apps/api/supabase/migrations/*.sql`.
+
+## Standard policy shape
+
+Most tables use this template:
+
+```sql
+ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON <table>
+  FOR ALL
+  USING (tenant_id::text = current_setting('request.jwt.claims', true)::json->>'tenant_id');
+```
+
+## Tables with custom policies
+
+Some tables have additional constraints layered on tenant_isolation:
+
+- **`api_keys`** — additional check that `environment` matches the caller's key environment
+- **`agent_sessions`** — TTL check in the policy itself (stale sessions invisible)
+- **`audit_log`** — write-only for most roles; owners can read
+- **`portal_tokens`** — customer_reference must match the claim carried by the token
+
+## Public read tables
+
+A small set of tables allow unauthenticated SELECT (because they're part of public APIs):
+
+- **`well_known_ucp`** — UCP capability advertisements
+- **`agent_cards`** — A2A agent cards
+- **`protocols`** — supported protocol metadata
+
+These have `FOR SELECT TO public USING (true)` policies alongside the default tenant_isolation for writes.
+
+## Audit tooling
+
+```bash
+pnpm --filter @sly/api check:rls
+```
+
+What it checks:
+- Every table has RLS enabled
+- Every table has a `tenant_id` column (except the handful above)
+- No application-code query omits `.eq('tenant_id', ...)`
+- No application-code write omits setting `tenant_id`
+
+Runs on every PR. Merge is blocked on failures.
+
+## Adding a new table
+
+Use the template in [engineering/database-rls](/engineering/database-rls) → "Adding new tables."
+
+## Auditing RLS at runtime
+
+For a tenant, confirm exactly what RLS considers theirs:
+
+```sql
+SET request.jwt.claims = '{"tenant_id": "ten_abc"}';
+SELECT count(*) FROM accounts;
+-- should match the app's view
+```
+
+This is the single most useful query during an RLS-related incident.
+
+## Incidents involving RLS
+
+Any incident where data crossed tenant boundaries is Sev 1. See [incident response](/runbooks/incident-response).

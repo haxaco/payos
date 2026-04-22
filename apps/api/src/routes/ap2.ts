@@ -152,14 +152,23 @@ ap2.post('/mandates', async (c) => {
   }
 
   // ─── KYA per-transaction amount check at mandate creation ──────────────
-  // Epic 73: Read tier limits from the DB (kya_tier_limits table) instead of
-  // hardcoding. T3 has per_transaction = 0 which means unlimited (no cap).
-  const { data: tierLimits } = await supabase
+  // Epic 73 + per-tenant tier limits (20260419_tier_limits_per_tenant.sql):
+  // kya_tier_limits now has both platform rows (tenant_id IS NULL) AND
+  // per-tenant override rows. A plain .eq('tier', agentTier).maybeSingle()
+  // returns null when both exist → fell back to $20 for every tier, which
+  // is what the sim was hitting. Mirror the DB function's resolution:
+  // prefer the tenant-specific row, fall back to the platform ceiling.
+  // T3 has per_transaction = 0 which means unlimited (no cap).
+  const { data: tierRows } = await supabase
     .from('kya_tier_limits')
-    .select('per_transaction')
+    .select('per_transaction, tenant_id')
     .eq('tier', agentTier)
-    .maybeSingle();
-  const maxPerTx = Number(tierLimits?.per_transaction) || 20; // fallback to T0 default
+    .or(`tenant_id.eq.${ctx.tenantId},tenant_id.is.null`);
+  const tierRow =
+    (tierRows || []).find((r: any) => r.tenant_id === ctx.tenantId)
+    ?? (tierRows || []).find((r: any) => r.tenant_id === null)
+    ?? null;
+  const maxPerTx = Number((tierRow as any)?.per_transaction) || 20; // fallback to T0 default
   if (maxPerTx > 0 && Number(authorized_amount) > maxPerTx) {
     return c.json(
       { error: `Mandate amount $${authorized_amount} exceeds KYA tier ${agentTier} per-transaction limit of $${maxPerTx}. Request a tier upgrade.` },

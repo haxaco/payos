@@ -1,0 +1,92 @@
+---
+title: "MCP server"
+description: "@sly_ai/mcp-server — Sly capabilities as MCP tools for Claude Desktop and compatible runtimes."
+---
+
+The Sly MCP server exposes the full Sly API as Model Context Protocol tools. Install it into any MCP-compatible client and the agent (Claude, GPT, custom LLMs) gets native tool access to accounts, agents, wallets, transfers, streams, and all six commerce protocols.
+
+## Install for Claude Desktop
+
+Simplest path:
+
+```bash
+npx @sly_ai/mcp-server install
+```
+
+This edits your Claude Desktop config file at:
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
+
+Then restart Claude. Sly tools appear under the 🔨 menu.
+
+## Manual install
+
+Add to your MCP client's config:
+
+```json
+{
+  "mcpServers": {
+    "sly": {
+      "command": "npx",
+      "args": ["@sly_ai/mcp-server", "run"],
+      "env": {
+        "SLY_API_KEY": "pk_test_...",
+        "SLY_ENVIRONMENT": "sandbox"
+      }
+    }
+  }
+}
+```
+
+Environment variables:
+
+- `SLY_API_KEY` (required) — your API key
+- `SLY_ENVIRONMENT` (optional) — `sandbox` (default), `production`
+- `SLY_AGENT_TOKEN` (alternative) — agent token instead of API key
+- `SLY_LOG_LEVEL` (optional) — `debug`, `info`, `warn`, `error`
+
+## Tools exposed
+
+The server exposes every tool appropriate for the calling credentials. Full list on the [MCP tool catalog](/agents/mcp-tool-catalog) page.
+
+Highlights:
+- Accounts + agents CRUD
+- Wallet management + balances
+- Transfers + streams
+- Full protocol coverage (UCP, ACP, AP2, x402, A2A, MCP, MPP)
+- Agent wallet policies + evaluation
+- Governance (approvals, kill-switch, rejection explanations)
+
+## Remote HTTP MCP
+
+If your runtime prefers HTTP to stdio, Sly hosts an MCP endpoint directly:
+
+```bash
+# JSON-RPC over HTTP
+curl -X POST https://api.getsly.ai/mcp \
+  -H "Authorization: Bearer agent_..." \
+  -d '{ "jsonrpc":"2.0", "method":"tools/list", "id":1 }'
+
+# Server-Sent Events streaming
+curl -N -H "Authorization: Bearer agent_..." https://api.getsly.ai/mcp
+```
+
+## Permission filtering
+
+The server only exposes tools the calling credentials can actually invoke. An agent at KYA Tier 0 won't see Tier-2-only tools. This keeps the LLM's tool catalog focused and prevents wasted, guaranteed-to-fail tool calls.
+
+## Scanner MCP (separate package)
+
+The Scanner service has its own MCP server with demand-intelligence tools (merchant readiness, protocol adoption, shopping simulations):
+
+```bash
+npx @sly_ai/scanner-mcp install
+```
+
+19 tools, including `scan_merchant`, `batch_scan`, `get_readiness_report`, `run_agent_shopping_test`.
+
+## Building a custom MCP integration
+
+If you're wrapping Sly inside your own agent framework, you don't need the stdio server — use the [Node SDK](/sdks/node-sdk) and integrate directly. The MCP server is a convenience for drop-in MCP clients; it doesn't add capability.

@@ -1,0 +1,111 @@
+---
+title: "MCP (Model Context Protocol)"
+description: "Anthropic's protocol for exposing tools and resources to LLM agents."
+---
+
+MCP is Anthropic's Model Context Protocol — a standard for how LLM agents (Claude, GPT, Gemini) discover and invoke tools exposed by external servers. Sly provides MCP on two surfaces:
+
+1. **The `@sly_ai/mcp-server` package** — runs locally (stdio transport) and gives Claude Desktop, Cursor, or Windsurf direct access to Sly capabilities
+2. **Remote MCP over HTTP** — Sly-hosted MCP server at `/mcp` for agents that need remote tool access
+
+## Local MCP server (Claude Desktop, Cursor, etc.)
+
+Install:
+
+```bash
+npx @sly_ai/mcp-server install
+```
+
+This adds Sly to your MCP client's config. Restart the client; Sly tools appear in the tool catalog.
+
+Tools exposed:
+
+- `sly_create_account`, `sly_list_accounts`, `sly_get_account`
+- `sly_create_agent`, `sly_list_agents`
+- `sly_create_wallet`, `sly_get_wallet_balance`, `sly_fund_wallet`
+- `sly_create_transfer`, `sly_get_transfer_status`
+- `sly_create_stream`, `sly_withdraw_stream`
+- `sly_ap2_create_mandate`, `sly_ap2_execute_mandate`
+- `sly_ucp_create_token`, `sly_ucp_settle`
+- `sly_x402_pay`, `sly_x402_verify`
+- `sly_a2a_send_task`, `sly_a2a_list_tasks`, `sly_a2a_complete_task`
+
+See the [MCP tool catalog](/agents/mcp-tool-catalog) for the full list with schemas.
+
+## Remote MCP over HTTP
+
+For agent runtimes that don't run locally but can speak MCP, Sly exposes `/mcp` directly:
+
+```bash
+# JSON-RPC over HTTP
+curl -X POST https://api.getsly.ai/mcp \
+  -H "Authorization: Bearer agent_..." \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/list",
+    "id": 1
+  }'
+```
+
+Returns the tool catalog. Invoke a tool:
+
+```bash
+curl -X POST https://api.getsly.ai/mcp \
+  -H "Authorization: Bearer agent_..." \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "sly_get_wallet_balance",
+      "arguments": { "wallet_id": "wal_..." }
+    },
+    "id": 2
+  }'
+```
+
+Supports three transports:
+- **POST `/mcp`** — JSON-RPC request/response (default)
+- **GET `/mcp`** — Server-Sent Events streaming (for long-running tools)
+- **DELETE `/mcp/:session_id`** — Close a session
+
+## Authentication
+
+MCP over HTTP requires one of Sly's auth methods. Recommended:
+
+- **Agent token** (`agent_*`) — simplest
+- **Ed25519 session** (`sess_*`) — production
+
+API keys work but grant too broad a scope for typical agent use cases.
+
+## Tool discovery
+
+Every registered MCP tool has:
+- A stable `name` (e.g. `sly_create_transfer`)
+- An `inputSchema` (JSON Schema)
+- A `description` optimized for LLM consumption
+- Permission requirements (what KYA tier / scope can invoke it)
+
+Agents receive only the tools their credentials allow them to invoke.
+
+## Scanner MCP (separate server)
+
+Sly also ships an MCP server for the [Scanner service](/api-reference/openapi) — a demand-intelligence tool for merchants and agents.
+
+```bash
+npx @sly_ai/scanner-mcp install
+```
+
+Exposes 19 tools for scanning merchants, analyzing protocol adoption, generating readiness reports, and running agent shopping tests. See the [scanner docs](/api-reference/openapi) for detail.
+
+## When to use MCP
+
+- You're building an LLM agent that needs to transact (Claude, GPT, local models)
+- You want **drop-in tool access** rather than calling the REST API manually
+- Your runtime already speaks MCP (Claude Desktop, Cursor, Windsurf, custom agent frameworks)
+- You want **automatic permission filtering** — MCP server only exposes tools the agent can actually call
+
+For non-LLM integrations (backend services, CI, operational scripts), use the [REST API](/api-reference/openapi) directly.
+
+## MCP tool catalog
+
+The full list of every tool in `@sly_ai/mcp-server` and scanner MCP is in the [MCP catalog](/agents/mcp-tool-catalog). Each entry includes input schema, example invocation, and permission requirements.

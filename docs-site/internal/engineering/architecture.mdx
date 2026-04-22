@@ -1,0 +1,118 @@
+---
+title: "Architecture"
+description: "How the Sly platform is organized at runtime."
+---
+
+## Component diagram
+
+```
+                       ┌─────────────────┐
+                       │  docs.getsly.ai │  (Mintlify, public)
+                       └────────┬────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│   app.getsly.ai (Next.js dashboard, apps/web)            │
+│   (OAuth SSO, user-facing)                               │
+│                                                          │
+└─────────────┬─────────────────────────────────┬──────────┘
+              │                                 │
+              │  REST + WS                      │  REST
+              ▼                                 ▼
+┌─────────────────────────┐         ┌────────────────────────┐
+│   apps/api (Hono)       │         │   apps/scanner (Hono)  │
+│   api.getsly.ai         │         │   4100 internal        │
+│                         │         │                        │
+│   • Auth middleware     │         │   • Probes             │
+│   • Tenant isolation    │         │   • Analyzers          │
+│   • Protocol adapters   │         │   • Demand intel       │
+│   • Policy engine       │         │   • Scanner MCP        │
+│   • Webhook emitter     │         └────────────────────────┘
+│                         │
+│   /v1/*      (auth)     │◀───── Partner integrations
+│   /mcp       (MCP HTTP) │◀───── Agent runtimes
+│   /a2a       (A2A)      │◀───── Peer agents
+│   /webhooks/*  (in)     │◀───── Circle, Stripe, Persona
+│   /webhooks/* (out)     │─────▶ Partner webhook endpoints
+└─────────────┬───────────┘
+              │
+              ▼
+┌─────────────────────────┐   ┌─────────────────────────┐
+│  Supabase Postgres      │   │  External integrations  │
+│  + Row-Level Security   │   │                         │
+│                         │   │  • Circle (stablecoin)  │
+│  RLS filters by         │   │  • Stripe (cards/ACP)   │
+│  tenant_id on every     │   │  • Persona (KYC/KYB)    │
+│  row of every table     │   │  • Visa / Mastercard    │
+└─────────────────────────┘   │  • Intercom (support)   │
+                              │  • Resend (email)       │
+                              └─────────────────────────┘
+```
+
+## Request lifecycle
+
+A typical `POST /v1/transfers` request:
+
+1. **Edge** — TLS termination, WAF
+2. **Rate limit** — IP + actor budget (see [rate-limit.ts](/engineering/monorepo-layout))
+3. **Request ID + security headers** — set on every request
+4. **Auth middleware** — verifies bearer token, populates `RequestContext` (`tenantId`, `actorType`, `environment`, KYA tier, etc.)
+5. **Idempotency middleware** — checks `Idempotency-Key` cache
+6. **Route handler** — in `apps/api/src/routes/transfers.ts`
+7. **Services** — balance check, policy evaluation, KYA tier check
+8. **Database** — insert via Supabase client (RLS enforced)
+9. **Async workers** — scheduled-transfers worker picks up and executes
+10. **Webhook emission** — on state transitions, fire subscribed webhooks
+11. **Response** — JSON with `request_id` header
+
+## Background workers
+
+Two long-running workers, started from `apps/api/src/worker.ts`:
+
+- **Scheduled transfers** — polls for `scheduled_at <= NOW()` transfers, executes
+- **Webhook delivery** — retries failed webhook deliveries on backoff schedule
+
+Both run on the same process in dev; in prod they're separated by env (`SCHEDULED_TRANSFERS_ENABLED`, `WEBHOOK_WORKER_ENABLED`).
+
+## Data model
+
+At the highest level:
+
+```
+Tenant
+ └── Account
+       ├── Wallet (direct)
+       └── Agent
+             ├── Wallet (agent-scoped)
+             ├── AuthKey (Ed25519)
+             ├── Sessions (sess_*)
+             ├── Skills (A2A)
+             └── Wallet Policy
+                   └── Approvals
+```
+
+Money movement primitives: Transfer (discrete), Stream (continuous), Quote (FX lock).
+
+Protocol-specific objects: UCP tokens, ACP checkouts, AP2 mandates, x402 endpoints, A2A tasks.
+
+## Multi-tenancy
+
+**Every** piece of data is tenant-scoped. Enforced at two layers:
+
+1. **Database RLS** — policies filter by `tenant_id = auth.tenant_id()`. Even a bug in app code can't leak cross-tenant.
+2. **Application filtering** — because the service role bypasses RLS, all server-side queries must explicitly `.eq('tenant_id', ctx.tenantId)`. See [database + RLS](/engineering/database-rls).
+
+## Environments
+
+Each tenant has separate `test` and `live` slices. Environment is scoped on nearly every table (`environment TEXT` column). Queries include `.eq('environment', getEnv(ctx))` which derives from the API key prefix.
+
+## Deployment
+
+- **apps/api** — Fluid Compute on Vercel
+- **apps/web** — Vercel (App Router, `'use client'` components sparingly)
+- **apps/scanner** — Fluid Compute
+- **Workers** — separate Vercel function cluster with `SCHEDULED_TRANSFERS_ENABLED=true`
+- **Database** — Supabase (managed Postgres + RLS)
+
+Branches auto-deploy to preview; `main` to production.

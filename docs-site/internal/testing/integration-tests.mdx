@@ -1,0 +1,81 @@
+---
+title: "Integration tests"
+description: "Real Supabase, real RLS, real end-to-end."
+---
+
+Integration tests live in `apps/api/tests/integration/`. They require live Supabase credentials and the `INTEGRATION=true` env var.
+
+```bash
+INTEGRATION=true pnpm --filter @sly/api test:integration
+```
+
+## What they cover
+
+- RLS policies (cross-tenant isolation)
+- Multi-table queries (RLS + app filters work together)
+- Full request/response cycle through the real stack
+- Migration-dependent behavior
+
+## Setup
+
+`tests/integration/setup.ts`:
+
+1. Creates a fresh test tenant
+2. Seeds sample accounts, agents, wallets
+3. Returns helpers (`createClient`, `cleanupTenant`)
+4. Per-test cleanup via `afterEach`
+
+Each test gets a fresh tenant to avoid cross-test pollution.
+
+## Writing a cross-tenant RLS test
+
+Every RLS-adjacent change needs one of these:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { createTestTenant, makeRequest } from './helpers.js';
+
+describe('accounts RLS', () => {
+  it('tenant A cannot read tenant B accounts', async () => {
+    const tenantA = await createTestTenant();
+    const tenantB = await createTestTenant();
+
+    // Create an account under tenant B
+    await makeRequest('POST', '/v1/accounts', {
+      apiKey: tenantB.apiKey,
+      body: { type: 'business', name: 'B' },
+    });
+
+    // Try to read as tenant A
+    const res = await makeRequest('GET', '/v1/accounts', {
+      apiKey: tenantA.apiKey,
+    });
+
+    // Must not see tenant B's account
+    expect(res.status).toBe(200);
+    expect(res.body.data.every(a => a.tenant_id === tenantA.id)).toBe(true);
+  });
+});
+```
+
+## Running against prod snapshots
+
+Never. Integration tests always run against a dedicated test project. If you need a production-like data shape, restore a prod backup to a scratch project first (see [database recovery](/runbooks/database-recovery)).
+
+## Flakiness
+
+Flaky integration tests are banned. Common causes + fixes:
+
+- **Time-dependent assertions** — use fixed timestamps, not `NOW()`
+- **Ordering assumptions** — explicit `.order()` in assertions
+- **Shared test data** — create fresh per-test tenants
+- **Network timeouts** — raise the vitest timeout for integration suite, not individual tests
+
+## CI gating
+
+Integration tests run:
+- On PRs with the `integration` label (engineer judgment)
+- Nightly on main
+- Before release
+
+They're slower than unit tests (30-60s for full suite), so not on every PR by default.

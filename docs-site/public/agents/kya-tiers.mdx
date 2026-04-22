@@ -1,0 +1,116 @@
+---
+title: "KYA tiers"
+description: "Know-Your-Agent verification levels with graduated spending limits."
+---
+
+KYA (Know Your Agent) is Sly's formal identity verification framework for AI agents. It's the direct parallel to KYC/KYB for human accounts — a tier-based system where higher tiers require more verification and unlock higher spending limits.
+
+## The four tiers
+
+| Tier | Label | Per-tx | Daily | Monthly | Requirements |
+|---|---|---|---|---|---|
+| **0** | Registered | $20 | $100 | $500 | Agent created (nothing more) |
+| **1** | Declared | $100 | $500 | $2,000 | DSD declaration filed |
+| **2** | Verified | $1,000 | $5,000 | $20,000 | 30-day history OR enterprise override |
+| **3** | Trusted | Custom | Custom | Custom | Kill-switch operator + Continuous Agent Integrity (CAI) |
+
+Limits shown are **defaults**. Your tenant can configure per-tier overrides — see [tier limits](/api-reference/openapi).
+
+## Tier 0: Registered
+
+The starting tier. An agent is created under a parent account and immediately becomes Tier 0. No declarations, no history, no vouching — just "this agent exists."
+
+- Safe for prototypes, dev, minimal-trust automations
+- Spending capped low enough that a runaway loop is financially containable
+- No additional docs required
+
+## Tier 1: Declared
+
+The agent's operator files a **Declared Spending Declaration** (DSD) — a self-attestation stating:
+
+- What the agent will be used for (natural-language purpose statement)
+- Expected merchant categories
+- Expected monthly volume
+- Who's accountable (a named individual in your org)
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agents/$AGENT_ID/declare \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "purpose": "Automated supplier invoice payments",
+    "expected_categories": ["saas", "business_services"],
+    "monthly_estimate": "1500.00",
+    "accountable_individual": "jsmith@acme.example"
+  }'
+```
+
+Upgrade is instant on submission. No external review required.
+
+## Tier 2: Verified
+
+Two paths:
+
+**Path A — Historical record.** Agent has operated at Tier 1 for 30 days with no violations, disputes, or manual freezes. Automatic upgrade.
+
+**Path B — Enterprise override.** Your tenant's operations team approves the upgrade based on their own due diligence. Useful for agents where the operator has its own established history (e.g. a treasury bot for a Fortune 500 customer).
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agents/$AGENT_ID/upgrade-tier \
+  -d '{ "to_tier": 2, "justification": "Enterprise override — Acme Treasury" }'
+```
+
+## Tier 3: Trusted
+
+The highest tier. Requires:
+
+1. **Kill-switch operator** — a named human (not the agent itself) who can instantly revoke credentials. Their contact details are held in the agent record.
+2. **Continuous Agent Integrity (CAI)** — an ongoing signal that the agent code and behavior haven't drifted. Usually wired up to your CI/CD + runtime monitoring.
+
+Tier 3 limits are custom — negotiated per agent. Typical ceilings: $10k/tx, $100k/day, $1M/month. Some trusted partners run at no ceiling at all, with the kill-switch as the sole backstop.
+
+## Effective limits
+
+Agent KYA tier is combined with the parent account's KYC/KYB tier. The **effective cap is the minimum of both**:
+
+```
+effective_per_tx = min(agent_kya_limit, account_kyc_limit)
+effective_daily   = min(agent_kya_daily,  account_kyc_daily)
+effective_monthly = min(agent_kya_month,  account_kyc_month)
+```
+
+So an agent can never "escape" via its own KYA tier — the parent account is a ceiling.
+
+## Read the current limits
+
+```bash
+curl https://api.getsly.ai/v1/agents/$AGENT_ID/limits \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Response:
+
+```json
+{
+  "kya_tier": 2,
+  "agent_limits": { "per_tx": "1000.00", "daily": "5000.00", "monthly": "20000.00" },
+  "account_limits": { "per_tx": "1000.00", "daily": "10000.00", "monthly": "50000.00" },
+  "effective_limits": { "per_tx": "1000.00", "daily": "5000.00", "monthly": "20000.00" },
+  "used_today": "342.00",
+  "used_this_month": "8102.50"
+}
+```
+
+## Violations
+
+If an agent attempts a spend over its effective limit, the API returns `403 KYA_LIMIT_EXCEEDED`. The attempt is logged. Repeated violations can trigger automatic tier downgrade (configurable per tenant).
+
+## Upgrade path API
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/agents/:id/limits` | Read current effective limits |
+| `POST /v1/agents/:id/declare` | File DSD (Tier 0 → 1) |
+| `POST /v1/agents/:id/upgrade-tier` | Request upgrade to a higher tier |
+| `GET /v1/tier-limits` | Tenant's configured per-tier caps |
+| `POST /v1/tier-limits` | Configure per-tenant overrides |
+| `POST /v1/agents/:id/request-limit-increase` | Ask for a one-time exception |

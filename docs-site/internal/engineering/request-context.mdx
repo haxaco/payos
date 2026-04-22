@@ -1,0 +1,84 @@
+---
+title: "RequestContext"
+description: "The per-request bag that every handler reads."
+---
+
+`RequestContext` is populated by [auth middleware](/engineering/auth-middleware) and available to every handler via `c.get('ctx')`.
+
+## Canonical shape
+
+```ts
+interface RequestContext {
+  tenantId: string;                                  // always set
+  actorType: 'api_key' | 'user' | 'agent' | 'portal'; // always set
+  environment?: 'test' | 'live';                      // set for most paths
+
+  // For API key auth
+  apiKeyId?: string;
+  apiKeyEnvironment?: 'test' | 'live';
+
+  // For JWT auth (dashboard users)
+  userId?: string;
+  userRole?: 'owner' | 'admin' | 'member' | 'viewer';
+  userName?: string;
+
+  // For agent auth (agent_* and sess_*)
+  actorId?: string;           // agent ID
+  actorName?: string;
+  kyaTier?: number;
+  parentAccountId?: string;
+  sessionBased?: boolean;     // true iff sess_* token
+
+  // For portal token auth
+  portalTokenId?: string;
+  portalScopes?: string[];
+}
+```
+
+## Rules for handlers
+
+- **Always read via `c.get('ctx')`.** Never re-parse the Authorization header yourself.
+- **Always filter queries by `ctx.tenantId`.** See [database + RLS](/engineering/database-rls).
+- **Always filter environment-scoped queries by `getEnv(ctx)`.** Helper in `apps/api/src/utils/helpers.ts`.
+- **Check `actorType` before granting cross-cutting actions.** Some endpoints are API-key-only (e.g. creating new agents); others are agent-only.
+- **Check `kyaTier` before spending.** See [tier-limits service](/engineering/monorepo-layout).
+- **Never log the full `ctx`.** It contains `apiKeyId` and `portalTokenId` — not secrets but semi-sensitive.
+
+## Helper: `getEnv`
+
+```ts
+// apps/api/src/utils/helpers.ts
+export function getEnv(ctx: RequestContext): 'test' | 'live' {
+  return (ctx.apiKeyEnvironment ?? ctx.environment ?? 'test');
+}
+```
+
+Derives environment from whichever auth context is populated. Safe fallback: `test`.
+
+## Setting ctx (middleware-side)
+
+Only [auth middleware](/engineering/auth-middleware) should set `ctx`. Other middleware may set other `c.set(...)` values but should never touch `ctx`.
+
+## Testing
+
+In unit tests, mock the middleware:
+
+```ts
+import { testClient } from 'hono/testing';
+import accounts from '../src/routes/accounts.js';
+
+const mockCtx: RequestContext = {
+  tenantId: 'ten_test',
+  actorType: 'api_key',
+  environment: 'test',
+  apiKeyId: 'key_test',
+};
+
+const app = new Hono();
+app.use('*', async (c, next) => { c.set('ctx', mockCtx); await next(); });
+app.route('/v1/accounts', accounts);
+```
+
+## Cross-request context
+
+`RequestContext` is per-request only. If you need persistent state across requests (rate limit counters, caches), use the caches exported from `apps/api/src/middleware/auth.ts` or add a new scoped cache. Never mutate `ctx` expecting it to survive.

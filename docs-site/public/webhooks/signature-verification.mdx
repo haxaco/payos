@@ -1,0 +1,115 @@
+---
+title: "Signature verification"
+description: "Verify webhooks come from Sly, not an attacker."
+---
+
+Every webhook Sly sends is HMAC-signed. You **must** verify the signature before trusting the payload; an attacker who discovers your webhook URL could otherwise POST forged events.
+
+See [webhook verification (SDKs)](/sdks/webhook-verification) for complete code samples in Node, Python, Go, and Ruby.
+
+## Why this matters
+
+Webhook URLs are often leaked — in logs, through public DNS scans, via employees' HTTP client history. If you accept unsigned POSTs to your webhook endpoint as authoritative, you're one URL-leak away from an attacker injecting fake `transfer.completed` events and triggering whatever downstream logic you've wired up.
+
+## What to check
+
+For every incoming webhook:
+
+1. **Header present** — reject anything without `X-Sly-Signature`
+2. **Timestamp fresh** — reject `t` older than 5 minutes (replay protection)
+3. **Signature matches** — HMAC-SHA256 of `{t}.{raw_body}` using your webhook secret
+4. **Constant-time compare** — never `==`, always `timingSafeEqual` / equivalent
+
+## Where to get the secret
+
+Shown once when you create the webhook:
+
+```json
+{
+  "id": "wh_...",
+  "secret": "whsec_rNq7VwK9PaZ8Jj2mXdQeY1R4hF3tC6sL",
+  ...
+}
+```
+
+If you lost it, rotate:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../rotate-secret
+```
+
+## Rotation strategies
+
+**Overlap rotation (recommended):**
+
+```bash
+curl -X POST /v1/webhooks/wh_.../rotate-secret \
+  -d '{ "strategy": "overlap", "overlap_seconds": 600 }'
+```
+
+For `overlap_seconds`, Sly accepts either old or new secret. Deploy the new secret, verify traffic, then let the overlap expire.
+
+**Immediate rotation:**
+
+```bash
+curl -X POST /v1/webhooks/wh_.../rotate-secret \
+  -d '{ "strategy": "immediate" }'
+```
+
+Old secret invalidated instantly. Use only when you suspect compromise.
+
+## Example (Node, Express)
+
+```ts
+import crypto from 'node:crypto';
+import express from 'express';
+
+const app = express();
+app.post('/webhooks/sly', express.raw({ type: '*/*' }), (req, res) => {
+  const header = req.get('x-sly-signature');
+  if (!header) return res.status(400).end();
+
+  const parts = Object.fromEntries(header.split(',').map(p => p.split('=')));
+  const timestamp = parseInt(parts.t, 10);
+  const signature = parts.v1;
+
+  if (Math.abs(Date.now() / 1000 - timestamp) > 300) return res.status(400).end();
+
+  const expected = crypto
+    .createHmac('sha256', process.env.SLY_WEBHOOK_SECRET!)
+    .update(`${timestamp}.${req.body}`)
+    .digest('hex');
+
+  const valid = crypto.timingSafeEqual(
+    Buffer.from(expected),
+    Buffer.from(signature)
+  );
+  if (!valid) return res.status(400).end();
+
+  // Safe to parse + process
+  const event = JSON.parse(req.body.toString());
+  handleEvent(event);
+  res.status(200).end();
+});
+```
+
+`express.raw` is critical — verifying against a re-serialized JSON body fails because whitespace differs.
+
+## Failure modes to watch for
+
+- **Body parsed before verification** — body is re-serialized, signature mismatches. Use a raw-body middleware for the webhook route.
+- **Proxy strips headers** — many WAFs or CDNs strip `X-*` headers. Allowlist `X-Sly-*`.
+- **Clock drift** — server clocks more than 5 minutes off kill every verification. NTP.
+- **`==` comparison** — enables timing attacks. Use constant-time comparison.
+- **Secret in source control** — rotate immediately if committed.
+
+## Testing
+
+Fire a test delivery to any endpoint:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../test \
+  -d '{ "event_type": "transfer.completed" }'
+```
+
+Delivers a `webhook.test` event to the endpoint with a valid signature. Use this to validate your verification code before going live.

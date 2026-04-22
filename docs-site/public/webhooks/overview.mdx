@@ -1,0 +1,124 @@
+---
+title: "Webhooks"
+description: "Subscribe to Sly events and have them pushed to your HTTP endpoint."
+---
+
+Webhooks let Sly push event notifications to your application — transfers completing, streams alerting, approvals being requested. Don't poll; subscribe.
+
+## When to use webhooks vs. SSE
+
+| | Webhooks | SSE |
+|---|---|---|
+| Direction | Sly POSTs to your URL | Agent opens a persistent connection |
+| Reachability | You need a public HTTPS URL | Agent makes the outbound connection |
+| Best for | Server-side integrations | Agents running locally / sandboxed |
+| Delivery | At-least-once with retries | Best-effort with replay buffer |
+
+See [persistent SSE](/agents/persistent-sse) for the agent-oriented alternative.
+
+## Create a subscription
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://hooks.example.com/sly",
+    "events": ["transfer.completed", "transfer.failed", "approval.requested"],
+    "description": "Production payments worker"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "wh_...",
+  "url": "https://hooks.example.com/sly",
+  "events": ["transfer.completed", "transfer.failed", "approval.requested"],
+  "secret": "whsec_...",
+  "status": "active",
+  "created_at": "2026-04-22T14:00:00Z"
+}
+```
+
+<Warning>
+Save the `secret` — you need it to [verify signatures](/sdks/webhook-verification). It's shown once.
+</Warning>
+
+## Delivery shape
+
+Every delivery is a POST with JSON body:
+
+```json
+{
+  "id": "evt_abc123",
+  "type": "transfer.completed",
+  "created_at": "2026-04-22T14:05:00Z",
+  "data": {
+    "transfer": { "id": "tx_...", "amount": "42.00", "status": "completed", ... }
+  },
+  "tenant_id": "ten_...",
+  "environment": "live"
+}
+```
+
+Headers include:
+- `X-Sly-Signature: t=...,v1=...` — HMAC signature (verify it)
+- `X-Sly-Event-Id: evt_...` — stable ID for idempotency
+- `X-Sly-Delivery-Id: del_...` — unique per delivery attempt
+- `X-Sly-Webhook-Id: wh_...` — which subscription
+
+## Expected response
+
+- **2xx** — treated as success; no retry
+- **Any other status** or timeout → retry with exponential backoff
+
+Respond fast. Sly's timeout is 15 seconds; if your processing takes longer, **ack immediately and process async**:
+
+```ts
+app.post('/webhooks/sly', (req, res) => {
+  // Verify signature
+  // Enqueue job
+  res.status(202).end();  // ack
+});
+```
+
+## Retries
+
+Failed deliveries retry on this schedule (up to 72 hours):
+
+```
+0s → 30s → 5m → 30m → 2h → 12h → 24h → 48h (final)
+```
+
+Each retry includes the same `X-Sly-Event-Id` — use it for idempotency.
+
+## Idempotency on your side
+
+Webhook delivery is **at-least-once**. Always dedupe:
+
+```ts
+if (await processedEvents.has(eventId)) return;
+await processedEvents.add(eventId);
+await handleEvent(event);
+```
+
+Keep a TTL index on `processedEvents` (24-48 hours is plenty).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Event catalog" href="/webhooks/events">
+    Full list of events you can subscribe to.
+  </Card>
+  <Card title="Signature verification" href="/webhooks/signature-verification">
+    How to verify webhooks are actually from Sly.
+  </Card>
+  <Card title="Replay" href="/webhooks/replay">
+    Re-send past events during incident recovery.
+  </Card>
+  <Card title="Local testing" href="/webhooks/local-testing">
+    ngrok, webhook.sly.ai, tunnel setup.
+  </Card>
+</CardGroup>

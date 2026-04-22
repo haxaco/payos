@@ -1,0 +1,94 @@
+---
+title: "Quotes"
+description: "Expiring FX rate quotes for cross-border transfers."
+---
+
+A **quote** is a time-bound FX rate quotation. Cross-border transfers between different currencies (USD → EUR, USDC → USDT, USD → USDC, etc.) require a quote before execution; the quote locks in the rate for a short window so the user sees exactly what they'll pay.
+
+## Flow
+
+```
+1. Request a quote    ──▶  Sly freezes the rate for ~30s
+2. Show to the user   ──▶  "You send $1000, they receive €928.40"
+3. Execute the transfer with the quote_id
+4. (or) Let it expire, request a new quote
+```
+
+## Request a quote
+
+```bash
+curl -X POST https://api.getsly.ai/v1/quotes \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_currency": "USD",
+    "to_currency": "EUR",
+    "amount": "1000.00",
+    "amount_side": "send"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "qt_...",
+  "rate": "0.9284",
+  "send_amount": "1000.00",
+  "send_currency": "USD",
+  "receive_amount": "928.40",
+  "receive_currency": "EUR",
+  "fee": "2.50",
+  "expires_at": "2026-04-22T14:05:30Z",
+  "provider": "sly_fx"
+}
+```
+
+## Specify which side is fixed
+
+- `"amount_side": "send"` — "I send exactly $1000; how much do they get?"
+- `"amount_side": "receive"` — "They must receive exactly €1000; how much do I send?"
+
+## Use the quote
+
+Pass `quote_id` on the transfer:
+
+```bash
+curl -X POST /v1/transfers \
+  -d '{
+    "type": "cross_border",
+    "from_wallet_id": "wal_...",
+    "to_wallet_id": "wal_...",
+    "quote_id": "qt_..."
+  }'
+```
+
+The transfer inherits the rate, amounts, and fee from the quote. If `expires_at` has passed, the request returns `400 QUOTE_EXPIRED`.
+
+## TTL
+
+Default expiry is **30 seconds** from quote creation. Large amounts may have shorter windows due to provider constraints; small amounts typically get the full 30s.
+
+## Re-quoting
+
+Quotes are cheap — re-request before every transfer if the user sat on the screen. There's no rate limit concern for quotes at normal volumes.
+
+## Supported pairs
+
+Every pair of currencies your tenant has enabled is available. Common:
+
+- USD ↔ EUR, GBP, CAD, AUD
+- USDC ↔ USDT, EURC, DAI
+- USD ↔ USDC (on-ramp / off-ramp)
+
+See `GET /v1/quotes/pairs` for the live list.
+
+## What quotes don't cover
+
+Quotes handle FX conversion. They don't cover:
+
+- **Settlement latency** — moving money takes time (especially to fiat rails)
+- **Compliance holds** — large amounts may trigger review
+- **Network gas fees** — for on-chain legs, gas is paid separately from the FX fee
+
+These surface during transfer execution, not quote creation.

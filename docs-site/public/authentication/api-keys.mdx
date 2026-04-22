@@ -1,0 +1,125 @@
+---
+title: "API keys"
+description: "pk_test_* and pk_live_* — server-to-server auth for partner backends."
+---
+
+API keys are the primary credential for server-side integrations. Every fintech partner has at least one key per environment; most have several (one per server, one per CI, etc.).
+
+## Key format
+
+```
+pk_test_rNq7VwK9PaZ8Jj2mXdQeY1R4hF3tC6sL
+│   │    └─ 32-char random suffix
+│   └────── environment (test or live)
+└────────── prefix (always "pk_" for "public key")
+```
+
+The prefix tells Sly which environment to route to. Test keys only work against `sandbox.getsly.ai`; live keys only work against `api.getsly.ai`.
+
+## Create a key
+
+From the dashboard: **Settings → API Keys → Create key**. From the API:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/api-keys \
+  -H "Authorization: Bearer $EXISTING_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "production-payments-server",
+    "environment": "live",
+    "scopes": ["accounts:*", "transfers:*", "webhooks:read"]
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "key_abc123",
+  "name": "production-payments-server",
+  "environment": "live",
+  "scopes": ["accounts:*", "transfers:*", "webhooks:read"],
+  "key": "pk_live_aaa...zzz",
+  "warning": "SAVE THIS KEY NOW — it will never be shown again"
+}
+```
+
+<Warning>
+The plaintext key is returned **once**, on creation. Sly stores only a hash. If you lose the key, you must revoke it and create a new one.
+</Warning>
+
+## Send a request
+
+```bash
+curl https://api.getsly.ai/v1/accounts \
+  -H "Authorization: Bearer pk_live_aaa...zzz"
+```
+
+Or via the SDK:
+
+```ts
+import { Sly } from '@sly_ai/sdk';
+
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+const accounts = await sly.accounts.list();
+```
+
+## Scopes
+
+Keys can be restricted to specific operations. Grant the narrowest scope that works.
+
+| Scope pattern | Example | Grants |
+|---|---|---|
+| `resource:*` | `accounts:*` | Full CRUD on the resource |
+| `resource:read` | `transfers:read` | GET only |
+| `resource:write` | `webhooks:write` | POST / PATCH / DELETE only |
+| `*:*` | `*:*` | Everything (avoid in production) |
+
+Common production patterns:
+
+- **Payments service** → `accounts:*`, `transfers:*`, `webhooks:read`
+- **Analytics service** → `transfers:read`, `streams:read`, `reports:read`
+- **CI / deploy pipeline** → `webhooks:*`, `api-keys:read`
+
+## Rotate a key
+
+Two strategies:
+
+**Overlap rotation (recommended for zero downtime):**
+1. Create a new key
+2. Deploy your service with the new key
+3. Confirm traffic is flowing on the new key
+4. Revoke the old key
+
+**Hard rotation:**
+1. Revoke the old key
+2. Create a new key
+3. Deploy — brief outage while keys swap
+
+```bash
+# Revoke
+curl -X DELETE https://api.getsly.ai/v1/api-keys/key_abc123 \
+  -H "Authorization: Bearer $ANOTHER_KEY"
+```
+
+## Security practices
+
+- **Store keys in a secrets manager.** Never commit to source control. Never log them. Rotate on staff departures.
+- **One key per service.** Don't share keys between services — makes forensic tracing useless. Every request includes the `apiKeyId` in audit logs.
+- **Use scopes.** A key scoped to `transfers:read` can't drain a wallet if it's leaked.
+- **Prefer short-lived credentials for agents.** Server keys (`pk_*`) are for servers. Agents should use [Ed25519 sessions](/authentication/ed25519-sessions).
+
+## Rate limits
+
+API keys share your tenant's overall rate budget. See [rate limits](/resources/rate-limits) for specifics. In short: 100 req/min/IP on standard plans, 5 req/min on auth endpoints.
+
+## Audit trail
+
+Every API-key-authenticated request is logged with:
+- `apiKeyId`
+- Source IP
+- Method + path
+- Response status
+- Latency
+
+Query via `GET /v1/events?actor_type=api_key&api_key_id=key_abc123`.

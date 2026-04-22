@@ -1,0 +1,67 @@
+---
+title: "AP2 internals"
+description: "Google AP2 mandates — implementation notes."
+---
+
+## File
+
+- `apps/api/src/routes/ap2.ts` — 38 endpoints
+
+## Mandate JWT
+
+Mandates are issued as Ed25519-signed JWTs. Payload:
+
+```json
+{
+  "mid": "ap2_mnd_...",
+  "account_id": "acc_...",
+  "agent_id": "agt_...",
+  "scope": {
+    "max_per_tx": "100.00",
+    "max_per_day": "500.00",
+    "max_per_month": "5000.00",
+    "currency": "USD",
+    "allowed_merchant_categories": [...],
+    "allowed_merchants": [...],
+    "blocked_merchants": [...]
+  },
+  "exp": <unix_timestamp>,
+  "iat": <unix_timestamp>,
+  "iss": "api.getsly.ai",
+  "kid": "mandate-key-2026-q2"
+}
+```
+
+Signing key rotated quarterly. `kid` in the header lets consumers pick the right public key.
+
+## Public key publication
+
+`.well-known/jwks` endpoint publishes our mandate-signing JWKs. External facilitators verify mandates offline.
+
+## Execution flow
+
+Every `POST /v1/ap2/mandates/:id/execute` runs through:
+1. Load mandate from DB; verify `status = 'active'`
+2. Verify JWT signature (even though we signed it — defense in depth)
+3. Check scope: amount ≤ caps, merchant allowed, not blocked
+4. Sum prior executions in window (day, month)
+5. Run KYA tier check + wallet policy evaluation
+6. Execute transfer
+7. Record execution in `ap2_executions`
+
+Step 4 is the one most commonly buggy — be careful with time window math, especially DST transitions.
+
+## Gotchas
+
+- **Mandate update vs. revoke** — partners sometimes expect `PATCH` to act like revoke+reissue. It doesn't; it modifies scope in-place. Tracked in `ap2_mandate_history`.
+- **Cancel vs. revoke** — `cancel` is soft (mandate state `cancelled` but executions can be audited); `revoke` is hard (mandate deleted, referential integrity maintained via tombstone). Most partners want `cancel`.
+- **Tier limit overrides** — some tenants have custom tier limits that take precedence. See `tier_limits` table.
+
+## Migration to OpenAPIHono
+
+Planned. 38 endpoints, moderate complexity.
+
+## Related
+
+- Public docs: [AP2 protocol page](https://docs.getsly.ai/protocols/ap2)
+- Google AP2 spec: https://cloud.google.com/solutions/agent-payment-protocol

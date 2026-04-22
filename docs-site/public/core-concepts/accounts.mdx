@@ -1,0 +1,76 @@
+---
+title: "Accounts"
+description: "The person or business that holds funds and owns agents."
+---
+
+An **account** is the entity that holds funds in your system — a person or a business. Every agent is attached to an account; every wallet belongs to an account (either directly, or indirectly through an agent).
+
+## Types
+
+| Type | Description | Verification path |
+|---|---|---|
+| `person` | Natural person | KYC (Persona) |
+| `business` | Corporate entity | KYB (Persona) |
+
+## Lifecycle
+
+```
+created ──▶ pending_verification ──▶ verified ──▶ active
+                     │
+                     ▼
+                 rejected / suspended
+```
+
+- **`created`** — account record exists, no verification yet
+- **`pending_verification`** — KYC/KYB in flight
+- **`verified`** — identity documents approved
+- **`active`** — can transact
+- **`suspended`** — flagged (sanctions hit, compliance review, self-requested freeze)
+
+## KYC/KYB tiers
+
+Accounts have a verification tier (0–3) that gates spending limits. Identity tier is *separate* from [agent KYA tier](/agents/kya-tiers) — an agent's effective limits are `min(agentLimit, parentAccountLimit)`.
+
+| Tier | Label | Typical verification | Spending cap (example) |
+|---|---|---|---|
+| 0 | Registered | Email + name | $500/month |
+| 1 | Declared | Self-declared KYC | $5,000/month |
+| 2 | Verified | Full KYC + doc upload | $50,000/month |
+| 3 | Enhanced | KYC + enterprise review | Custom |
+
+Exact caps are set per tenant and can be overridden. See [tier limits](/api-reference/openapi) for the programmatic API.
+
+## Create an account
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/accounts \
+  -H "Authorization: Bearer pk_test_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "business",
+    "name": "Acme Robotics",
+    "email": "ops@acme.example",
+    "metadata": { "internal_id": "cust_123" }
+  }'
+```
+
+Accounts start at tier 0. You trigger verification by calling `POST /v1/accounts/:id/verify` (which kicks off a Persona flow) or by providing documents through the dashboard.
+
+## Relationships
+
+```
+Tenant (you)
+  └─ Account
+       ├─ Wallets (direct)
+       └─ Agents (each has wallets, policies, KYA tier)
+              └─ Wallet
+```
+
+- One tenant has many accounts
+- One account has many wallets, many agents
+- One agent belongs to exactly one account (`parent_account_id`)
+- An agent's effective spending tier is the minimum of its own KYA tier and its parent account's KYC/KYB tier
+
+## Metadata
+
+Every account accepts a free-form `metadata` object (up to 4KB). Use it to stash your internal customer ID, CRM link, or any tag you need to correlate. Sly never interprets metadata — it round-trips with the record.

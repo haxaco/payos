@@ -1,0 +1,81 @@
+---
+title: "JWT sessions"
+description: "Dashboard-only user auth via Supabase. Rarely what you want for server integrations."
+---
+
+JWT session tokens are how the Sly dashboard UI authenticates humans. They're issued by Supabase Auth and have a 15-minute lifetime with automatic refresh. Your server integrations almost certainly want [API keys](/authentication/api-keys) instead.
+
+<Note>
+**Use JWT sessions only if you're building against the Sly dashboard experience** — e.g. a browser-side tool that needs to act as a logged-in staff member. For server-to-server integrations, use API keys.
+</Note>
+
+## Token format
+
+Standard RFC 7519 JWTs, signed by Supabase. Start with `eyJ…`:
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIi...
+```
+
+## How to obtain
+
+```bash
+curl -X POST https://api.getsly.ai/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "operator@example.com",
+    "password": "..."
+  }'
+```
+
+Response:
+
+```json
+{
+  "access_token": "eyJ...",
+  "refresh_token": "...",
+  "expires_in": 900,
+  "user": { "id": "usr_...", "role": "admin", ... }
+}
+```
+
+## Use
+
+Same header as any bearer token:
+
+```bash
+curl https://api.getsly.ai/v1/accounts \
+  -H "Authorization: Bearer eyJ..."
+```
+
+The server populates `RequestContext` with:
+- `actorType: 'user'`
+- `userId`
+- `userRole` — one of `owner`, `admin`, `member`, `viewer`
+- `userName`
+
+Role-based permissions gate dashboard-internal routes (organization management, billing, team).
+
+## Refresh before expiry
+
+Access tokens last 15 minutes. Refresh at ~14 minutes:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{ "refresh_token": "..." }'
+```
+
+The Sly SDK and the dashboard handle this automatically. If you're building a custom UI against JWT auth, implement the refresh loop or pages will silently fail after 15 minutes.
+
+## When JWT auth makes sense
+
+- **Browser-based staff tools** operating as a logged-in user
+- **Embedded iframes** showing user-specific views
+- **White-label dashboards** re-skinning the Sly dashboard experience
+
+For everything else — even "our internal back-office tool" — prefer [API keys](/authentication/api-keys). They don't expire mid-operation, they have no refresh loop, and they're not tied to a specific human being's account.
+
+## Signup, password reset, other flows
+
+The `/v1/auth/*` routes implement the full Supabase Auth suite (signup, login, logout, password reset, magic links). These are dashboard-internal and not part of the typical integration surface. If you need to see them for a specific use case, check `apps/api/src/routes/auth.ts` or reach out on [support](/resources/support).

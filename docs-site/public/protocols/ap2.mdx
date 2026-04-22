@@ -1,0 +1,137 @@
+---
+title: "AP2 (Google Agent Payment Protocol)"
+description: "Mandate-based authorization for agent spending. Pre-approved, policy-bound payments."
+---
+
+AP2 is Google's Agent Payment Protocol — a **mandate-based** approach where a user pre-authorizes an agent to spend within specific rules. The agent then transacts freely within those rules; exceeding them requires a new mandate.
+
+## Core concept: the mandate
+
+A **mandate** is a signed authorization:
+
+```
+I, account acc_abc, authorize agent agt_xyz to spend:
+  up to $500/month
+  on merchants in categories { "saas", "compute" }
+  until 2027-01-01
+```
+
+The agent carries this mandate and presents it on every transaction. Merchants verify the mandate is valid; Sly enforces the policy on every execution.
+
+## Create a mandate
+
+```bash
+curl -X POST https://api.getsly.ai/v1/ap2/mandates \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "account_id": "acc_...",
+    "agent_id": "agt_...",
+    "scope": {
+      "max_per_tx": "100.00",
+      "max_per_day": "500.00",
+      "max_per_month": "5000.00",
+      "currency": "USD",
+      "allowed_merchant_categories": ["saas", "compute", "api"],
+      "allowed_merchants": ["mer_acme", "mer_globex"],
+      "blocked_merchants": []
+    },
+    "expires_at": "2027-01-01T00:00:00Z",
+    "metadata": { "purpose": "Engineering tools subscription" }
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "ap2_mnd_...",
+  "status": "active",
+  "mandate_jwt": "eyJhbGciOiJFZERTQSI...",
+  "scope": { ... },
+  "expires_at": "2027-01-01T00:00:00Z",
+  "created_at": "2026-04-22T14:00:00Z"
+}
+```
+
+The `mandate_jwt` is signed by Sly's mandate authority; merchants and facilitators can verify without calling Sly's API.
+
+## Execute against a mandate
+
+The agent presents the mandate on every transaction:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/ap2/mandates/ap2_mnd_.../execute \
+  -H "Authorization: Bearer sess_..." \
+  -d '{
+    "merchant_id": "mer_acme",
+    "amount": "49.00",
+    "currency": "USD",
+    "description": "GitHub Copilot Business — monthly"
+  }'
+```
+
+Sly checks:
+- Mandate is `active` (not revoked, not expired)
+- Amount ≤ `max_per_tx`
+- This-day total + amount ≤ `max_per_day`
+- This-month total + amount ≤ `max_per_month`
+- Merchant is in the allowlist (if set) and not blocked
+- Agent KYA tier allows this amount
+
+If any check fails, the execution is rejected and logged. If all pass, the transfer executes and the mandate's counters advance.
+
+## Revoke a mandate
+
+```bash
+curl -X DELETE https://api.getsly.ai/v1/ap2/mandates/ap2_mnd_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Revocation is instant. Any pending executions against the mandate fail.
+
+## Update a mandate
+
+Update scope (e.g. raise a limit, extend expiry) without revoking:
+
+```bash
+curl -X PATCH https://api.getsly.ai/v1/ap2/mandates/ap2_mnd_... \
+  -d '{
+    "scope": { "max_per_day": "1000.00" },
+    "expires_at": "2027-06-01T00:00:00Z"
+  }'
+```
+
+Patches are tracked in an audit log; every execution after the patch uses the new scope.
+
+## Mandates and wallet policies
+
+AP2 mandates layer on top of [wallet policies](/agents/wallet-policies), not replace them. An execution must pass:
+
+1. **Mandate scope** (from this page)
+2. **Wallet policy** (per-agent limits and allowlists)
+3. **KYA tier** (account-level and agent-level)
+
+Every additional layer can only make the allowed set narrower. A mandate allowing $1,000 at a merchant that the wallet policy has blocked will still be rejected.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/ap2/mandates` | Create mandate |
+| `GET /v1/ap2/mandates` | List mandates |
+| `GET /v1/ap2/mandates/:id` | Get mandate |
+| `PATCH /v1/ap2/mandates/:id` | Update mandate |
+| `DELETE /v1/ap2/mandates/:id` | Revoke |
+| `POST /v1/ap2/mandates/:id/execute` | Execute against mandate |
+| `POST /v1/ap2/mandates/:id/cancel` | Soft-cancel |
+| `GET /v1/ap2/mandates/:id/executions` | Audit log of executions |
+
+Plus 30+ sub-resource endpoints for mandate templates, explanation of rejections, tier-limit queries, and dispute flows. See [API reference](/api-reference/openapi).
+
+## When to use AP2
+
+- Agent needs **persistent spending authority** over weeks/months
+- You want **mandate portability** (a single signed object agents can present anywhere)
+- You operate in the **Google / Gemini ecosystem** where AP2 is the native protocol
+- You need a **user-controllable kill-switch** separate from agent credentials (revoking the mandate instantly blocks spending without changing the agent)

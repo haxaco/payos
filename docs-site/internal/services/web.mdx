@@ -1,0 +1,57 @@
+---
+title: "apps/web"
+description: "The Next.js dashboard at app.getsly.ai."
+---
+
+<Warning>
+**`apps/web/` is the active dashboard.** `payos-ui/` is deprecated — never touch it.
+</Warning>
+
+## Tech
+
+- **Next.js App Router** (Node.js runtime, Fluid Compute)
+- **React Server Components** by default; `'use client'` only where interactivity is needed
+- **Tailwind CSS** + shadcn/ui
+- **Supabase Auth** for login/session
+
+## Deployment
+
+Vercel. Preview URLs on every PR; main deploys to `app.getsly.ai`.
+
+## Structure
+
+```
+apps/web/src/
+├── app/           # App Router pages + layouts
+├── components/    # React components
+├── lib/           # API client, utilities
+└── hooks/         # Custom hooks (useApi, useAuth)
+```
+
+## API client
+
+`packages/api-client` wraps fetch calls to `apps/api`. Auto-refreshes JWT at the 14-minute mark. Returns typed responses.
+
+Custom hooks (`apps/web/src/hooks/api/useApi.ts`):
+- `useApi<T>(endpoint)` — GET with loading/error states + retry
+- `useApiMutation<TReq, TRes>()` — POST/PUT/PATCH/DELETE with refresh handling
+
+## Auth flow
+
+1. User logs in → Supabase Auth returns JWT + refresh token
+2. Hooks attach JWT as `Authorization: Bearer eyJ...`
+3. 401 → `refreshAccessToken()` → retry original request
+4. Refresh fails → log out
+
+## Theming
+
+Primary color defined in `apps/web/src/app/globals.css` (`--primary: 221.2 83.2% 53.3%` ≈ `#2563EB`). Same color used in Mintlify public docs for brand consistency.
+
+## When to add UI vs. when to add API
+
+Rule of thumb: if the feature requires structured data operations, API first, then UI. If it's a cosmetic or layout change, UI only.
+
+## See also
+
+- [apps/api](/services/api) — the server the dashboard talks to
+- [Coding conventions](/engineering/conventions)

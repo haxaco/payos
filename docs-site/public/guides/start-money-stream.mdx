@@ -1,0 +1,138 @@
+---
+title: "Start a money stream"
+description: "Open a per-second payment flow and manage its lifecycle."
+---
+
+A [stream](/core-concepts/streams) flows money continuously between two wallets. This guide walks through opening a stream, monitoring it, and cleanly terminating it.
+
+## Scenario
+
+You're paying a contractor $50/day as a stream rather than a monthly invoice. The recipient can withdraw earned balance any time; you can top up or cancel at will.
+
+## 1. Calculate the flow rate
+
+```
+$50/day = $50 / 86400 seconds = 0.000579 USDC/s
+```
+
+Use more digits in practice to avoid rounding error:
+
+```ts
+const flowRatePerSecond = '0.00057870370'; // $50/day
+```
+
+## 2. Open the stream
+
+```ts
+const stream = await sly.streams.create({
+  from_wallet_id: 'wal_employer',
+  to_wallet_id: 'wal_contractor',
+  flow_rate: flowRatePerSecond,
+  currency: 'USDC',
+  initial_deposit: '1500.00',    // 30 days of runway
+  buffer: '50.00',
+});
+
+console.log(stream);
+// {
+//   id: 'str_...',
+//   status: 'active',
+//   flow_rate: '0.00057870370',
+//   wrapped_balance: '1450.00',   // 1500 - 50 buffer
+//   runway_seconds: 2505600,       // ~29 days
+// }
+```
+
+Under the hood, the API wraps `initial_deposit` into the stream's escrow (stream accounting is on-chain for stablecoin streams). From that moment, the recipient accrues at `flow_rate` per second.
+
+## 3. Recipient withdraws (on their schedule)
+
+The recipient can withdraw any time:
+
+```ts
+// Withdraw all accrued
+await sly.streams.withdraw(stream.id, {});
+
+// Or a specific amount
+await sly.streams.withdraw(stream.id, { amount: '150.00' });
+```
+
+Withdrawals create `stream_withdraw` transfer records.
+
+## 4. Monitor runway
+
+Runway = remaining wrapped balance / flow rate. When it crosses thresholds, Sly fires:
+
+- `stream.alert` webhook with `severity: warning` (<24h)
+- `severity: critical` (<1h)
+- `severity: exhausted` (runway = 0, stream auto-pauses)
+
+```ts
+// Webhook handler
+if (event.type === 'stream.alert') {
+  const { stream, alert } = event.data;
+  if (alert.severity === 'warning' && stream.id === YOUR_STREAM_ID) {
+    await sly.streams.topup(stream.id, { amount: '500.00' });
+  }
+}
+```
+
+## 5. Adjust mid-stream
+
+**Top up runway:**
+```ts
+await sly.streams.topup(stream.id, { amount: '1000.00' });
+```
+
+**Change flow rate:**
+```ts
+await sly.streams.update(stream.id, { flow_rate: '0.00069444444' });  // $60/day
+```
+
+**Pause / resume:**
+```ts
+await sly.streams.pause(stream.id);
+// accrual stops; wrapped balance stays locked
+await sly.streams.resume(stream.id);
+```
+
+## 6. Cancel cleanly
+
+```ts
+await sly.streams.cancel(stream.id);
+```
+
+On cancel:
+- Accrued balance transfers to the recipient
+- Unused wrapped funds return to the sender
+- Stream transitions to `cancelled` but the audit record stays
+
+## Permission scoping for agents
+
+If an agent manages the stream, grant granular permissions:
+
+```ts
+await sly.agentWallets.setPolicy(agent.walletId, {
+  ...,
+  stream_permissions: {
+    canCreate: true,
+    canModify: true,      // adjust flow rate + topup
+    canPause: false,
+    canTerminate: false,  // only humans cancel
+  },
+});
+```
+
+## Common patterns
+
+**Payroll for many contractors:** one parent wallet with many streams, one per contractor. When someone leaves, cancel their stream — remaining funds refund automatically.
+
+**Subscription billing:** open a stream from the customer to you; cancellation requires no refund logic because unused time returns automatically.
+
+**AI compute billing:** open a stream from the customer's agent to your API service; flow rate set to match the customer's per-request cost × expected RPS. Bill exactly what they used, no more.
+
+## Gotchas
+
+- **Flow rates must be reasonable.** Ultra-tiny flow rates (10^-12) cause rounding issues on some chains. Stick to 6-8 decimal places.
+- **Paused streams don't warn.** A paused stream can sit for weeks; it won't alert you it's not accruing.
+- **Network fees on wrap/unwrap.** Each stream wraps funds once at creation and unwraps once at cancel. Gas cost is trivial on L2s but visible.

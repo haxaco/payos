@@ -1,0 +1,65 @@
+---
+title: "On-call"
+description: "Rotation, tools, first-hours-on-shift."
+---
+
+## Rotation
+
+Weekly, Monday 09:00 → Monday 09:00 (America/New_York). PagerDuty manages the schedule.
+
+Primary + secondary per week. Secondary escalation: 15 minutes on unacknowledged Sev 1, 30 minutes on Sev 2.
+
+## When you come on shift
+
+1. Check [status.getsly.ai](https://status.getsly.ai) for open incidents
+2. Skim `#eng-deploys` for the last 24h of deploys
+3. Review the on-call hand-off doc from the outgoing primary
+4. Acknowledge receipt in `#on-call`
+
+## Tools you need access to
+
+- PagerDuty (mobile app installed)
+- Slack on your phone
+- Vercel admin (for deploys + rollbacks)
+- Supabase admin (for DB investigation)
+- Grafana / metrics (see [runbooks overview](/runbooks/overview))
+- Intercom (for support handoff)
+- GitHub (for code lookup and reverts)
+
+If any are missing — get them before your shift starts.
+
+## Common asks during the week
+
+- Partner reports a stuck transfer → check via `request_id`, confirm rail status
+- Webhook deliveries failing for one tenant → check their endpoint availability, consider replay
+- "Why is the API slow?" → dashboard latency; usually Supabase or a specific route
+- Agent can't authenticate → challenge/authenticate flow; usually clock skew or stale cached token
+
+## Workflow
+
+For most pages:
+1. Ack
+2. Assess severity
+3. If < Sev 2, investigate at normal pace
+4. If >= Sev 2, start incident channel
+5. Resolve or hand off to domain owner
+
+## Off-hours expectations
+
+- Answer Sev 1 pages within 10 minutes 24/7
+- Answer Sev 2 pages within 30 minutes during business hours
+- Non-critical Slack mentions can wait until business hours
+
+## Hand-off
+
+End of shift:
+1. Post in `#on-call`: open issues, recent incidents, anything the next primary should watch
+2. DM the incoming primary with any context that shouldn't be in a public channel
+3. Update the on-call hand-off doc
+4. Set PagerDuty schedule override if needed
+
+## Self-care
+
+- Don't do it alone. Loop in domain owners early.
+- Sleep matters. If you're exhausted, hand off — a half-awake responder makes worse incidents.
+- Take comp time after a heavy shift.

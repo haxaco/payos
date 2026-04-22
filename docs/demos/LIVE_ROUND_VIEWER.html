@@ -1786,6 +1786,16 @@ function handleEvent(type, event) {
           agentName: data.agentName || null,
           time: new Date().toISOString(),
         });
+        // Agent-to-agent milestones (e.g. governance-block 🛡 rejections
+        // from resale_chain when a buyer's mandate is refused). Draw a
+        // distinctive edge so the operator can see the block without
+        // digging through the feed — "governance working" is a first-class
+        // visible outcome, not an absence.
+        if (data.toKind === 'agent' && data.agentId && data.toId) {
+          const edgeState = data.edgeState === 'rejected' ? 'failed' : 'working';
+          addEdge(data.agentId, data.toId, edgeState);
+          renderAgents();
+        }
         // Merchant-purchase milestones carry a `toKind==='merchant'` target.
         // Ensure state.merchants has it, give agentNames[] a friendly label,
         // and push an edge agentId → toId so the graph renders a purchase arrow.
@@ -2722,6 +2732,56 @@ function openMerchantInspector(merchantId) {
           h += '<span style="flex:1;color:var(--text)">' + escapeHtml(c.name) + '</span>';
           h += '<span style="color:var(--muted);font-family:monospace">' + c.won + '/' + c.appeared + '</span>';
           h += '<span style="color:' + (r >= 50 ? '#22c55e' : r >= 25 ? '#eab308' : '#ef4444') + ';font-weight:600;min-width:32px;text-align:right">' + r + '%</span>';
+          h += '</div>';
+        }
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
+    // Agent-friendliness — 5-signal index, 0–100, with N/A redistribution.
+    // Only populated once the async fetch completes.
+    const friendliness = full.friendliness;
+    if (friendliness && typeof friendliness.score === 'number') {
+      const score = friendliness.score;
+      const scoreColor = score >= 80 ? '#22c55e' : score >= 60 ? '#0ea5e9' : score >= 40 ? '#eab308' : '#ef4444';
+      h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Agent-Friendliness</div>';
+      h += '<div style="background:var(--surface);padding:10px 12px;border-radius:6px;border:1px solid var(--border);margin-bottom:12px">';
+      h += '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">';
+      h += '  <div style="font-size:26px;font-weight:700;color:' + scoreColor + ';line-height:1">' + score + '</div>';
+      h += '  <div style="font-size:10px;color:var(--muted)">/ 100 — design signals</div>';
+      h += '</div>';
+      const signalDefs = [
+        { key: 'catalog', label: 'Catalog' },
+        { key: 'reliability', label: 'Reliability' },
+        { key: 'price_accuracy', label: 'Price accuracy' },
+        { key: 'latency', label: 'Latency' },
+        { key: 'manifest', label: 'Manifest' },
+      ];
+      for (const s of signalDefs) {
+        const sig = friendliness.breakdown && friendliness.breakdown[s.key];
+        const weight = friendliness.weights && friendliness.weights[s.key];
+        const isNA = !sig || sig.score == null;
+        const sc = isNA ? 0 : sig.score;
+        const barColor = isNA ? 'var(--border)' : (sc >= 80 ? '#22c55e' : sc >= 60 ? '#0ea5e9' : sc >= 40 ? '#eab308' : '#ef4444');
+        const scLabel = isNA ? 'N/A' : sc;
+        const weightLabel = weight ? Math.round(weight * 100) + '%' : '—';
+        h += '<div style="margin-bottom:6px">';
+        h += '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">';
+        h += '  <span style="color:var(--text)">' + escapeHtml(s.label) + '</span>';
+        h += '  <span style="font-family:monospace;color:var(--muted)"><span style="color:' + (isNA ? 'var(--muted)' : barColor) + ';font-weight:600">' + scLabel + '</span> · ' + weightLabel + '</span>';
+        h += '</div>';
+        h += '<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">';
+        if (!isNA) {
+          h += '<div style="height:100%;background:' + barColor + ';width:' + sc + '%"></div>';
+        }
+        h += '</div>';
+        // Issue list (catalog linter surfaces missing fields here).
+        if (sig && Array.isArray(sig.issues) && sig.issues.length > 0) {
+          h += '<div style="margin-top:3px;font-size:10px;color:#eab308">';
+          for (const iss of sig.issues.slice(0, 3)) {
+            h += '• ' + escapeHtml(iss) + '<br>';
+          }
           h += '</div>';
         }
         h += '</div>';

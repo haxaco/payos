@@ -1,0 +1,70 @@
+---
+title: "Error catalog"
+description: "Internal reference for every error code and how to diagnose."
+---
+
+For the external-facing version, see [public error codes](https://docs.getsly.ai/resources/error-codes). This page is the operator view — what each code means internally, what causes it, and where to look.
+
+## Auth
+
+| Code | Common cause | Where to look |
+|---|---|---|
+| `INVALID_API_KEY` | Key revoked, typo, environment mismatch | `api_keys` table; check `revoked_at` |
+| `EXPIRED_API_KEY` | Explicit expiry set | Same; `expires_at` |
+| `INVALID_AGENT_TOKEN` | Agent deleted, token rotated | `agents` table; `status` + `token_hash` |
+| `SESSION_EXPIRED` | 1h Ed25519 TTL elapsed | Normal; client should re-handshake |
+| `MALFORMED_AUTH_HEADER` | Missing `Bearer` prefix | Client bug |
+| `ENVIRONMENT_MISMATCH` | Test key on prod URL | Client config bug |
+
+## Policy / limits
+
+| Code | Common cause | Where to look |
+|---|---|---|
+| `KYA_LIMIT_EXCEEDED` | Agent over tier cap | `agents.kya_tier` + `tier_limits` table |
+| `KYC_LIMIT_EXCEEDED` | Parent account over tier cap | `accounts.verification_tier` |
+| `POLICY_VIOLATION` | Wallet policy rule hit | `agent_wallet_policies`; run evaluate-policy manually |
+| `VELOCITY_EXCEEDED` | Too many tx in window | Same, `velocity_rules` |
+| `WALLET_FROZEN` | Manual freeze or auto-freeze | `wallets.frozen_at` |
+| `REQUIRES_APPROVAL` | Above threshold | Not an error — expected path |
+
+## Balance
+
+| Code | Common cause | Where to look |
+|---|---|---|
+| `INSUFFICIENT_BALANCE` | Literally insufficient | `wallets.balance_available` |
+| `HOLD_EXCEEDS_BALANCE` | Pending holds too large | `transfers.status = 'pending'` on the wallet |
+| `CURRENCY_MISMATCH` | Cross-currency without quote | Missing `quote_id` on cross_border |
+
+## Quote / settlement
+
+| Code | Common cause | Where to look |
+|---|---|---|
+| `QUOTE_EXPIRED` | 30s TTL elapsed | Normal; client should re-quote |
+| `RAIL_DECLINED` | External provider rejected | Provider console (Circle, Stripe, bank) |
+| `RAIL_TIMEOUT` | Upstream timeout | Provider status; check retry |
+
+## System
+
+| Code | Common cause | Where to look |
+|---|---|---|
+| `INTERNAL_ERROR` | Unhandled exception | Sentry / logs with `request_id` |
+| `DATABASE_ERROR` | Supabase issue | Supabase status + specific error in logs |
+| `UPSTREAM_TIMEOUT` | External provider slow | Provider status |
+| `RATE_LIMIT_EXCEEDED` | Client exceeded budget | Rate limiter logs |
+
+## Compliance
+
+| Code | Common cause | Where to look |
+|---|---|---|
+| `SANCTIONS_HIT` | Counterparty on OFAC | Screening log; escalate to compliance |
+| `KYC_REQUIRED` | Account at tier 0 attempting high-value op | `accounts.verification_tier` |
+| `HIGH_RISK_TRANSACTION` | Rule-engine flag | Compliance rules table |
+
+## When a code doesn't exist
+
+If you hit an error that doesn't map to a code:
+1. Add the code to `packages/types/src/errors.ts`
+2. Update the error in the throwing code to use it
+3. Document it in both this page AND the [public docs](https://docs.getsly.ai/resources/error-codes)
+
+Unnamed 500s are debt — they slow down every future incident.

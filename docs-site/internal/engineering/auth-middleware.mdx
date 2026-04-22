@@ -1,0 +1,122 @@
+---
+title: "Auth middleware"
+description: "How the 5 authentication methods resolve to a single RequestContext."
+---
+
+`apps/api/src/middleware/auth.ts` is the single enforcement point for all authentication. Every `/v1/*` route passes through it. Understanding this middleware is non-negotiable for anyone touching server code.
+
+## Entry
+
+The middleware receives a Hono `Context`, reads `Authorization: Bearer <token>`, and routes to one of five verification paths based on token prefix:
+
+| Prefix | Method | Verification |
+|---|---|---|
+| `pk_test_*` / `pk_live_*` | API key | Hash + lookup in `api_keys` table |
+| `agent_*` | Agent token | Hash + lookup in `agents` table |
+| `sess_*` | Ed25519 session | Lookup in `agent_sessions`, validate TTL |
+| `portal_*` | Portal token | Lookup in `portal_tokens`, validate scope |
+| `eyJ…` (JWT shape) | User JWT | Supabase Auth `getUser()` |
+
+If no match, returns `401 UNAUTHORIZED`.
+
+## RequestContext shape
+
+On success, the middleware populates `c.set('ctx', RequestContext)`:
+
+```ts
+interface RequestContext {
+  tenantId: string;
+  actorType: 'api_key' | 'user' | 'agent' | 'portal';
+  environment?: 'test' | 'live';
+
+  // API key auth
+  apiKeyId?: string;
+  apiKeyEnvironment?: 'test' | 'live';
+
+  // User JWT
+  userId?: string;
+  userRole?: 'owner' | 'admin' | 'member' | 'viewer';
+  userName?: string;
+
+  // Agent (both agent_* and sess_*)
+  actorId?: string;
+  actorName?: string;
+  kyaTier?: number;
+  parentAccountId?: string;
+  sessionBased?: boolean;  // true for sess_*, distinguishes from agent_*
+
+  // Portal
+  portalTokenId?: string;
+  portalScopes?: string[];
+}
+```
+
+Route handlers do `const ctx = c.get('ctx')` and use it for tenant filtering + authorization.
+
+## Caching
+
+Two in-memory caches (60-second TTL, 1000-entry max):
+
+- **JWT cache** — SHA-256 of the JWT → RequestContext
+- **Agent token cache** — prefix-indexed, with constant-time hash comparison
+
+Caches reduce Supabase RPS under sustained load. Cache hits return immediately; misses fall through to DB lookup.
+
+<Warning>
+**Revocation is not instantaneous.** A revoked token remains valid in the cache for up to 60 seconds. For true immediate revocation, extend the agent `revoked_at` check to bypass the cache OR drop the entire cache during incident response.
+</Warning>
+
+## The crypto utilities
+
+`apps/api/src/utils/crypto.ts` exports:
+
+- `hashApiKey(plaintext)` — SHA-256 + pepper for at-rest storage
+- `getKeyPrefix(plaintext)` — first 12 chars, used as an index for fast lookup
+- `verifyApiKey(plaintext, hash)` — constant-time compare (`crypto.timingSafeEqual`)
+
+**Never use `===` on secrets.** Always `timingSafeEqual` to prevent timing attacks.
+
+## Public endpoints (skip auth)
+
+`app.ts` mounts a set of public routers **before** the `v1.use('*', authMiddleware)` line. Anything mounted after requires auth.
+
+Current public set:
+- `/health`, `/ready`
+- `/.well-known/ucp`, `/.well-known/agent.json`
+- `/webhooks/*` (signature verified internally)
+- `/agent-backend` (HMAC-verified)
+- `/a2a` (JSON-RPC)
+- `/v1/agents/:id/challenge`, `/v1/agents/:id/authenticate` (Ed25519 handshake)
+- `/v1/auth/*` (signup, login, password reset)
+- `/v1/protocols`, `/v1/openapi.json`
+- `/v1/onboarding/agent`
+- `/mcp` (auth inside the MCP JSON-RPC, not here)
+
+If you add a new public endpoint, mount it **above** the auth middleware and document it in `apps/api/src/middleware/auth.ts` and in the [public authentication docs](https://docs.getsly.ai/authentication/overview).
+
+## Ed25519 specifics
+
+`sess_*` tokens are issued by the challenge-authenticate handshake in `apps/api/src/routes/agent-connect.ts`. On each request, the middleware:
+
+1. Lookup `sess_*` → `agent_sessions` row
+2. Check `expires_at > NOW()`
+3. Verify `revoked_at IS NULL`
+4. Populate `RequestContext` identically to how `agent_*` would — so downstream code treats them interchangeably
+5. Set `sessionBased: true` for audit differentiation
+
+## Adding a new auth method
+
+If you need to add a 6th method (e.g. OAuth2 bearer for a partner integration):
+
+1. Define the token prefix (must be distinct from existing five)
+2. Add a verification path in `auth.ts` keyed by prefix
+3. Populate `RequestContext` using existing fields — don't add one-off fields
+4. Write unit tests (`tests/unit/auth.test.ts`) covering success, expiry, revocation, malformed token
+5. Write integration tests covering cross-tenant isolation
+6. Update this page
+
+## Common bugs to watch for
+
+- **Missing `tenantId` in `RequestContext`** — should never happen; if it does, the middleware has a control-flow bug. Test with `expect(ctx.tenantId).toBeDefined()` on every path.
+- **Cached `userRole` goes stale** — role changes take up to 60 seconds to reflect. Invalidate the cache on role changes if it matters.
+- **`environment` mismatch** — API keys are env-specific; JWTs aren't. Dashboard users can view both envs. Routes that should restrict to one must check `ctx.environment` explicitly.

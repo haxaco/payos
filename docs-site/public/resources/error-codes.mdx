@@ -1,0 +1,131 @@
+---
+title: "Error codes"
+description: "Machine-readable error taxonomy with suggested actions."
+---
+
+Every Sly error response has a stable `code` field. Your integration should branch on `code`, not on human-readable `message` text.
+
+## Response shape
+
+```json
+{
+  "error": "Insufficient balance",
+  "code": "INSUFFICIENT_BALANCE",
+  "details": {
+    "required": "100.00",
+    "available": "42.50",
+    "currency": "USDC"
+  },
+  "request_id": "req_..."
+}
+```
+
+`code` is always one of the enum values below. `details` varies per code and carries the contextual info you need to act.
+
+## Categories
+
+### Balance errors (400)
+- `INSUFFICIENT_BALANCE` — spend > available
+- `HOLD_EXCEEDS_BALANCE` — a hold would exceed available
+- `CURRENCY_MISMATCH` — source and destination currencies don't match (cross-border needs a quote)
+- `NEGATIVE_BALANCE_NOT_ALLOWED` — operation would leave a negative balance
+
+### Validation (400, 422)
+- `INVALID_AMOUNT`, `INVALID_CURRENCY`
+- `INVALID_ACCOUNT_ID`, `INVALID_AGENT_ID`, `INVALID_TRANSFER_ID`
+- `INVALID_PIX_KEY`, `INVALID_CLABE`, `INVALID_IBAN`, `INVALID_SWIFT_CODE`
+- `INVALID_EMAIL`, `INVALID_PHONE`
+- `INVALID_DATE_RANGE`, `INVALID_FLOW_RATE`
+- `INVALID_MANDATE`, `INVALID_CHECKOUT_SESSION`
+- `MISSING_REQUIRED_FIELD`, `INVALID_REQUEST_FORMAT`
+- `AMOUNT_TOO_SMALL`, `AMOUNT_TOO_LARGE`
+
+### Authentication (401)
+- `INVALID_API_KEY` — key not recognized
+- `EXPIRED_API_KEY` — key revoked
+- `INVALID_AGENT_TOKEN`, `INVALID_SESSION_TOKEN`
+- `SESSION_EXPIRED` — re-run Ed25519 handshake
+- `INVALID_JWT`, `EXPIRED_JWT`
+- `MISSING_AUTH_HEADER`, `MALFORMED_AUTH_HEADER`
+- `ENVIRONMENT_MISMATCH` — test key on prod URL (or vice versa)
+
+### Authorization (403)
+- `FORBIDDEN` — generic "not allowed"
+- `INSUFFICIENT_SCOPE` — API key lacks required scope
+- `KYA_LIMIT_EXCEEDED` — agent KYA tier limit exceeded
+- `KYC_LIMIT_EXCEEDED` — account KYC tier limit exceeded
+- `POLICY_VIOLATION` — wallet policy rule violation
+- `WALLET_FROZEN` — wallet frozen, cannot spend
+- `AGENT_SUSPENDED` — agent suspended
+- `MERCHANT_BLOCKED` — merchant blocked by policy
+- `VELOCITY_EXCEEDED` — too many tx in window
+- `TIME_RULE_VIOLATION` — outside allowed hours
+- `REQUIRES_APPROVAL` — approval workflow triggered (not an error — next step is `/v1/approvals`)
+
+### Not found (404)
+- `ACCOUNT_NOT_FOUND`, `AGENT_NOT_FOUND`, `WALLET_NOT_FOUND`, `TRANSFER_NOT_FOUND`
+- `STREAM_NOT_FOUND`, `QUOTE_NOT_FOUND`, `MANDATE_NOT_FOUND`
+- `WEBHOOK_NOT_FOUND`
+
+### Conflict (409)
+- `IDEMPOTENCY_KEY_REUSED` — same key with different parameters
+- `DUPLICATE_RESOURCE` — resource with same unique key already exists
+- `STATE_TRANSITION_INVALID` — operation not allowed in current state (e.g. completing a cancelled transfer)
+
+### Quote / settlement (400, 402)
+- `QUOTE_EXPIRED`
+- `QUOTE_RATE_CHANGED`
+- `SETTLEMENT_RAIL_UNAVAILABLE`
+- `RAIL_DECLINED`, `RAIL_TIMEOUT`
+- `X402_PAYMENT_REQUIRED` — `402` returned by an x402-gated endpoint (includes payment quote)
+- `X402_PROOF_INVALID`, `X402_PROOF_EXPIRED`
+
+### Rate limit (429)
+- `RATE_LIMIT_EXCEEDED` — honor `Retry-After`
+
+### Server (500, 502, 503, 504)
+- `INTERNAL_ERROR` — retry with backoff
+- `SERVICE_UNAVAILABLE` — retry with backoff
+- `UPSTREAM_TIMEOUT` — retry with backoff
+- `DATABASE_ERROR` — retry; if persistent, open a support ticket
+
+### Compliance (400, 403)
+- `SANCTIONS_HIT` — counterparty on sanctions list
+- `KYC_REQUIRED`, `KYB_REQUIRED`
+- `HIGH_RISK_TRANSACTION` — manual review triggered
+- `BLOCKED_COUNTRY`, `BLOCKED_ADDRESS`
+
+## Suggested actions
+
+The error object often includes `suggested_action`:
+
+```json
+{
+  "code": "KYA_LIMIT_EXCEEDED",
+  "details": {
+    "limit": "500.00",
+    "attempted": "750.00",
+    "current_tier": 1,
+    "tier_ceiling": "500.00"
+  },
+  "suggested_action": {
+    "type": "tier_upgrade",
+    "endpoint": "/v1/agents/agt_.../upgrade-tier",
+    "documentation_url": "/agents/kya-tiers"
+  }
+}
+```
+
+Use this to guide your error UX — for humans, surface the doc link; for agents, the `endpoint` can be invoked directly to self-remediate.
+
+## Retriable vs. permanent
+
+Retriable (with backoff):
+- `RATE_LIMIT_EXCEEDED`
+- `INTERNAL_ERROR`, `SERVICE_UNAVAILABLE`, `UPSTREAM_TIMEOUT`, `DATABASE_ERROR`
+
+Everything else is permanent for this request — retrying won't help. Fix the input or escalate.
+
+## Request ID
+
+Every error response carries `request_id`. Include this in support tickets; we can pull the full trace in seconds.
