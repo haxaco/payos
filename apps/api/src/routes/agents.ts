@@ -2758,10 +2758,13 @@ agents.post('/:id/x402-sign', async (c) => {
 
   // Use cached agent row from auth middleware if available (avoids re-query)
   const cachedAgent = ctx.actorType === 'agent' && ctx.actorId === id ? c.get('agentRow') : null;
-  if (!cachedAgent) {
+  let agentEnvironment: 'test' | 'live';
+  if (cachedAgent) {
+    agentEnvironment = (cachedAgent as any).environment === 'live' ? 'live' : 'test';
+  } else {
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('id, name, status, kya_tier, tenant_id, parent_account_id')
+      .select('id, name, status, kya_tier, tenant_id, parent_account_id, environment')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
       .single();
@@ -2769,9 +2772,25 @@ agents.post('/:id/x402-sign', async (c) => {
     if (agentError || !agent) {
       throw new NotFoundError('Agent', id);
     }
-    if (agent.status !== 'active') {
+    if ((agent as any).status !== 'active') {
       throw new ValidationError('Agent is not active');
     }
+    agentEnvironment = (agent as any).environment === 'live' ? 'live' : 'test';
+  }
+
+  // Enforce env ↔ chain coherence. Test agents must use Base Sepolia (84532);
+  // live agents must use Base mainnet (8453). Without this, a test agent can
+  // silently sign mainnet authorizations and drain real USDC if someone
+  // manually funded the EOA. The check runs before KYA limits so callers get
+  // the most specific error first.
+  const expectedChainId = agentEnvironment === 'live' ? 8453 : 84532;
+  if (chainIdNum !== expectedChainId) {
+    const expectedName = expectedChainId === 8453 ? 'Base mainnet' : 'Base Sepolia';
+    throw new ValidationError(
+      `chainId ${chainIdNum} is not allowed for a ${agentEnvironment} agent. ` +
+      `Use ${expectedChainId} (${expectedName}) instead. ` +
+      `Flip the agent's environment if you need to sign on the other chain.`,
+    );
   }
 
   // Check wallet freeze status — block signing if agent's wallet is frozen
