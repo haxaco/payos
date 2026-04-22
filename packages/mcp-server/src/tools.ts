@@ -1732,12 +1732,53 @@ export const tools: Tool[] = [
         agentId: { type: 'string', description: 'UUID of the agent whose EOA will sign' },
         to: { type: 'string', description: 'Recipient EVM address (from the 402 response\'s payTo field)' },
         value: { type: 'string', description: 'Amount in token units as decimal string (e.g. "100000" for 0.1 USDC at 6 decimals)' },
-        chainId: { type: 'number', description: 'Chain ID (default 84532 = Base Sepolia)', default: 84532 },
+        chainId: { type: 'number', description: 'Chain ID — required. 8453 = Base mainnet, 84532 = Base Sepolia. No default (pass the chainId from the 402 challenge\'s `network` field).' },
         validBefore: { type: 'number', description: 'Unix seconds deadline — signature rejected after this time' },
         validAfter: { type: 'number', description: 'Unix seconds start time (default 0)', default: 0 },
         nonce: { type: 'string', description: '32-byte hex nonce (auto-generated if omitted)' },
       },
-      required: ['agentId', 'to', 'value', 'validBefore'],
+      required: ['agentId', 'to', 'value', 'validBefore', 'chainId'],
+    },
+  },
+  {
+    name: 'x402_build_payment_header',
+    description: 'Client-side helper. Given a 402 challenge (the JSON body OR a single entry from its `accepts[]`) and a signed EIP-3009 payload (output of agent_x402_sign), returns the base64-encoded value to set as the `X-PAYMENT` request header. Handles both x402 v1 (`network: "base"`) and v2 (`network: "eip155:8453"`) envelope shapes. No API roundtrip.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        challenge: {
+          type: 'object',
+          description: 'The parsed 402 response body, or a single `accepts[]` entry. Must contain at least `scheme` and `network`; `x402Version` is read from the outer body when present.',
+        },
+        signed: {
+          type: 'object',
+          description: 'The object returned by agent_x402_sign: `{ signature, from, to, value, validAfter, validBefore, nonce }`.',
+        },
+      },
+      required: ['challenge', 'signed'],
+    },
+  },
+  {
+    name: 'x402_fetch',
+    description: 'One-shot paid fetch. Sends `method url` with no payment, detects a 402 response, signs an EIP-3009 authorization using the agent\'s managed EVM key, then retries with the `X-PAYMENT` header set — returning the final response. Use this instead of wiring agent_x402_sign + x402_build_payment_header + two separate HTTP calls. Safe against silent overcharging via `maxPrice`.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'UUID of the paying agent' },
+        url: { type: 'string', description: 'Target URL (external x402-protected endpoint)' },
+        method: { type: 'string', description: 'HTTP method (default GET)', default: 'GET' },
+        body: { type: 'string', description: 'Optional request body for POST/PUT (raw string, already JSON-stringified if JSON)' },
+        headers: {
+          type: 'object',
+          description: 'Optional additional request headers (e.g. {"Content-Type":"application/json"})',
+          additionalProperties: { type: 'string' },
+        },
+        maxPrice: {
+          type: 'string',
+          description: 'Hard cap on the challenge amount, in token micro-units as a decimal string (e.g. "50000" = 0.05 USDC). Reject if the 402 asks for more. Omit to disable the cap.',
+        },
+      },
+      required: ['agentId', 'url'],
     },
   },
   {

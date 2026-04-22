@@ -14,7 +14,7 @@ import {
   getEnv,
 } from '../utils/helpers.js';
 import { createLimitService } from '../services/limits.js';
-import { ValidationError, NotFoundError } from '../middleware/error.js';
+import { ValidationError, NotFoundError, LimitExceededError } from '../middleware/error.js';
 import { generateAgentToken, hashApiKey, getKeyPrefix } from '../utils/crypto.js';
 import { ErrorCode } from '@sly/types';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
@@ -2712,7 +2712,7 @@ agents.post('/:id/x402-sign', async (c) => {
   const {
     to,
     value,
-    chainId = 84532,
+    chainId,
     validAfter = 0,
     validBefore,
     nonce,
@@ -2720,6 +2720,16 @@ agents.post('/:id/x402-sign', async (c) => {
 
   if (!to || !value || !validBefore) {
     throw new ValidationError('Missing required fields: to, value, validBefore');
+  }
+  if (chainId === undefined || chainId === null || chainId === '') {
+    throw new ValidationError(
+      'Missing required field: chainId. Pass 8453 for Base mainnet or 84532 for Base Sepolia. ' +
+      'No default is applied to prevent silent wrong-network signatures.',
+    );
+  }
+  const chainIdNum = Number(chainId);
+  if (!Number.isFinite(chainIdNum)) {
+    throw new ValidationError(`Invalid chainId: ${chainId}`);
   }
 
   const supabase = createClient();
@@ -2734,7 +2744,7 @@ agents.post('/:id/x402-sign', async (c) => {
   if (!cachedAgent) {
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('id, name, status, kya_tier, tenant_id')
+      .select('id, name, status, kya_tier, tenant_id, parent_account_id')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
       .single();
@@ -2758,6 +2768,26 @@ agents.post('/:id/x402-sign', async (c) => {
     return c.json({ error: 'Agent wallet is frozen — signing blocked', code: 'WALLET_FROZEN' }, 403);
   }
 
+  // Enforce KYA spending limits BEFORE signing. `value` is USDC micro-units
+  // (6 decimals); the limit service works in whole-USDC units.
+  const valueBig = (() => {
+    try { return BigInt(String(value)); } catch { throw new ValidationError(`Invalid value: ${value}`); }
+  })();
+  if (valueBig <= 0n) {
+    throw new ValidationError('value must be a positive integer in token micro-units');
+  }
+  const amountUsdc = Number(valueBig) / 1_000_000;
+  const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
+  const limitCheck = await limitService.checkTransactionLimit(id, amountUsdc);
+  if (!limitCheck.allowed) {
+    throw new LimitExceededError(
+      limitCheck.limitType || 'transaction',
+      limitCheck.limit ?? 0,
+      limitCheck.requested ?? amountUsdc,
+      limitCheck.used,
+    );
+  }
+
   // Fetch the agent's secp256k1 key
   const { getAgentEvmKey, signTransferWithAuthorization, usdcDomain, generateNonce } =
     await import('../services/x402/signer.js');
@@ -2774,14 +2804,15 @@ agents.post('/:id/x402-sign', async (c) => {
   // Resolve the USDC contract for the requested chain
   let domain;
   try {
-    domain = usdcDomain(Number(chainId));
+    domain = usdcDomain(chainIdNum);
   } catch (e: any) {
     throw new ValidationError(e.message);
   }
 
   // Sign the EIP-3009 payload
+  let signed;
   try {
-    const signed = await signTransferWithAuthorization(keyRecord, {
+    signed = await signTransferWithAuthorization(keyRecord, {
       from: keyRecord.ethereum_address,
       to,
       value: String(value),
@@ -2789,35 +2820,83 @@ agents.post('/:id/x402-sign', async (c) => {
       validBefore: Number(validBefore),
       nonce: nonce || generateNonce(),
       ...domain,
-      chainId: Number(chainId),
-    });
-
-    // Update usage stats (fire-and-forget)
-    await supabase
-      .from('agent_signing_keys')
-      .update({ last_used_at: new Date().toISOString(), use_count: undefined })
-      .eq('agent_id', id)
-      .eq('algorithm', 'secp256k1')
-      .then(() => {}, () => {});
-
-    return c.json({
-      success: true,
-      signature: signed.signature,
-      v: signed.v,
-      r: signed.r,
-      s: signed.s,
-      from: signed.from,
-      to: signed.params.to,
-      value: signed.params.value,
-      chainId: signed.params.chainId,
-      tokenAddress: signed.params.tokenAddress,
-      validAfter: signed.params.validAfter,
-      validBefore: signed.params.validBefore,
-      nonce: signed.params.nonce,
+      chainId: chainIdNum,
     });
   } catch (e: any) {
     return c.json({ error: `Signing failed: ${e.message}` }, 500);
   }
+
+  // Bump signing-key usage stats (fire-and-forget)
+  void (supabase.from('agent_signing_keys') as any)
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('agent_id', id)
+    .eq('algorithm', 'secp256k1')
+    .then(() => {}, () => {});
+
+  // Write a transfers ledger row reflecting the committed external x402 spend.
+  // Status 'pending' matches the transfers check constraint; the facilitator's
+  // on-chain settlement is tracked separately (tx_hash + completed_at set by a
+  // reconciler if the signed auth is later submitted).
+  try {
+    await (supabase.from('transfers') as any).insert({
+      tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
+      type: 'x402',
+      status: 'pending',
+      from_account_id: null,
+      to_account_id: null,
+      initiated_by_type: ctx.actorType,
+      initiated_by_id: id,
+      initiated_by_name: ctx.actorName || null,
+      amount: amountUsdc,
+      currency: 'USDC',
+      description: `external x402 auth — ${to}`,
+      initiator_wallet_address: keyRecord.ethereum_address,
+      protocol_metadata: {
+        protocol: 'x402',
+        direction: 'external',
+        to_address: signed.params.to,
+        from_address: signed.from,
+        chain_id: signed.params.chainId,
+        token_address: signed.params.tokenAddress,
+        token_value_microunits: signed.params.value,
+        valid_after: signed.params.validAfter,
+        valid_before: signed.params.validBefore,
+        nonce: signed.params.nonce,
+        signature_prefix: String(signed.signature).slice(0, 18),
+      },
+    });
+  } catch (ledgerErr: any) {
+    // Refuse to hand back a signature we can't account for.
+    console.error('[x402-sign] ledger insert failed', ledgerErr);
+    return c.json({
+      error: 'Failed to record signed authorization; signature not returned',
+      code: 'LEDGER_WRITE_FAILED',
+      details: ledgerErr?.message,
+    }, 500);
+  }
+
+  // Bump daily/monthly usage counters (fire-and-forget — limit check already
+  // validated the request; a counter write failure shouldn't block the sign).
+  void limitService.recordUsage(id, amountUsdc).catch((e) => {
+    console.error('[x402-sign] recordUsage failed', e);
+  });
+
+  return c.json({
+    success: true,
+    signature: signed.signature,
+    v: signed.v,
+    r: signed.r,
+    s: signed.s,
+    from: signed.from,
+    to: signed.params.to,
+    value: signed.params.value,
+    chainId: signed.params.chainId,
+    tokenAddress: signed.params.tokenAddress,
+    validAfter: signed.params.validAfter,
+    validBefore: signed.params.validBefore,
+    nonce: signed.params.nonce,
+  });
 });
 
 // ============================================

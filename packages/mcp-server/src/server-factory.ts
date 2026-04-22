@@ -1368,11 +1368,116 @@ export function createMcpServer(
           validAfter?: number;
           nonce?: string;
         };
+        if (chainId === undefined || chainId === null) {
+          throw new Error('chainId is required. 8453 = Base mainnet, 84532 = Base Sepolia. Read it from the 402 challenge\'s `network` field.');
+        }
         const result = await ctx.sly.request(`/v1/agents/${agentId}/x402-sign`, {
           method: 'POST',
-          body: JSON.stringify({ to, value, chainId: chainId || 84532, validBefore, validAfter: validAfter || 0, nonce }),
+          body: JSON.stringify({ to, value, chainId, validBefore, validAfter: validAfter || 0, nonce }),
         });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'x402_build_payment_header': {
+        const { challenge, signed } = args as { challenge: any; signed: any };
+        const value = buildX402PaymentHeader(challenge, signed);
+        return { content: [{ type: 'text', text: JSON.stringify({ header: 'X-PAYMENT', value }, null, 2) }] };
+      }
+
+      case 'x402_fetch': {
+        const {
+          agentId,
+          url,
+          method = 'GET',
+          body,
+          headers = {},
+          maxPrice,
+        } = args as {
+          agentId: string;
+          url: string;
+          method?: string;
+          body?: string;
+          headers?: Record<string, string>;
+          maxPrice?: string;
+        };
+
+        const baseHeaders: Record<string, string> = { 'Accept': 'application/json', ...headers };
+        const firstInit: RequestInit = { method, headers: baseHeaders };
+        if (body !== undefined) firstInit.body = body;
+
+        const firstRes = await fetch(url, firstInit);
+        if (firstRes.status !== 402) {
+          const text = await firstRes.text();
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                paid: false,
+                status: firstRes.status,
+                body: safeParseJson(text),
+              }, null, 2),
+            }],
+          };
+        }
+
+        const challengeText = await firstRes.text();
+        const challenge = safeParseJson(challengeText);
+        const accept = pickX402Accept(challenge);
+        if (!accept) {
+          throw new Error(`402 response has no usable accepts[] entry. Raw: ${challengeText.slice(0, 500)}`);
+        }
+        if (accept.scheme && accept.scheme !== 'exact') {
+          throw new Error(`Unsupported x402 scheme "${accept.scheme}". Only "exact" is supported today.`);
+        }
+        if (maxPrice && BigInt(accept.amount || accept.maxAmountRequired || '0') > BigInt(maxPrice)) {
+          throw new Error(`Challenge amount ${accept.amount || accept.maxAmountRequired} exceeds maxPrice ${maxPrice}. Aborting.`);
+        }
+
+        const chainId = networkToChainId(accept.network);
+        if (!chainId) {
+          throw new Error(`Cannot derive chainId from network "${accept.network}". Supported: base, base-sepolia, eip155:8453, eip155:84532.`);
+        }
+
+        const timeoutSec = Number(accept.maxTimeoutSeconds) > 0 ? Number(accept.maxTimeoutSeconds) : 300;
+        const validBefore = Math.floor(Date.now() / 1000) + timeoutSec;
+        const amount = String(accept.amount ?? accept.maxAmountRequired);
+        const payTo = accept.payTo;
+        if (!payTo || !amount) {
+          throw new Error(`Challenge is missing payTo or amount/maxAmountRequired: ${JSON.stringify(accept)}`);
+        }
+
+        const signed = await ctx.sly.request(`/v1/agents/${agentId}/x402-sign`, {
+          method: 'POST',
+          body: JSON.stringify({ to: payTo, value: amount, chainId, validBefore }),
+        }) as any;
+
+        const headerValue = buildX402PaymentHeader(challenge, signed);
+
+        const secondInit: RequestInit = {
+          method,
+          headers: { ...baseHeaders, 'X-PAYMENT': headerValue },
+        };
+        if (body !== undefined) secondInit.body = body;
+        const secondRes = await fetch(url, secondInit);
+        const secondText = await secondRes.text();
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              paid: secondRes.status >= 200 && secondRes.status < 300,
+              status: secondRes.status,
+              paymentResponseHeader: secondRes.headers.get('x-payment-response') || null,
+              signedAuthorization: {
+                from: signed.from,
+                to: signed.to,
+                value: signed.value,
+                chainId: signed.chainId,
+                nonce: signed.nonce,
+              },
+              body: safeParseJson(secondText),
+            }, null, 2),
+          }],
+        };
       }
 
       case 'agent_fund_eoa': {
@@ -1708,13 +1813,32 @@ export function createMcpServer(
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error: any) {
-    const details = error.details || error.errors || '';
+    // Defensive coercion: never let a non-string message render as "[object Object]".
+    // The SDK always throws Error instances with string messages, but a future non-Error
+    // throw (e.g. a plain object) would otherwise leak through the template literal.
+    let message: string;
+    if (error instanceof Error && typeof error.message === 'string') {
+      message = error.message;
+    } else if (typeof error === 'string') {
+      message = error;
+    } else if (error && typeof error.message === 'string') {
+      message = error.message;
+    } else {
+      try {
+        message = JSON.stringify(error);
+      } catch {
+        message = String(error);
+      }
+    }
+    const code = error?.code ? ` [${error.code}]` : '';
+    const status = error?.status ? ` (HTTP ${error.status})` : '';
+    const details = error?.details || error?.data?.error?.suggestion || error?.errors || '';
     const detailsStr = details ? `\nDetails: ${JSON.stringify(details, null, 2)}` : '';
     return {
       content: [
         {
           type: 'text',
-          text: `Error: ${error.message}${detailsStr}`,
+          text: `Error${code}${status}: ${message}${detailsStr}`,
         },
       ],
       isError: true,
@@ -1723,4 +1847,72 @@ export function createMcpServer(
   });
 
   return server;
+}
+
+// ---------------------------------------------------------------------------
+// x402 envelope helpers (local — no API roundtrip)
+// ---------------------------------------------------------------------------
+
+function safeParseJson(text: string): any {
+  try { return JSON.parse(text); } catch { return text; }
+}
+
+// Return the first usable `accepts[]` entry. Accepts either the full 402 body
+// (with `accepts: [...]`) or a single entry already unwrapped by the caller.
+function pickX402Accept(challenge: any): any | null {
+  if (!challenge || typeof challenge !== 'object') return null;
+  if (Array.isArray(challenge.accepts) && challenge.accepts.length > 0) {
+    return challenge.accepts[0];
+  }
+  if (challenge.scheme && challenge.network) return challenge;
+  return null;
+}
+
+// Map x402's varying network identifiers to a numeric EVM chainId.
+// v1 uses short names ("base", "base-sepolia"); v2 uses CAIP-2 ("eip155:8453").
+function networkToChainId(network: string | undefined): number | null {
+  if (!network) return null;
+  const n = String(network).toLowerCase();
+  if (n === 'base' || n === 'eip155:8453') return 8453;
+  if (n === 'base-sepolia' || n === 'eip155:84532') return 84532;
+  const m = n.match(/^eip155:(\d+)$/);
+  if (m) return Number(m[1]);
+  return null;
+}
+
+// Build the base64-encoded X-PAYMENT value. Matches both v1 and v2 shapes —
+// the payload is identical; only the outer envelope's x402Version / network
+// naming differs. We echo the server's own network string so we don't have
+// to know which form it wants.
+function buildX402PaymentHeader(challenge: any, signed: any): string {
+  const accept = pickX402Accept(challenge) || {};
+  const x402Version =
+    (challenge && typeof challenge === 'object' && challenge.x402Version) || 2;
+  const scheme = accept.scheme || 'exact';
+  const network = accept.network || (signed.chainId === 84532 ? 'base-sepolia' : 'base');
+
+  const envelope = {
+    x402Version,
+    scheme,
+    network,
+    payload: {
+      signature: signed.signature,
+      authorization: {
+        from: signed.from,
+        to: signed.to,
+        value: String(signed.value),
+        validAfter: String(signed.validAfter ?? 0),
+        validBefore: String(signed.validBefore),
+        nonce: signed.nonce,
+      },
+    },
+  };
+
+  // Use Buffer when available (Node), fall back to btoa for edge/browser.
+  const json = JSON.stringify(envelope);
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(json, 'utf8').toString('base64');
+  }
+  // @ts-ignore — btoa exists in Edge/browser runtimes
+  return btoa(unescape(encodeURIComponent(json)));
 }

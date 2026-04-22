@@ -54,12 +54,25 @@ export class SlyClient {
     });
 
     if (!response.ok) {
-      const errorData: any = await response.json().catch(() => ({ 
-        message: response.statusText 
+      const errorData: any = await response.json().catch(() => ({
+        message: response.statusText,
       }));
-      const error = new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
+      // Story 51.2: API returns `{ error: { code, message, suggestion, details } }`.
+      // Legacy routes return `{ error: "string" }`. Handle both.
+      const errField = errorData.error;
+      const message =
+        (typeof errField === 'string' ? errField : errField?.message) ||
+        errorData.message ||
+        `HTTP ${response.status}`;
+      const error = new Error(message);
       (error as any).status = response.status;
       (error as any).data = errorData;
+      (error as any).code =
+        (errField && typeof errField === 'object' ? errField.code : undefined) ||
+        errorData.code;
+      (error as any).details =
+        (errField && typeof errField === 'object' ? errField.details : undefined) ||
+        errorData.details;
       throw error;
     }
 
