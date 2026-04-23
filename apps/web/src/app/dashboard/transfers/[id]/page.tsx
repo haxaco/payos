@@ -415,6 +415,7 @@ export default function TransferDetailPage() {
               : '—';
             const now = Math.floor(Date.now() / 1000);
             const expired = Number.isFinite(validBeforeTs) && validBeforeTs < now;
+            const resource = m.resource && typeof m.resource === 'object' ? m.resource : null;
             return (
               <div className="bg-purple-50 dark:bg-gray-900 rounded-2xl border border-purple-200 dark:border-purple-500/30 p-6">
                 <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-300 mb-1 flex items-center gap-2">
@@ -423,10 +424,60 @@ export default function TransferDetailPage() {
                   <span className="ml-2 inline-flex items-center rounded bg-blue-100 dark:bg-blue-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-700 dark:text-blue-300">
                     {network}
                   </span>
+                  {resource?.marketplace && (
+                    <span className="inline-flex items-center rounded bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                      {resource.marketplace}
+                    </span>
+                  )}
                 </h3>
                 <p className="text-sm text-purple-700 dark:text-gray-400 mb-4">
                   Signed EIP-3009 <code>transferWithAuthorization</code> for an on-chain address outside the Sly ledger (e.g. an agentic.market service).
                 </p>
+
+                {/* Resource — what the agent paid for (vendor + endpoint + description) */}
+                {resource && (resource.url || resource.host) && (
+                  <div className="mb-5 p-4 bg-white/70 dark:bg-gray-800/70 rounded-xl border border-purple-100 dark:border-purple-900">
+                    <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-2 flex items-center gap-2">
+                      <Globe className="h-4 w-4" />
+                      Paid for
+                    </h4>
+                    <dl className="space-y-2 text-sm">
+                      {resource.host && (
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-purple-600 dark:text-gray-400 flex-shrink-0">Vendor</dt>
+                          <dd className="font-mono text-purple-900 dark:text-white truncate">{resource.host}</dd>
+                        </div>
+                      )}
+                      {resource.url && (
+                        <div className="flex justify-between gap-4 items-start">
+                          <dt className="text-purple-600 dark:text-gray-400 flex-shrink-0">Endpoint</dt>
+                          <dd className="flex items-center gap-2 min-w-0">
+                            <span className="inline-flex items-center rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[10px] font-mono text-gray-700 dark:text-gray-300 flex-shrink-0">
+                              {resource.method || 'GET'}
+                            </span>
+                            <a href={resource.url} target="_blank" rel="noopener noreferrer"
+                               className="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline truncate"
+                               title={resource.url}>
+                              {resource.path || resource.url}
+                            </a>
+                          </dd>
+                        </div>
+                      )}
+                      {resource.description && (
+                        <div className="pt-1">
+                          <dt className="text-purple-600 dark:text-gray-400 mb-1">Description</dt>
+                          <dd className="text-xs text-purple-900 dark:text-gray-200">{resource.description}</dd>
+                        </div>
+                      )}
+                      {resource.mime_type && (
+                        <div className="flex justify-between">
+                          <dt className="text-purple-600 dark:text-gray-400">Response type</dt>
+                          <dd className="font-mono text-xs text-purple-900 dark:text-white">{resource.mime_type}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4">
                     <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400 mb-3 flex items-center gap-2">

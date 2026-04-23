@@ -1530,9 +1530,34 @@ export function createMcpServer(
           throw new Error(`Challenge is missing payTo or amount/maxAmountRequired: ${JSON.stringify(accept)}`);
         }
 
+        // Enrich the sign request with resource metadata pulled from the 402
+        // challenge so the ledger row describes WHAT was paid for — not just
+        // the recipient address. Most x402 services include `resource` in the
+        // challenge body; fall back to URL-derived fields if not.
+        const resourceFromChallenge = (challenge && typeof challenge === 'object' && challenge.resource && typeof challenge.resource === 'object')
+          ? challenge.resource : {};
+        let derivedHost: string | null = null;
+        let derivedPath: string | null = null;
+        try {
+          const parsed = new URL(url);
+          derivedHost = parsed.hostname;
+          derivedPath = parsed.pathname;
+        } catch { /* url was malformed — no-op */ }
+        const resourcePayload = {
+          url: resourceFromChallenge.url || url,
+          host: derivedHost,
+          path: derivedPath,
+          method: String(method).toUpperCase(),
+          description: resourceFromChallenge.description || null,
+          mimeType: resourceFromChallenge.mimeType || null,
+          // Heuristic: if the URL is listed on agentic.market, stamp it. A
+          // real marketplace registry could replace this later.
+          marketplace: derivedHost ? marketplaceForHost(derivedHost) : null,
+        };
+
         const signed = await ctx.sly.request(`/v1/agents/${agentId}/x402-sign`, {
           method: 'POST',
-          body: JSON.stringify({ to: payTo, value: amount, chainId, validBefore }),
+          body: JSON.stringify({ to: payTo, value: amount, chainId, validBefore, resource: resourcePayload }),
         }) as any;
 
         const headerValue = buildX402PaymentHeader(challenge, signed);
@@ -1967,6 +1992,28 @@ export function createMcpServer(
 
 function safeParseJson(text: string): any {
   try { return JSON.parse(text); } catch { return text; }
+}
+
+// Best-effort marketplace attribution based on hostname. Agentic.Market is the
+// first "registry of x402 endpoints" we integrate against. Additional known
+// marketplaces can be added here without touching API or dashboard code.
+function marketplaceForHost(host: string): string | null {
+  const h = host.toLowerCase();
+  // Known Agentic.Market listed services — not exhaustive, just the ones
+  // we've verified. A future dynamic registry lookup would replace this.
+  const agenticMarketHosts = new Set([
+    'api.slamai.dev',
+    'stabletravel.dev',
+    'llm.bankr.bot',
+    'api.venice.ai',
+    'api.messari.io',
+    'blockrun.ai',
+    'docs.anthropic.com',
+  ]);
+  if (agenticMarketHosts.has(h) || h.endsWith('.agentic.market') || h === 'agentic.market') {
+    return 'agentic.market';
+  }
+  return null;
 }
 
 // Decode the base64 X-PAYMENT-RESPONSE receipt that x402 facilitators return

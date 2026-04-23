@@ -28,6 +28,12 @@ import { recordObservation } from '../services/kya/observation.js';
 
 const agents = new Hono();
 
+// Extract host from a URL without throwing on malformed input.
+// Used by x402-sign to derive vendor info for ledger enrichment.
+function safeParseHost(url: string): string | null {
+  try { return new URL(url).hostname; } catch { return null; }
+}
+
 // ============================================
 // EFFECTIVE LIMITS CALCULATION
 // ============================================
@@ -2734,6 +2740,11 @@ agents.post('/:id/x402-sign', async (c) => {
     validAfter = 0,
     validBefore,
     nonce,
+    // Optional enrichment so the ledger row describes WHAT was paid for, not
+    // just WHO received money. `x402_fetch` forwards this from the 402
+    // challenge (challenge.resource) so the dashboard can render vendor +
+    // endpoint instead of just a recipient address.
+    resource,
   } = body;
 
   if (!to || !value || !validBefore) {
@@ -2891,7 +2902,18 @@ agents.post('/:id/x402-sign', async (c) => {
       initiated_by_name: ctx.actorName || null,
       amount: amountUsdc,
       currency: 'USDC',
-      description: `external x402 auth — ${to}`,
+      // Prefer a human-readable description when the caller enriched with
+      // resource info; fall back to the raw recipient address.
+      description: (() => {
+        if (resource && typeof resource === 'object') {
+          const host = resource.host || (resource.url ? safeParseHost(resource.url) : null);
+          const desc = resource.description ? String(resource.description).slice(0, 80) : null;
+          if (host && desc) return `${host} — ${desc}`;
+          if (host) return `${host}${resource.path ? resource.path : ''}`;
+          if (desc) return desc;
+        }
+        return `external x402 auth — ${to}`;
+      })(),
       settlement_network: chainIdNum === 8453 ? 'base' : chainIdNum === 84532 ? 'base-sepolia' : `eip155:${chainIdNum}`,
       protocol_metadata: {
         protocol: 'x402',
@@ -2905,6 +2927,18 @@ agents.post('/:id/x402-sign', async (c) => {
         valid_before: signed.params.validBefore,
         nonce: signed.params.nonce,
         signature_prefix: String(signed.signature).slice(0, 18),
+        // Carry the resource block into the ledger when the caller provided
+        // it. Dashboard reads this to show "what was paid for" instead of a
+        // bare recipient address.
+        resource: resource && typeof resource === 'object' ? {
+          url: resource.url || null,
+          host: resource.host || (resource.url ? safeParseHost(resource.url) : null),
+          path: resource.path || null,
+          method: resource.method || null,
+          description: resource.description || null,
+          mime_type: resource.mimeType || resource.mime_type || null,
+          marketplace: resource.marketplace || null,
+        } : null,
       },
     }).select('id').single();
     if (ledgerErr || !insertedRow?.id) {
