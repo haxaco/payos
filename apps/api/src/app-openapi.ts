@@ -19,6 +19,10 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 // ---- migrated protocol routers ----
 import x402OpenAPIRouter from './routes/openapi/x402.js';
 import ucpOpenAPIRouter from './routes/openapi/ucp.js';
+import ucpCheckoutOpenAPIRouter from './routes/openapi/ucp-checkout.js';
+import ucpOrdersOpenAPIRouter from './routes/openapi/ucp-orders.js';
+import ucpIdentityOpenAPIRouter from './routes/openapi/ucp-identity.js';
+import ucpMerchantsOpenAPIRouter from './routes/openapi/ucp-merchants.js';
 import acpOpenAPIRouter from './routes/openapi/acp.js';
 import ap2OpenAPIRouter from './routes/openapi/ap2.js';
 import a2aOpenAPIRouter from './routes/openapi/a2a.js';
@@ -50,6 +54,10 @@ export function buildOpenAPIApp(): OpenAPIHono {
   // Mount migrated routers under their real paths
   app.route('/v1/x402', x402OpenAPIRouter);
   app.route('/v1/ucp', ucpOpenAPIRouter);
+  app.route('/v1/ucp/checkouts', ucpCheckoutOpenAPIRouter);
+  app.route('/v1/ucp/orders', ucpOrdersOpenAPIRouter);
+  app.route('/v1/ucp/identity', ucpIdentityOpenAPIRouter);
+  app.route('/v1/ucp/merchants', ucpMerchantsOpenAPIRouter);
   app.route('/v1/acp', acpOpenAPIRouter);
   app.route('/v1/ap2', ap2OpenAPIRouter);
   app.route('/v1/a2a', a2aOpenAPIRouter);
