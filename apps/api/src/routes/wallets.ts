@@ -208,6 +208,31 @@ function getTokenContract(currency: string, blockchain: string): string | null {
   return contracts[blockchain.toUpperCase()] || null;
 }
 
+// Read on-chain USDC for an EVM address on Base mainnet or Base Sepolia.
+// Picked by the WALLET's own environment column (not process env) so a
+// test-env wallet queried from a production deploy reads Sepolia, and
+// vice versa. Returns null on any RPC error so callers can fall back.
+const USDC_BASE_MAINNET = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const USDC_BASE_SEPOLIA = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+async function readOnchainUsdc(address: string, env: 'live' | 'test'): Promise<number | null> {
+  try {
+    const rpcUrl = env === 'live' ? 'https://mainnet.base.org' : 'https://sepolia.base.org';
+    const usdc = env === 'live' ? USDC_BASE_MAINNET : USDC_BASE_SEPOLIA;
+    const data = '0x70a08231' + '0'.repeat(24) + address.slice(2).toLowerCase();
+    const res = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: usdc, data }, 'latest'] }),
+    });
+    const json: any = await res.json();
+    if (!json?.result) return null;
+    return parseInt(json.result, 16) / 1e6;
+  } catch (e) {
+    console.warn(`[wallets] on-chain read failed for ${address} on ${env}:`, e);
+    return null;
+  }
+}
+
 // ============================================
 // Routes
 // ============================================
@@ -814,6 +839,33 @@ app.get('/:id', async (c) => {
       return c.json({ error: 'Wallet not found' }, 404);
     }
 
+    // For agent_eoa wallets, chain IS the ledger. Sync on-chain USDC
+    // synchronously and await the DB update before returning so the
+    // caller never sees a stale zero balance. Non-fatal on RPC error —
+    // fall back to whatever balance is currently in the DB.
+    const walletRow = wallet as any;
+    if (walletRow.wallet_type === 'agent_eoa' && walletRow.wallet_address) {
+      const env: 'live' | 'test' = walletRow.environment === 'live' ? 'live' : 'test';
+      const onchain = await readOnchainUsdc(walletRow.wallet_address, env);
+      if (onchain !== null) {
+        const nowIso = new Date().toISOString();
+        await (supabase.from('wallets') as any)
+          .update({
+            balance: onchain,
+            last_synced_at: nowIso,
+            sync_data: {
+              ...(walletRow.sync_data || {}),
+              on_chain_usdc: String(onchain),
+              synced_at: nowIso,
+            },
+          })
+          .eq('id', id)
+          .eq('tenant_id', ctx.tenantId);
+        walletRow.balance = onchain;
+        walletRow.last_synced_at = nowIso;
+      }
+    }
+
     // Fetch recent transactions involving this wallet
     const { data: recentTxs } = await supabase
       .from('transfers')
@@ -826,7 +878,7 @@ app.get('/:id', async (c) => {
 
     // Format response
     const response = {
-      ...mapWalletFromDb(wallet),
+      ...mapWalletFromDb(walletRow),
       recentTransactions: recentTxs?.map(tx => ({
         id: tx.id,
         fromAccountId: tx.from_account_id,
@@ -919,19 +971,9 @@ app.get('/:id/balance', async (c) => {
             onChainBalance = formatted.toString();
           } else {
             const walletEnv: 'live' | 'test' = walletRecord.environment === 'live' ? 'live' : 'test';
-            const rpcUrl = walletEnv === 'live' ? 'https://mainnet.base.org' : 'https://sepolia.base.org';
-            const usdcAddr = walletEnv === 'live'
-              ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
-              : '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-            const data = '0x70a08231' + '0'.repeat(24) + wallet.wallet_address.slice(2).toLowerCase();
-            const res = await fetch(rpcUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: usdcAddr, data }, 'latest'] }),
-            });
-            const json: any = await res.json();
-            if (json?.result) {
-              onChainBalance = (parseInt(json.result, 16) / 1e6).toString();
+            const onchain = await readOnchainUsdc(wallet.wallet_address, walletEnv);
+            if (onchain !== null) {
+              onChainBalance = String(onchain);
             }
           }
         }

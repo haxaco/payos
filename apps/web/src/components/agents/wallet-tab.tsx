@@ -69,29 +69,54 @@ function decisionBadge(decision: string) {
 
 export function WalletTab({ agentId }: WalletTabProps) {
   const api = useApiClient();
+  const { apiEnvironment } = useApiConfig();
 
   // ── Wallet data ──
   // Fetches the full wallet envelope for this agent. We render every entry
   // in `all_wallets` uniformly so the Wallet tab looks the same across
   // agents regardless of which wallet types they have provisioned.
+  // apiEnvironment is in the queryKey so flipping test↔live refetches
+  // (the API filters by env and returns a different set per env).
   const { data: walletData, isLoading: walletLoading } = useTanstackQuery({
-    queryKey: ['agent-wallet', agentId],
+    queryKey: ['agent-wallet', agentId, apiEnvironment],
     queryFn: async () => {
       if (!api) return null;
       const raw: any = await api.agents.getWallet(agentId);
-      const unwrapped = raw?.data?.data ?? raw?.data ?? raw;
-      if (!unwrapped || (typeof unwrapped === 'object' && unwrapped.data === null)) return null;
-      return unwrapped;
+      // api-client returns the full envelope { success, data }. Unwrap once.
+      // Trust what the API returns — don't collapse `data: null` into null
+      // here; downstream code handles the empty case with a helpful banner.
+      return (raw?.data ?? raw) as any;
     },
     enabled: !!api,
   });
 
-  const allWallets: any[] = walletData?.all_wallets || (walletData?.id ? [walletData] : []);
+  // ── Agent detail (for environment mismatch banner) ──
+  // Lets us tell "agent has no wallets in THIS env" from "agent truly has
+  // no wallets anywhere" — very different UX.
+  const { data: agentData } = useTanstackQuery({
+    queryKey: ['agent-detail-env', agentId, apiEnvironment],
+    queryFn: async () => {
+      if (!api) return null;
+      try {
+        const raw: any = await api.agents.get(agentId);
+        return raw?.data ?? raw ?? null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!api,
+    staleTime: 60_000,
+  });
+
+  const allWallets: any[] =
+    walletData?.all_wallets ??
+    (walletData?.id && walletData?.wallet_type ? [walletData] : []);
   const primaryCustodialWallet = walletData?.id && walletData?.wallet_type !== 'agent_eoa' ? walletData : null;
+  const agentEnvironment: string | undefined = agentData?.environment;
 
   // ── Exposures data ──
   const { data: exposuresData, isLoading: exposuresLoading } = useTanstackQuery({
-    queryKey: ['agent-exposures', agentId],
+    queryKey: ['agent-exposures', agentId, apiEnvironment],
     queryFn: async () => {
       if (!api) return [];
       const raw = await api.agents.getExposures(agentId);
@@ -106,7 +131,7 @@ export function WalletTab({ agentId }: WalletTabProps) {
   const [decisionFilter, setDecisionFilter] = useState<string>('all');
 
   const { data: evaluationsRaw, isLoading: evalsLoading } = useTanstackQuery({
-    queryKey: ['agent-evaluations', agentId, evalPage],
+    queryKey: ['agent-evaluations', agentId, evalPage, apiEnvironment],
     queryFn: async () => {
       if (!api) return { data: [], total: 0 };
       const raw = await api.agents.getEvaluations(agentId, { page: evalPage, limit: 20 });
@@ -162,7 +187,12 @@ export function WalletTab({ agentId }: WalletTabProps) {
           through the same card component, regardless of type. Cards link
           through to /dashboard/wallets/[id] (same destination as the main
           list), so Deposit/Withdraw/Freeze/Balance behave identically. */}
-      <AgentWalletsGrid agentId={agentId} wallets={allWallets} />
+      <AgentWalletsGrid
+        agentId={agentId}
+        wallets={allWallets}
+        dashboardEnv={apiEnvironment}
+        agentEnv={agentEnvironment}
+      />
 
       {/* Contract policy config — only when the agent has a custodial wallet
           that accepts on-ledger policies. EOAs govern spend via KYA limits
@@ -196,9 +226,19 @@ export function WalletTab({ agentId }: WalletTabProps) {
 // custodial, etc.) fold into the shared layout instead of branching into
 // bespoke components, so the Wallet tab looks the same across agents.
 
-function AgentWalletsGrid({ agentId, wallets }: { agentId: string; wallets: any[] }) {
+function AgentWalletsGrid({
+  agentId,
+  wallets,
+  dashboardEnv,
+  agentEnv,
+}: {
+  agentId: string;
+  wallets: any[];
+  dashboardEnv?: string;
+  agentEnv?: string;
+}) {
   if (!wallets || wallets.length === 0) {
-    return <AgentEmptyWalletsCta agentId={agentId} />;
+    return <AgentEmptyWalletsCta agentId={agentId} dashboardEnv={dashboardEnv} agentEnv={agentEnv} />;
   }
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -209,9 +249,24 @@ function AgentWalletsGrid({ agentId, wallets }: { agentId: string; wallets: any[
   );
 }
 
-function AgentEmptyWalletsCta({ agentId }: { agentId: string }) {
+function AgentEmptyWalletsCta({
+  agentId,
+  dashboardEnv,
+  agentEnv,
+}: {
+  agentId: string;
+  dashboardEnv?: string;
+  agentEnv?: string;
+}) {
   const api = useApiClient();
   const queryClient = useQueryClient();
+
+  // If the dashboard is viewing one environment and the agent lives in the
+  // other, the "empty wallets" result is misleading — the agent DOES have
+  // wallets, just in the other env. Surface that specifically with a clear
+  // diagnostic banner instead of a generic "no wallets" message.
+  const envMismatch = !!(agentEnv && dashboardEnv && agentEnv !== dashboardEnv);
+
   const provisionMutation = useMutation({
     mutationFn: async () => {
       if (!api) throw new Error('API not initialized');
@@ -223,6 +278,27 @@ function AgentEmptyWalletsCta({ agentId }: { agentId: string }) {
     },
     onError: (err: any) => toast.error(err.message || 'Failed to provision key'),
   });
+
+  if (envMismatch) {
+    return (
+      <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-2xl p-6">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-1">
+              Environment mismatch
+            </div>
+            <div className="text-sm text-amber-800 dark:text-amber-300">
+              This agent is configured for the <strong>{agentEnv}</strong> environment,
+              but the dashboard is currently showing <strong>{dashboardEnv}</strong>.
+              Switch the dashboard environment to see this agent&apos;s wallets.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 text-center">
       <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">

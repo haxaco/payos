@@ -33,18 +33,23 @@ import { SpendingPolicyEditor } from '@/components/wallets/spending-policy-edito
 import { DepositModal } from '@/components/wallets/deposit-modal';
 import { WithdrawModal } from '@/components/wallets/withdraw-modal';
 
-const useWalletBalance = (walletId: string | undefined, authToken: string | null, apiUrl?: string) => {
+const useWalletBalance = (
+    walletId: string | undefined,
+    authToken: string | null,
+    apiUrl?: string,
+    apiEnvironment?: string,
+) => {
     return useQuery({
-        queryKey: ['wallet-balance', walletId],
+        queryKey: ['wallet-balance', walletId, apiEnvironment],
         queryFn: async () => {
             if (!authToken) return null;
+            const headers: Record<string, string> = {
+                Authorization: `Bearer ${authToken}`,
+            };
+            if (apiEnvironment) headers['X-Environment'] = apiEnvironment;
             const response = await fetch(
                 `${apiUrl || ''}/v1/wallets/${walletId}/balance`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                    },
-                }
+                { headers },
             );
             if (!response.ok) return null;
             return response.json();
@@ -74,7 +79,7 @@ export default function WalletDetailPage() {
     const { id } = useParams<{ id: string }>();
     const router = useRouter();
     const api = useApiClient();
-    const { authToken, apiUrl } = useApiConfig();
+    const { authToken, apiUrl, apiEnvironment } = useApiConfig();
     const queryClient = useQueryClient();
     const [timeRange, setTimeRange] = useState('30d');
     const [editingName, setEditingName] = useState(false);
@@ -82,9 +87,10 @@ export default function WalletDetailPage() {
     const [showDepositModal, setShowDepositModal] = useState(false);
     const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
-    // Fetch wallet details
+    // Fetch wallet details. Include env in the queryKey so flipping
+    // test↔live refetches — the API filters wallets by env.
     const { data: walletResponse, isLoading, error } = useQuery({
-        queryKey: ['wallet', id],
+        queryKey: ['wallet', id, apiEnvironment],
         queryFn: async () => {
             if (!api) throw new Error('API client not initialized');
             return api.wallets.get(id);
@@ -95,7 +101,7 @@ export default function WalletDetailPage() {
     const wallet = (walletResponse as any)?.data || walletResponse;
 
     // Fetch on-chain balance
-    const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance(id, authToken, apiUrl);
+    const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance(id, authToken, apiUrl, apiEnvironment);
     const onChain = balanceData?.data?.onChain;
     const syncStatus = balanceData?.data?.syncStatus || 'stale';
 
@@ -304,14 +310,24 @@ export default function WalletDetailPage() {
                                 <div>
                                     <p className="text-blue-100 text-sm font-medium mb-1">Total Balance</p>
                                     <h3 className="text-4xl font-bold">
-                                        {formatCurrency(wallet.balance || 0, wallet.currency || 'USDC')}
+                                        {(() => {
+                                            // For agent_eoa, on-chain IS the ledger — prefer the
+                                            // fresh chain number from /balance over the DB column
+                                            // (which lags by one request cycle in the worst case).
+                                            const walletType = wallet.walletType || wallet.wallet_type;
+                                            const onChainUsd = onChain?.usdc != null ? parseFloat(onChain.usdc) : null;
+                                            const display = walletType === 'agent_eoa' && onChainUsd != null
+                                                ? onChainUsd
+                                                : (wallet.balance || 0);
+                                            return formatCurrency(display, wallet.currency || 'USDC');
+                                        })()}
                                     </h3>
                                 </div>
                                 <Activity className="w-6 h-6 text-blue-200" />
                             </div>
                             <div className="flex items-center gap-2 text-sm text-blue-100">
                                 <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                                Available for use
+                                {(wallet.walletType || wallet.wallet_type) === 'agent_eoa' ? 'Live on-chain' : 'Available for use'}
                             </div>
                         </Card>
 
