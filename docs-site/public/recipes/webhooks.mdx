@@ -1,0 +1,271 @@
+---
+title: "Recipes: Webhooks & events"
+description: "Verify signatures in multiple languages, dedupe, replay from DLQ, tunnel to localhost."
+---
+
+## Verify a webhook in Express (Node)
+
+```ts
+import express from 'express';
+import { verifyWebhook } from '@sly_ai/sdk';
+
+const app = express();
+
+app.post('/webhooks/sly',
+  express.raw({ type: '*/*' }),    // critical — raw body required
+  (req, res) => {
+    let event;
+    try {
+      event = verifyWebhook(
+        req.body,
+        req.headers['x-sly-signature'] as string,
+        process.env.SLY_WEBHOOK_SECRET!,
+      );
+    } catch (e) {
+      return res.status(400).end();
+    }
+
+    processEvent(event).catch(console.error);   // fire-and-forget
+    res.status(202).end();                       // ack fast
+  }
+);
+```
+
+## Verify a webhook in Hono
+
+```ts
+import { Hono } from 'hono';
+import { verifyWebhook } from '@sly_ai/sdk';
+
+const app = new Hono();
+app.post('/webhooks/sly', async (c) => {
+  const rawBody = await c.req.arrayBuffer();
+  const signature = c.req.header('x-sly-signature') ?? '';
+
+  try {
+    const event = verifyWebhook(Buffer.from(rawBody), signature, process.env.SLY_WEBHOOK_SECRET!);
+    queueEvent(event);
+    return c.json({ received: true }, 202);
+  } catch {
+    return c.json({ error: 'invalid signature' }, 400);
+  }
+});
+```
+
+## Verify a webhook in Python
+
+No SDK yet for Python — implement manually:
+
+```python
+import hashlib
+import hmac
+import time
+import json
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+SECRET = os.environ['SLY_WEBHOOK_SECRET']
+
+def verify(raw_body: bytes, header: str, secret: str) -> bool:
+    parts = dict(p.split('=', 1) for p in header.split(','))
+    timestamp = int(parts['t'])
+    signature = parts['v1']
+
+    if abs(time.time() - timestamp) > 300:   # 5-min replay window
+        return False
+
+    expected = hmac.new(
+        secret.encode(),
+        f'{timestamp}.{raw_body.decode()}'.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+@app.route('/webhooks/sly', methods=['POST'])
+def webhook():
+    raw = request.get_data()    # raw bytes, NOT request.json
+    sig = request.headers.get('X-Sly-Signature', '')
+    if not verify(raw, sig, SECRET):
+        abort(400)
+
+    event = json.loads(raw)
+    queue_event(event)
+    return '', 202
+```
+
+## Verify a webhook in Go
+
+```go
+package main
+
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "fmt"
+    "io"
+    "net/http"
+    "os"
+    "strconv"
+    "strings"
+    "time"
+)
+
+func verify(rawBody []byte, header, secret string) bool {
+    parts := map[string]string{}
+    for _, p := range strings.Split(header, ",") {
+        kv := strings.SplitN(p, "=", 2)
+        if len(kv) == 2 {
+            parts[kv[0]] = kv[1]
+        }
+    }
+    ts, err := strconv.ParseInt(parts["t"], 10, 64)
+    if err != nil || time.Now().Unix()-ts > 300 {
+        return false
+    }
+    mac := hmac.New(sha256.New, []byte(secret))
+    fmt.Fprintf(mac, "%d.%s", ts, rawBody)
+    expected := hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(expected), []byte(parts["v1"]))
+}
+
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    raw, _ := io.ReadAll(r.Body)
+    sig := r.Header.Get("X-Sly-Signature")
+    secret := os.Getenv("SLY_WEBHOOK_SECRET")
+    if !verify(raw, sig, secret) {
+        http.Error(w, "invalid", http.StatusBadRequest)
+        return
+    }
+    // queue event for async processing
+    w.WriteHeader(http.StatusAccepted)
+}
+```
+
+## Dedupe events idempotently
+
+At-least-once delivery means the same event may arrive twice. Use `X-Sly-Event-Id` as the idempotency key:
+
+```ts
+// In-memory LRU (simple case)
+const seen = new LRU({ max: 10_000, ttl: 48 * 60 * 60 * 1000 });   // 48h TTL
+
+async function handleEvent(event) {
+  const eventId = event.id;
+  if (seen.has(eventId)) return;
+  seen.set(eventId, true);
+  await processEvent(event);
+}
+```
+
+For multi-instance services use Redis or Postgres instead of in-memory:
+
+```ts
+// Postgres
+const { rowCount } = await db.query(
+  'INSERT INTO processed_events(event_id, at) VALUES ($1, NOW()) ON CONFLICT DO NOTHING',
+  [event.id],
+);
+if (rowCount === 0) return;   // already processed
+await processEvent(event);
+```
+
+Clean the table nightly for events older than 48h.
+
+## Subscribe with wildcards
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "url": "https://hooks.example.com/sly",
+    "events": ["transfer.*", "settlement.*", "ap2.mandate.executed"]
+  }'
+```
+
+Wildcards reduce subscription noise vs. listing every event. `"*"` subscribes to everything (high volume — not recommended in production).
+
+## Replay a failed delivery
+
+```bash
+# List failed deliveries
+curl "https://api.getsly.ai/v1/webhooks/wh_.../deliveries?status=failed" \
+  -H "Authorization: Bearer pk_live_..."
+
+# Replay one
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../deliveries/del_.../replay \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+The replay carries the **same `X-Sly-Event-Id`** — your idempotency dedupe makes this safe.
+
+## Bulk replay from DLQ
+
+```bash
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../replay \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "since": "2026-04-22T00:00:00Z",
+    "until": "2026-04-23T00:00:00Z",
+    "only_failed": true
+  }'
+```
+
+Useful after fixing your endpoint post-incident. Rate-limited at 10/sec to avoid spiking your freshly-recovered service.
+
+## Test webhook delivery
+
+```bash
+# Fires a webhook.test event to your endpoint with valid signature
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../test \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Useful to verify your verification code before depending on real events.
+
+## Tunnel to localhost with ngrok
+
+```bash
+# Start your local server
+npm run dev     # listens on 127.0.0.1:3000
+
+# In another terminal
+ngrok http 3000
+# → https://abc123.ngrok-free.app
+```
+
+Update the webhook URL to the ngrok URL. ngrok URLs rotate on restart unless you have a paid plan; update via `PATCH /v1/webhooks/wh_...`.
+
+## Alternative: Cloudflare Tunnel (stable URL, free)
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+# → https://foo-bar-baz.trycloudflare.com
+```
+
+Stable per-session URL, no login required.
+
+## Handle a stale subscription
+
+Your endpoint has been failing for hours and the webhook is now `paused`:
+
+```bash
+# Resume
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../resume \
+  -H "Authorization: Bearer pk_live_..."
+
+# Then bulk-replay events that piled up while paused
+curl -X POST https://api.getsly.ai/v1/webhooks/wh_.../replay \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "since": "2026-04-22T14:00:00Z" }'
+```
+
+Consider wiring `webhook.dlq` events to on-call paging so you catch pauses immediately.
+
+## See also
+
+- [Webhooks overview](/webhooks/overview)
+- [Event catalog](/webhooks/events)
+- [Signature verification details](/webhooks/signature-verification)
+- [Replay](/webhooks/replay)
+- [Local testing](/webhooks/local-testing)

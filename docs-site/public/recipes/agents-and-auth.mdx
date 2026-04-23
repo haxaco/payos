@@ -1,0 +1,199 @@
+---
+title: "Recipes: Agents & auth"
+description: "Agent lifecycle patterns — auth migration, key rotation, kill-switch, approvals."
+---
+
+## Migrate an agent from `agent_*` to `sess_*` auth
+
+If you started with bearer tokens and want the stronger security of Ed25519 sessions, no downtime required — both auth methods produce identical `RequestContext`.
+
+```ts
+// 1. Provision an Ed25519 keypair on the existing agent
+const { authKey } = await sly.agents.provisionAuthKey(AGENT_ID);
+
+// Save the private key to your secret manager immediately
+storeSecret(`agent/${AGENT_ID}/private-key`, authKey.privateKey);
+
+// 2. Update the agent's runtime to use the session flow
+const agent = new Sly({
+  agentId: AGENT_ID,
+  privateKey: authKey.privateKey,
+  autoReauth: true,
+});
+
+// 3. Once the agent is running on sess_* and stable, revoke the old bearer token
+await sly.agents.rotateToken(AGENT_ID);  // invalidates agent_* token
+```
+
+## Rotate an Ed25519 key without downtime
+
+The agent self-rotates using a signed rotation proof:
+
+```ts
+import * as ed25519 from '@noble/ed25519';
+
+const message = new TextEncoder().encode(`rotate:${AGENT_ID}`);
+const proof = Buffer.from(
+  await ed25519.signAsync(message, currentPrivateKey)
+).toString('base64');
+
+const res = await fetch(`${API}/v1/agents/${AGENT_ID}/auth-keys/rotate`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ proof }),
+});
+const { privateKey: newPrivateKey } = await res.json();
+
+storeSecret(`agent/${AGENT_ID}/private-key`, newPrivateKey);
+// All active sess_* tokens are invalidated instantly — the agent must re-handshake
+```
+
+Schedule rotations monthly (Tier 2+) or weekly (Tier 3). See [Ed25519 keypair auth](/agents/ed25519-keypair-auth).
+
+## Kill-switch: freeze an agent wallet immediately
+
+Incident response — stop spending without breaking auth:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/freeze \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "reason": "Unusual spending pattern at 14:22 UTC — investigating" }'
+```
+
+Agent can still authenticate, read balances, and receive push events. Spending attempts return `403 WALLET_FROZEN`.
+
+Unfreeze when cleared:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/unfreeze \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "acknowledgment": "Reviewed — false alarm, resuming" }'
+```
+
+For full revocation (can't even authenticate), `DELETE /v1/agents/:id/auth-keys`.
+
+## Check wallet policy before spending
+
+Dry-run a transaction to see if it would succeed — useful for UI feedback before committing:
+
+```ts
+const decision = await sly.agentWallets.evaluatePolicy({
+  agentWalletId: WALLET_ID,
+  merchant_id: 'mer_aws',
+  amount: '300.00',
+  currency: 'USD',
+});
+
+if (decision.decision === 'allow') {
+  // safe to proceed
+} else if (decision.decision === 'require_approval') {
+  await notifyApprover(decision.next_step);
+} else {
+  console.log('Would be blocked:', decision.reasons);
+}
+```
+
+No state changes — pure evaluation against the policy engine.
+
+## Approve a pending spend
+
+```ts
+// Approver view: list pending
+const pending = await sly.approvals.list({ status: 'pending' });
+
+// Approve
+await sly.approvals.approve(approvalId, {
+  comment: 'Expected monthly AWS bill — matches forecast',
+});
+
+// Or reject
+await sly.approvals.reject(approvalId, {
+  reason: 'Amount unusually high — need vendor confirmation',
+});
+```
+
+Notifications wire up via Slack / email if configured. See [approval workflows](/agents/approval-workflows).
+
+## List agents by KYA tier
+
+Find all Tier 0 agents (ripe for upgrade) or Tier 3 (compliance review):
+
+```bash
+curl "https://api.getsly.ai/v1/agents?kya_tier=0&status=active" \
+  -H "Authorization: Bearer pk_live_..."
+
+curl "https://api.getsly.ai/v1/agents?kya_tier=3" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+## Upgrade an agent's KYA tier
+
+Path A: file DSD (Tier 0 → 1):
+
+```ts
+await sly.agents.declare(agentId, {
+  purpose: 'Automated supplier invoice payments',
+  expected_categories: ['saas', 'business_services'],
+  monthly_estimate: '1500.00',
+  accountable_individual: 'jsmith@acme.example',
+});
+```
+
+Path B: request upgrade (Tier 1 → 2):
+
+```ts
+// After 30 days of Tier 1 history, or with enterprise override
+await sly.agents.upgradeTier(agentId, {
+  to_tier: 2,
+  justification: 'Enterprise override — Acme Treasury',
+});
+```
+
+## Check an agent's effective limits
+
+```ts
+const limits = await sly.agents.getLimits(agentId);
+console.log({
+  agentCaps:   limits.agent_limits,       // from KYA tier
+  accountCaps: limits.account_limits,     // from parent KYC tier
+  effective:   limits.effective_limits,   // min of both — this is what applies
+  spentToday:  limits.used_today,
+  spentMonth:  limits.used_this_month,
+});
+```
+
+Effective = `min(agent_kya_cap, parent_account_kyc_cap)`. Agents can't exceed parent account's verification.
+
+## Open a push channel (SSE) for real-time events
+
+No polling; events stream as they happen:
+
+```ts
+const agent = new Sly({ agentId, privateKey, autoReauth: true });
+
+await agent.connect({
+  onTask: async (task) => handleA2ATask(task),
+  onTransfer: async (t) => log('transfer settled', t.id),
+  onApproval: async (a) => notifySlack(a),
+  onAlert: async (a) => pageOps(a),
+  onReconnectRequired: async () => { /* handle server-initiated reconnect */ },
+});
+```
+
+Handles reconnection, `Last-Event-ID` replay, and session refresh. See [persistent SSE](/agents/persistent-sse).
+
+## Query currently-connected agents
+
+```bash
+curl "https://api.getsly.ai/v1/agents?connected=true" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Useful for load-balanced dispatch ("which agents are online right now?").
+
+## See also
+
+- [Agent Platform overview](/agents/overview)
+- [KYA tiers reference](/agents/kya-tiers)
+- [Kill-switch](/agents/kill-switch)
+- [Approval workflows](/agents/approval-workflows)
