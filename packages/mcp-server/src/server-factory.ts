@@ -2061,23 +2061,19 @@ function networkToChainId(network: string | undefined): number | null {
   return null;
 }
 
-// Build the base64-encoded X-PAYMENT value. Matches both v1 and v2 shapes —
-// the payload is identical; only the outer envelope's x402Version / network
-// naming differs. We echo the server's own network string so we don't have
-// to know which form it wants.
+// Build the base64-encoded X-PAYMENT value. Matches the canonical
+// @x402/core@2.x envelope shape exactly — { x402Version, payload:
+// { authorization, signature } }. No top-level scheme or network —
+// those live in the payment requirements (challenge body) which the
+// server already has. SlamAI tolerated the extra fields; stricter
+// facilitators (PaySponge, Coinbase reference) may reject them.
 function buildX402PaymentHeader(challenge: any, signed: any): string {
-  const accept = pickX402Accept(challenge) || {};
   const x402Version =
     (challenge && typeof challenge === 'object' && challenge.x402Version) || 2;
-  const scheme = accept.scheme || 'exact';
-  const network = accept.network || (signed.chainId === 84532 ? 'base-sepolia' : 'base');
 
   const envelope = {
     x402Version,
-    scheme,
-    network,
     payload: {
-      signature: signed.signature,
       authorization: {
         from: signed.from,
         to: signed.to,
@@ -2086,6 +2082,7 @@ function buildX402PaymentHeader(challenge: any, signed: any): string {
         validBefore: String(signed.validBefore),
         nonce: signed.nonce,
       },
+      signature: signed.signature,
     },
   };
 
