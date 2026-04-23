@@ -115,8 +115,9 @@ function ActivityItem({ activity }: { activity: AgentAction }) {
           </div>
           
           {/* Details */}
-          {activity.details.amount && (
+          {activity.details.amount != null && activity.details.amount > 0 && (
             <p className="text-sm text-gray-600 dark:text-gray-400">
+              {activity.status === 'failed' && <span className="text-gray-400 line-through mr-1">attempted</span>}
               {formatCurrency(activity.details.amount, activity.details.currency || 'USD')}
               {activity.details.recipient && (
                 <span> → {activity.details.recipient}</span>

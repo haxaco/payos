@@ -1323,9 +1323,18 @@ function RecentTransfers({ agentId }: { agentId: string }) {
                 </div>
               </div>
               <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {formatCurrency(tx.amount, tx.currency)}
-                </span>
+                {/* Show the attempted amount for failed/cancelled rows
+                    as muted-and-strikethrough so users understand no
+                    money moved there. Completed rows render bold. */}
+                {tx.amount > 0 && (
+                  <span className={
+                    tx.status === 'completed' || tx.status === 'confirmed'
+                      ? 'text-sm font-medium text-gray-900 dark:text-white'
+                      : 'text-xs text-gray-400 line-through'
+                  }>
+                    {formatCurrency(tx.amount, tx.currency)}
+                  </span>
+                )}
                 <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getStatusColor(tx.status)}`}>
                   {tx.status}
                 </span>

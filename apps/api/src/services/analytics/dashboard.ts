@@ -97,13 +97,16 @@ export async function getProtocolDistribution(
   const fxService = getCircleFXService();
 
   // Query x402 payments (transfers with type = 'x402' + deferred payment_intents)
+  // Volume counts money that actually moved — `cancelled` x402 rows are
+  // failed attempts where no settlement occurred, so excluding them.
   const [{ data: x402Transfers }, { data: x402Intents }] = await Promise.all([
     supabase
       .from('transfers')
-      .select('amount, currency')
+      .select('amount, currency, status')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
       .eq('environment', env)
+      .in('status', ['completed', 'pending', 'processing'])
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('payment_intents')

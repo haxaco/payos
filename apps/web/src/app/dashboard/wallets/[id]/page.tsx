@@ -357,7 +357,10 @@ export default function WalletDetailPage() {
                             </div>
                         </Card>
 
-                        <SpendingPolicyEditor wallet={wallet} />
+                        {(wallet.walletType || wallet.wallet_type) === 'agent_eoa'
+                          ? <EoaAutoRefillCard wallet={wallet} />
+                          : <SpendingPolicyEditor wallet={wallet} />
+                        }
                     </div>
 
                     {/* Transactions List */}
@@ -643,5 +646,117 @@ export default function WalletDetailPage() {
                 />
             )}
         </div>
+    );
+}
+
+// ─── Auto-refill summary for agent_eoa wallets ────────────
+// Replaces the SpendingPolicy editor for EOAs. EOAs don't have the
+// `spendingPolicy` JSON that Circle/internal wallets carry — their
+// budget governance is KYA limits + per-agent auto-refill policy.
+// This card reads the policy from /v1/agents/:id/auto-refill and deep-
+// links to the agent page where tenants can edit it inline.
+
+function EoaAutoRefillCard({ wallet }: { wallet: any }) {
+    const { authToken, apiUrl, apiEnvironment } = useApiConfig();
+    const agentId = wallet.managedByAgentId || wallet.managed_by_agent_id;
+
+    const { data: policy, isLoading } = useQuery({
+        queryKey: ['wallet-auto-refill', agentId, apiEnvironment],
+        queryFn: async () => {
+            if (!authToken || !agentId) return null;
+            const headers: Record<string, string> = {
+                Authorization: `Bearer ${authToken}`,
+            };
+            if (apiEnvironment) headers['X-Environment'] = apiEnvironment;
+            const res = await fetch(`${apiUrl}/v1/agents/${agentId}/auto-refill`, { headers });
+            if (!res.ok) return null;
+            const body = await res.json();
+            return body.data || body;
+        },
+        enabled: !!authToken && !!agentId,
+        staleTime: 30_000,
+    });
+
+    const enabled = !!policy?.enabled;
+    const lastStatus: string | null = policy?.lastStatus || null;
+    const statusClass =
+        lastStatus === 'ok'
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+            : lastStatus === 'master_underfunded' || lastStatus === 'capped'
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
+                : lastStatus
+                    ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300';
+
+    return (
+        <Card className="p-6">
+            <div className="flex items-center justify-between mb-4">
+                <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Auto-refill</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Chain-native spending governance for this EOA.
+                    </p>
+                </div>
+                <UIBadge variant={enabled ? 'default' : 'outline'}>
+                    {enabled ? 'ON' : 'OFF'}
+                </UIBadge>
+            </div>
+
+            {isLoading ? (
+                <div className="h-24 bg-gray-100 dark:bg-gray-900 rounded animate-pulse" />
+            ) : enabled ? (
+                <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Threshold</div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                                {formatCurrency(policy?.threshold ?? 0, 'USDC')}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Target</div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                                {formatCurrency(policy?.target ?? 0, 'USDC')}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                Daily cap
+                            </div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                                {formatCurrency(policy?.dailyCap ?? 0, 'USDC')}
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                                {formatCurrency(policy?.dailySpent ?? 0, 'USDC')} used today
+                            </div>
+                        </div>
+                    </div>
+                    {lastStatus && (
+                        <div className={`text-xs px-3 py-1.5 rounded-md ${statusClass}`}>
+                            Last run: {lastStatus}
+                            {policy?.lastError && <div className="opacity-80 mt-0.5">{policy.lastError}</div>}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400 space-y-3">
+                    <p>
+                        Auto-refill is disabled. Enable it to have Sly keep this EOA topped up
+                        from the tenant Circle master whenever it runs low.
+                    </p>
+                </div>
+            )}
+
+            {agentId && (
+                <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-800">
+                    <Link
+                        href={`/dashboard/agents/${agentId}?tab=wallet`}
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                        Configure on agent page →
+                    </Link>
+                </div>
+            )}
+        </Card>
     );
 }
