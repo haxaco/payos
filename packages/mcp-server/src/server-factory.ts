@@ -1504,11 +1504,19 @@ export function createMcpServer(
           };
         }
 
+        // Some facilitators (StableTravel on Vercel, others) return the
+        // challenge only in the `payment-required` header with an empty
+        // body — try the body first, fall through to the header if the body
+        // didn't contain a usable challenge.
         const challengeText = await firstRes.text();
-        const challenge = safeParseJson(challengeText);
+        let challenge = safeParseJson(challengeText);
+        if (!challenge || typeof challenge !== 'object' || !pickX402Accept(challenge)) {
+          const headerChallenge = decodePaymentRequiredHeader(firstRes.headers.get('payment-required'));
+          if (headerChallenge) challenge = headerChallenge;
+        }
         const accept = pickX402Accept(challenge);
         if (!accept) {
-          throw new Error(`402 response has no usable accepts[] entry. Raw: ${challengeText.slice(0, 500)}`);
+          throw new Error(`402 response has no usable accepts[] entry in body or 'payment-required' header. Raw body: ${challengeText.slice(0, 300)}`);
         }
         if (accept.scheme && accept.scheme !== 'exact') {
           throw new Error(`Unsupported x402 scheme "${accept.scheme}". Only "exact" is supported today.`);
@@ -2038,15 +2046,40 @@ function decodeX402PaymentResponse(header: string | null): {
   }
 }
 
-// Return the first usable `accepts[]` entry. Accepts either the full 402 body
-// (with `accepts: [...]`) or a single entry already unwrapped by the caller.
+// Return the first `accepts[]` entry we can actually sign for. Some
+// facilitators offer multiple network options (e.g. StableTravel returns
+// both Base and Solana); we skip entries whose network isn't one of the
+// EVM chains we have USDC configured for.
 function pickX402Accept(challenge: any): any | null {
   if (!challenge || typeof challenge !== 'object') return null;
   if (Array.isArray(challenge.accepts) && challenge.accepts.length > 0) {
-    return challenge.accepts[0];
+    // Prefer a supported EVM entry; fall back to the first entry so the
+    // caller gets a clear error downstream if nothing matches.
+    const supported = challenge.accepts.find((a: any) => {
+      if (!a || typeof a !== 'object') return false;
+      return networkToChainId(a.network) !== null;
+    });
+    return supported || challenge.accepts[0];
   }
   if (challenge.scheme && challenge.network) return challenge;
   return null;
+}
+
+// Parse the base64-encoded `payment-required` response header that some
+// facilitators (StableTravel on Vercel, others following the x402 header-
+// based challenge pattern) use INSTEAD of a JSON body. Returns null if the
+// header is missing or malformed.
+function decodePaymentRequiredHeader(header: string | null | undefined): any | null {
+  if (!header) return null;
+  try {
+    const json = typeof Buffer !== 'undefined'
+      ? Buffer.from(header, 'base64').toString('utf8')
+      // @ts-ignore — atob in edge/browser
+      : decodeURIComponent(escape(atob(header)));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 // Map x402's varying network identifiers to a numeric EVM chainId.
@@ -2061,18 +2094,22 @@ function networkToChainId(network: string | undefined): number | null {
   return null;
 }
 
-// Build the base64-encoded X-PAYMENT value. Matches the canonical
-// @x402/core@2.x envelope shape exactly — { x402Version, payload:
-// { authorization, signature } }. No top-level scheme or network —
-// those live in the payment requirements (challenge body) which the
-// server already has. SlamAI tolerated the extra fields; stricter
-// facilitators (PaySponge, Coinbase reference) may reject them.
+// Build the base64-encoded X-PAYMENT value. We include `scheme` and `network`
+// at the top level because some facilitators (SlamAI) REQUIRE them; others
+// (PaySponge, @x402/core reference) tolerate them. The @x402/core source
+// doesn't include them, but real-world facilitator compatibility beats spec
+// purity — their presence never breaks anything observed in our test matrix.
 function buildX402PaymentHeader(challenge: any, signed: any): string {
+  const accept = pickX402Accept(challenge) || {};
   const x402Version =
     (challenge && typeof challenge === 'object' && challenge.x402Version) || 2;
+  const scheme = accept.scheme || 'exact';
+  const network = accept.network || (signed.chainId === 84532 ? 'base-sepolia' : 'base');
 
   const envelope = {
     x402Version,
+    scheme,
+    network,
     payload: {
       authorization: {
         from: signed.from,
@@ -2086,7 +2123,6 @@ function buildX402PaymentHeader(challenge: any, signed: any): string {
     },
   };
 
-  // Use Buffer when available (Node), fall back to btoa for edge/browser.
   const json = JSON.stringify(envelope);
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(json, 'utf8').toString('base64');
