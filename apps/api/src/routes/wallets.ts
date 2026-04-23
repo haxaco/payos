@@ -866,13 +866,29 @@ app.get('/:id', async (c) => {
       }
     }
 
-    // Fetch recent transactions involving this wallet
-    const { data: recentTxs } = await supabase
+    // Fetch recent transactions involving this wallet. Matching rule
+    // depends on wallet type:
+    //  - agent_eoa: transfers initiated by the agent that manages this
+    //    EOA (external x402 calls use initiated_by_id = agent_id and
+    //    don't set protocol_metadata.wallet_id), OR transfers whose
+    //    external to_address matches this EOA (e.g. auto-refill
+    //    deposits from the Circle master).
+    //  - everything else: legacy wildcard on protocol_metadata.wallet_id.
+    let txQuery = supabase
       .from('transfers')
       .select('id, from_account_id, to_account_id, amount, currency, status, type, created_at, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
-      .eq('environment', getEnv(ctx))
-      .or(`protocol_metadata->>wallet_id.eq.${id}`)
+      .eq('environment', getEnv(ctx));
+    if (walletRow.wallet_type === 'agent_eoa' && walletRow.managed_by_agent_id) {
+      // Match by managing agent OR by on-chain destination address.
+      const addrLower = (walletRow.wallet_address || '').toLowerCase();
+      txQuery = txQuery.or(
+        `initiated_by_id.eq.${walletRow.managed_by_agent_id},protocol_metadata->>to_address.eq.${addrLower}`
+      );
+    } else {
+      txQuery = txQuery.or(`protocol_metadata->>wallet_id.eq.${id}`);
+    }
+    const { data: recentTxs } = await txQuery
       .order('created_at', { ascending: false })
       .limit(20);
 

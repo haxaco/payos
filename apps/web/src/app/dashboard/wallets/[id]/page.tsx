@@ -160,17 +160,24 @@ export default function WalletDetailPage() {
         }
     };
 
-    // Fetch transactions for this wallet
+    // Fetch transactions for this wallet.
+    // Prefer the recentTransactions array the wallet GET handler ships
+    // — it already contains the right set per wallet type (EOA: agent-
+    // initiated x402 + inbound deposits; Circle: policy-wallet activity).
+    // Fall back to the generic transfers list if the shape isn't there.
+    const recentFromWallet = (wallet as any)?.recentTransactions;
     const { data: transactionsResponse, isLoading: txLoading } = useQuery({
-        queryKey: ['wallet-transactions', id],
+        queryKey: ['wallet-transactions', id, apiEnvironment],
         queryFn: async () => {
             if (!api) throw new Error('API client not initialized');
             return api.transfers.list({ walletId: id, limit: 20 });
         },
-        enabled: !!api && !!id,
+        enabled: !!api && !!id && !Array.isArray(recentFromWallet),
     });
 
-    const transactions = (transactionsResponse as any)?.data || [];
+    const transactions = Array.isArray(recentFromWallet)
+        ? recentFromWallet
+        : ((transactionsResponse as any)?.data || []);
 
     const handleCopyAddress = () => {
         if (wallet?.walletAddress) {
