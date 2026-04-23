@@ -4311,11 +4311,11 @@ agents.get('/:id/wallet', async (c) => {
     throw new NotFoundError('Agent', id);
   }
 
-  // Fetch all wallets managed by this agent. Exclude agent_eoa from the
-  // "primary" lookup — the EOA has its own dedicated card on the agent
-  // Wallet tab (X402EoaCard) so treating it as the primary here would
-  // render a second copy. The dashboard's /dashboard/wallets surface
-  // handles the EOA uniformly via its own list.
+  // Fetch all wallets managed by this agent. Returns the complete set in
+  // `all_wallets` so the dashboard tab can render every wallet (Circle,
+  // agent_eoa, etc.) uniformly. The `primary` field excludes agent_eoa
+  // because historical callers treated `primary` as the custodial Circle
+  // wallet; EOAs have their own dedicated surface.
   const { data: wallets } = await supabase
     .from('wallets')
     .select('*')
@@ -4323,15 +4323,15 @@ agents.get('/:id/wallet', async (c) => {
     .eq('tenant_id', ctx.tenantId)
     .eq('environment', getEnv(ctx))
     .eq('status', 'active')
-    .neq('wallet_type', 'agent_eoa')
     .order('created_at', { ascending: false });
 
   if (!wallets || wallets.length === 0) {
     return c.json(null);
   }
 
-  // Return the primary wallet (prefer Tempo, then Circle, then internal)
-  const sorted = [...wallets].sort((a, b) => {
+  // Primary = Tempo > Circle > internal, excluding agent_eoa.
+  const primaryCandidates = (wallets as any[]).filter(w => w.wallet_type !== 'agent_eoa');
+  const sorted = [...primaryCandidates].sort((a, b) => {
     const priority = (w: any) => {
       if (w.provider === 'tempo') return 0;
       if (w.provider === 'circle') return 1;
@@ -4339,6 +4339,30 @@ agents.get('/:id/wallet', async (c) => {
     };
     return priority(a) - priority(b);
   });
+
+  // If the agent has ONLY an EOA (no Circle/Tempo), fall back to returning
+  // null so the frontend's "No Circle wallet" banner still triggers — the
+  // EOA comes through all_wallets regardless.
+  if (sorted.length === 0) {
+    return c.json({
+      id: null,
+      all_wallets: (wallets as any[]).map((w: any) => ({
+        id: w.id,
+        name: w.name,
+        balance: parseFloat(w.balance),
+        currency: w.currency,
+        network: w.network,
+        status: w.status,
+        address: w.wallet_address,
+        wallet_address: w.wallet_address,
+        wallet_type: w.wallet_type,
+        blockchain: w.blockchain,
+        environment: w.environment,
+        provider: w.provider,
+        purpose: w.purpose,
+      })),
+    });
+  }
 
   const primary = sorted[0];
   return c.json({
@@ -4355,7 +4379,7 @@ agents.get('/:id/wallet', async (c) => {
     provider: primary.provider,
     token_contract: primary.token_contract,
     spending_policy: primary.spending_policy,
-    all_wallets: sorted.map((w: any) => ({
+    all_wallets: (wallets as any[]).map((w: any) => ({
       id: w.id,
       name: w.name,
       balance: parseFloat(w.balance),
@@ -4363,9 +4387,12 @@ agents.get('/:id/wallet', async (c) => {
       network: w.network,
       status: w.status,
       address: w.wallet_address,
+      wallet_address: w.wallet_address,
       wallet_type: w.wallet_type,
       blockchain: w.blockchain,
+      environment: w.environment,
       provider: w.provider,
+      purpose: w.purpose,
     })),
   });
 });

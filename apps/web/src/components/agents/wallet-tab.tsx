@@ -31,6 +31,7 @@ import {
   TableRow,
 } from '@sly/ui';
 import { formatCurrency, formatRelativeTime } from '@/lib/utils';
+import Link from 'next/link';
 
 interface WalletTabProps {
   agentId: string;
@@ -70,20 +71,23 @@ export function WalletTab({ agentId }: WalletTabProps) {
   const api = useApiClient();
 
   // ── Wallet data ──
+  // Fetches the full wallet envelope for this agent. We render every entry
+  // in `all_wallets` uniformly so the Wallet tab looks the same across
+  // agents regardless of which wallet types they have provisioned.
   const { data: walletData, isLoading: walletLoading } = useTanstackQuery({
     queryKey: ['agent-wallet', agentId],
     queryFn: async () => {
       if (!api) return null;
       const raw: any = await api.agents.getWallet(agentId);
-      // API returns { success, data } — unwrap and treat null as "no wallet
-      // in this environment" rather than passing a null-data envelope down
-      // (which makes WalletOverviewCard render a phantom $0.00 card).
       const unwrapped = raw?.data?.data ?? raw?.data ?? raw;
       if (!unwrapped || (typeof unwrapped === 'object' && unwrapped.data === null)) return null;
       return unwrapped;
     },
     enabled: !!api,
   });
+
+  const allWallets: any[] = walletData?.all_wallets || (walletData?.id ? [walletData] : []);
+  const primaryCustodialWallet = walletData?.id && walletData?.wallet_type !== 'agent_eoa' ? walletData : null;
 
   // ── Exposures data ──
   const { data: exposuresData, isLoading: exposuresLoading } = useTanstackQuery({
@@ -154,32 +158,18 @@ export function WalletTab({ agentId }: WalletTabProps) {
           enable auto-refill or trigger a fund-eoa call. */}
       <CircleMasterBalanceStrip />
 
-      {/* Primary: external x402 signing address (EOA). This is the wallet an
-          agent actually spends from when paying external x402 services. Shows
-          live on-chain balance — the Sly number IS the chain number. */}
-      <X402EoaCard agentId={agentId} />
+      {/* Unified wallet list — every wallet this agent manages renders
+          through the same card component, regardless of type. Cards link
+          through to /dashboard/wallets/[id] (same destination as the main
+          list), so Deposit/Withdraw/Freeze/Balance behave identically. */}
+      <AgentWalletsGrid agentId={agentId} wallets={allWallets} />
 
-      {/* Secondary: Circle custodial wallet + policy, only when one exists in
-          the current environment. Different wallet, different address, different
-          balance — so we label clearly and hide when absent instead of showing
-          $0.00 which reads as "agent is broke." */}
-      {walletData ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <WalletOverviewCard wallet={walletData} agentId={agentId} />
-          <ContractPolicyConfig wallet={walletData} agentId={agentId} />
-        </div>
-      ) : (
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
-          <div className="flex items-start gap-2">
-            <Info className="h-4 w-4 text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5" />
-            <div className="text-sm">
-              <div className="font-medium text-gray-900 dark:text-gray-200">No Circle custodial wallet in this environment</div>
-              <div className="text-gray-500 dark:text-gray-400 mt-0.5">
-                This agent doesn't have a Circle-managed wallet for the current environment. External x402 spend uses the on-chain EOA above — no Circle wallet required.
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Contract policy config — only when the agent has a custodial wallet
+          that accepts on-ledger policies. EOAs govern spend via KYA limits
+          and auto-refill config (shown inline on the EOA card itself), not
+          via the off-chain spending_policy JSON. */}
+      {primaryCustodialWallet && (
+        <ContractPolicyConfig wallet={primaryCustodialWallet} agentId={agentId} />
       )}
 
       {/* Counterparty Exposures */}
@@ -200,7 +190,287 @@ export function WalletTab({ agentId }: WalletTabProps) {
   );
 }
 
-// ─── Section A: Wallet Overview Card ───────────────────
+// ─── Unified Agent Wallets Grid ────────────────────────
+// Renders every wallet an agent owns through the same card shell. Type-
+// specific details (on-chain balance + auto-refill for EOAs, freeze for
+// custodial, etc.) fold into the shared layout instead of branching into
+// bespoke components, so the Wallet tab looks the same across agents.
+
+function AgentWalletsGrid({ agentId, wallets }: { agentId: string; wallets: any[] }) {
+  if (!wallets || wallets.length === 0) {
+    return <AgentEmptyWalletsCta agentId={agentId} />;
+  }
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {wallets.map((w) => (
+        <AgentWalletCard key={w.id} wallet={w} agentId={agentId} />
+      ))}
+    </div>
+  );
+}
+
+function AgentEmptyWalletsCta({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  const provisionMutation = useMutation({
+    mutationFn: async () => {
+      if (!api) throw new Error('API not initialized');
+      return api.agents.provisionEvmKey(agentId);
+    },
+    onSuccess: () => {
+      toast.success('EVM signing key provisioned');
+      queryClient.invalidateQueries({ queryKey: ['agent-wallet', agentId] });
+    },
+    onError: (err: any) => toast.error(err.message || 'Failed to provision key'),
+  });
+  return (
+    <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 text-center">
+      <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+        This agent has no wallets provisioned in this environment.
+      </div>
+      <Button
+        size="sm"
+        onClick={() => provisionMutation.mutate()}
+        disabled={provisionMutation.isPending}
+      >
+        {provisionMutation.isPending ? 'Provisioning…' : 'Provision x402 signing key'}
+      </Button>
+    </div>
+  );
+}
+
+// Type-aware labels for card header & subtitle.
+function walletTypeLabels(wallet: any): { title: string; subtitle: string } {
+  const env = wallet.environment === 'live' ? 'Base mainnet' : 'Base Sepolia';
+  switch (wallet.wallet_type) {
+    case 'agent_eoa':
+      return {
+        title: wallet.name || 'x402 signing EOA',
+        subtitle: `External x402 signing · ${env}`,
+      };
+    case 'circle_custodial':
+      return {
+        title: wallet.name || 'Circle Custodial Wallet',
+        subtitle: 'Circle-managed off-chain balance',
+      };
+    case 'internal':
+      return {
+        title: wallet.name || 'Sly Internal Wallet',
+        subtitle: 'Sly-internal ledger (no on-chain presence)',
+      };
+    case 'tempo':
+      return {
+        title: wallet.name || 'Tempo Wallet',
+        subtitle: 'Tempo MPP streaming wallet',
+      };
+    case 'smart_wallet':
+      return {
+        title: wallet.name || 'Smart Wallet',
+        subtitle: `Coinbase Smart Wallet (ERC-4337) · ${env}`,
+      };
+    default:
+      return {
+        title: wallet.name || 'Wallet',
+        subtitle: wallet.purpose || wallet.wallet_type || '',
+      };
+  }
+}
+
+function AgentWalletCard({ wallet, agentId }: { wallet: any; agentId: string }) {
+  const api = useApiClient();
+  const apiFetch = useApiFetch();
+  const { apiUrl } = useApiConfig();
+  const queryClient = useQueryClient();
+  const { title, subtitle } = walletTypeLabels(wallet);
+  const isAgentEoa = wallet.wallet_type === 'agent_eoa';
+  const isCircle = wallet.wallet_type === 'circle_custodial';
+  const isFrozen = wallet.status === 'frozen';
+  const address: string | null = wallet.wallet_address || wallet.address || null;
+  const scanBase = wallet.environment === 'live' ? 'https://basescan.org' : 'https://sepolia.basescan.org';
+
+  // For EOAs: poll on-chain USDC directly. For everything else: use the
+  // wallets balance endpoint (which syncs from Circle / whatever upstream).
+  const { data: onchainUsdc, refetch: refetchBalance, isFetching } = useTanstackQuery({
+    queryKey: ['agent-wallet-balance', wallet.id, address, wallet.environment],
+    queryFn: async () => {
+      if (!address) return parseFloat(wallet.balance ?? 0);
+      if (isAgentEoa) {
+        const rpc = wallet.environment === 'live' ? 'https://mainnet.base.org' : 'https://sepolia.base.org';
+        const usdc = wallet.environment === 'live'
+          ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+          : '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+        const data = `0x70a08231000000000000000000000000${address.slice(2).toLowerCase()}`;
+        const res = await fetch(rpc, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: usdc, data }, 'latest'] }),
+        });
+        const json = await res.json();
+        if (!json.result) return null;
+        return parseInt(json.result, 16) / 1e6;
+      }
+      // Non-EOA: hit the wallets balance endpoint
+      const res = await apiFetch(`${apiUrl}/v1/wallets/${wallet.id}/balance`);
+      if (!res.ok) return parseFloat(wallet.balance ?? 0);
+      const body = await res.json();
+      const onChain = body?.data?.onChain?.usdc;
+      return onChain != null ? parseFloat(onChain) : parseFloat(body?.data?.balance ?? 0);
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
+  const freezeMutation = useMutation({
+    mutationFn: async () => {
+      if (!api) throw new Error('API not initialized');
+      return isFrozen ? api.agents.unfreezeWallet(agentId) : api.agents.freezeWallet(agentId);
+    },
+    onSuccess: () => {
+      toast.success(isFrozen ? 'Wallet unfrozen' : 'Wallet frozen');
+      queryClient.invalidateQueries({ queryKey: ['agent-wallet', agentId] });
+    },
+    onError: (err: any) => toast.error(err.message || 'Failed to update wallet status'),
+  });
+
+  const handleFreezeToggle = () => {
+    const action = isFrozen ? 'unfreeze' : 'freeze';
+    if (!confirm(`Are you sure you want to ${action} this wallet?`)) return;
+    freezeMutation.mutate();
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      {isFrozen && (
+        <div className="mb-4 -mt-2 -mx-2 px-4 py-2 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+          <span className="text-sm font-medium text-amber-800 dark:text-amber-200">Wallet is frozen — all transactions are blocked</span>
+        </div>
+      )}
+
+      <div className="flex items-start justify-between mb-1">
+        <div className="min-w-0">
+          <Link
+            href={`/dashboard/wallets/${wallet.id}`}
+            className="text-lg font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+          >
+            {title}
+          </Link>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Badge variant="outline" className="text-[10px]">{wallet.wallet_type}</Badge>
+          <Badge variant={isFrozen ? 'warning' : 'success'}>{wallet.status || 'active'}</Badge>
+          {(isAgentEoa || isCircle) && (
+            <button
+              onClick={() => refetchBalance()}
+              disabled={isFetching}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+              title="Refresh balance"
+            >
+              <RefreshCwIcon className={isFetching ? 'animate-spin' : ''} />
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">{subtitle}</p>
+
+      {/* Balance */}
+      <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+          {isAgentEoa ? 'On-chain USDC' : 'Balance'}
+        </div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+          {onchainUsdc == null
+            ? '—'
+            : formatCurrency(onchainUsdc, wallet.currency || 'USDC')}
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          {wallet.currency || 'USDC'}
+          {isAgentEoa && address && ' · live from chain'}
+        </div>
+      </div>
+
+      {/* Address block — for any wallet with an on-chain address */}
+      {address && !address.startsWith('internal://') && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Address</div>
+            <a
+              href={`${scanBase}/address/${address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              View ↗
+            </a>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <code className="font-mono text-xs text-gray-900 dark:text-white truncate">{truncateAddress(address)}</code>
+            <button
+              onClick={() => copyToClipboard(address)}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex-shrink-0"
+              title="Copy full address"
+            >
+              <Copy className="h-3.5 w-3.5 text-gray-400" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-refill config lives with the EOA since that's the wallet it
+          operates on. Circle custodial wallets use their own spending policy
+          instead (rendered in ContractPolicyConfig below the grid). */}
+      {isAgentEoa && (
+        <div className="mb-4">
+          <AutoRefillPanel agentId={agentId} onchainUsdc={onchainUsdc ?? null} />
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="pt-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between">
+        <Link
+          href={`/dashboard/wallets/${wallet.id}`}
+          className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          Open detail →
+        </Link>
+        {isCircle && (
+          <Button
+            variant={isFrozen ? 'default' : 'outline'}
+            size="sm"
+            onClick={handleFreezeToggle}
+            disabled={freezeMutation.isPending}
+            className={!isFrozen ? 'text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-950' : ''}
+          >
+            {isFrozen ? (
+              <>
+                <Play className="h-4 w-4 mr-1" />
+                {freezeMutation.isPending ? 'Unfreezing…' : 'Unfreeze'}
+              </>
+            ) : (
+              <>
+                <Snowflake className="h-4 w-4 mr-1" />
+                {freezeMutation.isPending ? 'Freezing…' : 'Freeze'}
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RefreshCwIcon({ className }: { className?: string }) {
+  return (
+    <svg className={`h-4 w-4 text-gray-400 ${className || ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+      <path d="M3 21v-5h5" />
+    </svg>
+  );
+}
+
+// ─── Section A: Wallet Overview Card (legacy, kept for reference) ─────
 
 function WalletOverviewCard({ wallet, agentId }: { wallet: any; agentId: string }) {
   const api = useApiClient();

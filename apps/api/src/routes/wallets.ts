@@ -860,7 +860,7 @@ app.get('/:id/balance', async (c) => {
 
     const { data: wallet, error } = await supabase
       .from('wallets')
-      .select('id, balance, currency, wallet_address, last_synced_at, sync_data, sync_enabled')
+      .select('id, balance, currency, wallet_address, last_synced_at, sync_data, sync_enabled, wallet_type, environment, blockchain, provider_wallet_id, token_contract')
       .eq('id', walletId)
       .eq('tenant_id', ctx.tenantId)
       .single();
