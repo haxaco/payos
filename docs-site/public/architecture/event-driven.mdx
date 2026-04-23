@@ -1,0 +1,182 @@
+---
+title: "Event-driven architecture"
+description: "Webhooks as the primary signal. The simplest shape that scales for most integrations."
+---
+
+Most payments backends are fundamentally event-driven: something happens (transfer settles, mandate executes, dispute opens), a webhook fires, your service responds. This is the simplest architecture that handles Sly traffic and scales to thousands of events per second before you need anything fancier.
+
+## The shape
+
+```
+┌─────────┐     POST /webhooks/sly     ┌──────────────────┐
+│  Sly    ├───────────────────────────▶│  Your service    │
+│         │                            │                  │
+│         │     2xx within 10 sec      │  1. Verify sig   │
+│         │◀───────────────────────────│  2. Dedupe       │
+│         │                            │  3. Update DB    │
+│         │                            │  4. Respond 2xx  │
+└─────────┘                            └──────────────────┘
+```
+
+Every event arrives as a POST. Your handler verifies the signature, dedupes by event ID, updates the relevant record in your database, and acks within the 10-second timeout.
+
+## When it's the right fit
+
+- **Prototype or early-stage** — you're still validating the business
+- **Low-to-moderate volume** — a few hundred webhooks per minute is easily handled by a single handler
+- **Simple per-event work** — update a row, send an email, notify a channel
+- **You control latency of downstream actions** — if your DB write takes 30 seconds, this pattern breaks
+
+Past a few thousand events per minute or once per-event work gets expensive, upgrade to [queue-backed workers](/architecture/queue-model).
+
+## Reference handler (Node + Express + Postgres)
+
+```ts
+import express from 'express';
+import { verifyWebhook } from '@sly_ai/sdk';
+import { Pool } from 'pg';
+
+const app = express();
+const db = new Pool({ connectionString: process.env.DATABASE_URL });
+
+app.post('/webhooks/sly',
+  express.raw({ type: '*/*' }),        // raw body for signature verification
+  async (req, res) => {
+    // 1. Verify
+    let event;
+    try {
+      event = verifyWebhook(
+        req.body,
+        req.headers['x-sly-signature'] as string,
+        process.env.SLY_WEBHOOK_SECRET!,
+      );
+    } catch {
+      return res.status(400).end();
+    }
+
+    // 2. Dedupe (event_id unique constraint on a processed_events table)
+    const { rowCount } = await db.query(
+      `INSERT INTO processed_events(event_id, type, processed_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (event_id) DO NOTHING`,
+      [event.id, event.type],
+    );
+    if (rowCount === 0) {
+      return res.status(200).end();      // already processed — ack
+    }
+
+    // 3. Dispatch to handler
+    try {
+      await dispatch(event);
+    } catch (e) {
+      // Rethrowing here causes Sly to retry. Decide carefully — sometimes
+      // you want to log and ack (application bug, not transient), sometimes
+      // you want the retry (downstream outage).
+      console.error('handler failure', e, { eventId: event.id });
+      return res.status(500).end();
+    }
+
+    res.status(200).end();
+  }
+);
+
+async function dispatch(event) {
+  switch (event.type) {
+    case 'transfer.completed':
+      await markOrderPaid(event.data.transfer_id);
+      break;
+    case 'ap2.mandate.executed':
+      await logSubscriptionRenewal(event.data);
+      break;
+    // ... etc
+  }
+}
+```
+
+## Handling retry-vs-ack decisions
+
+Sly retries on non-2xx responses. Your handler decides whether a given failure is **transient** (worth retrying) or **permanent** (ack and log).
+
+| Failure | Handler response | Sly behavior |
+|---|---|---|
+| Signature verification fails | 400 | No retry — assume bad actor |
+| Unknown event type | 200 (ack) | No retry — log and move on |
+| Transient DB connection failure | 500 | Retry with backoff |
+| Downstream API timeout | 500 | Retry with backoff |
+| Application bug (deserialization, null ref) | 200 (ack) + page ops | Log the bug; don't retry into the same bug |
+| Dead-letter (5 attempts exhausted) | N/A | Moves to DLQ; subscribe to `webhook.dlq` |
+
+## Dedupe strategies
+
+Pick one based on scale:
+
+**Small volume (<1k events/day):** in-memory LRU cache, 48h TTL. Simple, fast, no DB roundtrip.
+
+**Medium volume:** Postgres table with unique constraint on `event_id`. The `INSERT ... ON CONFLICT DO NOTHING` pattern shown above works.
+
+**High volume:** Redis with SETNX + TTL. Faster than Postgres for read-mostly access.
+
+```ts
+// Redis version
+const acquired = await redis.set(`event:${event.id}`, '1', { EX: 48 * 3600, NX: true });
+if (!acquired) return res.status(200).end();
+```
+
+## Don't block the ack path
+
+Anything slow moves async. For a quick email or notification, in-handler is fine. For heavy work (re-render a PDF, call an LLM, hit 3 external APIs), either:
+
+1. Enqueue a background job and ack immediately
+2. Upgrade to [queue-backed workers](/architecture/queue-model)
+
+**Golden rule:** respond to the webhook within 200ms on the hot path. Sly's 10-second timeout is the cliff; 200ms is the graceful floor.
+
+## Multi-instance deployments
+
+If you run multiple replicas of your webhook handler behind a load balancer, deduplication must be **shared** across replicas — the in-memory LRU won't catch events handled by a sibling. Use the Postgres or Redis pattern above.
+
+## Testing locally
+
+See [local testing](/webhooks/local-testing) for the tunnel setup. For unit tests, just construct a signed event and POST it to your handler:
+
+```ts
+const rawBody = JSON.stringify(event);
+const timestamp = Math.floor(Date.now() / 1000);
+const signature = crypto.createHmac('sha256', SECRET)
+  .update(`${timestamp}.${rawBody}`).digest('hex');
+
+await request(app)
+  .post('/webhooks/sly')
+  .set('X-Sly-Signature', `t=${timestamp},v1=${signature}`)
+  .send(Buffer.from(rawBody));
+```
+
+## Observability
+
+Log these fields on every webhook receipt:
+- `X-Sly-Event-Id`
+- `X-Sly-Delivery-Id`
+- `event.type`
+- Handler outcome (ack / retry-requested / error)
+- Time-to-ack in ms
+
+Dashboards to build:
+- **Ack latency** — p50/p95/p99 time from request start to 2xx
+- **Retry rate by event type** — identifies which handlers are flaky
+- **Delivery lag** — time from event to webhook receipt (rarely > 2s; growing = Sly-side issue)
+
+## When to outgrow this pattern
+
+Signals to move to [queue-backed workers](/architecture/queue-model):
+
+- Ack p95 approaches 1s
+- Per-event work takes more than a few hundred ms
+- Any per-event external API call
+- Fan-out to multiple downstreams per event
+
+## See also
+
+- [Webhooks overview](/webhooks/overview) — delivery contract
+- [Event catalog](/webhooks/events) — what can fire
+- [Verify signatures](/webhooks/signature-verification) — security detail
+- [Recipes: Webhooks](/recipes/webhooks) — multi-language verification + dedupe

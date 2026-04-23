@@ -1,0 +1,286 @@
+---
+title: "State-machine modeled architecture"
+description: "Model orders, checkouts, and agents as explicit FSMs. Best for complex multi-step commerce."
+---
+
+When your business objects have non-trivial lifecycles — an order goes through cart → checkout → paid → fulfilled → shipped → delivered → disputed — modeling each as an **explicit finite state machine** saves you from a class of bugs that otherwise dominate your codebase.
+
+This pattern works well on top of [event-driven](/architecture/event-driven) or [queue-backed](/architecture/queue-model) handlers: webhooks trigger state transitions, and transitions are validated explicitly.
+
+## The shape
+
+```
+┌─────────────────────────────────────────┐
+│  Your business object (e.g. Order)      │
+│                                         │
+│   ┌──────┐   ┌──────┐   ┌──────┐       │
+│   │ cart │──▶│ paid │──▶│ ship │ ──▶   │
+│   └──────┘   └──────┘   └──────┘       │
+│       │         │          │            │
+│       ▼         ▼          ▼            │
+│   cancelled  refunded   returned        │
+│                                         │
+│  Transitions only via well-defined      │
+│  events. Invalid transitions reject.    │
+└─────────────────────────────────────────┘
+           │
+           │ onTransition
+           ▼
+   ┌──────────────────────────┐
+   │  Side effects            │
+   │   - Persist new state    │
+   │   - Fire domain events   │
+   │   - Enqueue async work   │
+   └──────────────────────────┘
+```
+
+Every state change is an explicit function. You know exhaustively what can happen next at any state.
+
+## When it's the right fit
+
+- **Multi-step commerce flows** — carts, checkouts, orders, shipments
+- **Long-lived agent interactions** — an agent's task progresses through `assigned → accepted → working → delivered → rated`
+- **Regulated flows** — every state change is also a durable audit event
+- **Mandate lifecycles** — `active → paused → revoked`
+- **Anything where "what state are we in?" matters to correctness**
+
+Skip this pattern for ephemeral or stateless work (idempotent upserts, analytics fan-out).
+
+## Define states explicitly
+
+```ts
+// Using xstate
+import { createMachine } from 'xstate';
+
+const orderMachine = createMachine({
+  id: 'order',
+  initial: 'cart',
+  states: {
+    cart: {
+      on: {
+        CHECKOUT_STARTED: 'awaiting_payment',
+        CART_ABANDONED:   'cancelled',
+      },
+    },
+    awaiting_payment: {
+      on: {
+        PAYMENT_SUCCEEDED: 'paid',
+        PAYMENT_FAILED:    'cart',        // return to cart
+        CHECKOUT_EXPIRED:  'cancelled',
+      },
+    },
+    paid: {
+      on: {
+        FULFILLMENT_STARTED: 'fulfilling',
+        REFUND_ISSUED:       'refunded',
+      },
+    },
+    fulfilling: {
+      on: {
+        SHIPPED:        'shipped',
+        FULFILLMENT_FAILED: 'paid',        // retry from paid
+        CANCELLED:      'refunded',
+      },
+    },
+    shipped: {
+      on: {
+        DELIVERED: 'delivered',
+        RETURNED:  'returned',
+      },
+    },
+    delivered: {
+      on: {
+        DISPUTED:       'disputed',
+        REFUND_ISSUED:  'refunded',
+      },
+      type: 'final',
+    },
+    disputed: {
+      on: {
+        DISPUTE_WON:  'delivered',
+        DISPUTE_LOST: 'refunded',
+      },
+    },
+    refunded:  { type: 'final' },
+    returned:  { type: 'final' },
+    cancelled: { type: 'final' },
+  },
+});
+```
+
+Benefits:
+- Invalid transitions (`cart → shipped`) throw immediately
+- Visualizable — xstate has a visualizer that renders the diagram
+- Serializable — store `state` as a column; restore by loading it
+- Exhaustive — you can't forget to handle a state
+
+## Wire webhooks to transitions
+
+```ts
+async function onWebhook(event) {
+  // Find the order this event pertains to
+  const order = await loadOrderByEvent(event);
+  if (!order) return;
+
+  // Derive the state-machine event from the webhook event
+  const machineEvent = toMachineEvent(event);
+  if (!machineEvent) return;
+
+  // Transition
+  const next = orderMachine.transition(order.state, machineEvent);
+
+  if (next.value === order.state) {
+    // No transition — already in this state or invalid transition
+    console.log('no-op', { orderId: order.id, currentState: order.state, event: machineEvent.type });
+    return;
+  }
+
+  // Persist new state + event log
+  await db.transaction(async (tx) => {
+    await tx.query('UPDATE orders SET state=$1, updated_at=NOW() WHERE id=$2',
+      [next.value, order.id]);
+    await tx.query(
+      'INSERT INTO order_events(order_id, from_state, to_state, event_type, event_id) VALUES($1,$2,$3,$4,$5)',
+      [order.id, order.state, next.value, machineEvent.type, event.id],
+    );
+  });
+
+  // Side effects on transition
+  await dispatchSideEffects(order.id, order.state, next.value);
+}
+
+function toMachineEvent(webhookEvent) {
+  switch (webhookEvent.type) {
+    case 'transfer.completed': return { type: 'PAYMENT_SUCCEEDED' };
+    case 'transfer.failed':    return { type: 'PAYMENT_FAILED' };
+    case 'transfer.refunded':  return { type: 'REFUND_ISSUED' };
+    case 'ucp.settlement_completed': return { type: 'PAYMENT_SUCCEEDED' };
+    case 'acp.checkout.expired':     return { type: 'CHECKOUT_EXPIRED' };
+    default: return null;
+  }
+}
+```
+
+## Audit trail for free
+
+Every transition is a row in `order_events`. That's your audit log. For regulated flows, this becomes the compliance record:
+
+```sql
+SELECT * FROM order_events WHERE order_id = '...' ORDER BY created_at;
+```
+
+Returns the full history: who moved to what state, when, and triggered by which webhook event. Preserved forever; never delete.
+
+## Side effects as enqueued jobs
+
+Don't execute side effects inline — enqueue them. The state transition itself is the durable signal:
+
+```ts
+async function dispatchSideEffects(orderId, fromState, toState) {
+  if (toState === 'paid' && fromState === 'awaiting_payment') {
+    await jobQueue.add('send-receipt-email',        { orderId });
+    await jobQueue.add('trigger-fulfillment',       { orderId });
+    await jobQueue.add('update-analytics-funnel',   { orderId, event: 'purchase' });
+  }
+
+  if (toState === 'disputed') {
+    await jobQueue.add('page-support',              { orderId });
+    await jobQueue.add('freeze-downstream-shipping', { orderId });
+  }
+
+  // etc.
+}
+```
+
+Benefits:
+- Side effects run asynchronously; state transition is durable
+- Each side effect has its own retry / DLQ
+- New side effects don't require changing the transition logic
+
+## Compose with agent state
+
+If you're building agents, every agent is itself an FSM:
+
+```
+created → verified → active → frozen → active → revoked
+```
+
+And each A2A task has its own state machine:
+```
+received → accepted (or declined) → in_progress → delivered → rated
+```
+
+Model these explicitly. The Sly platform tracks its own internal state; your state mirrors it, with your business events layered on.
+
+## Handling concurrency
+
+Two webhooks for the same order arriving simultaneously (common after a burst) → use optimistic locking:
+
+```ts
+const result = await db.query(
+  `UPDATE orders
+      SET state = $1, version = version + 1, updated_at = NOW()
+    WHERE id = $2 AND version = $3`,
+  [next.value, order.id, order.version]);
+
+if (result.rowCount === 0) {
+  // Someone else updated — retry from current state
+  return onWebhook(event);
+}
+```
+
+The `version` column on your table guarantees no two concurrent transitions corrupt the state.
+
+## Testing
+
+FSMs are testable by enumerating transitions:
+
+```ts
+test('cart → paid on payment success', () => {
+  const next = orderMachine.transition('cart', { type: 'CHECKOUT_STARTED' });
+  expect(next.value).toBe('awaiting_payment');
+  const paid = orderMachine.transition(next, { type: 'PAYMENT_SUCCEEDED' });
+  expect(paid.value).toBe('paid');
+});
+
+test('cart → paid via invalid event rejected', () => {
+  const next = orderMachine.transition('cart', { type: 'SHIPPED' });
+  expect(next.value).toBe('cart');     // no transition
+  expect(next.changed).toBe(false);
+});
+```
+
+Full coverage of state transitions is achievable in a way raw webhook handlers rarely achieve.
+
+## Downsides
+
+- **Upfront design cost** — FSM has to be right; refactoring states later is painful
+- **Over-engineering risk** — a 3-state CRUD object doesn't need this
+- **Library dependency** — xstate (Node) or similar is an additional dependency; some teams prefer rolling their own state tables
+
+## Recommended libraries
+
+| Language | Library |
+|---|---|
+| JS / TS | `xstate` |
+| Python | `transitions` |
+| Go | `looplab/fsm` |
+| Ruby | `aasm` |
+| Java / Kotlin | Spring Statemachine |
+
+All support visualization, persistence, guards, and side-effect hooks.
+
+## Observability
+
+- **State transition histogram** per day / per object type
+- **Time-in-state** — long-lived `awaiting_payment` = checkout abandonment; long `fulfilling` = shipping issue
+- **Invalid-transition-attempted counter** — high count = webhook-handler bug
+- **State distribution** — snapshot of where your orders are right now
+
+Each of these drives product insight beyond what a raw-DB view gives you.
+
+## See also
+
+- [Event-driven](/architecture/event-driven) — for simple cases where FSM is overkill
+- [Queue-backed](/architecture/queue-model) — the infra layer this pattern builds on
+- [Core concepts: Transfers](/core-concepts/transfers) — Sly's own state machines (transfers, streams, quotes)
