@@ -159,6 +159,7 @@
             "pages": [
               "resources/rate-limits",
               "resources/error-codes",
+              "resources/analytics-and-usage",
               "resources/changelog",
               "resources/status",
               "resources/support"
