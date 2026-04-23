@@ -128,6 +128,7 @@ Every story must meet these criteria before completion:
 ### Agent Custody & External Services ⭐ NEW
 - [Epic 77: BYO Wallet Custody](./epic-77-byo-wallet-custody.md) 🔑 - Session-key delegation + managed providers (Privy/Turnkey/Fireblocks/CDP) + interactive WalletConnect for agent x402 signing
 - [Epic 78: Agentic Credential Vault](./epic-78-agentic-credential-vault.md) 🔐 - Tenant-stored API keys with per-agent grants for non-x402 services (Anthropic, OpenAI, Deepgram, etc.) + unified call dispatcher
+- [Epic 79: API Monetization Gateway](./epic-79-api-monetization-gateway.md) 🛰️ - Thin proxy + OpenAPI ingest that turns any REST API into a paid x402 endpoint without code changes; closes Sponge Gateway feature gap
 - [Epic 80: AgentKit Proof-of-Humanity for x402](./epic-80-agentkit-proof-of-humanity.md) 🧑‍🔬 - World ID / Worldcoin-anchored human-proof signatures for services that require dual auth (Exa + future); extends Epic 78 with `human_attested` custody mode
 
 ### API Monetization ⭐ NEW
