@@ -485,6 +485,150 @@ function WalletBalanceCard({ wallet, authToken, apiEnvironment, apiUrl, onDelete
   );
 }
 
+// ─── Tenant Circle master wallet card ──────────────────
+// Visual shape mirrors WalletBalanceCard so it reads as "just another wallet"
+// in the grid, but it's labeled as tenant-scoped and always rendered first
+// regardless of filters — it's the backstop that funds every agent EOA
+// top-up (manual fund-eoa + auto-refill). Balance comes from the live Circle
+// API via /v1/agents/circle/master-balance; no DB row.
+
+function CircleMasterWalletCard({
+  authToken,
+  apiUrl,
+  apiEnvironment,
+}: {
+  authToken: string | null;
+  apiUrl?: string;
+  apiEnvironment: 'test' | 'live';
+}) {
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ['circle-master-balance', apiEnvironment],
+    queryFn: async () => {
+      if (!authToken) return null;
+      const res = await fetch(`${apiUrl || ''}/v1/agents/circle/master-balance`, {
+        headers: { Authorization: `Bearer ${authToken}`, 'X-Environment': apiEnvironment },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
+      return res.json() as Promise<{
+        usdcAvailable: number;
+        balances?: Array<{ amount: string; currency: string }>;
+        note?: string;
+      }>;
+    },
+    enabled: !!authToken,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const usdc = data?.usdcAvailable ?? null;
+  const chain = apiEnvironment === 'live' ? 'Base mainnet' : 'Base Sepolia';
+  const network = apiEnvironment === 'live' ? 'Live' : 'Sandbox';
+  const unreachable = !!error;
+  const low = usdc != null && usdc < 5;
+
+  const statusDot = unreachable ? 'bg-red-500' : low ? 'bg-yellow-500' : usdc != null ? 'bg-emerald-500' : 'bg-gray-300';
+  const statusLabel = unreachable ? 'Unreachable' : low ? 'Low' : usdc != null ? 'Healthy' : 'Checking';
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow ring-1 ring-emerald-100 dark:ring-emerald-950/40">
+      <div className="flex items-start justify-between mb-4">
+        <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+          <WalletIcon className="h-6 w-6 text-white" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-900 rounded-full border border-gray-100 dark:border-gray-800">
+            <span className={`w-2 h-2 rounded-full ${statusDot}`} />
+            <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">{statusLabel}</span>
+          </div>
+          <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
+            Tenant master
+          </span>
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw className={cn('h-4 w-4 text-gray-400', isFetching && 'animate-spin')} />
+          </button>
+        </div>
+      </div>
+
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Circle master wallet</h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        Tenant-scoped · funds all agent EOA top-ups (manual &amp; auto-refill) · {network} · {chain}
+      </p>
+
+      <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <div className="flex justify-between items-start mb-1">
+          <div className="text-sm text-gray-600 dark:text-gray-400">USDC available</div>
+        </div>
+        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+          {isLoading && usdc == null
+            ? '…'
+            : unreachable
+              ? '—'
+              : usdc == null
+                ? '—'
+                : `$${usdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">USDC</div>
+      </div>
+
+      {unreachable && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg text-xs text-red-800 dark:text-red-300">
+          <div className="font-medium mb-0.5">Circle unreachable</div>
+          <div className="opacity-80">
+            Check that <code className="font-mono">CIRCLE_API_KEY</code> on the API is a Circle Mint / Business Account key
+            (not a W3S Programmable Wallets key) — Payouts endpoints require Mint scope.
+          </div>
+        </div>
+      )}
+
+      {!unreachable && data?.balances && data.balances.length > 1 && (
+        <div className="mb-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">Other currencies</div>
+          <div className="space-y-1">
+            {data.balances
+              .filter((b) => b.currency !== 'USD' && b.currency !== 'USDC' && parseFloat(b.amount) > 0)
+              .map((b) => (
+                <div key={b.currency} className="flex justify-between items-center">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{b.currency}</span>
+                  <span className="font-mono text-sm text-gray-900 dark:text-white">
+                    {parseFloat(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <a
+          href="https://console.circle.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+        >
+          <ArrowDown className="h-4 w-4" />
+          Top up in Circle
+        </a>
+        <div
+          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-900 text-gray-400 text-sm font-medium rounded-lg cursor-not-allowed"
+          title="Withdrawals from the master happen at Circle — not via Sly"
+        >
+          <ArrowUp className="h-4 w-4" />
+          Withdraw
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WalletsPage() {
   const api = useApiClient();
   const { isConfigured, isLoading: isAuthLoading, authToken, apiEnvironment, apiUrl } = useApiConfig();
@@ -917,6 +1061,13 @@ export default function WalletsPage() {
 
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Tenant Circle master — always shown first, bypasses filters. */}
+        <CircleMasterWalletCard
+          authToken={authToken}
+          apiUrl={apiUrl}
+          apiEnvironment={apiEnvironment}
+        />
+
         {loading ? (
           <div className="col-span-full">
             <CardListSkeleton count={6} />
