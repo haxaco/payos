@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery as useTanstackQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useApiClient } from '@/lib/api-client';
+import { useApiClient, useApiFetch, useApiConfig } from '@/lib/api-client';
 import { usePagination } from '@/hooks/usePagination';
 import { toast } from 'sonner';
 import {
@@ -150,6 +150,10 @@ export function WalletTab({ agentId }: WalletTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Tenant master balance strip — preflight visibility before users
+          enable auto-refill or trigger a fund-eoa call. */}
+      <CircleMasterBalanceStrip />
+
       {/* Primary: external x402 signing address (EOA). This is the wallet an
           agent actually spends from when paying external x402 services. Shows
           live on-chain balance — the Sly number IS the chain number. */}
@@ -1102,24 +1106,306 @@ function X402EoaCard({ agentId }: { agentId: string }) {
             </div>
           </div>
 
-          <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg">
+          <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg mb-4">
             <div className="flex items-start gap-2">
               <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-blue-900 dark:text-blue-200">
                 <div className="font-medium mb-1">How to fund this address</div>
                 <div className="text-blue-800 dark:text-blue-300">
-                  Send USDC on the <strong>Base</strong> network to the address above.
-                  Ethereum-mainnet withdrawals will lose most of the amount in gas fees.
-                  No ETH needed — x402 facilitators sponsor settlement gas.
-                </div>
-                <div className="mt-2 text-xs text-blue-700 dark:text-blue-400">
-                  The EOA <em>cannot</em> be refunded via the Circle custodial wallet — those two are isolated.
+                  Send USDC on the <strong>Base</strong> network to the address above, or
+                  enable auto-refill below to top up automatically from the tenant&apos;s
+                  Circle master wallet whenever the balance runs low.
                 </div>
               </div>
             </div>
           </div>
+
+          <AutoRefillPanel agentId={agentId} onchainUsdc={onchainUsdc ?? null} />
         </>
       )}
+    </div>
+  );
+}
+
+// ─── Auto-refill panel ─────────────────────────────────
+// Configures threshold/target/daily cap and shows last run status. Refills
+// flow Circle master → agent EOA and are bounded by KYA limits + a hard
+// per-tick cap (see workers/agent-auto-refill.ts).
+
+type AutoRefillPolicy = {
+  enabled: boolean;
+  threshold: number | null;
+  target: number | null;
+  dailyCap: number | null;
+  dailySpent: number;
+  dailyResetAt: string | null;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+};
+
+function AutoRefillPanel({ agentId, onchainUsdc }: { agentId: string; onchainUsdc: number | null }) {
+  const apiFetch = useApiFetch();
+  const { apiUrl } = useApiConfig();
+  const queryClient = useQueryClient();
+
+  const [editing, setEditing] = useState(false);
+  const [threshold, setThreshold] = useState('0.20');
+  const [target, setTarget] = useState('1.00');
+  const [dailyCap, setDailyCap] = useState('5.00');
+
+  const { data: policy, isLoading } = useTanstackQuery<AutoRefillPolicy | null>({
+    queryKey: ['agent-auto-refill', agentId],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/agents/${agentId}/auto-refill`);
+      if (!res.ok) return null;
+      const body = await res.json();
+      return body.data || body;
+    },
+    refetchInterval: 60_000,
+  });
+
+  useEffect(() => {
+    if (!policy) return;
+    if (policy.threshold != null) setThreshold(String(policy.threshold));
+    if (policy.target != null) setTarget(String(policy.target));
+    if (policy.dailyCap != null) setDailyCap(String(policy.dailyCap));
+    // Only hydrate from server once — edits stay local until saved
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policy?.threshold, policy?.target, policy?.dailyCap]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const body = enabled
+        ? {
+            enabled: true,
+            threshold: parseFloat(threshold),
+            target: parseFloat(target),
+            dailyCap: parseFloat(dailyCap),
+          }
+        : { enabled: false };
+      const res = await apiFetch(`${apiUrl}/v1/agents/${agentId}/auto-refill`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+    onSuccess: (_data, enabled) => {
+      toast.success(enabled ? 'Auto-refill enabled' : 'Auto-refill disabled');
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ['agent-auto-refill', agentId] });
+    },
+    onError: (err: any) => toast.error(err?.message || 'Failed to save policy'),
+  });
+
+  const enabled = !!policy?.enabled;
+  const threshNum = parseFloat(threshold);
+  const targetNum = parseFloat(target);
+  const dailyCapNum = parseFloat(dailyCap);
+  const valid =
+    Number.isFinite(threshNum) && threshNum > 0 &&
+    Number.isFinite(targetNum) && targetNum > threshNum &&
+    Number.isFinite(dailyCapNum) && dailyCapNum > 0;
+
+  const statusColor =
+    policy?.lastStatus === 'ok'
+      ? 'bg-green-50 text-green-800 border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-900'
+      : policy?.lastStatus === 'master_underfunded' || policy?.lastStatus === 'capped'
+        ? 'bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-950/30 dark:text-yellow-300 dark:border-yellow-900'
+        : policy?.lastStatus
+          ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-900'
+          : 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900 dark:text-gray-400 dark:border-gray-800';
+
+  const belowThreshold =
+    onchainUsdc != null &&
+    policy?.threshold != null &&
+    onchainUsdc < policy.threshold;
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Auto-refill</h4>
+            <Badge variant={enabled ? 'default' : 'outline'}>{enabled ? 'ON' : 'OFF'}</Badge>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Sly tops up this EOA from the tenant Circle master whenever USDC falls below threshold.
+          </p>
+        </div>
+        {!editing && !isLoading && (
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            <Pencil className="h-3.5 w-3.5 mr-1" />
+            {enabled ? 'Edit' : 'Configure'}
+          </Button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label htmlFor="ar-threshold" className="text-xs">Threshold (USDC)</Label>
+              <Input
+                id="ar-threshold"
+                value={threshold}
+                onChange={(e) => setThreshold(e.target.value)}
+                placeholder="0.20"
+              />
+              <p className="text-xs text-gray-400 mt-1">Refill when below this</p>
+            </div>
+            <div>
+              <Label htmlFor="ar-target" className="text-xs">Target (USDC)</Label>
+              <Input
+                id="ar-target"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="1.00"
+              />
+              <p className="text-xs text-gray-400 mt-1">Refill up to this</p>
+            </div>
+            <div>
+              <Label htmlFor="ar-daily-cap" className="text-xs">Daily cap (USDC)</Label>
+              <Input
+                id="ar-daily-cap"
+                value={dailyCap}
+                onChange={(e) => setDailyCap(e.target.value)}
+                placeholder="5.00"
+              />
+              <p className="text-xs text-gray-400 mt-1">Max / UTC day</p>
+            </div>
+          </div>
+          {!valid && (
+            <div className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Target must be greater than threshold; all values must be positive numbers.
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => saveMutation.mutate(false)}
+              disabled={saveMutation.isPending || !enabled}
+            >
+              Turn off
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                <X className="h-3.5 w-3.5 mr-1" /> Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => saveMutation.mutate(true)}
+                disabled={!valid || saveMutation.isPending}
+              >
+                <Save className="h-3.5 w-3.5 mr-1" />
+                {saveMutation.isPending ? 'Saving…' : enabled ? 'Save' : 'Enable'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {enabled ? (
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Threshold</div>
+                <div className="text-gray-900 dark:text-white">{formatCurrency(policy?.threshold ?? 0, 'USDC')}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Target</div>
+                <div className="text-gray-900 dark:text-white">{formatCurrency(policy?.target ?? 0, 'USDC')}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Daily cap ({formatCurrency(policy?.dailySpent ?? 0, 'USDC')} used)
+                </div>
+                <div className="text-gray-900 dark:text-white">{formatCurrency(policy?.dailyCap ?? 0, 'USDC')}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Disabled. Enable to have Sly keep this EOA topped up automatically when it runs low.
+            </div>
+          )}
+
+          {enabled && belowThreshold && (
+            <div className="text-xs px-3 py-2 rounded-md bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-900">
+              Balance is below threshold — the next worker tick (within 5 minutes) will refill.
+            </div>
+          )}
+
+          {policy?.lastStatus && (
+            <div className={`text-xs px-3 py-2 rounded-md border ${statusColor}`}>
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Last run: {policy.lastStatus}</span>
+                {policy.lastRunAt && <span>{formatRelativeTime(policy.lastRunAt)}</span>}
+              </div>
+              {policy.lastError && <div className="mt-1 text-xs opacity-80">{policy.lastError}</div>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Circle master balance strip ───────────────────────
+// Tenant-wide preflight — shows whether the Circle master wallet has enough
+// USDC to service refills. If this is $0, both manual fund-eoa and
+// auto-refill will be no-ops regardless of agent config.
+
+function CircleMasterBalanceStrip() {
+  const apiFetch = useApiFetch();
+  const { apiUrl } = useApiConfig();
+
+  const { data, isLoading, error } = useTanstackQuery({
+    queryKey: ['circle-master-balance'],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/agents/circle/master-balance`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<{ usdcAvailable: number; note?: string }>;
+    },
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const usdc = data?.usdcAvailable ?? null;
+  const low = usdc != null && usdc < 5;
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div
+          className={`h-2 w-2 rounded-full ${
+            error ? 'bg-red-500' : usdc == null ? 'bg-gray-300' : low ? 'bg-yellow-500' : 'bg-green-500'
+          }`}
+        />
+        <div>
+          <div className="text-sm font-medium text-gray-900 dark:text-white">
+            Tenant Circle master · USDC available
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Funds all agent EOA top-ups (manual and auto-refill). Top up via Circle dashboard.
+          </div>
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-lg font-semibold text-gray-900 dark:text-white">
+          {isLoading ? '…' : error ? '—' : usdc == null ? '—' : formatCurrency(usdc, 'USDC')}
+        </div>
+        {low && !error && (
+          <div className="text-xs text-yellow-700 dark:text-yellow-400">Running low</div>
+        )}
+        {error && (
+          <div className="text-xs text-red-600 dark:text-red-400">Circle unreachable</div>
+        )}
+      </div>
     </div>
   );
 }

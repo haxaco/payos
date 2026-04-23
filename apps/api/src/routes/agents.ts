@@ -3468,8 +3468,15 @@ agents.post('/:id/wallet/refill-faucet', async (c) => {
 
 // ============================================
 // POST /v1/agents/:id/fund-eoa
-// Bridge USDC from the agent's Circle custodial wallet to their EVM EOA
-// so they can pay external x402-protected resources on-chain.
+// Transfer USDC from the tenant's Circle master wallet to the agent's
+// managed EVM EOA. Sources from Circle Payouts API (blockchain destination),
+// not from a per-agent Circle custodial wallet — one funding surface, scaled
+// by KYA limits per agent.
+//
+// Body: { amount: string }  (USDC in whole units, e.g. "0.50")
+//
+// Returns: { success, circlePayoutId, destinationAddress, amount, transferRowId,
+//            estimatedSettlementSeconds, note }
 // ============================================
 agents.post('/:id/fund-eoa', async (c) => {
   const ctx = c.get('ctx');
@@ -3485,20 +3492,39 @@ agents.post('/:id/fund-eoa', async (c) => {
 
   let body: any = {};
   try { body = await c.req.json(); } catch {}
-  const amount = body.amount ? String(body.amount) : '1';
+  const amountStr = body.amount ? String(body.amount) : '1';
+  const amountNum = parseFloat(amountStr);
+  if (!Number.isFinite(amountNum) || amountNum <= 0) {
+    throw new ValidationError('amount must be a positive number');
+  }
 
   const supabase = createClient();
 
-  // Verify agent exists and is active
+  // Verify agent exists, is active, and belongs to the caller's tenant
   const { data: agent } = await supabase
     .from('agents')
-    .select('id, tenant_id, status')
+    .select('id, tenant_id, status, environment')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
     .single();
 
   if (!agent) throw new NotFoundError('Agent', id);
   if ((agent as any).status !== 'active') throw new ValidationError('Agent is not active');
+  const agentEnvironment: 'test' | 'live' = (agent as any).environment === 'live' ? 'live' : 'test';
+
+  // KYA limit check — fund-eoa is an agent-attributed spend. Apply the same
+  // per-transaction cap that gates x402 signing so a runaway caller can't
+  // quietly move $10k into one agent's EOA.
+  const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
+  const limitCheck = await limitService.checkTransactionLimit(id, amountNum);
+  if (!limitCheck.allowed) {
+    throw new LimitExceededError(
+      limitCheck.limitType || 'transaction',
+      limitCheck.limit ?? 0,
+      limitCheck.requested ?? amountNum,
+      limitCheck.used,
+    );
+  }
 
   // Get the agent's EVM key (destination)
   const { getAgentEvmKey } = await import('../services/x402/signer.js');
@@ -3510,72 +3536,108 @@ agents.post('/:id/fund-eoa', async (c) => {
     }, 400);
   }
 
-  // Find the agent's Circle custodial wallet (source)
-  const { data: circleWallet } = await (supabase.from('wallets') as any)
-    .select('id, provider_wallet_id, balance, wallet_address')
+  // Wallet freeze check — don't fund a frozen agent.
+  const { data: frozenWallets } = await supabase
+    .from('wallets')
+    .select('status')
     .eq('managed_by_agent_id', id)
-    .eq('wallet_type', 'circle_custodial')
-    .eq('status', 'active')
-    .maybeSingle();
-
-  if (!circleWallet || !circleWallet.provider_wallet_id) {
-    return c.json({
-      error: 'Agent has no Circle custodial wallet to fund from',
-      code: 'NO_CIRCLE_WALLET',
-    }, 400);
+    .eq('status', 'frozen')
+    .limit(1);
+  if (frozenWallets && frozenWallets.length > 0) {
+    return c.json({ error: 'Agent wallet is frozen — funding blocked', code: 'WALLET_FROZEN' }, 403);
   }
 
-  // Execute the Circle transfer
+  // Pick chain based on agent environment. Circle's master wallet config
+  // dictates whether 'BASE' maps to mainnet (live API key) or sepolia
+  // (sandbox key); we mirror that convention via the agent's env flag so
+  // a test agent's EOA on Sepolia gets funded from sandbox Circle, and a
+  // live agent's EOA on Base mainnet gets funded from production Circle.
+  const chain = agentEnvironment === 'live' ? 'BASE' : 'BASE-SEPOLIA';
+
   try {
-    const { getCircleClient } = await import('../services/circle/client.js');
-    const circle = getCircleClient();
+    const { getCirclePayoutsClient } = await import('../services/circle/payouts.js');
+    const circle = getCirclePayoutsClient();
 
-    // Resolve the USDC token id for this wallet (Circle uses different IDs per chain)
-    const balances = await circle.getWalletBalances(circleWallet.provider_wallet_id);
-    const usdcBalance = balances.find((b: any) => b.token.symbol === 'USDC');
-    if (!usdcBalance) {
+    // Preflight: check master wallet has sufficient USDC. Fail fast with a
+    // useful error instead of letting Circle reject opaquely.
+    const masterBalances = await circle.getMasterWalletBalance();
+    const usdcMaster = masterBalances.find(b => b.currency === 'USD' || b.currency === 'USDC');
+    const masterUsdc = usdcMaster ? parseFloat(usdcMaster.amount) : 0;
+    if (masterUsdc < amountNum) {
       return c.json({
-        error: 'Circle wallet has no USDC token record',
-        code: 'NO_USDC_TOKEN',
+        error: `Tenant master wallet underfunded. Master has $${masterUsdc.toFixed(4)} USDC, requested $${amountStr}. Top up via Circle dashboard or increase deposit.`,
+        code: 'MASTER_UNDERFUNDED',
+        available: masterUsdc,
+        requested: amountNum,
       }, 400);
     }
 
-    const onChainBalance = parseFloat(usdcBalance.amount);
-    if (onChainBalance < parseFloat(amount)) {
-      return c.json({
-        error: `Insufficient on-chain USDC in Circle wallet. Have: ${onChainBalance}, need: ${amount}`,
-        code: 'INSUFFICIENT_ONCHAIN_BALANCE',
-        available: onChainBalance,
-        requested: parseFloat(amount),
-      }, 400);
-    }
+    // Execute: Circle Payouts transfers from master wallet to any on-chain
+    // address. Returns a payout record with pending status; settles in ~60s.
+    const payout = await circle.createUsdcTransfer({
+      amount: amountStr,
+      destinationAddress: keyRecord.ethereum_address,
+      chain: chain as any,
+      metadata: {
+        tenant_id: ctx.tenantId,
+        agent_id: id,
+        source: 'sly_fund_eoa',
+        environment: agentEnvironment,
+      },
+    });
 
-    const tx = await circle.transferTokens(
-      circleWallet.provider_wallet_id,
-      usdcBalance.token.id,
-      keyRecord.ethereum_address,
-      amount,
-      'LOW',
-    );
+    // Record in transfers ledger as an internal deposit. Status tracks the
+    // Circle payout lifecycle — a reconciler updates tx_hash + status when
+    // on-chain settlement confirms. For MVP we leave as 'pending' and rely
+    // on polling / webhook (phase 2).
+    const { data: transferRow } = await (supabase.from('transfers') as any).insert({
+      tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
+      type: 'deposit',
+      status: 'pending',
+      from_account_id: null,
+      to_account_id: null,
+      initiated_by_type: ctx.actorType,
+      initiated_by_id: id,
+      initiated_by_name: ctx.actorName || null,
+      amount: amountNum,
+      currency: 'USDC',
+      description: `Fund agent EOA from Circle master`,
+      settlement_network: chain === 'BASE' ? 'base' : 'base-sepolia',
+      protocol_metadata: {
+        protocol: 'circle_payouts',
+        direction: 'internal_deposit',
+        to_address: keyRecord.ethereum_address,
+        chain,
+        circle_payout_id: payout.id,
+        circle_payout_status: payout.state || (payout as any).status,
+        source: 'tenant_master',
+      },
+    }).select('id').single();
+
+    // Record usage for KYA accounting — this counts against the agent's
+    // daily/monthly spend buckets.
+    void limitService.recordUsage(id, amountNum).catch((e) => {
+      console.error('[fund-eoa] recordUsage failed', e);
+    });
 
     return c.json({
       success: true,
-      txId: tx.id,
-      state: tx.state,
-      sourceWallet: {
-        id: circleWallet.id,
-        providerWalletId: circleWallet.provider_wallet_id,
-        address: circleWallet.wallet_address,
-      },
+      circlePayoutId: payout.id,
+      state: payout.state || (payout as any).status,
       destinationAddress: keyRecord.ethereum_address,
-      amount,
+      chain,
+      amount: amountStr,
       currency: 'USDC',
-      note: 'Transfer initiated on Base Sepolia. Check txId for on-chain confirmation.',
+      transferRowId: transferRow?.id || null,
+      estimatedSettlementSeconds: 90,
+      note: `Circle payout initiated — expect on-chain settlement to ${keyRecord.ethereum_address} on ${chain} in ~60-120s.`,
     });
   } catch (e: any) {
+    console.error('[fund-eoa] Circle payout failed', e);
     return c.json({
-      error: `Circle transfer failed: ${e.message}`,
-      code: 'CIRCLE_TRANSFER_FAILED',
+      error: `Circle payout failed: ${e.message}`,
+      code: 'CIRCLE_PAYOUT_FAILED',
     }, 500);
   }
 });
@@ -4807,6 +4869,168 @@ agents.delete('/:id/avatar', async (c) => {
   }
 
   return c.json({ data: { avatar_url: null } });
+});
+
+// ============================================
+// GET /v1/organization/circle/master-balance
+// Returns the tenant's Circle master wallet balance. Used as preflight
+// before auto-refilling agent EOAs. Tenant-admin scoped (any caller in
+// tenant can read since the balance is a shared tenant resource).
+// Mounted here for proximity to the fund-eoa route; logically it's an
+// org-level resource — in Phase 2 move to /v1/organization/circle/*.
+// ============================================
+agents.get('/circle/master-balance', async (c) => {
+  try {
+    const { getCirclePayoutsClient } = await import('../services/circle/payouts.js');
+    const circle = getCirclePayoutsClient();
+    const balances = await circle.getMasterWalletBalance();
+    const usdc = balances.find(b => b.currency === 'USD' || b.currency === 'USDC');
+    return c.json({
+      success: true,
+      balances,
+      usdcAvailable: usdc ? parseFloat(usdc.amount) : 0,
+      note: 'Single master wallet per Circle API key. Live API key => Base mainnet; sandbox key => Base Sepolia. Fund via Circle dashboard wire/deposit/mint.',
+    });
+  } catch (e: any) {
+    return c.json({
+      error: `Circle master balance check failed: ${e.message}`,
+      code: 'CIRCLE_HEALTH_FAILED',
+    }, 500);
+  }
+});
+
+// ============================================
+// GET /v1/agents/:id/auto-refill
+// PATCH /v1/agents/:id/auto-refill
+// Per-agent auto-refill policy. When enabled, a background worker checks
+// the agent's EOA on-chain balance every few minutes; if below threshold,
+// tops up to target from the tenant's Circle master wallet, capped by a
+// per-day ceiling.
+// ============================================
+agents.get('/:id/auto-refill', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  if (!isValidUUID(id)) throw new ValidationError('Invalid agent ID format');
+
+  const supabase = createClient();
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, auto_refill_enabled, auto_refill_threshold, auto_refill_target, auto_refill_daily_cap, auto_refill_daily_spent, auto_refill_daily_reset_at, auto_refill_last_at, auto_refill_last_status, auto_refill_last_error')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  if (!agent) throw new NotFoundError('Agent', id);
+
+  const a = agent as any;
+  return c.json({
+    data: {
+      enabled: a.auto_refill_enabled ?? false,
+      threshold: a.auto_refill_threshold != null ? Number(a.auto_refill_threshold) : null,
+      target: a.auto_refill_target != null ? Number(a.auto_refill_target) : null,
+      dailyCap: a.auto_refill_daily_cap != null ? Number(a.auto_refill_daily_cap) : null,
+      dailySpent: Number(a.auto_refill_daily_spent ?? 0),
+      dailyResetAt: a.auto_refill_daily_reset_at,
+      lastRunAt: a.auto_refill_last_at,
+      lastStatus: a.auto_refill_last_status,
+      lastError: a.auto_refill_last_error,
+    },
+  });
+});
+
+agents.patch('/:id/auto-refill', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  if (!isValidUUID(id)) throw new ValidationError('Invalid agent ID format');
+
+  // Writes to auto-refill policy are tenant-admin operations; agents should
+  // not be able to raise their own budgets.
+  if (ctx.actorType === 'agent') {
+    return c.json({ error: 'Agents cannot modify their own auto-refill policy' }, 403);
+  }
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { throw new ValidationError('Invalid JSON body'); }
+
+  // Accept both short ("threshold") and qualified ("thresholdUsdc") forms —
+  // internal callers settled on the short names; older callers may still
+  // use the Usdc-suffixed ones.
+  const enabled = body.enabled;
+  const thresholdIn = body.threshold ?? body.thresholdUsdc;
+  const targetIn = body.target ?? body.targetUsdc;
+  const dailyCapIn = body.dailyCap ?? body.dailyCapUsdc;
+  const patch: any = {};
+
+  if (typeof enabled === 'boolean') patch.auto_refill_enabled = enabled;
+  if (thresholdIn != null) {
+    const v = Number(thresholdIn);
+    if (!Number.isFinite(v) || v < 0) throw new ValidationError('threshold must be a non-negative number');
+    patch.auto_refill_threshold = v;
+  }
+  if (targetIn != null) {
+    const v = Number(targetIn);
+    if (!Number.isFinite(v) || v <= 0) throw new ValidationError('target must be a positive number');
+    patch.auto_refill_target = v;
+  }
+  if (dailyCapIn != null) {
+    const v = Number(dailyCapIn);
+    if (!Number.isFinite(v) || v < 0) throw new ValidationError('dailyCap must be a non-negative number');
+    patch.auto_refill_daily_cap = v;
+  }
+
+  // Semantic validation: target must exceed threshold, daily cap should be
+  // at least one target-worth of headroom, KYA caps must not be exceeded.
+  const supabase = createClient();
+  const { data: current } = await supabase
+    .from('agents')
+    .select('auto_refill_threshold, auto_refill_target, auto_refill_daily_cap, effective_limit_daily')
+    .eq('id', id).eq('tenant_id', ctx.tenantId).single();
+  if (!current) throw new NotFoundError('Agent', id);
+
+  const nextThreshold = patch.auto_refill_threshold ?? (current as any).auto_refill_threshold;
+  const nextTarget = patch.auto_refill_target ?? (current as any).auto_refill_target;
+  const nextDailyCap = patch.auto_refill_daily_cap ?? (current as any).auto_refill_daily_cap;
+  if (nextThreshold != null && nextTarget != null && Number(nextThreshold) >= Number(nextTarget)) {
+    throw new ValidationError('threshold must be less than target');
+  }
+  if (nextDailyCap != null && nextTarget != null && Number(nextDailyCap) < Number(nextTarget)) {
+    throw new ValidationError('dailyCap must be at least target — otherwise a single refill exhausts the cap');
+  }
+  const dailyKyaLimit = parseFloat((current as any).effective_limit_daily) || 0;
+  if (nextDailyCap != null && dailyKyaLimit > 0 && Number(nextDailyCap) > dailyKyaLimit) {
+    throw new ValidationError(`dailyCap ($${nextDailyCap}) exceeds agent's daily KYA limit ($${dailyKyaLimit}). Raise the KYA tier first.`);
+  }
+
+  const { data: updated, error: updateErr } = await (supabase.from('agents') as any)
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('tenant_id', ctx.tenantId)
+    .select('auto_refill_enabled, auto_refill_threshold, auto_refill_target, auto_refill_daily_cap, auto_refill_daily_spent, auto_refill_daily_reset_at, auto_refill_last_at, auto_refill_last_status, auto_refill_last_error')
+    .single();
+  if (updateErr || !updated) {
+    console.error('[auto-refill] update failed', updateErr);
+    throw new Error('Failed to update auto-refill policy');
+  }
+
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId, entityType: 'agent', entityId: id,
+    action: 'auto_refill_policy_updated', actorType: ctx.actorType,
+    actorId: ctx.actorId, actorName: ctx.actorName,
+    metadata: patch,
+  });
+
+  const u = updated as any;
+  return c.json({
+    data: {
+      enabled: u.auto_refill_enabled ?? false,
+      threshold: u.auto_refill_threshold != null ? Number(u.auto_refill_threshold) : null,
+      target: u.auto_refill_target != null ? Number(u.auto_refill_target) : null,
+      dailyCap: u.auto_refill_daily_cap != null ? Number(u.auto_refill_daily_cap) : null,
+      dailySpent: Number(u.auto_refill_daily_spent ?? 0),
+      dailyResetAt: u.auto_refill_daily_reset_at,
+      lastRunAt: u.auto_refill_last_at,
+      lastStatus: u.auto_refill_last_status,
+      lastError: u.auto_refill_last_error,
+    },
+  });
 });
 
 export default agents;

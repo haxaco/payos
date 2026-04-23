@@ -2001,6 +2001,42 @@ export function createMcpServer(
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
+      case 'agent_enable_auto_refill': {
+        const { agentId, threshold, target, dailyCap } = args as {
+          agentId: string;
+          threshold: number;
+          target: number;
+          dailyCap?: number;
+        };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            enabled: true,
+            threshold,
+            target,
+            dailyCap: dailyCap ?? 5,
+          }),
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'agent_disable_auto_refill': {
+        const { agentId } = args as { agentId: string };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
+          method: 'PATCH',
+          body: JSON.stringify({ enabled: false }),
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'agent_auto_refill_status': {
+        const { agentId } = args as { agentId: string };
+        const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
+          method: 'GET',
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
       // ====================================================================
       // A2A Tools
       // ====================================================================
