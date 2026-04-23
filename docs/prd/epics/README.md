@@ -125,6 +125,10 @@ Every story must meet these criteria before completion:
 ### Notifications
 - [Epic 66: Email Notification System](./epic-66-email-notification-system.md) 🚧 - 10 email types (Tier 1 done), notification preferences, unsubscribe
 
+### Agent Custody & External Services ⭐ NEW
+- [Epic 77: BYO Wallet Custody](./epic-77-byo-wallet-custody.md) 🔑 - Session-key delegation + managed providers (Privy/Turnkey/Fireblocks/CDP) + interactive WalletConnect for agent x402 signing
+- [Epic 78: Agentic Credential Vault](./epic-78-agentic-credential-vault.md) 🔐 - Tenant-stored API keys with per-agent grants for non-x402 services (Anthropic, OpenAI, Deepgram, etc.) + unified call dispatcher
+
 ### Future Considerations (P2/P3)
 - [Epic 37: Facilitator-as-a-Service](./epic-37-facilitator-as-a-service.md) - x402 facilitator for LATAM ecosystem
 - [Epic 39: Open Issuance](./epic-39-open-issuance.md) - Custom stablecoin support
