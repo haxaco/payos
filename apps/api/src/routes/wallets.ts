@@ -892,11 +892,15 @@ app.get('/:id/balance', async (c) => {
       }
     }
 
-    // Phase 2: Live balance fetch for Circle/external wallets when stale
+    // Phase 2: Live balance fetch for Circle/external wallets when stale.
+    // agent_eoa wallets ARE the on-chain number (no separate ledger), so we
+    // also mirror the on-chain result into wallets.balance so the "Balance"
+    // card on the detail page doesn't perpetually show $0.
     let onChainBalance: string | null = null;
-    if (!isInternalWallet && syncStatus !== 'synced') {
+    const walletRecord = wallet as any;
+    const isAgentEoa = walletRecord.wallet_type === 'agent_eoa';
+    if (!isInternalWallet && (syncStatus !== 'synced' || isAgentEoa)) {
       try {
-        const walletRecord = wallet as any;
         if (walletRecord.wallet_type === 'circle_custodial' && walletRecord.provider_wallet_id) {
           // Circle wallet: use Circle API for balance
           const isLiveBalEnv = getEnv(ctx) === 'live';
@@ -905,30 +909,50 @@ app.get('/:id/balance', async (c) => {
           const balance = await circle.getUsdcBalance(walletRecord.provider_wallet_id);
           onChainBalance = balance.formatted.toString();
         } else if (wallet.wallet_address && !wallet.wallet_address.startsWith('internal://')) {
-          // External wallet: use Solana or EVM balance check based on blockchain
+          // EVM / Solana: use chain RPC. For EVM, pick RPC + USDC contract
+          // by the WALLET's environment column (not the process env), so a
+          // test-env EOA queried from production doesn't wrongly read mainnet.
           const walletBlockchain = (wallet as any).blockchain || 'base';
           if (walletBlockchain === 'sol') {
             const { getSolanaUsdcBalance } = await import('../config/solana.js');
             const { formatted } = await getSolanaUsdcBalance(wallet.wallet_address);
             onChainBalance = formatted.toString();
           } else {
-            const { getUsdcBalance: getOnChainUsdcBalance } = await import('../config/blockchain.js');
-            onChainBalance = await getOnChainUsdcBalance(wallet.wallet_address);
+            const walletEnv: 'live' | 'test' = walletRecord.environment === 'live' ? 'live' : 'test';
+            const rpcUrl = walletEnv === 'live' ? 'https://mainnet.base.org' : 'https://sepolia.base.org';
+            const usdcAddr = walletEnv === 'live'
+              ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+              : '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+            const data = '0x70a08231' + '0'.repeat(24) + wallet.wallet_address.slice(2).toLowerCase();
+            const res = await fetch(rpcUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: usdcAddr, data }, 'latest'] }),
+            });
+            const json: any = await res.json();
+            if (json?.result) {
+              onChainBalance = (parseInt(json.result, 16) / 1e6).toString();
+            }
           }
         }
 
-        // Update sync_data in background
+        // Persist. For agent_eoa, mirror into balance too — chain IS the
+        // ledger, so the primary "Balance" card should reflect it.
         if (onChainBalance !== null) {
+          const updatePatch: any = {
+            sync_data: {
+              ...(wallet.sync_data as Record<string, unknown> || {}),
+              on_chain_usdc: onChainBalance,
+              synced_at: new Date().toISOString(),
+            },
+            last_synced_at: new Date().toISOString(),
+          };
+          if (isAgentEoa) {
+            updatePatch.balance = parseFloat(onChainBalance);
+          }
           supabase
             .from('wallets')
-            .update({
-              sync_data: {
-                ...(wallet.sync_data as Record<string, unknown> || {}),
-                on_chain_usdc: onChainBalance,
-                synced_at: new Date().toISOString(),
-              },
-              last_synced_at: new Date().toISOString(),
-            })
+            .update(updatePatch)
             .eq('id', walletId)
             .eq('tenant_id', ctx.tenantId)
             .then(() => {});

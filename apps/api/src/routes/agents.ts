@@ -4311,7 +4311,11 @@ agents.get('/:id/wallet', async (c) => {
     throw new NotFoundError('Agent', id);
   }
 
-  // Fetch all wallets managed by this agent
+  // Fetch all wallets managed by this agent. Exclude agent_eoa from the
+  // "primary" lookup — the EOA has its own dedicated card on the agent
+  // Wallet tab (X402EoaCard) so treating it as the primary here would
+  // render a second copy. The dashboard's /dashboard/wallets surface
+  // handles the EOA uniformly via its own list.
   const { data: wallets } = await supabase
     .from('wallets')
     .select('*')
@@ -4319,6 +4323,7 @@ agents.get('/:id/wallet', async (c) => {
     .eq('tenant_id', ctx.tenantId)
     .eq('environment', getEnv(ctx))
     .eq('status', 'active')
+    .neq('wallet_type', 'agent_eoa')
     .order('created_at', { ascending: false });
 
   if (!wallets || wallets.length === 0) {
