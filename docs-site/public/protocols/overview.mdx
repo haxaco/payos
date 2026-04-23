@@ -11,8 +11,10 @@ Sly speaks six protocols that let AI agents transact with merchants, services, a
 | [**ACP**](/protocols/acp) | Stripe + OpenAI | Agentic checkout sessions with card networks | Agent opens checkout → completes payment → merchant confirms |
 | [**AP2**](/protocols/ap2) | Google | Pre-authorized spending mandates | Agent presents mandate → merchant executes within policy |
 | [**x402**](/protocols/x402) | Coinbase | Micropayments for APIs (HTTP 402 revival) | API returns 402 → agent pays → retries with proof |
+| [**MPP**](/protocols/mpp) | Sly-native | Recurring M2M micropayments with session vouchers | Agent opens session + deposit → signs vouchers per call → closes |
 | [**A2A**](/protocols/a2a) | Google | Agent-to-agent task delegation and discovery | Agent A sends task to Agent B → gets deliverable → pays |
 | [**MCP**](/protocols/mcp) | Anthropic | Tool catalogs and resources for LLM agents | LLM discovers tools → invokes → receives results |
+| [**Cards**](/protocols/cards) | Visa VIC + Mastercard Agent Pay | Card-rail transactions with network identity verification | Agent presents Web Bot Auth → vaulted card → network authorizes |
 
 ## How to pick
 
@@ -20,8 +22,10 @@ Most integrations use **one or two protocols** aligned to their partner ecosyste
 
 - Selling on **Stripe / OpenAI** marketplaces → [ACP](/protocols/acp)
 - Selling on **Google Cloud / Gemini** ecosystem → [AP2](/protocols/ap2) and [A2A](/protocols/a2a)
-- Monetizing **APIs** via micropayments → [x402](/protocols/x402)
+- Monetizing **APIs** via one-off micropayments → [x402](/protocols/x402)
+- Monetizing **APIs** via recurring sessions with vouchers → [MPP](/protocols/mpp)
 - Building a **traditional checkout** with agentic capabilities → [UCP](/protocols/ucp)
+- Routing agent spend over **card rails** with Visa / Mastercard programs → [Cards](/protocols/cards)
 - Shipping **Claude Desktop / agent tools** → [MCP](/protocols/mcp)
 
 If in doubt, see the [decision tree](/protocols/decision-tree).

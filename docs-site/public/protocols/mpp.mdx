@@ -1,0 +1,215 @@
+---
+title: "MPP (Machine Payments Protocol)"
+description: "Session-based M2M payments with vouchers, reconciliation, and streaming cost tracking."
+---
+
+MPP is a machine-to-machine payment protocol for ongoing relationships between two services — think AI agent paying an API, or one service retaining another. Instead of a new authentication + payment per call (like [x402](/protocols/x402)), MPP opens a **session** with a pre-deposited budget; the consumer signs **vouchers** for each unit of work; the session reconciles at close.
+
+Best when you have recurring, high-frequency micropayments between the same two parties.
+
+## When to pick MPP vs. alternatives
+
+| Situation | Protocol |
+|---|---|
+| New consumer discovered your API and pays per call | [x402](/protocols/x402) |
+| Recurring relationship, many calls per session | **MPP** |
+| Pre-authorized budget envelope, no per-call voucher | [AP2](/protocols/ap2) |
+| Hosted checkout for human buyer | [UCP](/protocols/ucp) / [ACP](/protocols/acp) |
+
+## Anatomy
+
+```
+┌───────────┐         ┌─────────────────┐         ┌───────────┐
+│ Consumer  │ 1. Open │   Session       │ 2. Pay  │  Service  │
+│  agent    ├────────▶│   (budget held) │◀────────┤           │
+│           │         └─────────────────┘         │           │
+│           │              ▲   │                  │           │
+│           │  3. Voucher  │   │  4. Stream cost  │           │
+│           ├──────────────┘   └─────────────────▶│           │
+│           │                                     │           │
+│           │  5. Close + return unspent budget   │           │
+│           │◀────────────────────────────────────│           │
+└───────────┘                                     └───────────┘
+```
+
+## One-shot payment (simplest case)
+
+For a single micropayment without opening a session:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/mpp/pay \
+  -H "Authorization: Bearer agent_..." \
+  -d '{
+    "service_url": "https://inference.example.com/v1/complete",
+    "amount": "0.05",
+    "currency": "USDC",
+    "agent_id": "agt_...",
+    "wallet_id": "wal_...",
+    "description": "Completion request, 120 tokens"
+  }'
+```
+
+Useful for first call to a new service. For subsequent calls, open a session.
+
+## Open a session
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/mpp/sessions \
+  -H "Authorization: Bearer agent_..." \
+  -d '{
+    "service_url": "https://inference.example.com",
+    "deposit_amount": "50.00",
+    "currency": "USDC",
+    "agent_id": "agt_...",
+    "wallet_id": "wal_..."
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "mpp_sess_...",
+  "status": "open",
+  "budget_remaining": "50.00",
+  "budget_used": "0.00",
+  "currency": "USDC",
+  "voucher_key": "<ed25519 public key for voucher verification>",
+  "expires_at": "2026-04-23T18:00:00Z"
+}
+```
+
+The `deposit_amount` is held from the agent's wallet. Any unspent balance returns on close.
+
+## Sign a voucher
+
+Each unit of work within the session produces a voucher:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/mpp/sessions/mpp_sess_.../voucher \
+  -H "Authorization: Bearer sess_..." \
+  -d '{
+    "amount": "0.05",
+    "description": "Completion request, 120 tokens",
+    "request_id": "req_abc123"
+  }'
+```
+
+Returns a signed voucher that the service verifies to confirm it's authorized to deliver and be paid. Sessions enforce `budget_remaining` — once it hits zero, voucher requests return `INSUFFICIENT_BALANCE`.
+
+## Stream session costs
+
+Useful when you want live metrics during a long session:
+
+```bash
+curl -N https://sandbox.getsly.ai/v1/mpp/sessions/mpp_sess_.../stream \
+  -H "Authorization: Bearer sess_..."
+```
+
+Server-sent events stream back with each voucher:
+
+```
+event: voucher
+data: {"voucher_id":"v_...","amount":"0.05","budget_remaining":"49.95"}
+
+event: voucher
+data: {"voucher_id":"v_...","amount":"0.02","budget_remaining":"49.93"}
+```
+
+## Close a session
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/mpp/sessions/mpp_sess_.../close \
+  -H "Authorization: Bearer sess_..."
+```
+
+Settlement is atomic:
+1. All signed vouchers finalize
+2. Total paid amount debits from the agent's wallet (vs. the deposit hold)
+3. Unspent deposit returns to the agent's wallet
+4. Session transitions to `closed`
+
+## Service-side: verify a receipt
+
+When a consumer shows you a voucher, verify it:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/mpp/receipts/verify \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "voucher_id": "v_..." }'
+```
+
+Returns `{ valid: true, session_id, amount, issued_at, expires_at }` or a failure reason (replay, expired, revoked).
+
+## Discover MPP services
+
+```bash
+curl https://sandbox.getsly.ai/v1/mpp/services?category=inference \
+  -H "Authorization: Bearer agent_..."
+```
+
+Returns MPP-enabled services with published pricing. Or probe a specific service:
+
+```bash
+curl https://sandbox.getsly.ai/v1/mpp/services/inference.example.com/pricing \
+  -H "Authorization: Bearer agent_..."
+```
+
+## Analytics + reconciliation
+
+Per-tenant summary:
+
+```bash
+curl "https://sandbox.getsly.ai/v1/mpp/analytics?period=30d" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Returns transfer volume, fees, session count, budget utilization.
+
+Receipt-level reconciliation:
+
+```bash
+curl "https://sandbox.getsly.ai/v1/mpp/reconciliation?session_id=mpp_sess_..." \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+## Provision a wallet for MPP
+
+If an agent doesn't have an MPP-capable wallet yet:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/mpp/wallets/provision \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "agent_id": "agt_..." }'
+```
+
+Provisions a Tempo wallet (MPP-native, supports voucher signing).
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/mpp/pay` | One-shot micropayment |
+| `POST /v1/mpp/sessions` | Open session |
+| `GET /v1/mpp/sessions` | List sessions |
+| `GET /v1/mpp/sessions/:id` | Session detail + vouchers |
+| `POST /v1/mpp/sessions/:id/voucher` | Sign voucher |
+| `POST /v1/mpp/sessions/:id/close` | Close + settle |
+| `GET /v1/mpp/sessions/:id/stream` | SSE cost stream |
+| `POST /v1/mpp/receipts/verify` | Verify voucher |
+| `GET /v1/mpp/services` | Service directory |
+| `GET /v1/mpp/services/:domain/pricing` | Probe pricing |
+| `POST /v1/mpp/wallets/provision` | Provision MPP wallet |
+| `GET /v1/mpp/analytics` | Tenant summary |
+| `GET /v1/mpp/reconciliation` | Receipt-level recon |
+| `GET /v1/mpp/transfers` | List MPP transfers |
+
+## Lifecycle states
+
+**Session:** `open` → `active` → `closed` | `exhausted` (budget ran out) | `error`
+
+## When not to use MPP
+
+- **One-off calls** — overhead of opening a session isn't worth it; use [x402](/protocols/x402)
+- **Human buyers** — MPP is machine-to-machine; for humans use [UCP](/protocols/ucp) / [ACP](/protocols/acp)
+- **Fixed-price subscriptions** — use [AP2](/protocols/ap2) mandates instead
