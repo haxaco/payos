@@ -1,0 +1,177 @@
+---
+title: "Handle a dispute"
+description: "File, respond to, escalate, or resolve disputes."
+---
+
+A **dispute** is a formal complaint filed by either party against a completed transfer. Sly's dispute workflow handles evidence submission, response windows, escalation to human review, and optional auto-refund at resolution.
+
+Disputes are separate from [refunds](/guides/issue-refund) — refunds are voluntary, disputes are contested.
+
+## When a dispute opens
+
+Either side can file:
+- **Buyer** — "I didn't receive the service / the charge is unauthorized / the amount is wrong"
+- **Seller** — rare, but possible (e.g. contesting a refund)
+
+Filed within the **dispute window** (default 120 days from transfer completion).
+
+## File a dispute
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/disputes \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "transferId": "tx_abc123",
+    "reason": "service_not_received",
+    "description": "Agent was charged for SaaS subscription but access was never provisioned.",
+    "amountDisputed": "49.00",
+    "evidence": [
+      {
+        "type": "screenshot",
+        "description": "Login page showing account inactive",
+        "url": "https://evidence.example/acct_inactive.png"
+      },
+      {
+        "type": "email_thread",
+        "description": "Support reply confirming no account exists",
+        "content": "..."
+      }
+    ],
+    "requestedResolution": "full_refund"
+  }'
+```
+
+### Reason codes
+
+| Reason | Meaning |
+|---|---|
+| `service_not_received` | Paid but didn't get what was purchased |
+| `duplicate_charge` | Same thing charged twice |
+| `unauthorized` | Agent or merchant transacted without authorization |
+| `amount_incorrect` | Charged amount differs from agreed amount |
+| `quality_issue` | Service delivered but materially deficient |
+| `other` | Specify in `description` |
+
+## Dispute lifecycle
+
+```
+open ──▶ under_review ──▶ resolved
+   │         │
+   │         └──▶ escalated ──▶ resolved
+   │
+   └─▶ (auto-timeout after response window) ──▶ resolved (default rule)
+```
+
+- **`open`** — filed; the counterparty has `response_window_days` (default 30) to respond
+- **`under_review`** — both sides have submitted; Sly or an arbiter is reviewing
+- **`escalated`** — routed to human review when automated resolution can't decide
+- **`resolved`** — final decision; optional refund issued
+
+## Respond (as the counterparty)
+
+When a dispute is filed against you, you have the response window to rebut:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/disputes/dsp_.../respond \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "response": "Access was provisioned at 14:02 UTC. Logs show successful login at 14:05.",
+    "counterEvidence": [
+      { "type": "server_log", "description": "Provisioning log", "content": "..." },
+      { "type": "auth_log",   "description": "Login success", "content": "..." }
+    ]
+  }'
+```
+
+Missing the response window = dispute auto-resolves in the filer's favor.
+
+## Escalate
+
+If automated resolution stalls or the stakes warrant human review:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/disputes/dsp_.../escalate \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "reason": "Complex evidence, both sides credible" }'
+```
+
+Escalation extends the timeline — expect ~5 business days for human review.
+
+## Resolve
+
+When both sides agree, resolve directly without waiting:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/disputes/dsp_.../resolve \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "resolution": "full_refund",
+    "notes": "Merchant agreed to full refund — service genuinely wasn't provisioned"
+  }'
+```
+
+Options:
+- `full_refund` — full amount returned; auto-creates [refund](/guides/issue-refund)
+- `partial_refund` — amount returned (specify `refundAmount`)
+- `credit` — credit issued to dispute filer (no cash movement)
+- `no_refund` — dispute dismissed, funds retained
+
+Resolution also handles downstream effects:
+- If an [AP2 mandate](/protocols/ap2) funded the disputed transfer, you can optionally cancel the mandate in one call
+- Associated webhooks fire (`dispute.resolved`)
+
+## Monitoring
+
+List active disputes:
+
+```bash
+curl "https://sandbox.getsly.ai/v1/disputes?status=open&due_soon=true" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+`due_soon=true` filters to disputes where your response window expires in <72 hours — priority queue for ops.
+
+### Dispute analytics
+
+```bash
+curl https://sandbox.getsly.ai/v1/disputes/stats/summary \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Returns counts by status, reason, resolution outcome, and average resolution time. Useful for spotting systemic product issues (rising `service_not_received` = provisioning bug).
+
+## Card-network disputes
+
+[Card](/protocols/cards) transactions can also dispute via the card network (Visa / Mastercard). Sly surfaces these as `card.dispute.opened` webhook events and funnels them through the same `/v1/disputes` API so your team has one workflow.
+
+Differences from Sly-native disputes:
+- Response window is the network's (varies by rule, typically 20-30 days)
+- Evidence requirements are stricter (compelling evidence rules)
+- Chargeback fees may apply (processor-dependent)
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/disputes` | File dispute |
+| `GET /v1/disputes` | List (filter by status, reason, account, due_soon) |
+| `GET /v1/disputes/:id` | Dispute detail + full timeline |
+| `POST /v1/disputes/:id/respond` | Submit response + evidence |
+| `POST /v1/disputes/:id/resolve` | Resolve |
+| `POST /v1/disputes/:id/escalate` | Send to human review |
+| `GET /v1/disputes/stats/summary` | Aggregate stats |
+
+## Evidence best practices
+
+- **Timestamps matter** — server logs with UTC timestamps are the strongest evidence
+- **Link to delivery** — for `service_not_received` claims, show proof of delivery (login logs, API call logs, tracking)
+- **Quote the original agreement** — if the buyer agreed to specific terms, include those
+- **Respond early** — don't wait for the deadline; early responses tilt toward your side
+- **Be factual, not defensive** — arbitrators reward clarity over rhetoric
+
+## Common mistakes
+
+- Ignoring the response window (auto-loss)
+- Vague evidence ("we delivered the service")
+- Over-refunding without resolving the dispute status (leaves the record `open`)
+- Not tracking dispute rates — rising rate often signals product bug or fraud wave

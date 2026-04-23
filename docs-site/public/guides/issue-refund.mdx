@@ -1,0 +1,118 @@
+---
+title: "Issue a refund"
+description: "Full or partial reversal of a completed transfer."
+---
+
+Refunds reverse money already sent. Sly's refund API is idempotent, window-bound, and gracefully handles both straight reversals and partial returns.
+
+## Prerequisites
+
+- The original transfer is in `completed` state
+- You're still within the **refund window** (default 90 days from transfer completion — configurable per tenant)
+- The sending account still has sufficient balance, OR you use a different funding source
+
+## Full refund
+
+Simplest case — return the full amount:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/refunds \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "X-Idempotency-Key: refund-$(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "originalTransferId": "tx_abc123",
+    "reason": "customer_request",
+    "reasonDetails": "Customer returned product unopened"
+  }'
+```
+
+Omitting `amount` → full refund.
+
+## Partial refund
+
+Specify the amount to return:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/refunds \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "X-Idempotency-Key: refund-partial-$(uuidgen)" \
+  -d '{
+    "originalTransferId": "tx_abc123",
+    "amount": "15.00",
+    "reason": "service_not_rendered",
+    "reasonDetails": "Partial service — 30 of 100 API calls delivered"
+  }'
+```
+
+Multiple partial refunds per transfer allowed as long as the running total stays ≤ original amount.
+
+## Reason codes
+
+| Reason | When to use |
+|---|---|
+| `duplicate_payment` | You accidentally charged twice |
+| `service_not_rendered` | Buyer paid but didn't receive |
+| `customer_request` | Voluntary goodwill refund |
+| `error` | System / integration bug |
+| `other` | Anything else (provide `reasonDetails`) |
+
+Reason codes feed analytics + dispute defensibility. Be specific.
+
+## Idempotency
+
+**Always set `X-Idempotency-Key`.** Refunds are the one operation you absolutely do not want to accidentally double-process.
+
+The key is cached 24 hours. Same key + same parameters → returns original result. Same key + different parameters → `IDEMPOTENCY_KEY_REUSED`.
+
+## Watch settlement
+
+```bash
+curl https://sandbox.getsly.ai/v1/refunds/ref_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Status progresses `pending` → `completed` | `failed`.
+
+Or subscribe to webhooks: `transfer.refunded` fires on the original transfer when refund settles.
+
+## Failures
+
+| Error | Cause | Fix |
+|---|---|---|
+| `INSUFFICIENT_BALANCE` | Originating wallet no longer has funds | Top up or use a different source account |
+| `REFUND_WINDOW_EXPIRED` | Past the 90-day (or tenant-configured) window | Out of band — contact support with strong justification |
+| `TRANSFER_NOT_FOUND` | Wrong transfer ID or already fully refunded | Check `originalTransferId` |
+| `STATE_TRANSITION_INVALID` | Transfer not in `completed` state | Only completed transfers are refundable |
+| `AMOUNT_EXCEEDS_REMAINING` | Sum of partial refunds would exceed original | Reduce amount or refund balance |
+
+## List refunds
+
+Filter by status, account, or date range:
+
+```bash
+curl "https://sandbox.getsly.ai/v1/refunds?status=completed&since=2026-04-01&until=2026-04-23" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Common monitoring queries:
+- **Stuck pending** — refunds older than 1 hour still `pending`
+- **Recent failures** — indicate wallet or rail issues upstream
+- **Volume trend** — sudden spikes often precede disputes
+
+## Refund vs. dispute
+
+- **Refund** = you voluntarily return money. Use when the buyer asks or you spot an error first.
+- **[Dispute](/guides/handle-dispute)** = buyer filed a formal complaint via card network or Sly. You can still issue a refund during a dispute — often the cleanest resolution.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/refunds` | Initiate refund |
+| `GET /v1/refunds` | List refunds |
+| `GET /v1/refunds/:id` | Refund detail |
+
+## Practice
+
+In sandbox: send a small transfer, then immediately refund it. Check that your webhook handler receives `transfer.refunded` and updates your ledger. Test partial refunds, double-refund attempts, and post-window rejection before going live.

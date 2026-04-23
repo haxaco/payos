@@ -88,7 +88,21 @@
               "guides/cross-border-transfer",
               "guides/start-money-stream",
               "guides/receive-webhooks",
+              "guides/issue-refund",
+              "guides/handle-dispute",
+              "guides/fund-live-wallet",
               "guides/sandbox-testing"
+            ]
+          },
+          {
+            "group": "Settlement & Treasury",
+            "pages": [
+              "settlement/overview",
+              "settlement/rules",
+              "settlement/windows",
+              "settlement/reconciliation",
+              "settlement/treasury",
+              "settlement/scheduled-transfers"
             ]
           },
           {
