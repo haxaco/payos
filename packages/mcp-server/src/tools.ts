@@ -1771,7 +1771,7 @@ export const tools: Tool[] = [
   },
   {
     name: 'x402_probe',
-    description: 'Inspect an x402-protected endpoint WITHOUT paying. Sends `method url` with no X-PAYMENT, parses the 402 challenge (from body OR `payment-required` response header), and returns structured info: price, supported networks, vendor, body schema, auth requirements, and a protocol classification (standard-x402 / agentkit-gated / prepay / api-key-gated / free / broken). Also surfaces a `fallback.url` field when the 402 body advertises a free/demo endpoint (TrustLayer-style demo URLs) — always check `fallback` BEFORE calling x402_fetch so you can use the free path for low-volume reads. Use this before `x402_fetch` to decide whether a vendor is worth paying. Zero-cost, read-only — never signs or spends.',
+    description: 'Inspect an x402-protected endpoint WITHOUT paying. Sends `method url` with no X-PAYMENT, parses the 402 challenge (from body OR `payment-required` response header), and returns structured info: price, supported networks, vendor, body schema, auth requirements, and a protocol classification (standard-x402 / agentkit-gated / prepay / api-key-gated / free / broken). Also includes: `fallback.url` when the 402 body advertises a free/demo endpoint (TrustLayer-style); `reputation` with tenant-specific history for the host (totalCalls, successRate, classificationHistogram, recommendation: trusted/caution/avoid/unknown). Always check `reputation.recommendation` AND `fallback` BEFORE calling x402_fetch — skip `avoid` vendors outright, use fallbacks for low-volume reads. Zero-cost, read-only — never signs or spends.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1846,6 +1846,30 @@ export const tools: Tool[] = [
         agentId: { type: 'string', description: 'UUID of the agent' },
       },
       required: ['agentId'],
+    },
+  },
+  {
+    name: 'x402_endpoint_reputation',
+    description: 'Look up reliability history for an x402 vendor before paying. Aggregates every external x402 call this tenant has made to the given host and returns: totalCalls, successRate, classificationHistogram (which failure codes dominated), avgDurationMs, totalUsdcSpent, totalUsdcWasted (paid-but-failed), and a `recommendation` code — one of `trusted` (≥90% success, ≥3 calls), `caution` (40–90% success), `avoid` (<40%), or `unknown` (fewer than 3 calls). Use before x402_fetch to skip known-broken vendors (like StableTravel / PaySponge) and favor known-good ones (like mesh.heurist.xyz). Pass `host` as the bare hostname (e.g. "api.slamai.dev"). `window` defaults to 30d.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', description: 'Hostname to look up (e.g. "mesh.heurist.xyz"). Lowercased + trimmed server-side.' },
+        window: { type: 'string', description: 'Lookback window — "24h", "7d", or "30d" (default 30d).' },
+        env: { type: 'string', description: 'Filter to a specific environment: "live" or "test". Defaults to the caller\'s current environment.' },
+      },
+      required: ['host'],
+    },
+  },
+  {
+    name: 'x402_list_vendors',
+    description: 'List every x402 vendor this tenant has tried, sorted by volume, with per-vendor reliability scores. Returns the same shape as x402_endpoint_reputation but for every host. Useful for "which vendors have I wasted money on?" audits or picking alternatives in a category. Default window 30d.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        window: { type: 'string', description: 'Lookback window — "24h", "7d", or "30d" (default 30d).' },
+        env: { type: 'string', description: 'Filter to a specific environment: "live" or "test". Defaults to the caller\'s current environment.' },
+      },
     },
   },
   {

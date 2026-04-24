@@ -1476,6 +1476,23 @@ export function createMcpServer(
           headers: probeHeaders = {},
         } = args as { url: string; method?: string; body?: string; headers?: Record<string, string> };
 
+        // Best-effort reputation lookup — Epic 81. Tenant-scoped via the
+        // authenticated MCP session. Don't block the probe on this; if
+        // reputation isn't available (new tenant, network blip, etc.)
+        // just proceed without it. Done outside the try-blocks below
+        // so it runs once per probe regardless of 402/non-402 path.
+        let probeHost: string | null = null;
+        try { probeHost = new URL(url).hostname.toLowerCase(); } catch {}
+        let reputation: any = null;
+        if (probeHost) {
+          try {
+            const repRes: any = await ctx.sly.request(`/v1/analytics/x402-vendors/${encodeURIComponent(probeHost)}?window=30d`);
+            reputation = repRes?.data ?? null;
+          } catch {
+            reputation = null;
+          }
+        }
+
         const probeInit: RequestInit = {
           method,
           headers: { 'Accept': 'application/json', ...probeHeaders },
@@ -1518,6 +1535,7 @@ export function createMcpServer(
             note: protocol === 'free' ? 'Endpoint responded without requiring payment. Safe to call directly with standard fetch.'
               : protocol === 'api-key-gated' ? 'Endpoint requires an API key, not x402 payment. Use Epic 78 credential vault once shipped.'
               : `Endpoint returned ${probeRes.status} — inspect body before proceeding.`,
+            reputation,
           }, null, 2) }] };
         }
 
@@ -1611,11 +1629,30 @@ export function createMcpServer(
             url: fallbackUrl,
             note: 'Vendor advertised a free fallback endpoint in the 402 body. Rate limits apply — use for low-volume reads before committing to the paid path.',
           } : null,
-          recommendation: fallbackUrl
-            ? `Vendor offers a free fallback at ${fallbackUrl} — try that first for low-volume reads. Paid path costs $${amountUsdc?.toFixed(4) ?? '?'} USDC/call via x402_fetch.`
-            : protocolCode === 'standard-x402'
-              ? `Safe to pay via x402_fetch with maxPrice cap. Estimated cost per call: $${amountUsdc?.toFixed(4) ?? '?'} USDC.`
-              : protocolNotes.join(' '),
+          // Epic 81 — per-tenant historical reliability for this host.
+          // Agents should prefer `avoid` vendors' fallbacks or skip them
+          // outright; `trusted` vendors are the green light.
+          reputation,
+          recommendation: (() => {
+            if (reputation?.recommendation === 'avoid') {
+              return `AVOID: ${reputation.reasoning} ${fallbackUrl ? `Use the vendor's demo fallback at ${fallbackUrl} instead.` : 'Find an alternative.'}`;
+            }
+            if (reputation?.recommendation === 'caution') {
+              return `CAUTION: ${reputation.reasoning} Pay via x402_fetch only if you can tolerate the failure rate. Cost: $${amountUsdc?.toFixed(4) ?? '?'} USDC.`;
+            }
+            if (fallbackUrl) {
+              return `Vendor offers a free fallback at ${fallbackUrl} — try that first for low-volume reads. Paid path costs $${amountUsdc?.toFixed(4) ?? '?'} USDC/call via x402_fetch.`;
+            }
+            if (protocolCode === 'standard-x402') {
+              const repNote = reputation?.recommendation === 'trusted'
+                ? ` Vendor reputation: trusted (${reputation.completedCount}/${reputation.totalCalls} success).`
+                : reputation?.recommendation === 'unknown'
+                  ? ' No tenant history yet — treat as pioneer call.'
+                  : '';
+              return `Safe to pay via x402_fetch with maxPrice cap. Estimated cost per call: $${amountUsdc?.toFixed(4) ?? '?'} USDC.${repNote}`;
+            }
+            return protocolNotes.join(' ');
+          })(),
         }, null, 2) }] };
       }
 
@@ -2021,6 +2058,29 @@ export function createMcpServer(
           method: 'POST',
           body: '{}',
         });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'x402_endpoint_reputation': {
+        const { host, window, env } = args as { host: string; window?: string; env?: 'live' | 'test' };
+        if (!host) {
+          return { content: [{ type: 'text', text: JSON.stringify({ error: 'host is required' }, null, 2) }] };
+        }
+        const qs = new URLSearchParams();
+        if (window) qs.set('window', window);
+        if (env) qs.set('env', env);
+        const path = `/v1/analytics/x402-vendors/${encodeURIComponent(host)}${qs.toString() ? `?${qs.toString()}` : ''}`;
+        const result = await ctx.sly.request(path);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'x402_list_vendors': {
+        const { window, env } = args as { window?: string; env?: 'live' | 'test' };
+        const qs = new URLSearchParams();
+        if (window) qs.set('window', window);
+        if (env) qs.set('env', env);
+        const path = `/v1/analytics/x402-vendors${qs.toString() ? `?${qs.toString()}` : ''}`;
+        const result = await ctx.sly.request(path);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
