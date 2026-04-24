@@ -491,10 +491,13 @@ export function Sidebar() {
           </>
         )}
 
-        {/* 6. Developers — owner/admin only, collapsible. Expand state
-            persists to localStorage so Logs / API Keys / Webhooks stay
-            reachable without re-expanding every visit. */}
-        {isAdmin && !collapsed && (
+        {/* 6. Developers — visible to all authenticated users (not just
+            admins). Logs and the Developer portal are core debugging
+            tools every user should be able to reach; API Keys and
+            Webhooks still enforce their own permission checks on the
+            page itself for write operations. Collapsible, state
+            persists to localStorage. */}
+        {!collapsed && (
           <>
             <SectionHeader
               label="Developers"
