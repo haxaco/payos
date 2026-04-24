@@ -25,7 +25,20 @@ export interface VendorReputation {
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
   firstSeenAt: string | null;
+  // Actually moved on-chain. Completed rows with tx_hash set.
   totalUsdcSpent: number;
+  // Signed authorizations the vendor never redeemed. Chain was NOT
+  // settled — money stayed in the caller's wallet. Treat as
+  // "leakage risk surface" (stale auths could theoretically be
+  // redeemed until validBefore expires), not realized loss.
+  totalUsdcAuthorizedUnredeemed: number;
+  // On-chain settlement happened (tx_hash set) AND the call was still
+  // cancelled — rare, but when this is non-zero it is actual
+  // paid-and-got-nothing. THIS is real waste.
+  totalUsdcPaidUnreturned: number;
+  // Back-compat alias — equals totalUsdcAuthorizedUnredeemed +
+  // totalUsdcPaidUnreturned. Older dashboards read `.totalUsdcWasted`
+  // expecting this combined figure; keep it but prefer the split.
   totalUsdcWasted: number;
   recommendation: Recommendation;
   reasoning: string;
@@ -84,6 +97,8 @@ function normalizeHost(host: string): string {
 
 function mapRow(row: any): VendorReputation {
   const { recommendation, reasoning } = classify(row);
+  const authorizedUnredeemed = Number(row.total_usdc_authorized_unredeemed) || 0;
+  const paidUnreturned = Number(row.total_usdc_paid_unreturned) || 0;
   return {
     host: row.host,
     marketplace: row.marketplace ?? null,
@@ -100,7 +115,9 @@ function mapRow(row: any): VendorReputation {
     lastFailureAt: row.last_failure_at,
     firstSeenAt: row.first_seen_at,
     totalUsdcSpent: Number(row.total_usdc_spent) || 0,
-    totalUsdcWasted: Number(row.total_usdc_wasted) || 0,
+    totalUsdcAuthorizedUnredeemed: authorizedUnredeemed,
+    totalUsdcPaidUnreturned: paidUnreturned,
+    totalUsdcWasted: authorizedUnredeemed + paidUnreturned,
     recommendation,
     reasoning,
   };
@@ -157,6 +174,8 @@ export async function getVendorReputation(
     lastFailureAt: null,
     firstSeenAt: null,
     totalUsdcSpent: 0,
+    totalUsdcAuthorizedUnredeemed: 0,
+    totalUsdcPaidUnreturned: 0,
     totalUsdcWasted: 0,
     recommendation: 'unknown',
     reasoning: 'No calls to this host from this tenant in the window.',

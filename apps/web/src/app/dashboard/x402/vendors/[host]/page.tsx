@@ -34,7 +34,9 @@ interface VendorRow {
   lastFailureAt: string | null;
   firstSeenAt: string | null;
   totalUsdcSpent: number;
-  totalUsdcWasted: number;
+  totalUsdcAuthorizedUnredeemed: number;
+  totalUsdcPaidUnreturned: number;
+  totalUsdcWasted: number; // compat
   recommendation: Recommendation;
   reasoning: string;
 }
@@ -161,7 +163,17 @@ export default function VendorDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Stat label="Calls" value={String(v.totalCalls)} sub={`${v.completedCount}✓ ${v.cancelledCount}✗${v.pendingCount > 0 ? ` ${v.pendingCount}○` : ''}`} />
             <Stat label="Success rate" value={`${(v.successRate * 100).toFixed(0)}%`} tone={v.successRate >= 0.9 ? 'emerald' : v.successRate >= 0.4 ? 'amber' : 'red'} />
-            <Stat label="USDC spent" value={money(v.totalUsdcSpent)} sub={`${money(v.totalUsdcWasted)} wasted`} />
+            <Stat
+              label="USDC spent"
+              value={money(v.totalUsdcSpent)}
+              sub={
+                v.totalUsdcPaidUnreturned > 0
+                  ? `${money(v.totalUsdcPaidUnreturned)} lost (paid, no return)`
+                  : v.totalUsdcAuthorizedUnredeemed > 0
+                    ? `${money(v.totalUsdcAuthorizedUnredeemed)} signed but never redeemed`
+                    : undefined
+              }
+            />
             <Stat label="Avg response" value={v.avgDurationMs ? `${Math.round(v.avgDurationMs)}ms` : '—'} sub={v.avgResponseSize ? `${Math.round(v.avgResponseSize)} bytes` : undefined} />
           </div>
 

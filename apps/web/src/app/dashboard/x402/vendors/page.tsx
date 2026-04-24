@@ -30,7 +30,9 @@ interface VendorRow {
   lastFailureAt: string | null;
   firstSeenAt: string | null;
   totalUsdcSpent: number;
-  totalUsdcWasted: number;
+  totalUsdcAuthorizedUnredeemed: number;
+  totalUsdcPaidUnreturned: number;
+  totalUsdcWasted: number; // compat alias
   recommendation: Recommendation;
   reasoning: string;
 }
@@ -94,8 +96,9 @@ export default function X402VendorsPage() {
     const avoid = rows.filter((r) => r.recommendation === 'avoid').length;
     const unknown = rows.filter((r) => r.recommendation === 'unknown').length;
     const spent = rows.reduce((a, r) => a + r.totalUsdcSpent, 0);
-    const wasted = rows.reduce((a, r) => a + r.totalUsdcWasted, 0);
-    return { trusted, caution, avoid, unknown, spent, wasted, total: rows.length };
+    const unredeemed = rows.reduce((a, r) => a + r.totalUsdcAuthorizedUnredeemed, 0);
+    const lost = rows.reduce((a, r) => a + r.totalUsdcPaidUnreturned, 0);
+    return { trusted, caution, avoid, unknown, spent, unredeemed, lost, total: rows.length };
   }, [rows]);
 
   const filteredSorted = useMemo(() => {
@@ -105,7 +108,7 @@ export default function X402VendorsPage() {
       if (sortBy === 'volume') return b.totalCalls - a.totalCalls;
       if (sortBy === 'success') return b.successRate - a.successRate;
       if (sortBy === 'spent') return b.totalUsdcSpent - a.totalUsdcSpent;
-      if (sortBy === 'wasted') return b.totalUsdcWasted - a.totalUsdcWasted;
+      if (sortBy === 'wasted') return (b.totalUsdcPaidUnreturned + b.totalUsdcAuthorizedUnredeemed) - (a.totalUsdcPaidUnreturned + a.totalUsdcAuthorizedUnredeemed);
       if (sortBy === 'recent') {
         const aT = Math.max(
           a.lastSuccessAt ? new Date(a.lastSuccessAt).getTime() : 0,
@@ -139,7 +142,16 @@ export default function X402VendorsPage() {
         <KpiCard label="Trusted" value={String(stats.trusted)} tone="emerald" />
         <KpiCard label="Caution" value={String(stats.caution)} tone="amber" />
         <KpiCard label="Avoid" value={String(stats.avoid)} tone="red" />
-        <KpiCard label="USDC wasted" value={money(stats.wasted)} tone="red" subtitle={`${money(stats.spent)} paid successfully`} />
+        {stats.lost > 0 ? (
+          <KpiCard label="USDC lost (paid, no return)" value={money(stats.lost)} tone="red" subtitle={`${money(stats.spent)} paid successfully`} />
+        ) : (
+          <KpiCard
+            label="USDC successfully spent"
+            value={money(stats.spent)}
+            tone={stats.spent > 0 ? 'emerald' : undefined}
+            subtitle={stats.unredeemed > 0 ? `${money(stats.unredeemed)} signed but never redeemed` : 'No unredeemed auths'}
+          />
+        )}
       </div>
 
       {/* Controls */}
@@ -176,7 +188,7 @@ export default function X402VendorsPage() {
           <option value="volume">Sort: Call volume</option>
           <option value="success">Sort: Success rate</option>
           <option value="spent">Sort: USDC spent</option>
-          <option value="wasted">Sort: USDC wasted</option>
+          <option value="wasted">Sort: Unredeemed</option>
           <option value="recent">Sort: Most recent</option>
         </select>
       </div>
@@ -192,7 +204,7 @@ export default function X402VendorsPage() {
               <th className="px-6 py-3 text-right">Success</th>
               <th className="px-6 py-3 text-right">Avg time</th>
               <th className="px-6 py-3 text-right">USDC spent</th>
-              <th className="px-6 py-3 text-right">USDC wasted</th>
+              <th className="px-6 py-3 text-right" title="Authorizations signed but never redeemed on-chain, plus any actually-lost funds">Unredeemed</th>
               <th className="px-6 py-3 text-right">Last activity</th>
             </tr>
           </thead>
@@ -227,9 +239,21 @@ export default function X402VendorsPage() {
                   <td className="px-6 py-3 text-right tabular-nums text-gray-600 dark:text-gray-400">{r.avgDurationMs ? `${Math.round(r.avgDurationMs)}ms` : '—'}</td>
                   <td className="px-6 py-3 text-right tabular-nums text-gray-900 dark:text-white">{money(r.totalUsdcSpent)}</td>
                   <td className="px-6 py-3 text-right tabular-nums">
-                    <span className={r.totalUsdcWasted > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}>
-                      {money(r.totalUsdcWasted)}
-                    </span>
+                    {/* Distinguish signed-but-unredeemed (amber, no
+                        money moved) from paid-but-no-return (red,
+                        actual loss). Most of today's "wasted" is the
+                        former. */}
+                    {r.totalUsdcPaidUnreturned > 0 ? (
+                      <span className="text-red-600 dark:text-red-400" title="Settled on-chain but vendor returned nothing — actual loss">
+                        {money(r.totalUsdcPaidUnreturned)}
+                      </span>
+                    ) : r.totalUsdcAuthorizedUnredeemed > 0 ? (
+                      <span className="text-amber-600 dark:text-amber-400" title="Signed but vendor never redeemed — no money moved">
+                        {money(r.totalUsdcAuthorizedUnredeemed)}*
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">$0</span>
+                    )}
                   </td>
                   <td className="px-6 py-3 text-right text-xs text-gray-500">{relTime(lastIso)}</td>
                 </tr>
@@ -237,6 +261,13 @@ export default function X402VendorsPage() {
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 px-2">
+        <span className="font-medium">Unredeemed column:</span>{' '}
+        <span className="text-amber-600 dark:text-amber-400">amber*</span> = authorization signed but never redeemed on-chain (money stayed in wallet, leakage-risk only).
+        {' '}
+        <span className="text-red-600 dark:text-red-400">red</span> = settled on-chain but vendor returned nothing (actual loss).
       </div>
     </div>
   );
