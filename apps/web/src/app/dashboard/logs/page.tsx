@@ -3,7 +3,7 @@
 import { Download, ChevronRight, ShieldCheck, Activity, Webhook, FlaskConical } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useApiClient, useApiFetch, useApiConfig } from '@/lib/api-client';
+import { useApiFetch, useApiConfig } from '@/lib/api-client';
 
 // Locale-stable timestamp formatter. toLocaleString without a fixed
 // locale produces different output on server vs. client (react #418
@@ -89,12 +89,20 @@ function CollapsibleSection({
 // ─── Audit Trail — real data via api.reports.getAuditLogs ────────────────
 
 export function AuditTrailSection({ defaultOpen = false }: { defaultOpen?: boolean }) {
-  const api = useApiClient();
+  const apiFetch = useApiFetch();
+  const { authToken, apiUrl, apiEnvironment } = useApiConfig();
   const [open, setOpen] = useState(defaultOpen);
   const { data, isLoading } = useQuery({
-    queryKey: ['logs', 'audit-trail'],
-    queryFn: () => api!.reports.getAuditLogs({ limit: 50 }),
-    enabled: !!api && open,
+    queryKey: ['logs', 'audit-trail', apiEnvironment],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/usage/audit-log?limit=50`);
+      if (!res.ok) return { data: [] };
+      return res.json();
+    },
+    // Gate on authToken so the query doesn't fire before JWT is loaded
+    // (fired-without-auth produces a 401 spam in the console).
+    enabled: !!authToken && !!apiUrl && open,
+    refetchInterval: 60_000,
   });
   const entries = ((data as any)?.data as any[]) || [];
 
@@ -140,7 +148,7 @@ export function AuditTrailSection({ defaultOpen = false }: { defaultOpen?: boole
 
 export function OperationEventsSection({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const apiFetch = useApiFetch();
-  const { apiUrl, apiEnvironment } = useApiConfig();
+  const { authToken, apiUrl, apiEnvironment } = useApiConfig();
   const [open, setOpen] = useState(defaultOpen);
   const { data, isLoading } = useQuery({
     queryKey: ['logs', 'operations', apiEnvironment],
@@ -149,7 +157,8 @@ export function OperationEventsSection({ defaultOpen = false }: { defaultOpen?: 
       if (!res.ok) return { data: [] };
       return res.json();
     },
-    enabled: !!apiUrl && open,
+    // Gate on authToken so the fetch doesn't fire before JWT is loaded.
+    enabled: !!authToken && !!apiUrl && open,
     refetchInterval: 30_000,
   });
   const events = ((data as any)?.data as any[]) || [];
