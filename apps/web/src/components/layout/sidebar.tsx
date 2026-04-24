@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useSidebarData } from './use-sidebar-data';
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 
 // --- Nav data ---
 
@@ -211,34 +211,35 @@ export function Sidebar() {
   // Collapsible state — auto-expand if pathname matches
   const [agentsExpanded, setAgentsExpanded] = useState(() => pathname.startsWith('/dashboard/agents'));
   const [agenticExpanded, setAgenticExpanded] = useState(() => pathname.startsWith('/dashboard/agentic-payments'));
-  // Ops + Dev subgroup state persists to localStorage so a tenant who
-  // expands "Developers" to reach the Logs page keeps it expanded on the
-  // next visit. Default: expanded for admins — the common user flow
-  // (finding Logs, API Keys, Operations dashboards) broke when these
-  // auto-collapsed off-path and users complained they couldn't find
-  // observability in the menu.
+  // Ops + Dev subgroup state. Default: COLLAPSED unless the current
+  // path is inside the group (then auto-expand). localStorage preference
+  // is applied *after* mount via useEffect so SSR and first client
+  // render produce identical markup — reading localStorage during the
+  // useState initializer causes React #418 hydration mismatch.
   const OPS_EXPANDED_KEY = 'sly:sidebar-ops-expanded';
   const DEV_EXPANDED_KEY = 'sly:sidebar-dev-expanded';
-  const [opsExpanded, setOpsExpanded] = useState(() => {
-    if (['/dashboard/settlements', '/dashboard/schedules', '/dashboard/refunds', '/dashboard/funding',
-         '/dashboard/treasury', '/dashboard/reports', '/dashboard/compliance', '/dashboard/workflows',
-         '/dashboard/fx', '/dashboard/operations',
-        ].some((p) => pathname.startsWith(p))) return true;
-    if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem(OPS_EXPANDED_KEY);
-      if (stored === 'false') return false;
-    }
-    return true;
-  });
-  const [devExpanded, setDevExpanded] = useState(() => {
-    if (['/dashboard/developers', '/dashboard/api-keys', '/dashboard/webhooks', '/dashboard/logs',
-        ].some((p) => pathname.startsWith(p))) return true;
-    if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem(DEV_EXPANDED_KEY);
-      if (stored === 'false') return false;
-    }
-    return true;
-  });
+  const opsPathMatch = ['/dashboard/settlements', '/dashboard/schedules', '/dashboard/refunds', '/dashboard/funding',
+    '/dashboard/treasury', '/dashboard/reports', '/dashboard/compliance', '/dashboard/workflows',
+    '/dashboard/fx', '/dashboard/operations',
+  ].some((p) => pathname.startsWith(p));
+  const devPathMatch = ['/dashboard/developers', '/dashboard/api-keys', '/dashboard/webhooks', '/dashboard/logs',
+  ].some((p) => pathname.startsWith(p));
+  const [opsExpanded, setOpsExpanded] = useState(opsPathMatch);
+  const [devExpanded, setDevExpanded] = useState(devPathMatch);
+  useEffect(() => {
+    try {
+      if (!opsPathMatch) {
+        const stored = window.localStorage.getItem(OPS_EXPANDED_KEY);
+        if (stored === 'true') setOpsExpanded(true);
+      }
+      if (!devPathMatch) {
+        const stored = window.localStorage.getItem(DEV_EXPANDED_KEY);
+        if (stored === 'true') setDevExpanded(true);
+      }
+    } catch {}
+    // Only run once on mount — subsequent toggles are user-driven.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const toggleOps = () => setOpsExpanded((prev) => {
     const next = !prev;
     try { window.localStorage.setItem(OPS_EXPANDED_KEY, String(next)); } catch {}
