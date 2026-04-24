@@ -16,6 +16,7 @@ import { useApiConfig, useApiFetch } from '@/lib/api-client';
 import { useEnvironment } from '@/lib/environment-context';
 import { Key, Plus, Copy, Check, Trash2, RotateCcw, Eye, EyeOff, AlertTriangle, Loader2, Shield } from 'lucide-react';
 import { toast } from 'sonner';
+import { ScannerKeysSection } from '@/components/api-keys/scanner-keys-section';
 
 interface ApiKeyRecord {
   id: string;
@@ -324,6 +325,9 @@ export default function ApiKeysPage() {
           <p>Keys are shown only once when created. Store them securely and never commit them to version control.</p>
         </CardContent>
       </Card>
+
+      {/* Scanner keys (separate keyspace — pk_* won't work on scanner, and vice versa) */}
+      <ScannerKeysSection />
     </div>
   );
 }

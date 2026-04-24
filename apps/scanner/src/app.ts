@@ -12,6 +12,7 @@ import { healthRouter } from './routes/health.js';
 import { trafficMonitorRouter } from './routes/traffic-monitor.js';
 import { reportsRouter } from './routes/reports.js';
 import { creditsRouter } from './routes/credits.js';
+import { keysRouter } from './routes/keys.js';
 import { authMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import { usageCounterMiddleware } from './middleware/usage-counter.js';
@@ -94,6 +95,7 @@ v1.route('/scanner', prospectsRouter);
 v1.route('/scanner', trafficMonitorRouter);
 v1.route('/scanner', reportsRouter);
 v1.route('/scanner', creditsRouter);
+v1.route('/scanner', keysRouter);
 
 app.route('/v1', v1);
 

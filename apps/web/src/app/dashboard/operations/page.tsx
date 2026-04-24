@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useApiConfig } from '@/lib/api-client';
+import { ScannerSection } from '@/components/operations/scanner-section';
 import {
   Activity,
   BarChart3,
@@ -525,6 +526,9 @@ export default function OperationsPage() {
           </div>
         )}
       </div>
+
+      {/* Scanner usage (separate product, distinct credit-based metrics) */}
+      <ScannerSection />
     </div>
   );
 }

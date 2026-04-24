@@ -1,0 +1,333 @@
+'use client';
+
+import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { AlertCircle, Coins, Mail, Radar, TrendingUp } from 'lucide-react';
+import { useScannerApi } from '@/lib/scanner-api';
+
+/**
+ * Scanner usage + ledger, rendered as a stacked section below the main API
+ * operations on /dashboard/operations. Hits sly-scanner.vercel.app directly
+ * using the logged-in user's Supabase JWT.
+ */
+export function ScannerSection() {
+  const scanner = useScannerApi();
+
+  const balanceQuery = useQuery({
+    queryKey: ['scanner', 'balance'],
+    queryFn: async () => {
+      const res = await scanner.get('/v1/scanner/credits/balance');
+      if (!res.ok) throw new Error('balance-fetch-failed');
+      return (await res.json()) as {
+        balance: number;
+        grantedTotal: number;
+        consumedTotal: number;
+      };
+    },
+    staleTime: 30_000,
+  });
+
+  // Last 30 days of day-buckets
+  const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const usageByDayQuery = useQuery({
+    queryKey: ['scanner', 'usage', 'day', from],
+    queryFn: async () => {
+      const res = await scanner.get(
+        `/v1/scanner/usage?group_by=day&from=${encodeURIComponent(from)}`,
+      );
+      if (!res.ok) throw new Error('usage-day-failed');
+      const json = (await res.json()) as {
+        data: Array<{
+          day: string;
+          requests: number;
+          credits: number;
+          errors: number;
+          total_duration_ms: number;
+        }>;
+      };
+      return json.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const usageByEndpointQuery = useQuery({
+    queryKey: ['scanner', 'usage', 'endpoint'],
+    queryFn: async () => {
+      const res = await scanner.get('/v1/scanner/usage?group_by=endpoint');
+      if (!res.ok) throw new Error('usage-endpoint-failed');
+      const json = (await res.json()) as {
+        data: Array<{
+          endpoint: string;
+          requests: number;
+          credits: number;
+          errors: number;
+          total_duration_ms: number;
+        }>;
+      };
+      return json.data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const ledgerQuery = useQuery({
+    queryKey: ['scanner', 'ledger'],
+    queryFn: async () => {
+      const res = await scanner.get('/v1/scanner/credits/ledger?limit=20');
+      if (!res.ok) throw new Error('ledger-failed');
+      const json = (await res.json()) as {
+        data: Array<{
+          id: string;
+          delta: number;
+          reason: string;
+          source: string | null;
+          balance_after: number;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        }>;
+      };
+      return json.data ?? [];
+    },
+    staleTime: 30_000,
+  });
+
+  const balance = balanceQuery.data?.balance ?? 0;
+  const needsTopup = balanceQuery.isSuccess && balance < 500;
+
+  const monthRequests =
+    usageByDayQuery.data
+      ?.filter((d) => d.day >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+      .reduce((sum, d) => sum + d.requests, 0) ?? 0;
+
+  return (
+    <div id="scanner" className="space-y-6 pt-8 mt-8 border-t border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Radar className="h-5 w-5" />
+            Scanner
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Agentic-commerce scanner — credit-based, tracked separately from the main API.{' '}
+            <Link href="/dashboard/api-keys#scanner" className="underline hover:text-gray-900 dark:hover:text-white">
+              Manage scanner keys →
+            </Link>
+          </p>
+        </div>
+      </div>
+
+      {/* Balance row */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <Kpi
+          label="Balance"
+          value={balanceQuery.isLoading ? '—' : balance.toLocaleString()}
+          icon={<Coins className="h-4 w-4 text-amber-500" />}
+          accent={needsTopup ? 'warn' : 'ok'}
+        />
+        <Kpi
+          label="Granted (lifetime)"
+          value={(balanceQuery.data?.grantedTotal ?? 0).toLocaleString()}
+          icon={<TrendingUp className="h-4 w-4 text-emerald-500" />}
+        />
+        <Kpi
+          label="Consumed (lifetime)"
+          value={(balanceQuery.data?.consumedTotal ?? 0).toLocaleString()}
+          icon={<AlertCircle className="h-4 w-4 text-rose-500" />}
+        />
+        <Kpi
+          label="Requests (30d)"
+          value={usageByDayQuery.isLoading ? '—' : monthRequests.toLocaleString()}
+          icon={<Radar className="h-4 w-4 text-indigo-500" />}
+        />
+      </div>
+
+      {needsTopup && (
+        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-2">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                Scanner balance is low — {balance} credits remaining
+              </p>
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                Contact us to top up. Credit packs start at 5,000 for $200.
+              </p>
+              <a
+                href="mailto:partners@getsly.ai?subject=Scanner%20credits%20top-up"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-900 dark:text-amber-100 hover:underline"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                partners@getsly.ai
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Usage chart */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Requests per day (last 30d)</h3>
+        </div>
+        {usageByDayQuery.isLoading ? (
+          <div className="h-56 flex items-center justify-center text-sm text-gray-500">Loading…</div>
+        ) : !usageByDayQuery.data || usageByDayQuery.data.length === 0 ? (
+          <div className="h-56 flex items-center justify-center text-sm text-gray-500">
+            No scanner requests yet. Create a scanner key in{' '}
+            <Link href="/dashboard/api-keys#scanner" className="underline ml-1">API Keys</Link>
+            {' '}and make your first call.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={usageByDayQuery.data}>
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} tickFormatter={(v) => v.slice(5)} />
+              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+              <Tooltip
+                cursor={{ fill: 'rgba(99,102,241,0.1)' }}
+                contentStyle={{ fontSize: 12 }}
+                formatter={(v: number, name: string) => [v.toLocaleString(), name]}
+              />
+              <Bar dataKey="requests" fill="#6366f1" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="credits" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="errors" fill="#ef4444" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Top endpoints */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Top scanner endpoints</h3>
+        {!usageByEndpointQuery.data || usageByEndpointQuery.data.length === 0 ? (
+          <p className="text-sm text-gray-500">No scanner activity yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-2 font-medium text-gray-500">Endpoint</th>
+                  <th className="text-right py-2 font-medium text-gray-500">Requests</th>
+                  <th className="text-right py-2 font-medium text-gray-500">Credits</th>
+                  <th className="text-right py-2 font-medium text-gray-500">Errors</th>
+                  <th className="text-right py-2 font-medium text-gray-500">Avg latency</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usageByEndpointQuery.data
+                  .sort((a, b) => b.requests - a.requests)
+                  .slice(0, 15)
+                  .map((e) => (
+                    <tr key={e.endpoint} className="border-b border-gray-100 dark:border-gray-700/50">
+                      <td className="py-2 text-gray-700 dark:text-gray-300 font-mono text-xs">{e.endpoint}</td>
+                      <td className="py-2 text-right text-gray-900 dark:text-white">{e.requests.toLocaleString()}</td>
+                      <td className="py-2 text-right text-gray-900 dark:text-white">{e.credits.toLocaleString()}</td>
+                      <td className="py-2 text-right text-gray-500">{e.errors.toLocaleString()}</td>
+                      <td className="py-2 text-right text-gray-500">
+                        {e.requests > 0 ? Math.round(e.total_duration_ms / e.requests) : 0}ms
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Recent ledger */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent ledger activity</h3>
+        {!ledgerQuery.data || ledgerQuery.data.length === 0 ? (
+          <p className="text-sm text-gray-500">No ledger entries yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-2 font-medium text-gray-500">When</th>
+                  <th className="text-left py-2 font-medium text-gray-500">Reason</th>
+                  <th className="text-right py-2 font-medium text-gray-500">Δ</th>
+                  <th className="text-right py-2 font-medium text-gray-500">Balance after</th>
+                  <th className="text-left py-2 font-medium text-gray-500">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledgerQuery.data.map((row) => (
+                  <tr key={row.id} className="border-b border-gray-100 dark:border-gray-700/50">
+                    <td className="py-2 text-gray-500 text-xs whitespace-nowrap">
+                      {new Date(row.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-2">
+                      <span
+                        className={
+                          'inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ' +
+                          (row.reason === 'consume'
+                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                            : row.reason === 'grant'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                              : row.reason === 'refund'
+                                ? 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300'
+                                : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300')
+                        }
+                      >
+                        {row.reason}
+                      </span>
+                    </td>
+                    <td
+                      className={
+                        'py-2 text-right font-mono ' +
+                        (row.delta < 0 ? 'text-rose-600' : 'text-emerald-600')
+                      }
+                    >
+                      {row.delta > 0 ? '+' : ''}
+                      {row.delta}
+                    </td>
+                    <td className="py-2 text-right text-gray-900 dark:text-white">{row.balance_after}</td>
+                    <td className="py-2 text-gray-500 font-mono text-xs truncate max-w-xs">
+                      {row.source ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  icon,
+  accent,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  accent?: 'ok' | 'warn';
+}) {
+  return (
+    <div
+      className={
+        'rounded-lg border p-4 ' +
+        (accent === 'warn'
+          ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800'
+          : 'border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700')
+      }
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-gray-500">{label}</span>
+        {icon}
+      </div>
+      <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+    </div>
+  );
+}
