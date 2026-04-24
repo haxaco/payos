@@ -34,7 +34,7 @@ if (process.env.NODE_ENV === 'development') {
 
 // Request ID middleware — accepts inbound X-Request-ID, otherwise generates a
 // UUID. Stores on ctx vars so downstream middleware (credits, usage) can tag
-// debits and log entries with a consistent correlation ID.
+// debits with a consistent correlation ID.
 app.use('*', async (c, next) => {
   const requestId = c.req.header('x-request-id') || crypto.randomUUID();
   c.set('requestId', requestId);
