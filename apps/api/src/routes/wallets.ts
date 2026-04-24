@@ -1071,6 +1071,14 @@ app.get('/:id/balance', async (c) => {
         if (isAgentEoa && onChainBalance !== null) {
           updatePatch.balance = parseFloat(onChainBalance);
         }
+        // For circle_custodial, the authoritative ledger value is what
+        // Circle's API reports (that's what accounting + spend-caps
+        // key off). Mirror it into `balance` so the stored value doesn't
+        // drift from Circle. On-chain is still shown separately for
+        // transparency when the two disagree.
+        if (isCircleCustodial && circleReported !== null) {
+          updatePatch.balance = parseFloat(circleReported);
+        }
         supabase
           .from('wallets')
           .update(updatePatch)
