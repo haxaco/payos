@@ -1,14 +1,15 @@
 import type { Context, Next } from 'hono';
 import { recordRequest, flushUsage } from '../services/usage.js';
+import { waitUntil } from '../utils/wait-until.js';
 
 /**
  * Placed after authMiddleware so ctx is populated.
  *
- * Records the request into the in-memory buffer, then triggers a flush
- * synchronously — serverless functions don't keep interval timers alive
- * between invocations, so we flush per request. The flush is ~1 DB round-trip
- * and upserts are idempotent per (tenant, minute_bucket, method, path,
- * status, actor), so concurrent flushes are safe.
+ * Records the request into the in-memory buffer, then hands the flush off to
+ * Vercel's waitUntil() so the function instance stays alive long enough for
+ * the Supabase upsert to complete. Without waitUntil, serverless teardown
+ * would kill the in-flight flush promise and scanner_usage_events would
+ * never receive rows.
  */
 export async function usageCounterMiddleware(c: Context, next: Next) {
   const start = performance.now();
@@ -31,12 +32,11 @@ export async function usageCounterMiddleware(c: Context, next: Next) {
     creditsConsumed,
   });
 
-  // Fire-and-forget flush. In Fluid Compute the floating promise runs until
-  // either the function goes idle or the next invocation reuses the instance;
-  // upserts are idempotent so retries are safe.
-  flushUsage().catch((err) => {
-    console.error('[scanner-usage] flush failed:', err);
-  });
+  waitUntil(
+    flushUsage().catch((err) => {
+      console.error('[scanner-usage] flush failed:', err);
+    }),
+  );
 }
 
 declare module 'hono' {

@@ -28,6 +28,11 @@ export const CREDIT_COSTS: Record<string, number> = {
   'GET /v1/scanner/credits/balance': 0,
   'GET /v1/scanner/credits/ledger': 0,
   'GET /v1/scanner/usage': 0,
+
+  // Scanner key management (self-serve from the Sly dashboard).
+  'GET /v1/scanner/keys': 0,
+  'POST /v1/scanner/keys': 0,
+  'DELETE /v1/scanner/keys/:id': 0,
 };
 
 export const PER_BATCH_TARGET = 0.5;
