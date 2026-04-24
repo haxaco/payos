@@ -48,12 +48,14 @@ type Phase = 'select-provider' | 'coinbase-init' | 'coinbase-ready' | 'stripe-lo
 export function DepositModal({
   walletId, walletName, walletAddress, blockchain, walletType, onClose,
 }: DepositModalProps) {
-  // Agent EOAs are Sly-managed signing keys, not Circle provider wallets —
-  // the fiat onramps (Coinbase/Stripe/Crossmint) route payouts through
-  // Circle, so they don't work here. Land the user directly on the QR
-  // flow which accepts USDC from any wallet via direct on-chain transfer.
+  // Fiat onramps (Coinbase / Stripe / Crossmint) accept any on-chain
+  // address — they deliver USDC directly to the wallet_address we pass
+  // through the session token. The /onramp-session API endpoint needs
+  // only wallet_address + blockchain, no Circle provider ID. So the
+  // same selector works for agent_eoa as for Circle custodial: user
+  // picks fiat provider or QR, money ends up at the EOA on Base.
   const isAgentEoa = walletType === 'agent_eoa';
-  const [phase, setPhase] = useState<Phase>(isAgentEoa ? 'qrcode' : 'select-provider');
+  const [phase, setPhase] = useState<Phase>('select-provider');
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
@@ -275,6 +277,19 @@ export function DepositModal({
               <p className="text-center text-xs text-gray-400 dark:text-gray-500 pt-1">
                 All options deliver USDC directly to your wallet. Sly never holds your money.
               </p>
+
+              {/* EOA-specific quick tip: auto-refill is the zero-effort
+                  path for agent wallets. Pointer to where it lives. */}
+              {isAgentEoa && (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-xs text-blue-800 dark:text-blue-200">
+                    <strong>Tip:</strong> skip one-off top-ups by enabling{' '}
+                    <strong>Auto-refill</strong> on the agent&apos;s Wallet tab.
+                    Sly will top up this EOA from the tenant Circle master
+                    whenever it runs low, with a per-day cap you control.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

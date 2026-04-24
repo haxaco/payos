@@ -1771,7 +1771,7 @@ export const tools: Tool[] = [
   },
   {
     name: 'x402_probe',
-    description: 'Inspect an x402-protected endpoint WITHOUT paying. Sends `method url` with no X-PAYMENT, parses the 402 challenge (from body OR `payment-required` response header), and returns structured info: price, supported networks, vendor, body schema, auth requirements, and a protocol classification (standard-x402 / agentkit-gated / prepay / api-key-gated / free / broken). Use this before `x402_fetch` to decide whether a vendor is worth paying. Zero-cost, read-only — never signs or spends.',
+    description: 'Inspect an x402-protected endpoint WITHOUT paying. Sends `method url` with no X-PAYMENT, parses the 402 challenge (from body OR `payment-required` response header), and returns structured info: price, supported networks, vendor, body schema, auth requirements, and a protocol classification (standard-x402 / agentkit-gated / prepay / api-key-gated / free / broken). Also surfaces a `fallback.url` field when the 402 body advertises a free/demo endpoint (TrustLayer-style demo URLs) — always check `fallback` BEFORE calling x402_fetch so you can use the free path for low-volume reads. Use this before `x402_fetch` to decide whether a vendor is worth paying. Zero-cost, read-only — never signs or spends.',
     inputSchema: {
       type: 'object',
       properties: {

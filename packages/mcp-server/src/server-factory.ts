@@ -1528,6 +1528,13 @@ export function createMcpServer(
           if (fromHeader) challenge = fromHeader;
         }
         const accept = pickX402Accept(challenge);
+        // Some vendors embed a free / demo fallback URL in the 402 body
+        // (e.g. TrustLayer's {"x-trustlayer":{"demo":{"url":"..."}}}).
+        // Expose it in the probe response so agents can choose to use
+        // the free endpoint instead of paying — before spending a cent.
+        const fallbackUrl = parsedBody && typeof parsedBody === 'object'
+          ? findDemoUrl(parsedBody)
+          : null;
 
         // Classify what KIND of x402 this is before signing
         let protocolCode: string = 'standard-x402';
@@ -1597,9 +1604,18 @@ export function createMcpServer(
               : 'UNKNOWN',
             explanation: protocolNotes.join(' '),
           },
-          recommendation: protocolCode === 'standard-x402'
-            ? `Safe to pay via x402_fetch with maxPrice cap. Estimated cost per call: $${amountUsdc?.toFixed(4) ?? '?'} USDC.`
-            : protocolNotes.join(' '),
+          // Free/demo fallback URL detected in the 402 body, if any.
+          // Callers can hit this without paying; rate-limited by the
+          // vendor. Same detection logic as the post-failure classifier.
+          fallback: fallbackUrl ? {
+            url: fallbackUrl,
+            note: 'Vendor advertised a free fallback endpoint in the 402 body. Rate limits apply — use for low-volume reads before committing to the paid path.',
+          } : null,
+          recommendation: fallbackUrl
+            ? `Vendor offers a free fallback at ${fallbackUrl} — try that first for low-volume reads. Paid path costs $${amountUsdc?.toFixed(4) ?? '?'} USDC/call via x402_fetch.`
+            : protocolCode === 'standard-x402'
+              ? `Safe to pay via x402_fetch with maxPrice cap. Estimated cost per call: $${amountUsdc?.toFixed(4) ?? '?'} USDC.`
+              : protocolNotes.join(' '),
         }, null, 2) }] };
       }
 
