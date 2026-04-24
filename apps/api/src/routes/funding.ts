@@ -426,6 +426,85 @@ app.get('/conversion-rates', async (c) => {
 // ============================================
 
 /**
+ * POST /v1/funding/topup-link
+ *
+ * Chat-first top-up. Returns a standalone Coinbase Pay URL the tenant
+ * can click to buy USDC with a card/bank and deliver it directly to
+ * the specified wallet address. No embedded widget, no session token
+ * roundtrip on the client — the URL is self-contained, suitable for
+ * posting into chat (e.g. an agent saying "tap this to top me up").
+ *
+ * Body: { wallet_id: string, preset_amount_usdc?: number }
+ * Returns: { url, walletAddress, network, expiresAt }
+ */
+app.post('/topup-link', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json().catch(() => ({}));
+  const wallet_id = body?.wallet_id as string | undefined;
+  const presetAmount = Number(body?.preset_amount_usdc) > 0 ? Number(body.preset_amount_usdc) : undefined;
+
+  if (!wallet_id) {
+    return c.json({ error: 'wallet_id is required' }, 400);
+  }
+
+  try {
+    const supabase = createClient();
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, status, wallet_address, blockchain, wallet_type, name')
+      .eq('id', wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+    if (wallet.status !== 'active') {
+      return c.json({ error: `Wallet is ${wallet.status}, must be active` }, 400);
+    }
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({
+        error: 'no_onchain_address',
+        message: 'Internal wallets cannot receive fiat top-ups. Use an on-chain wallet (agent_eoa, circle_custodial, external).',
+      }, 400);
+    }
+
+    // Mint a CDP session token — this is the preferred approach over
+    // bare appId links because it pins the destination address on the
+    // Coinbase side (prevents URL tampering and carries onramp config).
+    const tokenResult = await createOnrampToken({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+    });
+    const network = BLOCKCHAIN_TO_COINBASE[wallet.blockchain || 'base'] || 'base';
+
+    // Construct the hosted Coinbase Pay URL. Session tokens are valid
+    // for ~5 min; Coinbase refuses reuse after redemption.
+    const params = new URLSearchParams();
+    params.set('sessionToken', tokenResult.token);
+    params.set('defaultAsset', 'USDC');
+    params.set('defaultNetwork', network);
+    if (presetAmount) params.set('presetFiatAmount', String(presetAmount));
+    const url = `https://pay.coinbase.com/buy/select-asset?${params.toString()}`;
+    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+
+    return c.json({
+      url,
+      walletAddress: wallet.wallet_address,
+      walletName: wallet.name,
+      network,
+      blockchain: wallet.blockchain,
+      asset: 'USDC',
+      presetAmountUsdc: presetAmount ?? null,
+      expiresAt,
+      instructions: 'Open this URL in a browser to pay by card/bank. USDC arrives at the listed address on Base within ~2 minutes.',
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
  * POST /v1/funding/onramp-session - Create Coinbase Onramp Session Token
  *
  * Returns a session token and wallet details for embedding the Coinbase onramp widget.

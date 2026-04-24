@@ -1849,6 +1849,18 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'wallet_topup_link',
+    description: 'Generate a one-time Coinbase Pay URL that lets the tenant top up any Sly wallet by clicking a link — ideal for chat. Works for agent_eoa, circle_custodial, and external wallets with an on-chain address. USDC is delivered straight to the wallet on Base; Sly never touches the funds. The URL is self-contained (embeds a short-lived session token pinned to the destination address) and expires in ~5 minutes. Accept optional `presetAmountUsdc` to pre-fill a dollar amount. Return includes { url, walletAddress, network, expiresAt, instructions } — agents should share the url and tell the tenant it expires soon.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        walletId: { type: 'string', description: 'UUID of the destination wallet' },
+        presetAmountUsdc: { type: 'number', description: 'Pre-fill the Coinbase checkout with this USD amount (optional)' },
+      },
+      required: ['walletId'],
+    },
+  },
+  {
     name: 'agent_enable_auto_refill',
     description: 'Enable automatic USDC top-ups for an agent EOA. A background worker watches the on-chain balance and tops it up from the tenant Circle master whenever it falls below `threshold`, refilling up to `target`. All refills are bounded by a per-day cap and KYA limits. Returns the saved policy.',
     inputSchema: {

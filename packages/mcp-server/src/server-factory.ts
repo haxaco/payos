@@ -2024,6 +2024,21 @@ export function createMcpServer(
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
+      case 'wallet_topup_link': {
+        const { walletId, presetAmountUsdc } = args as {
+          walletId: string;
+          presetAmountUsdc?: number;
+        };
+        const result = await ctx.sly.request('/v1/funding/topup-link', {
+          method: 'POST',
+          body: JSON.stringify({
+            wallet_id: walletId,
+            preset_amount_usdc: presetAmountUsdc,
+          }),
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
       case 'agent_enable_auto_refill': {
         const { agentId, threshold, target, dailyCap } = args as {
           agentId: string;
