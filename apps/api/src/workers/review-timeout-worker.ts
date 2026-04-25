@@ -35,7 +35,7 @@ export class ReviewTimeoutWorker {
   }
 
   async sweep(): Promise<number> {
-    const supabase = createClient();
+    const supabase: any = createClient();
     let timedOut = 0;
 
     // Find all input-required tasks (filter in-memory for review metadata)

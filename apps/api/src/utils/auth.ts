@@ -208,9 +208,33 @@ export type SecurityEventType =
   | 'team_invite_resent'
   | 'accept_invite_rate_limited'
   | 'accept_invite_failure'
-  | 'accept_invite_success';
+  | 'accept_invite_success'
+  // Session lifecycle (Story 11.12)
+  | 'session_created'
+  | 'session_refreshed'
+  | 'session_revoked'
+  | 'all_sessions_revoked'
+  | 'invalid_refresh_token'
+  | 'refresh_token_reuse'
+  | 'new_ip_detected'
+  | 'new_device_detected'
+  // Provisioning
+  | 'provision_rate_limited'
+  | 'provision_idempotent'
+  | 'provision_success'
+  // Agent signup
+  | 'agent_signup_rate_limited'
+  | 'agent_signup_failure'
+  | 'agent_signup_success'
+  | 'agent_claimed'
+  // Agent onboarding (Epic onboarding-agent)
+  | 'agent_onboard_rate_limited'
+  | 'agent_onboard_screened'
+  | 'agent_onboard_success'
+  // Tenant provisioning
+  | 'tenant_provisioned';
 
-export type SecurityEventSeverity = 'info' | 'warning' | 'critical';
+export type SecurityEventSeverity = 'info' | 'warning' | 'critical' | 'error';
 
 /**
  * Log security event

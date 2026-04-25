@@ -367,10 +367,11 @@ export async function executeSettlementWithMandate(
     mandate_token,
     amount,
     currency,
-    corridor,
+    corridor: corridorRaw,
     recipient,
     idempotency_key,
   } = request;
+  const corridor: 'pix' | 'spei' | 'auto' = corridorRaw ?? 'auto';
 
   // Import AP2 mandate service dynamically to avoid circular dependencies
   const { getAP2MandateService } = await import('../ap2/mandate-service.js');
@@ -415,7 +416,7 @@ export async function executeSettlementWithMandate(
 
   // Calculate estimated completion (only if not deferred)
   let estimatedCompletion: Date | undefined;
-  if (!shouldDefer && corridor !== 'auto') {
+  if (!shouldDefer && (corridor as string) !== 'auto') {
     const estimatedMinutes = corridor === 'pix' ? 1 : 30;
     estimatedCompletion = new Date(Date.now() + estimatedMinutes * 60 * 1000);
   }

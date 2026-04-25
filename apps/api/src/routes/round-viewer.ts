@@ -55,7 +55,7 @@ roundViewerRouter.use('*', async (c, next) => {
   c.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Credentials', 'true');
-  if (c.req.method === 'OPTIONS') return c.text('', 204);
+  if (c.req.method === 'OPTIONS') return c.text('', 204 as any);
   return next();
 });
 
@@ -109,7 +109,7 @@ roundViewerRouter.get('/stream', async (c) => {
 roundViewerRouter.get('/snapshot', async (c) => {
   const minutes = parseInt(c.req.query('minutes') || '5');
   const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
-  const supabase = createClient(); // service role — bypasses RLS
+  const supabase: any = createClient(); // service role — bypasses RLS
 
   const [tasksRes, mandatesRes, transfersRes] = await Promise.all([
     supabase.from('a2a_tasks')
@@ -172,7 +172,7 @@ roundViewerRouter.get('/snapshot', async (c) => {
  * All active agents with skills and wallets — cross-tenant.
  */
 roundViewerRouter.get('/agents', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: agents } = await supabase
     .from('agents')
@@ -216,7 +216,7 @@ roundViewerRouter.get('/agents', async (c) => {
  * can populate its sidebar without crashing on CORS preflight.
  */
 roundViewerRouter.get('/merchants', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const tenantId = process.env.SIM_TENANT_ID || 'aaaaaaaa-0000-0000-0000-000000000002';
 
   const { data: accounts } = await supabase
@@ -268,7 +268,7 @@ roundViewerRouter.get('/merchants', async (c) => {
  */
 roundViewerRouter.get('/merchant/:id', async (c) => {
   const rawId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const tenantId = process.env.SIM_TENANT_ID || 'aaaaaaaa-0000-0000-0000-000000000002';
 
   // Decode the viewer id scheme.
@@ -365,7 +365,7 @@ roundViewerRouter.get('/merchant/:id', async (c) => {
  * the same table but are noise for merchant flows.
  */
 roundViewerRouter.get('/x402-endpoints', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const tenantId = process.env.SIM_TENANT_ID || 'aaaaaaaa-0000-0000-0000-000000000002';
 
   const { data: endpoints } = await supabase
@@ -386,7 +386,7 @@ roundViewerRouter.get('/x402-endpoints', async (c) => {
  */
 roundViewerRouter.get('/agent/:id', async (c) => {
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const [agentRes, skillsRes, walletsRes, feedbackRes] = await Promise.all([
     supabase.from('agents').select('id, name, status, kya_tier, kya_status, description, type, erc8004_agent_id, model_family, processing_mode, total_volume, total_transactions, discoverable, created_at').eq('id', id).maybeSingle(),
@@ -591,7 +591,7 @@ roundViewerRouter.post('/kill-switch/:agentId', async (c) => {
     return c.json({ error: 'Invalid agentId (must be UUID)' }, 400);
   }
 
-  const supabase = createClient(); // service role — bypasses RLS (admin-key protected upstream)
+  const supabase: any = createClient(); // service role — bypasses RLS (admin-key protected upstream)
 
   const { data: agent, error: fetchError } = await supabase
     .from('agents')
@@ -661,7 +661,7 @@ roundViewerRouter.post('/check-collusion', async (c) => {
   const { computeCollusionSignals } = await import(
     '../services/reputation/collusion-detector.js'
   );
-  const supabase = createClient();
+  const supabase: any = createClient();
   const signals = await computeCollusionSignals(supabase, agentId);
   return c.json({ data: signals });
 });
@@ -680,7 +680,7 @@ roundViewerRouter.post('/seed-agent', async (c) => {
   const name: string | undefined = body?.name;
   if (!name) return c.json({ error: 'Missing name' }, 400);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Reuse any existing sim agent with this name (marketplace-sim personas are stable)
   const { data: existing } = await supabase
@@ -925,7 +925,7 @@ roundViewerRouter.post('/attest', async (c) => {
     // on rating rows, agent detail, etc. Merge into existing metadata.
     if (body.taskId) {
       try {
-        const supabase = createClient();
+        const supabase: any = createClient();
         const { data: existing } = await (supabase.from('a2a_tasks') as any)
           .select('metadata')
           .eq('id', body.taskId)
@@ -988,7 +988,7 @@ roundViewerRouter.post('/announce', async (c) => {
 roundViewerRouter.get('/report', async (c) => {
   const minutes = parseInt(c.req.query('minutes') || '15');
   const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const [tasksRes, mandatesRes, acpRes, ucpRes, transfersRes] = await Promise.all([
     supabase.from('a2a_tasks')
@@ -1585,7 +1585,7 @@ roundViewerRouter.post('/reset', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const minutes = body?.minutes || 10;
   const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Delete recent mandates first (FK to tasks via a2a_session_id)
   const { data: deletedMandates } = await supabase
@@ -1706,7 +1706,7 @@ roundViewerRouter.post('/sim/run', async (c) => {
 roundViewerRouter.get('/task/:id', async (c) => {
   const taskId = c.req.param('id');
   if (!UUID_RE.test(taskId)) return c.json({ error: 'Invalid task ID format' }, 400);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const [taskRes, messagesRes, artifactsRes, auditRes, feedbackRes] = await Promise.all([
     supabase.from('a2a_tasks').select('*').eq('id', taskId).maybeSingle(),

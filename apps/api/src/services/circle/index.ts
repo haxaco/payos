@@ -373,7 +373,6 @@ export type {
   TokenBalance,
   CircleTransaction,
   PayOSBlockchain,
-  CircleServiceInterface,
   GasStationConfig,
   GasStationStatus,
 };

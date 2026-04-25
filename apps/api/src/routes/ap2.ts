@@ -63,7 +63,7 @@ ap2.get('/agent-card', async (c) => {
  */
 ap2.post('/mandates', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -248,7 +248,7 @@ ap2.post('/mandates', async (c) => {
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -262,7 +262,7 @@ ap2.post('/mandates', async (c) => {
 ap2.get('/mandates/:id', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Query by UUID id or user-defined mandate_id (avoid UUID cast error)
   const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
@@ -314,7 +314,7 @@ ap2.get('/mandates/:id', async (c) => {
 ap2.patch('/mandates/:id', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -375,7 +375,7 @@ ap2.patch('/mandates/:id', async (c) => {
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -389,7 +389,7 @@ ap2.patch('/mandates/:id', async (c) => {
 ap2.patch('/mandates/:id/cancel', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Look up by UUID id or user-defined mandate_id (avoid UUID cast error)
   const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
@@ -413,7 +413,7 @@ ap2.patch('/mandates/:id/cancel', async (c) => {
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -488,7 +488,7 @@ ap2.post('/mandates/:id/revoke', async (c) => {
  */
 ap2.get('/mandates', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Parse query params
   const page = parseInt(c.req.query('page') || '1');
@@ -549,7 +549,7 @@ ap2.get('/mandates', async (c) => {
 ap2.post('/mandates/:id/execute', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -590,17 +590,20 @@ ap2.post('/mandates/:id/execute', async (c) => {
 
   if (mandate.status !== 'active') {
     const telemetry = createCheckoutTelemetryService(supabase);
+    // ap2_mandates row no longer carries a `description` column; fall back
+    // to mandate_id for domain extraction. agent_name / currency are
+    // `string | null` per the schema while telemetry expects `undefined`.
     telemetry.record({
       protocol: 'ap2',
       event_type: 'mandate.not_active',
       success: false,
-      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
       failure_reason: `Mandate is ${mandate.status}`,
       failure_code: 'MANDATE_NOT_ACTIVE',
       agent_id: mandate.agent_id,
-      agent_name: mandate.agent_name,
+      agent_name: mandate.agent_name ?? undefined,
       amount: Number(amount),
-      currency: currency || mandate.currency,
+      currency: currency || mandate.currency || undefined,
       protocol_metadata: { mandate_id: mandate.id, mandate_status: mandate.status },
     });
     return c.json({ error: `Mandate is ${mandate.status}, not active` }, 400);
@@ -616,13 +619,13 @@ ap2.post('/mandates/:id/execute', async (c) => {
       protocol: 'ap2',
       event_type: 'mandate.budget_exceeded',
       success: false,
-      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
       failure_reason: 'Amount exceeds remaining mandate budget',
       failure_code: 'BUDGET_EXCEEDED',
       agent_id: mandate.agent_id,
-      agent_name: mandate.agent_name,
+      agent_name: mandate.agent_name ?? undefined,
       amount: execAmount,
-      currency: currency || mandate.currency,
+      currency: currency || mandate.currency || undefined,
       protocol_metadata: { mandate_id: mandate.id, remaining, requested: execAmount },
     });
     return c.json({ error: 'Amount exceeds remaining mandate budget' }, 400);
@@ -668,8 +671,13 @@ ap2.post('/mandates/:id/execute', async (c) => {
   // ============================================
   // Cross-border detection & FX resolution
   // ============================================
-  const destCurrency = destination_currency || mandate.mandate_data?.destination_currency;
-  const destAccountId = to_account_id || mandate.mandate_data?.destination_account_id;
+  // mandate_data is a Json column; narrow to the fields we read.
+  const mandateData = (mandate.mandate_data as {
+    destination_currency?: string;
+    destination_account_id?: string;
+  } | null) ?? {};
+  const destCurrency = destination_currency || mandateData.destination_currency;
+  const destAccountId = to_account_id || mandateData.destination_account_id;
   const isCrossBorder = !!destCurrency && !['USD', 'USDC'].includes(destCurrency.toUpperCase());
 
   let crossBorderInfo: {
@@ -882,8 +890,11 @@ ap2.post('/mandates/:id/execute', async (c) => {
         };
       }
 
-      const { data: transfer } = await supabase
-        .from('transfers')
+      // Cast at the boundary: transferInsert is a freeform record that
+      // includes optional cross-border fields, and Supabase's typed
+      // insert overload chokes on the Json union (TS2769 / TS2589).
+      const { data: transfer } = await (supabase
+        .from('transfers') as any)
         .insert(transferInsert)
         .select('id')
         .single();
@@ -895,8 +906,11 @@ ap2.post('/mandates/:id/execute', async (c) => {
           supabase,
           tenantId: ctx.tenantId,
           destinationTenantId: recipientTenantId,
-          sourceWallet: wallet,
-          destinationWallet: destWallet,
+          // The wallet rows we pulled have `wallet_address: string | null`,
+          // but SettlementWallet wants `string`. We've already filtered on
+          // active wallets that the ledger will accept; cast at boundary.
+          sourceWallet: wallet as any,
+          destinationWallet: destWallet as any,
           amount: execAmount,
           transferId: transfer.id,
           protocolMetadata: settlementMetadata,
@@ -919,20 +933,36 @@ ap2.post('/mandates/:id/execute', async (c) => {
           .eq('id', wallet.id)
           .single();
 
-        const encryptedKey = walletMeta.data?.provider_metadata?.encrypted_private_key;
+        // provider_metadata, mandate.metadata, mandate.mandate_data are
+        // all Json columns. Narrow once before the on-chain settlement
+        // path so the property accesses below typecheck cleanly.
+        const providerMeta = (walletMeta.data?.provider_metadata as {
+          encrypted_private_key?: string;
+        } | null) ?? {};
+        const mandateMeta = (mandate.metadata as {
+          recipientAgentId?: string;
+          providerAgentId?: string;
+          recipientAddress?: string;
+        } | null) ?? {};
+        const mandateDataExt = (mandate.mandate_data as {
+          recipient_agent_id?: string;
+          provider_agent_id?: string;
+          recipient_address?: string;
+        } | null) ?? {};
+        const encryptedKey = providerMeta.encrypted_private_key;
         if (encryptedKey && walletMeta.data?.network?.startsWith('tempo')) {
           try {
             // Resolve recipient wallet address (counterparty agent)
-            const recipientAgentId = mandate.metadata?.recipientAgentId
-              || mandate.mandate_data?.recipient_agent_id
-              || mandate.metadata?.providerAgentId
-              || mandate.mandate_data?.provider_agent_id;
+            const recipientAgentId = mandateMeta.recipientAgentId
+              || mandateDataExt.recipient_agent_id
+              || mandateMeta.providerAgentId
+              || mandateDataExt.provider_agent_id;
 
             // Find recipient agent's wallet address
             const { data: recipientWallet } = await supabase
               .from('wallets')
               .select('wallet_address, network')
-              .eq('managed_by_agent_id', recipientAgentId)
+              .eq('managed_by_agent_id', recipientAgentId ?? '')
               .eq('tenant_id', ctx.tenantId)
               .eq('environment', getEnv(ctx))
               .like('network', 'tempo-%')
@@ -941,8 +971,8 @@ ap2.post('/mandates/:id/execute', async (c) => {
               .single();
 
             const recipientAddress = recipientWallet?.wallet_address
-              || mandate.metadata?.recipientAddress
-              || mandate.mandate_data?.recipient_address;
+              || mandateMeta.recipientAddress
+              || mandateDataExt.recipient_address;
 
             if (recipientAddress) {
               const isTestnet = walletMeta.data.network === 'tempo-testnet';
@@ -1131,13 +1161,13 @@ ap2.post('/mandates/:id/execute', async (c) => {
         protocol: 'ap2',
         event_type: 'mandate.insufficient_balance',
         success: false,
-        merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+        merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
         failure_reason: 'Insufficient wallet balance',
         failure_code: 'INSUFFICIENT_BALANCE',
         agent_id: mandate.agent_id,
-        agent_name: mandate.agent_name,
+        agent_name: mandate.agent_name ?? undefined,
         amount: execAmount,
-        currency: currency || mandate.currency,
+        currency: currency || mandate.currency || undefined,
         protocol_metadata: { mandate_id: mandate.id, wallet_id: wallet.id, available: currentBalance },
       });
     }
@@ -1168,11 +1198,11 @@ ap2.post('/mandates/:id/execute', async (c) => {
       protocol: 'ap2',
       event_type: 'mandate.executed',
       success: true,
-      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
       agent_id: mandate.agent_id,
-      agent_name: mandate.agent_name,
+      agent_name: mandate.agent_name ?? undefined,
       amount: execAmount,
-      currency: currency || mandate.currency,
+      currency: currency || mandate.currency || undefined,
       protocol_metadata: { mandate_id: mandate.id, execution_index: newExecIndex },
     });
   }
@@ -1194,7 +1224,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -1227,7 +1257,7 @@ ap2.post('/payments', async (c) => {
     throw new ValidationError('mandate_id, amount, and currency are required');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const mandateService = getAP2MandateService();
 
   // Get mandate to check payer info
@@ -1274,7 +1304,7 @@ ap2.post('/payments', async (c) => {
       walletId,
       amount,
       policyContext,
-      c.get('requestId')
+      (c as any).get('requestId') as string | undefined
     );
 
     if (!policyCheck.allowed) {
@@ -1308,7 +1338,7 @@ ap2.post('/payments', async (c) => {
           requestedByType: ctx.actorType,
           requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
           requestedByName: ctx.userName || ctx.actorName || undefined,
-          correlationId: c.get('requestId'),
+          correlationId: (c as any).get('requestId') as string | undefined,
         });
 
         return c.json({
@@ -1425,7 +1455,7 @@ ap2.get('/analytics', async (c) => {
   try {
     const ctx = c.get('ctx');
     const period = c.req.query('period') || '30d';
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Calculate date range
     const end = new Date();
@@ -1457,8 +1487,8 @@ ap2.get('/analytics', async (c) => {
       .eq('environment', getEnv(ctx));
 
     // Calculate revenue and fees
-    const revenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount), 0) || 0;
-    const fees = transfers?.reduce((sum, t) => sum + parseFloat(t.fee_amount || '0'), 0) || 0;
+    const revenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount as any), 0) || 0;
+    const fees = transfers?.reduce((sum, t) => sum + parseFloat((t.fee_amount as any) || '0'), 0) || 0;
 
     // Mandate stats (from DB or empty if table doesn't exist)
     const mandateList = mandates || [];

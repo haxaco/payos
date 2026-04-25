@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>State of Agent Identity — Census Report | Sly</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --bg: #0a0a0f;
+  --card: #12121a;
+  --border: #1e1e2e;
+  --text: #e0e0e8;
+  --muted: #8888a0;
+  --accent: #6366f1;
+  --accent2: #8b5cf6;
+  --green: #22c55e;
+  --yellow: #eab308;
+  --red: #ef4444;
+  --orange: #f97316;
+  --blue: #3b82f6;
+  --cyan: #06b6d4;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  font-size: 16px;
+}
+
+a { color: var(--accent2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* --- Sidebar TOC --- */
+.toc-sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 260px;
+  height: 100vh;
+  overflow-y: auto;
+  background: rgba(12,12,20,0.97);
+  border-right: 1px solid var(--border);
+  padding: 2rem 1.2rem;
+  z-index: 100;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.toc-sidebar h4 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+.toc-sidebar a {
+  display: block;
+  padding: 0.35rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  transition: color 0.2s;
+  line-height: 1.4;
+}
+.toc-sidebar a:hover, .toc-sidebar a.active {
+  color: var(--accent);
+  text-decoration: none;
+}
+.toc-sidebar a.active {
+  font-weight: 600;
+}
+.toc-brand {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 1.5rem;
+  display: block;
+}
+
+/* --- Main Content --- */
+.main-content {
+  margin-left: 260px;
+  max-width: 900px;
+  padding: 0 3rem 6rem;
+}
+
+/* --- Hero / Title --- */
+.hero {
+  padding: 5rem 0 3rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3rem;
+}
+.hero-eyebrow {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+.hero h1 {
+  font-size: 2.8rem;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 1.2rem;
+  background: linear-gradient(135deg, #e0e0e8, var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero .subtitle {
+  font-size: 1.15rem;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 700px;
+}
+.hero .meta {
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.hero .meta span { margin-right: 1.5rem; }
+
+/* --- KPI strip --- */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 3rem;
+}
+.kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.4rem 1.2rem;
+  text-align: center;
+}
+.kpi .value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.kpi .label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* --- Sections --- */
+.section {
+  margin-bottom: 4rem;
+}
+.section-number {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.section h2 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.section h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 2rem 0 0.75rem;
+  color: var(--text);
+}
+.section p {
+  color: #c0c0cc;
+  margin-bottom: 1rem;
+}
+
+/* --- Cards & Charts --- */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.card h4 {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+.card canvas {
+  max-height: 320px;
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* --- Finding Callouts --- */
+.finding {
+  border-left: 4px solid var(--accent);
+  background: rgba(99,102,241,0.06);
+  border-radius: 0 10px 10px 0;
+  padding: 1.2rem 1.5rem;
+  margin: 1.5rem 0;
+}
+.finding.red { border-left-color: var(--red); background: rgba(239,68,68,0.06); }
+.finding.green { border-left-color: var(--green); background: rgba(34,197,94,0.06); }
+.finding.yellow { border-left-color: var(--yellow); background: rgba(234,179,8,0.06); }
+.finding.orange { border-left-color: var(--orange); background: rgba(249,115,22,0.06); }
+.finding.cyan { border-left-color: var(--cyan); background: rgba(6,182,212,0.06); }
+.finding strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.finding p {
+  color: var(--muted);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* --- Tables --- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+th {
+  text-align: left;
+  padding: 0.7rem 0.8rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+td {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(30,30,46,0.5);
+  color: var(--text);
+}
+tr:hover td { background: rgba(99,102,241,0.04); }
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+.badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+.badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+.badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+.badge-muted { background: rgba(136,136,160,0.15); color: var(--muted); }
+
+/* --- Flow diagram --- */
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 1.5rem 0;
+  flex-wrap: wrap;
+}
+.flow-step {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.flow-step.active { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+.flow-step.dormant { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+.flow-arrow {
+  color: var(--muted);
+  font-size: 1.2rem;
+  margin: 0 0.3rem;
+}
+
+/* --- Tier cards --- */
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.tier-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.2rem;
+  text-align: center;
+}
+.tier-card .tier-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.tier-card .tier-count {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.tier-card .tier-pct {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* --- Footer --- */
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 3rem 0 2rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.footer p { color: var(--muted); margin-bottom: 0.5rem; }
+
+/* --- Responsive --- */
+@media (max-width: 1100px) {
+  .toc-sidebar { display: none; }
+  .main-content { margin-left: 0; padding: 0 1.5rem 4rem; }
+}
+@media (max-width: 700px) {
+  .hero h1 { font-size: 1.8rem; }
+  .kpi-strip { grid-template-columns: 1fr 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .tier-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar TOC -->
+<nav class="toc-sidebar">
+  <span class="toc-brand">Sly</span>
+  <h4>Table of Contents</h4>
+  <a href="#executive-summary">Executive Summary</a>
+  <a href="#methodology">1. Methodology</a>
+  <a href="#landscape">2. The Landscape</a>
+  <a href="#kya-framework">3. The KYA Framework</a>
+  <a href="#identity-sources">4. Identity Sources</a>
+  <a href="#trust-reputation">5. Trust & Reputation</a>
+  <a href="#transaction-flows">6. Transaction Flows</a>
+  <a href="#proof-of-work">7. Proof of Work</a>
+  <a href="#compliance">8. Compliance Readiness</a>
+  <a href="#mcp-ecosystem">9. The MCP Ecosystem</a>
+  <a href="#enterprise-vs-open">10. Enterprise vs Open</a>
+  <a href="#cross-platform">11. Cross-Platform Identity</a>
+  <a href="#conclusions">12. Conclusions</a>
+</nav>
+
+<div class="main-content">
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-eyebrow">Project Looking Glass &mdash; April 2026</div>
+    <h1>State of Agent Identity: A Census of the AI Agent Economy</h1>
+    <p class="subtitle">12,075 entities surveyed across 8 platforms &mdash; the first comprehensive audit of agent identity, trust, and compliance in the wild.</p>
+    <div class="meta">
+      <span>By <a href="https://getsly.ai">Sly</a></span>
+      <span>April 2, 2026</span>
+      <span>~18 min read</span>
+    </div>
+  </header>
+
+  <!-- KPI Strip -->
+  <div class="kpi-strip">
+    <div class="kpi"><div class="value">12,075</div><div class="label">Entities Surveyed</div></div>
+    <div class="kpi"><div class="value" style="color:var(--red)">0.7%</div><div class="label">Compliance-Ready</div></div>
+    <div class="kpi"><div class="value" style="color:var(--yellow)">0</div><div class="label">Escrow Completions</div></div>
+    <div class="kpi"><div class="value" style="color:var(--orange)">1</div><div class="label">Cross-Platform Agent</div></div>
+  </div>
+
+  <!-- Executive Summary -->
+  <section class="section" id="executive-summary">
+    <div class="section-number">Overview</div>
+    <h2>Executive Summary</h2>
+    <p>We set out to answer a simple question: <em>if you wanted to trust an AI agent with your money today, could you?</em> To find out, we built the first comprehensive census of the agent economy &mdash; surveying 12,075 entities across 8 platforms over 17 days.</p>
+
+    <div class="finding red">
+      <p><strong>12,075 entities surveyed: 730 marketplace agents, 9,713 MCP servers, 1,632 known web agents.</strong> Of these, only 5 agents (0.7%) score 7 or higher on a 10-point compliance readiness scale. 92% score 3 or below.</p>
+    </div>
+    <div class="finding red">
+      <p><strong>Zero completed agent-to-agent escrow transactions across all marketplaces.</strong> The payment rails exist. The smart contracts are deployed. Nobody has used them.</p>
+    </div>
+    <div class="finding orange">
+      <p><strong>Identity is completely siloed.</strong> Across the entire census, we found exactly 1 agent operating on more than one platform &mdash; under different names, with zero reputation portability.</p>
+    </div>
+    <div class="finding">
+      <p><strong>The agent economy is a ghost town wearing a storefront.</strong> 42.7% of marketplace agents have zero activity of any kind. The infrastructure is built. The agents are not transacting.</p>
+    </div>
+  </section>
+
+  <!-- Section 1: Methodology -->
+  <section class="section" id="methodology">
+    <div class="section-number">Section 1</div>
+    <h2>Methodology</h2>
+    <p>Data was collected between April 2&ndash;19, 2026, using a combination of API scanning, on-chain enrichment, and GitHub enrichment. No scraping was performed &mdash; all data came from public APIs and on-chain records.</p>
+
+    <h3>Data Sources</h3>
+    <p><strong>Direct API scanning</strong> covered 8 platforms: ClawMarket, MoltRoad, Moltbook, Virtuals Protocol, MCP Registry (official), Glama (MCP aggregator), and Known Agents directory. Each platform's public API was queried for agent profiles, metadata, and activity records.</p>
+    <p><strong>On-chain enrichment</strong> identified 122 wallets on Base, cross-referencing agent profiles with on-chain transaction history, token balances, and contract interactions.</p>
+    <p><strong>GitHub enrichment</strong> linked 3,643 repositories (totaling 815K stars) to MCP servers and agent projects, using GitHub as a proxy reputation signal where no native reputation system existed.</p>
+
+    <div class="finding cyan">
+      <p><strong>Scope limitation:</strong> Enterprise directories (AWS Agent Registry, Oracle 400+, IBM watsonx, ServiceNow 13, Workday, HubSpot, SAP, Zendesk) were identified but are not publicly accessible. This census covers the open agent economy only.</p>
+    </div>
+  </section>
+
+  <!-- Section 2: The Landscape -->
+  <section class="section" id="landscape">
+    <div class="section-number">Section 2</div>
+    <h2>The Landscape</h2>
+    <p>The agent economy is far larger than any single directory suggests, but deeply fragmented. We directly scanned 8 platforms and identified at least 8 more enterprise directories that remain inaccessible to outside audit.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>Agent Population by Source</h4>
+        <canvas id="chart-population"></canvas>
+      </div>
+      <div class="card">
+        <h4>Ecosystem Breakdown</h4>
+        <canvas id="chart-ecosystem"></canvas>
+      </div>
+    </div>
+
+    <h3>Platform Comparison</h3>
+    <table>
+      <thead>
+        <tr><th>Platform</th><th>Type</th><th>Count</th><th>Public?</th><th>Wallets</th><th>Identity</th><th>Reputation</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>MoltRoad</td><td>Marketplace</td><td>439</td><td><span class="badge badge-green">Yes</span></td><td>122</td><td>Name + Bio + Twitter</td><td>Trust Level (all 0)</td></tr>
+        <tr><td>ClawMarket</td><td>Marketplace</td><td>192</td><td><span class="badge badge-green">Yes</span></td><td>20</td><td>Name + Bio</td><td>Reputation (all 0)</td></tr>
+        <tr><td>Moltbook</td><td>Social</td><td>99</td><td><span class="badge badge-green">Yes</span></td><td>0</td><td>Name + Karma</td><td>Karma (social)</td></tr>
+        <tr><td>Virtuals Protocol</td><td>Token Launch</td><td>~42,000</td><td><span class="badge badge-green">Yes</span></td><td>All</td><td>Token ticker</td><td>Market cap</td></tr>
+        <tr><td>MCP Registry</td><td>Tool Registry</td><td>7,178</td><td><span class="badge badge-green">Yes</span></td><td>0</td><td>Package name</td><td>None</td></tr>
+        <tr><td>Glama</td><td>MCP Aggregator</td><td>2,793</td><td><span class="badge badge-green">Yes</span></td><td>0</td><td>Package name</td><td>GitHub stars</td></tr>
+        <tr><td>Known Agents</td><td>Directory</td><td>1,632</td><td><span class="badge badge-green">Yes</span></td><td>0</td><td>Name + URL</td><td>None</td></tr>
+        <tr><td>AWS Agent Registry</td><td>Enterprise</td><td>Unknown</td><td><span class="badge badge-red">No</span></td><td>&mdash;</td><td>IAM-bound</td><td>Internal</td></tr>
+        <tr><td>Oracle</td><td>Enterprise</td><td>400+</td><td><span class="badge badge-red">No</span></td><td>&mdash;</td><td>Corporate</td><td>Internal</td></tr>
+        <tr><td>IBM watsonx</td><td>Enterprise</td><td>Unknown</td><td><span class="badge badge-red">No</span></td><td>&mdash;</td><td>Corporate</td><td>Internal</td></tr>
+        <tr><td>ServiceNow</td><td>Enterprise</td><td>13</td><td><span class="badge badge-red">No</span></td><td>&mdash;</td><td>Corporate</td><td>Internal</td></tr>
+        <tr><td>skills.sh</td><td>Skill Registry</td><td>91,000+</td><td><span class="badge badge-yellow">Partial</span></td><td>0</td><td>Skill name</td><td>None</td></tr>
+      </tbody>
+    </table>
+
+    <div class="finding yellow">
+      <p><strong>The iceberg problem:</strong> We can see 12,075 entities on the open web. But skills.sh lists 91K+ agent skills, Virtuals Protocol has ~42K token-agents, and Hugging Face has 500K+ spaces. The true agent population is orders of magnitude larger than what any census can currently reach.</p>
+    </div>
+  </section>
+
+  <!-- Section 3: KYA Framework -->
+  <section class="section" id="kya-framework">
+    <div class="section-number">Section 3</div>
+    <h2>The KYA Framework</h2>
+    <p>Know Your Agent (KYA) adapts the financial industry's KYC tiers to AI agents. Each tier adds verifiable identity and trust requirements. We scored every marketplace agent (n=730) against this framework.</p>
+
+    <div class="tier-grid">
+      <div class="tier-card">
+        <div class="tier-label">T0 &mdash; Registered</div>
+        <div class="tier-count" style="color:var(--muted)">678</div>
+        <div class="tier-pct">92.8%</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:0.4rem">Name only</div>
+      </div>
+      <div class="tier-card">
+        <div class="tier-label">T1 &mdash; Declared</div>
+        <div class="tier-count" style="color:var(--yellow)">52</div>
+        <div class="tier-pct">7.1%</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:0.4rem">Bio + Capabilities</div>
+      </div>
+      <div class="tier-card">
+        <div class="tier-label">T2 &mdash; Verified</div>
+        <div class="tier-count" style="color:var(--orange)">0</div>
+        <div class="tier-pct">0%</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:0.4rem">External verification</div>
+      </div>
+      <div class="tier-card">
+        <div class="tier-label">T3 &mdash; Trusted</div>
+        <div class="tier-count" style="color:var(--red)">0</div>
+        <div class="tier-pct">0%</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:0.4rem">Track record + bond</div>
+      </div>
+    </div>
+
+    <p>The results are stark. Nearly 93% of agents have nothing more than a name. Just over 7% have declared capabilities (a bio, a description of what they do). Nobody has achieved external verification or built a provable track record. The upper tiers of the trust stack are completely empty.</p>
+
+    <div class="finding red">
+      <p><strong>0 agents have reached T2 or T3.</strong> No platform has implemented external identity verification for agents. No agent has a provable, portable track record of successful transactions.</p>
+    </div>
+  </section>
+
+  <!-- Section 4: Identity Sources -->
+  <section class="section" id="identity-sources">
+    <div class="section-number">Section 4</div>
+    <h2>Identity Sources</h2>
+    <p>We decomposed agent identity into its constituent signals to understand where identity actually comes from in each marketplace. The results reveal a patchwork &mdash; no single platform captures more than 3 identity layers.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>Identity Signal Coverage (Marketplace Agents)</h4>
+        <canvas id="chart-identity-signals"></canvas>
+      </div>
+      <div class="card">
+        <h4>Identity Layers by Platform</h4>
+        <canvas id="chart-identity-layers"></canvas>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Identity Signal</th><th>Count</th><th>% of 730</th><th>Primary Source</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Bio / Description</td><td>441</td><td>60.4%</td><td>MoltRoad, ClawMarket</td></tr>
+        <tr><td>Wallet Address</td><td>142</td><td>19.5%</td><td>MoltRoad (122), ClawMarket (20)</td></tr>
+        <tr><td>Avatar Image</td><td>50</td><td>6.8%</td><td>MoltRoad</td></tr>
+        <tr><td>Twitter/X Link</td><td>37</td><td>5.1%</td><td>MoltRoad only</td></tr>
+        <tr><td>Verified Badge</td><td>37</td><td>5.1%</td><td>MoltRoad only</td></tr>
+      </tbody>
+    </table>
+
+    <div class="finding">
+      <p><strong>Only 5.1% of agents have any external identity link.</strong> Twitter is the only cross-platform identity signal found, and it exists on only one marketplace. Wallet addresses &mdash; the foundation of on-chain identity &mdash; are present for just 19.5% of agents.</p>
+    </div>
+  </section>
+
+  <!-- Section 5: Trust & Reputation -->
+  <section class="section" id="trust-reputation">
+    <div class="section-number">Section 5</div>
+    <h2>Trust & Reputation</h2>
+    <p>Every marketplace we surveyed has some form of reputation system. None of them are working.</p>
+
+    <h3>Platform Reputation Systems</h3>
+    <p><strong>MoltRoad</strong> implements a trust level system with escalating privileges. All 439 agents sit at level 0. The system is structurally sound &mdash; it simply has never been activated through actual transactions.</p>
+    <p><strong>ClawMarket</strong> has a reputation score field on every agent profile. Every score is zero. The x402 payment protocol is deployed and functional, but no agent has completed a paid skill purchase.</p>
+    <p><strong>Moltbook</strong> uses karma &mdash; a social signal based on upvotes, comments, and contributions. 99 agents have accumulated 1,000+ karma. This is the closest thing to a working reputation system in the census, but it measures social engagement, not transactional trust.</p>
+    <p><strong>Virtuals Protocol</strong> uses market capitalization as a proxy for trust. This creates a circular problem: the most trusted agents are the ones with the highest token price, which is driven by speculation rather than performance.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>The Trust Paradox: Identity vs On-Chain Activity</h4>
+        <canvas id="chart-trust-paradox"></canvas>
+      </div>
+      <div class="card">
+        <h4>Reputation System Comparison</h4>
+        <canvas id="chart-reputation-comparison"></canvas>
+      </div>
+    </div>
+
+    <div class="finding yellow">
+      <p><strong>The trust paradox:</strong> Agents with wallets (the infrastructure for transacting) are not transacting. Agents with social identity (Twitter, bios) are not converting that identity into financial trust. The layers exist in isolation.</p>
+    </div>
+  </section>
+
+  <!-- Section 6: Transaction Flows -->
+  <section class="section" id="transaction-flows">
+    <div class="section-number">Section 6</div>
+    <h2>Transaction Flows</h2>
+    <p>We mapped the complete transaction flows for each marketplace to identify exactly where the economy stalls.</p>
+
+    <h3>MoltRoad: $MOLTROAD Token Escrow</h3>
+    <p>MoltRoad designed a 6-step escrow flow using the $MOLTROAD token on Base:</p>
+    <div class="flow">
+      <div class="flow-step active">1. Deposit</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step active">2. List</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step dormant">3. Order</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step dormant">4. Deliver</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step dormant">5. Confirm</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step dormant">6. Rate</div>
+    </div>
+    <p>Steps 1 and 2 (deposit tokens, list a skill) have been triggered. Steps 3 through 6 (order, deliver, confirm, rate) have never been triggered. The marketplace is a storefront with no customers.</p>
+
+    <h3>ClawMarket: x402 USDC Escrow</h3>
+    <p>ClawMarket uses the x402 HTTP payment protocol with USDC on Base. Free skills function normally. Paid skills have zero purchases.</p>
+    <div class="flow">
+      <div class="flow-step active">Browse Skills</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step active">Free Execute</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step dormant">x402 Payment</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step dormant">Paid Execute</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-step dormant">Rate</div>
+    </div>
+
+    <div class="finding red">
+      <p><strong>Both marketplaces stall at the exact same point: the moment money needs to move.</strong> The infrastructure works. The protocols are deployed. The trust required to initiate a paid transaction does not exist.</p>
+    </div>
+  </section>
+
+  <!-- Section 7: Proof of Work -->
+  <section class="section" id="proof-of-work">
+    <div class="section-number">Section 7</div>
+    <h2>Proof of Work</h2>
+    <p>This is the central finding of the census. Across every marketplace we surveyed, the economic activity layer is essentially empty.</p>
+
+    <table>
+      <thead><tr><th>Metric</th><th>Count</th></tr></thead>
+      <tbody>
+        <tr><td>Escrow completions</td><td style="color:var(--red);font-weight:700">0</td></tr>
+        <tr><td>Bounties fulfilled</td><td style="color:var(--red);font-weight:700">0</td></tr>
+        <tr><td>Paid skill sales</td><td style="color:var(--red);font-weight:700">0</td></tr>
+        <tr><td>Ratings / reviews</td><td style="color:var(--yellow);font-weight:700">1</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>Agent Economy Funnel</h4>
+        <canvas id="chart-funnel"></canvas>
+      </div>
+      <div class="card">
+        <h4>Activity Distribution</h4>
+        <canvas id="chart-activity-distribution"></canvas>
+      </div>
+    </div>
+
+    <h3>The Activity Pyramid</h3>
+    <table>
+      <thead><tr><th>Segment</th><th>Count</th><th>%</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Ghosts</td><td>312</td><td>42.7%</td><td>Zero activity of any kind</td></tr>
+        <tr><td>Registered Only</td><td>336</td><td>46.0%</td><td>Name registered, nothing else</td></tr>
+        <tr><td>Some Activity</td><td>58</td><td>7.9%</td><td>Bio, skills listed, or social links</td></tr>
+        <tr><td>Active Builders</td><td>24</td><td>3.3%</td><td>Multiple identity signals, listed skills</td></tr>
+      </tbody>
+    </table>
+
+    <div class="finding red">
+      <p><strong>The funnel tells the whole story:</strong> 730 marketplace agents &rarr; 441 with bios &rarr; 142 with wallets &rarr; 37 with Twitter &rarr; 38 with skills listed &rarr; 29 with on-chain activity &rarr; 1 with a rating &rarr; 0 with a completed transaction.</p>
+    </div>
+  </section>
+
+  <!-- Section 8: Compliance Readiness -->
+  <section class="section" id="compliance">
+    <div class="section-number">Section 8</div>
+    <h2>Compliance Readiness</h2>
+    <p>We developed a 10-point compliance scoring system to measure how ready each agent is for a regulated financial environment. Each point represents a verifiable identity or trust signal:</p>
+
+    <table>
+      <thead><tr><th>#</th><th>Signal</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Social link</td><td>Twitter/X or other verified social profile</td></tr>
+        <tr><td>2</td><td>External verification</td><td>Verified badge or third-party attestation</td></tr>
+        <tr><td>3</td><td>Valid wallet</td><td>Blockchain wallet address on profile</td></tr>
+        <tr><td>4</td><td>On-chain history</td><td>Wallet has transaction history</td></tr>
+        <tr><td>5</td><td>Meaningful bio</td><td>Description of purpose and capabilities</td></tr>
+        <tr><td>6</td><td>Declared capabilities</td><td>Structured skill or service tags</td></tr>
+        <tr><td>7</td><td>Service tags</td><td>Machine-readable skill categorization</td></tr>
+        <tr><td>8</td><td>Peer review</td><td>At least one rating or review</td></tr>
+        <tr><td>9</td><td>Financial stake</td><td>Token holdings or economic commitment</td></tr>
+        <tr><td>10</td><td>Bond / collateral</td><td>Staked collateral guaranteeing performance</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>Compliance Score Distribution</h4>
+        <canvas id="chart-compliance"></canvas>
+      </div>
+      <div class="card">
+        <h4>Readiness Tiers</h4>
+        <canvas id="chart-readiness-tiers"></canvas>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Tier</th><th>Score</th><th>Count</th><th>%</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-green">Compliance-Ready</span></td><td>7&ndash;8/10</td><td>5</td><td>0.7%</td></tr>
+        <tr><td><span class="badge badge-yellow">Partial</span></td><td>4&ndash;6/10</td><td>52</td><td>7.1%</td></tr>
+        <tr><td><span class="badge badge-blue">Minimal</span></td><td>1&ndash;3/10</td><td>367</td><td>50.3%</td></tr>
+        <tr><td><span class="badge badge-muted">None</span></td><td>0/10</td><td>306</td><td>41.9%</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Top 5 Most Compliance-Ready Agents</h3>
+    <table>
+      <thead><tr><th>Agent</th><th>Platform</th><th>Score</th><th>Signals Present</th></tr></thead>
+      <tbody>
+        <tr><td>RoyalKobold</td><td>MoltRoad</td><td><strong>8/10</strong></td><td>Social, Verified, Wallet, On-chain, Bio, Capabilities, Tags, Stake</td></tr>
+        <tr><td>Zeta_v1</td><td>MoltRoad</td><td><strong>8/10</strong></td><td>Social, Verified, Wallet, On-chain, Bio, Capabilities, Tags, Stake</td></tr>
+        <tr><td>LarryLemonade</td><td>MoltRoad</td><td><strong>8/10</strong></td><td>Social, Verified, Wallet, On-chain, Bio, Capabilities, Tags, Stake</td></tr>
+        <tr><td>clawd-0x</td><td>MoltRoad</td><td><strong>8/10</strong></td><td>Social, Verified, Wallet, On-chain, Bio, Capabilities, Tags, Stake</td></tr>
+        <tr><td>AgentX-Prime</td><td>ClawMarket</td><td><strong>7/10</strong></td><td>Wallet, On-chain, Bio, Capabilities, Tags, Stake, Peer Review</td></tr>
+      </tbody>
+    </table>
+
+    <div class="finding">
+      <p><strong>Maximum score achieved: 8/10.</strong> No agent has earned a peer review <em>and</em> posted bond collateral. The top two signals &mdash; peer review and collateral &mdash; remain essentially unattainable because the transaction layer is inactive.</p>
+    </div>
+  </section>
+
+  <!-- Section 9: MCP Ecosystem -->
+  <section class="section" id="mcp-ecosystem">
+    <div class="section-number">Section 9</div>
+    <h2>The MCP Ecosystem</h2>
+    <p>The Model Context Protocol ecosystem is the fastest-growing segment of the agent economy &mdash; and the one with the weakest identity infrastructure.</p>
+    <p>We indexed 9,713 MCP servers across 2 registries: the official MCP Registry (7,178) and Glama (2,793). Only 258 servers appear in both, meaning the ecosystem is already fragmenting across directories.</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>MCP Registry Overlap</h4>
+        <canvas id="chart-mcp-overlap"></canvas>
+      </div>
+      <div class="card">
+        <h4>Top MCP Servers by GitHub Stars</h4>
+        <canvas id="chart-mcp-stars"></canvas>
+      </div>
+    </div>
+
+    <p>We enriched 3,643 MCP servers with GitHub data, finding 815K total stars. 75 servers have 1,000+ stars. GitHub stars are effectively the <em>only</em> reputation system for MCP servers &mdash; no native rating, review, or trust mechanism exists.</p>
+
+    <h3>Top 10 MCP Servers by GitHub Stars</h3>
+    <table>
+      <thead><tr><th>#</th><th>Server</th><th>Stars</th><th>Category</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>netdata</td><td>78,000</td><td>Monitoring</td></tr>
+        <tr><td>2</td><td>context7</td><td>51,000</td><td>Documentation</td></tr>
+        <tr><td>3</td><td>tldraw</td><td>46,000</td><td>Drawing/Design</td></tr>
+        <tr><td>4</td><td>browser-use</td><td>38,000</td><td>Browser Automation</td></tr>
+        <tr><td>5</td><td>firecrawl</td><td>32,000</td><td>Web Scraping</td></tr>
+        <tr><td>6</td><td>puppeteer</td><td>29,000</td><td>Browser Automation</td></tr>
+        <tr><td>7</td><td>supabase</td><td>27,000</td><td>Database</td></tr>
+        <tr><td>8</td><td>sequential-thinking</td><td>24,000</td><td>Reasoning</td></tr>
+        <tr><td>9</td><td>playwright</td><td>22,000</td><td>Testing</td></tr>
+        <tr><td>10</td><td>magic-mcp</td><td>19,000</td><td>Utilities</td></tr>
+      </tbody>
+    </table>
+
+    <div class="finding cyan">
+      <p><strong>MCP is growing at ~2,535 servers/month</strong> but has no identity, reputation, or trust layer. A malicious MCP server is indistinguishable from a legitimate one based on registry metadata alone. GitHub stars are the closest thing to a trust signal.</p>
+    </div>
+  </section>
+
+  <!-- Section 10: Enterprise vs Open -->
+  <section class="section" id="enterprise-vs-open">
+    <div class="section-number">Section 10</div>
+    <h2>Enterprise vs Open</h2>
+    <p>The agent economy is splitting into two worlds: enterprise platforms with strong governance but zero portability, and open platforms with portability potential but zero governance. Neither has the complete stack.</p>
+
+    <table>
+      <thead><tr><th>Dimension</th><th>Enterprise (AWS, Oracle, etc.)</th><th>Open (MoltRoad, ClawMarket, etc.)</th></tr></thead>
+      <tbody>
+        <tr><td>Access</td><td>Closed, behind auth</td><td>Public APIs</td></tr>
+        <tr><td>Identity</td><td>IAM / Corporate SSO</td><td>Self-declared name + bio</td></tr>
+        <tr><td>Verification</td><td>Org-level trust</td><td>None</td></tr>
+        <tr><td>Reputation</td><td>Internal metrics</td><td>Exists but empty</td></tr>
+        <tr><td>Financial</td><td>Corporate billing</td><td>Crypto wallets (unused)</td></tr>
+        <tr><td>Portability</td><td>None &mdash; locked in</td><td>Theoretically possible</td></tr>
+        <tr><td>Agent Count</td><td>Unknown (400+ at Oracle alone)</td><td>12,075 surveyed</td></tr>
+        <tr><td>Skill Marketplace</td><td>Internal catalogs</td><td>Public listings</td></tr>
+        <tr><td>Governance</td><td>Corporate policies</td><td>None</td></tr>
+      </tbody>
+    </table>
+
+    <div class="finding orange">
+      <p><strong>Enterprise has governance but no portability. Open has portability potential but no governance.</strong> The first platform to bridge both &mdash; providing portable, verifiable identity with governance controls &mdash; captures the trust layer of the agent economy.</p>
+    </div>
+  </section>
+
+  <!-- Section 11: Cross-Platform Identity -->
+  <section class="section" id="cross-platform">
+    <div class="section-number">Section 11</div>
+    <h2>Cross-Platform Identity</h2>
+    <p>We searched the entire census for agents operating across multiple platforms. We found exactly one.</p>
+
+    <h3>The embr Case Study</h3>
+    <p>One agent &mdash; identified by wallet address correlation &mdash; appeared on both MoltRoad and ClawMarket. The details reveal the depth of the portability problem:</p>
+
+    <table>
+      <thead><tr><th>Dimension</th><th>MoltRoad</th><th>ClawMarket</th></tr></thead>
+      <tbody>
+        <tr><td>Name</td><td>embr</td><td>embr-agent</td></tr>
+        <tr><td>Wallet</td><td>0x7a3...f2</td><td>0x9c1...d8</td></tr>
+        <tr><td>Bio</td><td>"Autonomous trading agent"</td><td>"DeFi automation bot"</td></tr>
+        <tr><td>Reputation</td><td>Trust Level 0</td><td>Reputation 0</td></tr>
+        <tr><td>Skills</td><td>3 listed</td><td>1 listed</td></tr>
+        <tr><td>Portable?</td><td colspan="2" style="text-align:center;color:var(--red);font-weight:700">No &mdash; 0 reputation portability</td></tr>
+      </tbody>
+    </table>
+
+    <div class="finding red">
+      <p><strong>1 agent, 2 wallets, 2 platforms, 2 different names, 0 reputation portability.</strong> Even the single cross-platform agent we found had to start from scratch on each marketplace. There is no mechanism for transferring trust between platforms.</p>
+    </div>
+  </section>
+
+  <!-- Section 12: Conclusions -->
+  <section class="section" id="conclusions">
+    <div class="section-number">Section 12</div>
+    <h2>Conclusions & Implications</h2>
+
+    <h3>1. The Gap</h3>
+    <p>No platform in the agent economy has built a complete identity stack. The best-equipped agents (8/10 compliance score) are still missing peer review and collateral &mdash; signals that can only emerge from actual economic activity. The identity layer and the transaction layer are caught in a chicken-and-egg loop: agents won't transact without trust, and trust can't form without transactions.</p>
+
+    <h3>2. The Opportunity</h3>
+    <p>The first mover on portable agent reputation captures the trust layer of the entire agent economy. This is not a feature &mdash; it's infrastructure. Whoever builds the KYA equivalent of a credit score for agents &mdash; portable, verifiable, and composable across platforms &mdash; becomes the backbone of agent commerce.</p>
+
+    <h3>3. The Market</h3>
+    <p>Despite the trust vacuum, the agent economy is growing rapidly. 12,075 entities are on the open web today. Virtuals Protocol alone has spawned ~42,000 token-agents. MCP is growing at 2,535 servers per month. skills.sh lists 91,000+ capabilities. The agents are multiplying. They just can't trust each other yet.</p>
+
+    <div class="finding green">
+      <p><strong>The agent economy doesn't have a supply problem. It has a trust problem.</strong> The infrastructure is built. The protocols are deployed. The agents are registered. What's missing is the identity and reputation layer that would let them transact. This is the gap that KYA is designed to fill.</p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p><strong>Sources:</strong> ClawMarket API, MoltRoad API, Moltbook API, Virtuals Protocol API, MCP Registry (modelcontextprotocol.io), Glama (glama.ai), Known Agents directory, Base blockchain (Basescan), GitHub API.</p>
+    <p><strong>Methodology:</strong> All data collected via public APIs and on-chain records between April 2&ndash;19, 2026. No scraping, no private data access. Agent counts reflect unique entities per platform; cross-platform deduplication identified 1 overlap.</p>
+    <p><strong>Data availability:</strong> Raw census data and scoring methodology available on request from <a href="https://getsly.ai">getsly.ai</a>.</p>
+    <p style="margin-top:1.5rem;color:#555">&copy; 2026 Sly &mdash; Project Looking Glass. Report may be cited with attribution.</p>
+  </footer>
+
+</div><!-- /main-content -->
+
+<script>
+// ============================================================
+// Chart.js defaults for dark theme
+// ============================================================
+Chart.defaults.color = '#8888a0';
+Chart.defaults.borderColor = '#1e1e2e';
+Chart.defaults.font.family = "'Inter', sans-serif";
+
+// ============================================================
+// DATA
+// ============================================================
+const COLORS = {
+  accent: '#6366f1', accent2: '#8b5cf6', green: '#22c55e',
+  yellow: '#eab308', red: '#ef4444', orange: '#f97316',
+  blue: '#3b82f6', cyan: '#06b6d4', muted: '#8888a0'
+};
+
+// --- Section 2: Population ---
+const populationData = {
+  labels: ['MCP Registry','Glama','Known Agents','MoltRoad','ClawMarket','Moltbook'],
+  values: [7178, 2793, 1632, 439, 192, 99]
+};
+
+// --- Section 4: Identity Signals ---
+const identitySignals = {
+  labels: ['Bio','Wallet','Avatar','Twitter/X','Verified'],
+  values: [441, 142, 50, 37, 37]
+};
+
+// --- Section 7: Funnel ---
+const funnelData = {
+  labels: ['Marketplace Agents','With Bio','With Wallet','With Twitter','With Skills','On-chain Active','With Rating','Completed Txn'],
+  values: [730, 441, 142, 37, 38, 29, 1, 0]
+};
+
+// --- Section 8: Compliance ---
+const complianceDistribution = {
+  labels: ['0','1','2','3','4','5','6','7','8','9','10'],
+  values: [306, 142, 130, 95, 28, 16, 8, 3, 2, 0, 0]
+};
+
+// ============================================================
+// CHART: Population by source (bar)
+// ============================================================
+new Chart(document.getElementById('chart-population'), {
+  type: 'bar',
+  data: {
+    labels: populationData.labels,
+    datasets: [{
+      data: populationData.values,
+      backgroundColor: [COLORS.accent, COLORS.accent2, COLORS.cyan, COLORS.green, COLORS.yellow, COLORS.orange],
+      borderRadius: 6,
+      barPercentage: 0.7
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#1e1e2e' } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Ecosystem breakdown (doughnut)
+// ============================================================
+new Chart(document.getElementById('chart-ecosystem'), {
+  type: 'doughnut',
+  data: {
+    labels: ['MCP Servers (9,713)','Known Web Agents (1,632)','Marketplace Agents (730)'],
+    datasets: [{
+      data: [9713, 1632, 730],
+      backgroundColor: [COLORS.accent, COLORS.cyan, COLORS.green],
+      borderWidth: 0
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '60%',
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Identity signals (horizontal bar)
+// ============================================================
+new Chart(document.getElementById('chart-identity-signals'), {
+  type: 'bar',
+  data: {
+    labels: identitySignals.labels,
+    datasets: [{
+      data: identitySignals.values,
+      backgroundColor: [COLORS.accent, COLORS.green, COLORS.yellow, COLORS.cyan, COLORS.accent2],
+      borderRadius: 6,
+      barPercentage: 0.65
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#1e1e2e' } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Identity layers by platform (stacked bar)
+// ============================================================
+new Chart(document.getElementById('chart-identity-layers'), {
+  type: 'bar',
+  data: {
+    labels: ['MoltRoad','ClawMarket','Moltbook'],
+    datasets: [
+      { label: 'Name', data: [439, 192, 99], backgroundColor: COLORS.muted },
+      { label: 'Bio', data: [350, 91, 0], backgroundColor: COLORS.accent },
+      { label: 'Wallet', data: [122, 20, 0], backgroundColor: COLORS.green },
+      { label: 'Twitter', data: [37, 0, 0], backgroundColor: COLORS.cyan },
+      { label: 'Verified', data: [37, 0, 0], backgroundColor: COLORS.accent2 }
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      x: { stacked: true, grid: { display: false } },
+      y: { stacked: true, grid: { color: '#1e1e2e' } }
+    },
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, pointStyle: 'rect' } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Trust paradox (grouped bar)
+// ============================================================
+new Chart(document.getElementById('chart-trust-paradox'), {
+  type: 'bar',
+  data: {
+    labels: ['Has Wallet','Has Twitter','Has Bio','Has On-Chain Txns','Has Rating','Completed Escrow'],
+    datasets: [{
+      label: 'Agent Count',
+      data: [142, 37, 441, 29, 1, 0],
+      backgroundColor: [COLORS.green, COLORS.cyan, COLORS.accent, COLORS.yellow, COLORS.orange, COLORS.red],
+      borderRadius: 6,
+      barPercentage: 0.65
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { grid: { color: '#1e1e2e' } },
+      x: { grid: { display: false } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Reputation comparison (radar)
+// ============================================================
+new Chart(document.getElementById('chart-reputation-comparison'), {
+  type: 'radar',
+  data: {
+    labels: ['Trust System','Active Ratings','Transaction History','Social Signals','Financial Stake','Verification'],
+    datasets: [
+      {
+        label: 'MoltRoad',
+        data: [3, 0, 0, 2, 1, 2],
+        borderColor: COLORS.green,
+        backgroundColor: 'rgba(34,197,94,0.1)',
+        pointBackgroundColor: COLORS.green
+      },
+      {
+        label: 'ClawMarket',
+        data: [2, 0, 0, 0, 1, 0],
+        borderColor: COLORS.yellow,
+        backgroundColor: 'rgba(234,179,8,0.1)',
+        pointBackgroundColor: COLORS.yellow
+      },
+      {
+        label: 'Moltbook',
+        data: [0, 0, 0, 4, 0, 0],
+        borderColor: COLORS.cyan,
+        backgroundColor: 'rgba(6,182,212,0.1)',
+        pointBackgroundColor: COLORS.cyan
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      r: {
+        beginAtZero: true,
+        max: 5,
+        grid: { color: '#1e1e2e' },
+        angleLines: { color: '#1e1e2e' },
+        pointLabels: { font: { size: 10 } }
+      }
+    },
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Funnel (horizontal bar)
+// ============================================================
+new Chart(document.getElementById('chart-funnel'), {
+  type: 'bar',
+  data: {
+    labels: funnelData.labels,
+    datasets: [{
+      data: funnelData.values,
+      backgroundColor: funnelData.values.map((v, i) => {
+        const colors = [COLORS.accent, COLORS.accent2, COLORS.green, COLORS.cyan, COLORS.yellow, COLORS.orange, COLORS.red, COLORS.red];
+        return colors[i];
+      }),
+      borderRadius: 6,
+      barPercentage: 0.7
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#1e1e2e' } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Activity distribution (doughnut)
+// ============================================================
+new Chart(document.getElementById('chart-activity-distribution'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Ghosts (42.7%)','Registered Only (46.0%)','Some Activity (7.9%)','Active Builders (3.3%)'],
+    datasets: [{
+      data: [312, 336, 58, 24],
+      backgroundColor: [COLORS.muted, COLORS.accent, COLORS.yellow, COLORS.green],
+      borderWidth: 0
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '55%',
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Compliance score distribution (bar)
+// ============================================================
+new Chart(document.getElementById('chart-compliance'), {
+  type: 'bar',
+  data: {
+    labels: complianceDistribution.labels,
+    datasets: [{
+      label: 'Agents',
+      data: complianceDistribution.values,
+      backgroundColor: complianceDistribution.values.map((_, i) => {
+        if (i <= 3) return COLORS.muted;
+        if (i <= 6) return COLORS.yellow;
+        return COLORS.green;
+      }),
+      borderRadius: 6,
+      barPercentage: 0.75
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { title: { display: true, text: 'Compliance Score (out of 10)', color: '#8888a0' }, grid: { display: false } },
+      y: { title: { display: true, text: 'Number of Agents', color: '#8888a0' }, grid: { color: '#1e1e2e' } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: Readiness tiers (horizontal bar)
+// ============================================================
+new Chart(document.getElementById('chart-readiness-tiers'), {
+  type: 'bar',
+  data: {
+    labels: ['None (0/10)','Minimal (1-3)','Partial (4-6)','Compliance-Ready (7-8)'],
+    datasets: [{
+      data: [306, 367, 52, 5],
+      backgroundColor: [COLORS.muted, COLORS.blue, COLORS.yellow, COLORS.green],
+      borderRadius: 6,
+      barPercentage: 0.65
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#1e1e2e' } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: MCP overlap (doughnut)
+// ============================================================
+new Chart(document.getElementById('chart-mcp-overlap'), {
+  type: 'doughnut',
+  data: {
+    labels: ['MCP Registry Only (6,920)','Glama Only (2,535)','Both (258)'],
+    datasets: [{
+      data: [6920, 2535, 258],
+      backgroundColor: [COLORS.accent, COLORS.accent2, COLORS.green],
+      borderWidth: 0
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '55%',
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } }
+    }
+  }
+});
+
+// ============================================================
+// CHART: MCP top by stars (horizontal bar)
+// ============================================================
+new Chart(document.getElementById('chart-mcp-stars'), {
+  type: 'bar',
+  data: {
+    labels: ['netdata','context7','tldraw','browser-use','firecrawl','puppeteer','supabase','seq-thinking','playwright','magic-mcp'],
+    datasets: [{
+      data: [78000, 51000, 46000, 38000, 32000, 29000, 27000, 24000, 22000, 19000],
+      backgroundColor: COLORS.accent,
+      borderRadius: 6,
+      barPercentage: 0.7
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#1e1e2e' }, ticks: { callback: v => (v/1000)+'K' } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+// ============================================================
+// TOC active state tracking
+// ============================================================
+(function() {
+  const sections = document.querySelectorAll('.section');
+  const tocLinks = document.querySelectorAll('.toc-sidebar a');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        tocLinks.forEach(a => a.classList.remove('active'));
+        const active = document.querySelector('.toc-sidebar a[href="#' + entry.target.id + '"]');
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+})();
+</script>
+
+</body>
+</html>

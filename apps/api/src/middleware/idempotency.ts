@@ -147,7 +147,7 @@ export async function idempotencyMiddleware(c: Context, next: Next) {
   }
 
   // 2. Check database
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { data: existing, error: lookupError } = await supabase
     .from('idempotency_keys')
     .select('*')
@@ -177,7 +177,7 @@ export async function idempotencyMiddleware(c: Context, next: Next) {
       response: {
         status: existing.response_status,
         body: existing.response_body,
-        headers: existing.response_headers,
+        headers: (existing.response_headers as Record<string, string> | null) ?? undefined,
       },
       requestHash: existing.request_hash,
       expiresAt: Date.now() + MEMORY_CACHE_TTL,
@@ -260,7 +260,7 @@ export async function checkIdempotencyKey(
   }
 
   // Check database
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { data: existing } = await supabase
     .from('idempotency_keys')
     .select('*')
@@ -297,7 +297,7 @@ export async function storeIdempotencyResponse(
   responseStatus: number,
   responseBody: any
 ): Promise<void> {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + DB_TTL_HOURS);
 

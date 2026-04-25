@@ -29,7 +29,7 @@ const createInternalTransferSchema = z.object({
 // Completes synchronously with < 300ms target
 internalTransfers.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const startTime = Date.now();
   
   // Check for idempotency key

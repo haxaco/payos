@@ -58,7 +58,7 @@ backendRouter.post('/process', async (c) => {
 });
 
 async function processTaskAsync(taskId: string, agentId: string, history: any[]): Promise<void> {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: agent, error: agentErr } = await supabase
     .from('agents')

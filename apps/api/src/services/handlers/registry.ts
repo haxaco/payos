@@ -43,13 +43,13 @@ export function createHandlerFromAccount(
 ): PaymentHandler | null {
   switch (account.handler_type) {
     case 'stripe':
-      return createStripeHandler(credentials as StripeCredentials);
+      return createStripeHandler(credentials as unknown as StripeCredentials);
 
     case 'paypal':
-      return createPayPalHandler(credentials as PayPalCredentials);
+      return createPayPalHandler(credentials as unknown as PayPalCredentials);
 
     case 'circle':
-      return createCircleHandler(credentials as CircleCredentials);
+      return createCircleHandler(credentials as unknown as CircleCredentials);
 
     case 'sly_native':
       // TODO: Implement PayOS native handler (Pix/SPEI)
@@ -83,7 +83,7 @@ export async function getHandler(
   tenantId: string,
   handlerType: HandlerType
 ): Promise<PaymentHandler | null> {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: account, error } = await supabase
     .from('connected_accounts')
@@ -116,7 +116,7 @@ export async function getHandler(
 export async function getActiveHandlers(
   tenantId: string
 ): Promise<Array<{ type: HandlerType; handler: PaymentHandler }>> {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: accounts, error } = await supabase
     .from('connected_accounts')
@@ -214,7 +214,7 @@ export async function getHandlerCapabilities(tenantId: string): Promise<{
  * Check if tenant has any active handlers
  */
 export async function hasActiveHandlers(tenantId: string): Promise<boolean> {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { count, error } = await supabase
     .from('connected_accounts')

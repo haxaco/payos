@@ -188,7 +188,7 @@ const createEndpointRoute = createRoute({
 app.openapi(createEndpointRoute, async (c): Promise<any> => {
   const ctx = c.get('ctx');
   const body = c.req.valid('json');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const accountResult = await supabase
     .from('accounts')
@@ -298,7 +298,7 @@ const listEndpointsRoute = createRoute({
 app.openapi(listEndpointsRoute, async (c) => {
   const ctx = c.get('ctx');
   const { status, account_id, page, limit } = c.req.valid('query');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const offset = (page - 1) * limit;
 
   let query = supabase
@@ -345,7 +345,7 @@ const getEndpointRoute = createRoute({
 app.openapi(getEndpointRoute, async (c): Promise<any> => {
   const ctx = c.get('ctx');
   const { id } = c.req.valid('param');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const result = await supabase
     .from('x402_endpoints')
@@ -386,7 +386,7 @@ app.openapi(updateEndpointRoute, async (c): Promise<any> => {
   const ctx = c.get('ctx');
   const { id } = c.req.valid('param');
   const body = c.req.valid('json');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const existingResult = await supabase
     .from('x402_endpoints')
@@ -460,7 +460,7 @@ app.openapi(deleteEndpointRoute, async (c): Promise<any> => {
   const ctx = c.get('ctx');
   const { id } = c.req.valid('param');
   const { force } = c.req.valid('query');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const existingResult = await supabase
     .from('x402_endpoints')

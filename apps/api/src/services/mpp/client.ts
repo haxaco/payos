@@ -66,7 +66,7 @@ export class MppClient {
       // Configure Stripe payment method — optional
       if (this.config.stripeSecretKey) {
         methods.push(
-          mppx.stripe({
+          (mppx.stripe as any)({
             secretKey: this.config.stripeSecretKey,
           })
         );
@@ -158,7 +158,7 @@ export class MppClient {
     try {
       // session() is exported from mppx/client as a separate function
       const mppx = await import('mppx/client');
-      const sess = await mppx.session(this.mppxClient, serviceUrl, {
+      const sess = await (mppx.session as any)(this.mppxClient, serviceUrl, {
         deposit: options?.deposit,
         maxBudget: options?.maxBudget,
       });

@@ -255,9 +255,9 @@ agents.get('/', async (c) => {
     if (row.accounts) {
       agent.parentAccount = {
         id: row.accounts.id,
-        type: row.accounts.type,
+        type: row.accounts.type as any,
         name: row.accounts.name,
-        verificationTier: row.accounts.verification_tier,
+        verificationTier: (row.accounts.verification_tier ?? 0) as any,
       };
     }
     if (walletMap.has(row.id)) {
@@ -398,10 +398,10 @@ agents.post('/', async (c) => {
 
   const { data, error } = await supabase
     .from('agents')
-    .insert(insertData)
+    .insert(insertData as any)
     .select('*')
     .single();
-  
+
   if (error) {
     console.error('Error creating agent:', error);
     throw new Error('Failed to create agent in database');
@@ -580,7 +580,7 @@ agents.post('/', async (c) => {
     subject: `agent/${data.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId'),
     success: true,
   });
 
@@ -688,9 +688,9 @@ agents.get('/:id', async (c) => {
   if (data.accounts) {
     agent.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
 
@@ -800,7 +800,7 @@ agents.patch('/:id', async (c) => {
   if (parsed.data.permissions !== undefined) {
     // Merge with existing permissions
     updates.permissions = {
-      ...existing.permissions,
+      ...((existing.permissions as Record<string, unknown>) || {}),
       ...parsed.data.permissions,
     };
   }
@@ -923,9 +923,9 @@ agents.patch('/:id', async (c) => {
   if (data.accounts) {
     agent.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
 
@@ -1018,7 +1018,7 @@ agents.delete('/:id', async (c) => {
     subject: `agent/${id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId'),
     success: true,
   });
 
@@ -1097,9 +1097,9 @@ agents.post('/:id/suspend', async (c) => {
   if (data.accounts) {
     agent.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
   
@@ -1178,9 +1178,9 @@ agents.post('/:id/activate', async (c) => {
   if (data.accounts) {
     agent.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
   
@@ -1416,7 +1416,7 @@ agents.get('/:id/transactions', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .eq('environment', getEnv(ctx));
     for (const t of a2aLinkedTransfers || []) {
-      a2aTransferAmounts.set(t.id, { amount: Number(t.amount) || 0, currency: t.currency });
+      a2aTransferAmounts.set(t.id, { amount: Number(t.amount) || 0, currency: t.currency || 'USDC' });
     }
   }
 
@@ -1566,12 +1566,14 @@ agents.post('/:id/verify', async (c) => {
   }
 
   // Fetch parent account verification tier
-  const { data: parentAccount } = await supabase
-    .from('accounts')
-    .select('verification_tier')
-    .eq('id', existing.parent_account_id)
-    .eq('environment', getEnv(ctx))
-    .single();
+  const { data: parentAccount } = existing.parent_account_id
+    ? await supabase
+        .from('accounts')
+        .select('verification_tier')
+        .eq('id', existing.parent_account_id)
+        .eq('environment', getEnv(ctx))
+        .single()
+    : { data: null as { verification_tier: number | null } | null };
 
   const parentTier = parentAccount?.verification_tier ?? 0;
 
@@ -1627,9 +1629,9 @@ agents.post('/:id/verify', async (c) => {
   if (data.accounts) {
     agent.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
   
@@ -1774,9 +1776,9 @@ agents.post('/:id/upgrade', async (c) => {
   if (data.accounts) {
     agent.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
 
@@ -1858,9 +1860,9 @@ agents.get('/:id/kya-status', async (c) => {
     status: agent.kya_status,
     verifiedAt: agent.kya_verified_at,
     effectiveLimits: {
-      perTransaction: parseFloat(agent.effective_limit_per_tx) || 0,
-      daily: parseFloat(agent.effective_limit_daily) || 0,
-      monthly: parseFloat(agent.effective_limit_monthly) || 0,
+      perTransaction: Number(agent.effective_limit_per_tx ?? 0) || 0,
+      daily: Number(agent.effective_limit_daily ?? 0) || 0,
+      monthly: Number(agent.effective_limit_monthly ?? 0) || 0,
       cappedByParent: agent.effective_limits_capped || false,
       parentTier,
     },
@@ -2044,9 +2046,9 @@ agents.post('/:id/declare-dsd', async (c) => {
   if (data.accounts) {
     agent.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
 
@@ -2199,9 +2201,9 @@ agents.post('/:id/kill-switch/designate', async (c) => {
   if (data.accounts) {
     result.parentAccount = {
       id: data.accounts.id,
-      type: data.accounts.type,
+      type: data.accounts.type as any,
       name: data.accounts.name,
-      verificationTier: data.accounts.verification_tier,
+      verificationTier: (data.accounts.verification_tier ?? 0) as any,
     };
   }
 
@@ -2604,7 +2606,7 @@ agents.post('/:id/sign-request', async (c) => {
   }
 
   // Check KYA tier >= 1 (unverified agents cannot sign)
-  if (agent.kya_tier < 1) {
+  if ((agent.kya_tier ?? 0) < 1) {
     const error: any = new ValidationError('Agent must be KYA verified (tier >= 1) to sign requests');
     error.details = {
       agent_id: id,
@@ -2774,7 +2776,7 @@ agents.post('/:id/x402-sign', async (c) => {
   }
 
   // Use cached agent row from auth middleware if available (avoids re-query)
-  const cachedAgent = ctx.actorType === 'agent' && ctx.actorId === id ? c.get('agentRow') : null;
+  const cachedAgent = ctx.actorType === 'agent' && ctx.actorId === id ? (c as any).get('agentRow') : null;
   let agentEnvironment: 'test' | 'live';
   if (cachedAgent) {
     agentEnvironment = (cachedAgent as any).environment === 'live' ? 'live' : 'test';
@@ -3422,7 +3424,7 @@ agents.post('/:id/smart-wallet/send-usdc', async (c) => {
   const supabase = createClient();
 
   // Use cached agent row from auth middleware if available (avoids re-query)
-  const cachedAgent = ctx.actorType === 'agent' && ctx.actorId === id ? c.get('agentRow') : null;
+  const cachedAgent = ctx.actorType === 'agent' && ctx.actorId === id ? (c as any).get('agentRow') : null;
   if (!cachedAgent) {
     const { data: agent } = await supabase
       .from('agents')
@@ -3754,7 +3756,7 @@ agents.post('/:id/fund-eoa', async (c) => {
         to_address: keyRecord.ethereum_address,
         chain,
         circle_payout_id: payout.id,
-        circle_payout_status: payout.state || (payout as any).status,
+        circle_payout_status: (payout as any).state || (payout as any).status,
         source: 'tenant_master',
       },
     }).select('id').single();
@@ -3768,7 +3770,7 @@ agents.post('/:id/fund-eoa', async (c) => {
     return c.json({
       success: true,
       circlePayoutId: payout.id,
-      state: payout.state || (payout as any).status,
+      state: (payout as any).state || (payout as any).status,
       destinationAddress: keyRecord.ethereum_address,
       chain,
       amount: amountStr,
@@ -4074,13 +4076,22 @@ agents.post('/:id/skills', async (c) => {
       agent_id: id,
       ...parsed.data,
       ...(x402EndpointId ? { x402_endpoint_id: x402EndpointId } : {}),
-    }, { onConflict: 'tenant_id,agent_id,skill_id' })
+    } as any, { onConflict: 'tenant_id,agent_id,skill_id' })
     .select('*')
     .single();
 
   if (error) throw new Error(error.message);
 
-  logAudit(supabase, ctx, 'agent.skill.created', { agentId: id, skillId: parsed.data.skill_id });
+  logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'agent_skill',
+    entityId: id,
+    action: 'agent.skill.created',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: { agentId: id, skillId: parsed.data.skill_id },
+  });
   return c.json(skill, 201);
 });
 
@@ -4133,7 +4144,16 @@ agents.patch('/:id/skills/:skillId', async (c) => {
     }
   }
 
-  logAudit(supabase, ctx, 'agent.skill.updated', { agentId: id, skillId });
+  logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'agent_skill',
+    entityId: id,
+    action: 'agent.skill.updated',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: { agentId: id, skillId },
+  });
   return c.json(skill);
 });
 
@@ -4242,7 +4262,16 @@ agents.delete('/:id/skills/:skillId', async (c) => {
     await supabase.from('x402_endpoints').delete().eq('id', existingSkill.x402_endpoint_id);
   }
 
-  logAudit(supabase, ctx, 'agent.skill.deleted', { agentId: id, skillId });
+  logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'agent_skill',
+    entityId: id,
+    action: 'agent.skill.deleted',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: { agentId: id, skillId },
+  });
   return c.json({ deleted: true });
 });
 
@@ -4556,7 +4585,7 @@ agents.get('/:id/wallet/exposures', async (c) => {
       total_volume: 0, active_contracts: 0, active_escrows: 0,
     };
     const amt = Number(t.amount) || 0;
-    const age = now - new Date(t.created_at).getTime();
+    const age = now - new Date(t.created_at ?? 0).getTime();
     if (age <= day) existing.volume_24h += amt;
     if (age <= 7 * day) existing.volume_7d += amt;
     if (age <= 30 * day) existing.volume_30d += amt;

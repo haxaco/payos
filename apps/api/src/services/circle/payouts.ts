@@ -389,7 +389,7 @@ export class CirclePayoutsClient {
           type: 'spei_settlement',
           clabe: params.clabe,
           recipientName: params.recipientName,
-          bankName: params.bankName,
+          bankName: params.bankName ?? '',
           ...params.metadata,
         },
       });

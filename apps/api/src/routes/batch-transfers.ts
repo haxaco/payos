@@ -49,7 +49,7 @@ const createBatchSchema = z.object({
  */
 batch.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
   
   // Get idempotency key
@@ -189,7 +189,7 @@ batch.post('/', async (c) => {
  */
 batch.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
 
   const query = c.req.query();
@@ -222,7 +222,7 @@ batch.get('/', async (c) => {
 batch.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const batchId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
 
   if (!isValidUUID(batchId)) {
@@ -245,7 +245,7 @@ batch.get('/:id', async (c) => {
 batch.get('/:id/items', async (c) => {
   const ctx = c.get('ctx');
   const batchId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
 
   if (!isValidUUID(batchId)) {
@@ -279,7 +279,7 @@ batch.get('/:id/items', async (c) => {
 batch.post('/:id/process', async (c) => {
   const ctx = c.get('ctx');
   const batchId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
 
   if (!isValidUUID(batchId)) {
@@ -345,7 +345,7 @@ batch.post('/:id/process', async (c) => {
 batch.post('/:id/retry', async (c) => {
   const ctx = c.get('ctx');
   const batchId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
 
   if (!isValidUUID(batchId)) {
@@ -405,7 +405,7 @@ batch.post('/:id/retry', async (c) => {
 batch.post('/:id/cancel', async (c) => {
   const ctx = c.get('ctx');
   const batchId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
 
   if (!isValidUUID(batchId)) {
@@ -454,7 +454,7 @@ batch.post('/:id/cancel', async (c) => {
  */
 batch.post('/csv', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const processor = createBatchProcessor(supabase);
 
   try {

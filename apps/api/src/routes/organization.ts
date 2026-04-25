@@ -25,7 +25,7 @@ async function getCurrentUserAndTenant(c: any) {
   }
 
   const accessToken = authHeader.slice(7);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Use Supabase client to get user from access token
   const { data: userData, error } = await (supabase as any).auth.getUser(accessToken);
@@ -68,8 +68,8 @@ async function getCurrentUserAndTenant(c: any) {
 // ============================================
 organization.get('/', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
-    return c.json(result.error.body, result.error.status);
+  if ('error' in result && result.error) {
+    return c.json(result.error.body, result.error.status as any);
   }
 
   const { tenant } = result;
@@ -108,8 +108,8 @@ organization.get('/', async (c) => {
 organization.patch('/', async (c) => {
   try {
     const result = await getCurrentUserAndTenant(c);
-    if ('error' in result) {
-      return c.json(result.error.body, result.error.status);
+    if ('error' in result && result.error) {
+      return c.json(result.error.body, result.error.status as any);
     }
 
     const { userProfile, tenant } = result;
@@ -126,7 +126,7 @@ organization.patch('/', async (c) => {
       return c.json({ error: 'No changes provided' }, 400);
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const updates: any = {};
     if (validated.name) updates.name = validated.name;
     if (validated.metadata) updates.settings = validated.metadata;

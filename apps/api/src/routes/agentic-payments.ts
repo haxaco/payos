@@ -191,24 +191,33 @@ app.get('/summary', async (c) => {
       .limit(10);
 
     // Format recent activity with descriptions
+    // protocol_metadata is a Json column. Narrow to a struct with the
+    // fields we read so the property accesses typecheck.
+    type TransferProtocolMeta = {
+      protocol?: string;
+      endpoint_path?: string;
+      mandate_type?: string;
+      merchant_name?: string;
+    };
     const formattedActivity = (recentActivity || []).map(transfer => {
-      const protocol = transfer.protocol_metadata?.protocol || transfer.type;
+      const meta = (transfer.protocol_metadata as TransferProtocolMeta | null) ?? {};
+      const protocol = meta.protocol || transfer.type;
       let description = 'Payment';
 
       // Extract protocol-specific descriptions
-      if (protocol === 'x402' && transfer.protocol_metadata?.endpoint_path) {
-        description = transfer.protocol_metadata.endpoint_path;
-      } else if (protocol === 'ap2' && transfer.protocol_metadata?.mandate_type) {
-        description = `${transfer.protocol_metadata.mandate_type} mandate`;
-      } else if (protocol === 'acp' && transfer.protocol_metadata?.merchant_name) {
-        description = transfer.protocol_metadata.merchant_name;
+      if (protocol === 'x402' && meta.endpoint_path) {
+        description = meta.endpoint_path;
+      } else if (protocol === 'ap2' && meta.mandate_type) {
+        description = `${meta.mandate_type} mandate`;
+      } else if (protocol === 'acp' && meta.merchant_name) {
+        description = meta.merchant_name;
       }
 
       return {
         id: transfer.id,
         protocol: protocol as 'x402' | 'ap2' | 'acp',
         type: transfer.type,
-        amount: parseFloat(transfer.amount),
+        amount: parseFloat(transfer.amount as any),
         description,
         timestamp: transfer.created_at,
       };
@@ -318,8 +327,10 @@ app.get('/analytics', async (c) => {
     const timeSeriesMap = new Map<string, { x402: number; ap2: number; acp: number; total: number }>();
     
     transfers?.forEach(transfer => {
-      const date = transfer.created_at.split('T')[0]; // YYYY-MM-DD
-      const amount = parseFloat(transfer.amount);
+      // transfer.created_at is `string | null`; in practice every row has
+      // it, but TS can't follow that.
+      const date = (transfer.created_at ?? '').split('T')[0]; // YYYY-MM-DD
+      const amount = parseFloat(transfer.amount as any);
       const protocol = transfer.type as 'x402' | 'ap2' | 'acp';
 
       if (!timeSeriesMap.has(date)) {
@@ -339,27 +350,37 @@ app.get('/analytics', async (c) => {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     // Calculate metrics
-    const totalRevenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount), 0) || 0;
-    const totalFees = transfers?.reduce((sum, t) => sum + parseFloat(t.fee_amount || '0'), 0) || 0;
+    const totalRevenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount as any), 0) || 0;
+    const totalFees = transfers?.reduce((sum, t) => sum + parseFloat((t.fee_amount as any) || '0'), 0) || 0;
     const uniquePayers = new Set(transfers?.map(t => t.from_account_id)).size;
 
     // Top endpoints/integrations
     const integrationMetrics = new Map<string, { revenue: number; transactions: number; name: string }>();
-    
+
+    // protocol_metadata is a Json column — narrow once per iteration.
+    type IntegrationMeta = {
+      endpoint_id?: string;
+      endpoint_path?: string;
+      mandate_id?: string;
+      mandate_type?: string;
+      checkout_id?: string;
+      merchant_name?: string;
+    };
     transfers?.forEach(transfer => {
       let integrationId = 'unknown';
       let integrationName = 'Unknown';
 
       if (transfer.protocol_metadata) {
+        const meta = transfer.protocol_metadata as IntegrationMeta;
         if (transfer.type === 'x402') {
-          integrationId = transfer.protocol_metadata.endpoint_id || 'unknown';
-          integrationName = transfer.protocol_metadata.endpoint_path || 'Unknown Endpoint';
+          integrationId = meta.endpoint_id || 'unknown';
+          integrationName = meta.endpoint_path || 'Unknown Endpoint';
         } else if (transfer.type === 'ap2') {
-          integrationId = transfer.protocol_metadata.mandate_id || 'unknown';
-          integrationName = `Mandate ${transfer.protocol_metadata.mandate_type || 'unknown'}`;
+          integrationId = meta.mandate_id || 'unknown';
+          integrationName = `Mandate ${meta.mandate_type || 'unknown'}`;
         } else if (transfer.type === 'acp') {
-          integrationId = transfer.protocol_metadata.checkout_id || 'unknown';
-          integrationName = transfer.protocol_metadata.merchant_name || 'Unknown Merchant';
+          integrationId = meta.checkout_id || 'unknown';
+          integrationName = meta.merchant_name || 'Unknown Merchant';
         }
       }
 
@@ -368,7 +389,7 @@ app.get('/analytics', async (c) => {
       }
 
       const metrics = integrationMetrics.get(integrationId)!;
-      metrics.revenue += parseFloat(transfer.amount);
+      metrics.revenue += parseFloat(transfer.amount as any);
       metrics.transactions += 1;
     });
 
@@ -402,19 +423,19 @@ app.get('/analytics', async (c) => {
           x402: {
             transactions: byProtocol.x402.length,
             revenue: parseFloat(
-              byProtocol.x402.reduce((sum, t) => sum + parseFloat(t.amount), 0).toFixed(8)
+              byProtocol.x402.reduce((sum, t) => sum + parseFloat(t.amount as any), 0).toFixed(8)
             ),
           },
           ap2: {
             transactions: byProtocol.ap2.length,
             revenue: parseFloat(
-              byProtocol.ap2.reduce((sum, t) => sum + parseFloat(t.amount), 0).toFixed(8)
+              byProtocol.ap2.reduce((sum, t) => sum + parseFloat(t.amount as any), 0).toFixed(8)
             ),
           },
           acp: {
             transactions: byProtocol.acp.length,
             revenue: parseFloat(
-              byProtocol.acp.reduce((sum, t) => sum + parseFloat(t.amount), 0).toFixed(8)
+              byProtocol.acp.reduce((sum, t) => sum + parseFloat(t.amount as any), 0).toFixed(8)
             ),
           },
         },

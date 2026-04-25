@@ -86,7 +86,7 @@ agentWallets.get('/:agentId/wallet', async (c) => {
     throw new ValidationError('Invalid agent ID format');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const wallet = await getAgentWallet(supabase, agentId, ctx.tenantId, getEnv(ctx));
 
   if (!wallet) {
@@ -109,7 +109,7 @@ agentWallets.post('/:agentId/wallet/freeze', async (c) => {
     throw new ValidationError('Invalid agent ID format');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const wallet = await getAgentWallet(supabase, agentId, ctx.tenantId, getEnv(ctx));
 
   if (!wallet) {
@@ -145,7 +145,7 @@ agentWallets.post('/:agentId/wallet/unfreeze', async (c) => {
     throw new ValidationError('Invalid agent ID format');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const wallet = await getAgentWallet(supabase, agentId, ctx.tenantId, getEnv(ctx));
 
   if (!wallet) {
@@ -197,7 +197,7 @@ agentWallets.put('/:agentId/wallet/policy', async (c) => {
     throw new ValidationError('Invalid policy', parsed.error.format());
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const wallet = await getAgentWallet(supabase, agentId, ctx.tenantId, getEnv(ctx));
 
   if (!wallet) {
@@ -256,7 +256,7 @@ agentWallets.post('/:agentId/wallet/policy/evaluate', async (c) => {
     throw new ValidationError('Invalid request body', parsed.error.format());
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Find the agent's wallet
   const { data: wallet } = await supabase
@@ -312,7 +312,7 @@ agentWallets.get('/:agentId/wallet/exposures', async (c) => {
     throw new ValidationError('Invalid agent ID format');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: wallet } = await supabase
     .from('wallets')
@@ -362,7 +362,7 @@ agentWallets.get('/:agentId/wallet/policy/evaluations', async (c) => {
   }
 
   const { page, limit } = getPaginationParams(c);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Find wallet
   const { data: wallet } = await supabase
@@ -441,7 +441,7 @@ agentWallets.post('/:agentId/wallet/request-funds', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const env = getEnv(ctx);
 
     // Get agent and its wallet

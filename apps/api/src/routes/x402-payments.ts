@@ -441,7 +441,7 @@ setInterval(() => {
  * - Batch settlement via database function
  */
 app.post('/pay', async (c) => {
-  const timings: Record<string, number> = {};
+  const timings: Record<string, number | string> = {};
   const startTotal = Date.now();
   
   try {
@@ -451,7 +451,7 @@ app.post('/pay', async (c) => {
     // Validate request
     const auth = paymentAuthorizationSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // ============================================
     // 1. IDEMPOTENCY CHECK (OPTIMIZED with bloom filter)
@@ -460,7 +460,7 @@ app.post('/pay', async (c) => {
     
     // OPTIMIZATION: Check in-memory first (O(1), ~1ms)
     // If not in set, definitely not processed - skip DB query
-    let existingTransfer = null;
+    let existingTransfer: any = null;
     
     if (hasProcessedRequest(auth.requestId)) {
       // Maybe processed - need to confirm with DB
@@ -506,10 +506,10 @@ app.post('/pay', async (c) => {
     const t2 = Date.now();
 
     // OPTIMIZATION: Check endpoint cache first
-    let endpoint = getCachedEndpoint(auth.endpointId);
-    let endpointError = null;
-    let consumerWallet = null;
-    let consumerWalletError = null;
+    let endpoint: any = getCachedEndpoint(auth.endpointId);
+    let endpointError: any = null;
+    let consumerWallet: any = null;
+    let consumerWalletError: any = null;
     
     if (endpoint) {
       // Endpoint in cache - only fetch wallet
@@ -1380,7 +1380,7 @@ app.post('/verify', async (c) => {
     // Fall back to database verification (legacy mode)
     const { requestId, transferId } = verifyPaymentSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch transfer
     const queryStart = Date.now();
@@ -1461,7 +1461,7 @@ app.get('/quote/:endpointId', async (c) => {
   try {
     const ctx = c.get('ctx');
     const endpointId = c.req.param('endpointId');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch endpoint
     const { data: endpoint, error } = await supabase

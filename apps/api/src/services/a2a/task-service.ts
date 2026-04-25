@@ -188,7 +188,7 @@ export class A2ATaskService {
       .eq('task_id', taskId)
       .eq('tenant_id', this.tenantId)
       .order('created_at', { ascending: false })
-      .limit(effectiveLimit);
+      .limit(effectiveLimit ?? 50);
 
     const messages = (messagesDesc || []).reverse();
 

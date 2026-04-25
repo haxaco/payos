@@ -49,7 +49,7 @@ vault.post('/', async (c) => {
     );
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify account belongs to tenant
   const { data: account, error: accountError } = await supabase
@@ -97,7 +97,7 @@ vault.post('/', async (c) => {
  */
 vault.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const accountId = c.req.query('accountId');
   const status = c.req.query('status');
@@ -147,7 +147,7 @@ vault.get('/', async (c) => {
 vault.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: card, error } = await supabase
     .from('vaulted_cards')
@@ -175,7 +175,7 @@ vault.patch('/:id', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { label, status, metadata } = body;
 
@@ -209,7 +209,7 @@ vault.patch('/:id', async (c) => {
 vault.delete('/:id', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // First revoke all agent access
   await supabase
@@ -243,7 +243,7 @@ vault.delete('/:id', async (c) => {
 vault.post('/:id/tokenize/visa', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Get card details
   const { data: card, error: cardError } = await supabase
@@ -312,7 +312,7 @@ vault.post('/:id/tokenize/mastercard', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { mcAgentId } = body;
 
@@ -385,7 +385,7 @@ vault.post('/:id/tokenize/mastercard', async (c) => {
 vault.get('/:id/tokens', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: card, error } = await supabase
     .from('vaulted_cards')
@@ -398,7 +398,7 @@ vault.get('/:id/tokens', async (c) => {
     throw new NotFoundError('Vaulted card not found');
   }
 
-  const tokens = [];
+  const tokens: Array<{ network: string; tokenId: any; expiresAt: any }> = [];
 
   if (card.visa_vts_token) {
     tokens.push({
@@ -431,7 +431,7 @@ vault.post('/:id/access', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const {
     agentId,
@@ -523,7 +523,7 @@ vault.post('/:id/access', async (c) => {
 vault.get('/:id/access', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: accesses, error } = await supabase
     .from('agent_card_access')
@@ -555,7 +555,7 @@ vault.patch('/:id/access/:agentId', async (c) => {
   const cardId = c.req.param('id');
   const agentId = c.req.param('agentId');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
@@ -595,7 +595,7 @@ vault.delete('/:id/access/:agentId', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
   const agentId = c.req.param('agentId');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { error } = await supabase
     .from('agent_card_access')
@@ -622,7 +622,7 @@ vault.delete('/:id/access/:agentId', async (c) => {
 vault.get('/agents/:agentId/cards', async (c) => {
   const ctx = c.get('ctx');
   const agentId = c.req.param('agentId');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: accesses, error } = await supabase
     .from('agent_card_access')
@@ -660,7 +660,7 @@ vault.post('/:id/pay', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { agentId, amount, currency, merchantName, merchantDomain, merchantCategoryCode } = body;
 
@@ -758,7 +758,7 @@ vault.post('/:id/pay', async (c) => {
  */
 vault.get('/approvals', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: approvals, error } = await supabase
     .from('vaulted_card_transactions')
@@ -795,7 +795,7 @@ vault.post('/approvals/:txId/approve', async (c) => {
   const ctx = c.get('ctx');
   const txId = c.req.param('txId');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { notes } = body;
 
@@ -869,7 +869,7 @@ vault.post('/approvals/:txId/decline', async (c) => {
   const ctx = c.get('ctx');
   const txId = c.req.param('txId');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { reason } = body;
 
@@ -913,7 +913,7 @@ vault.post('/approvals/:txId/decline', async (c) => {
 vault.get('/:id/transactions', async (c) => {
   const ctx = c.get('ctx');
   const cardId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
   const offset = parseInt(c.req.query('offset') || '0');

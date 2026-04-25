@@ -104,7 +104,7 @@ auth.post('/signup', async (c) => {
       }
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Get Supabase URL and service role key for admin operations
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -337,7 +337,7 @@ auth.post('/login', async (c) => {
       );
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -578,7 +578,7 @@ auth.get('/me', async (c) => {
     
     if (isApiKey) {
       // API KEY PATH - for SDKs
-      const supabase = createAdminClient();
+      const supabase: any = createAdminClient();
 
       // Agent tokens (agent_*) are stored in the agents table, not api_keys
       if (token.startsWith('agent_')) {
@@ -671,7 +671,7 @@ auth.get('/me', async (c) => {
       
     } else {
       // SESSION TOKEN PATH - for dashboard
-      const supabase = createClient();
+      const supabase: any = createClient();
       
       const { data: userData, error } = await (supabase as any).auth.getUser(token);
       
@@ -750,7 +750,7 @@ auth.post('/provision', async (c) => {
     }
 
     const token = authHeader.slice(7);
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data: userData, error: authError } = await (supabase as any).auth.getUser(token);
     if (authError || !userData?.user) {
@@ -762,7 +762,7 @@ auth.post('/provision', async (c) => {
     const userMetadata = userData.user.user_metadata || {};
 
     // Parse optional body
-    let body: { organizationName?: string; userName?: string } = {};
+    let body: { organizationName?: string; userName?: string; inviteCode?: string } = {};
     try {
       body = provisionSchema.parse(await c.req.json());
     } catch {
@@ -884,7 +884,7 @@ auth.post('/accept-invite', async (c) => {
       );
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Look up invite by token
     const { data: invite, error: inviteError } = await (supabase
@@ -916,7 +916,7 @@ auth.post('/accept-invite', async (c) => {
     }
 
     // Use admin client to check if user exists
-    const adminClient = createAdminClient();
+    const adminClient: any = createAdminClient();
     const { data: existingUsers, error: listError } = await adminClient.auth.admin.listUsers();
     
     let userId: string | null = null;
@@ -1166,7 +1166,7 @@ auth.post('/refresh', async (c) => {
 auth.get('/sessions', async (c) => {
   try {
     const { getUserSessions } = await import('../services/sessions.js');
-    const userId = c.get('userId');
+    const userId = c.get('userId' as never) as string | undefined;
 
     if (!userId) {
       return c.json(
@@ -1207,7 +1207,7 @@ auth.get('/sessions', async (c) => {
 auth.delete('/sessions/:id', async (c) => {
   try {
     const { revokeSession } = await import('../services/sessions.js');
-    const userId = c.get('userId');
+    const userId = c.get('userId' as never) as string | undefined;
     const sessionId = c.req.param('id');
 
     if (!userId) {
@@ -1248,7 +1248,7 @@ auth.delete('/sessions/:id', async (c) => {
 auth.post('/sessions/revoke-all', async (c) => {
   try {
     const { revokeAllUserSessions } = await import('../services/sessions.js');
-    const userId = c.get('userId');
+    const userId = c.get('userId' as never) as string | undefined;
 
     if (!userId) {
       return c.json(
@@ -1337,7 +1337,7 @@ auth.post('/agent-signup', async (c) => {
       }
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // 1. Create agent tenant
     const legacyApiKey = generateApiKey('test');
@@ -1563,7 +1563,7 @@ auth.post('/agent-claim/:agentId', async (c) => {
       return c.json({ error: 'API key authentication required for claiming agents' }, 401);
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const keyHash = hashApiKey(token);
 
     const { data: apiKey } = await (supabase
@@ -1797,7 +1797,7 @@ auth.post('/beta/validate', async (c) => {
     // If valid, look up the linked application to pre-fill signup form
     let applicant: { email?: string; organization_name?: string } | undefined;
     if (result.valid && result.code?.id) {
-      const supabase = createClient();
+      const supabase: any = createClient();
       const { data: app } = await (supabase.from('beta_applications') as any)
         .select('email, organization_name')
         .eq('access_code_id', result.code.id)

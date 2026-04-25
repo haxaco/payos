@@ -35,7 +35,7 @@ const mcpRouter = new Hono();
  * endpoint too.
  */
 async function validateBearerToken(token: string): Promise<string | null> {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   if (token.startsWith('pk_')) {
     const prefix = getKeyPrefix(token);
@@ -108,7 +108,7 @@ mcpRouter.all('/', async (c) => {
   });
 
   // Create MCP server with all tools
-  const server = createMcpServer(sly, apiUrl, token);
+  const server = createMcpServer(sly as any, apiUrl, token);
 
   // Create stateless Streamable HTTP transport (no session management)
   const transport = new WebStandardStreamableHTTPServerTransport({

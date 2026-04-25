@@ -27,7 +27,7 @@ const context = new Hono();
 // ============================================
 context.get('/whoami', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: tenant } = await (supabase
     .from('tenants') as any)
@@ -190,7 +190,7 @@ interface AccountContext {
 context.get('/account/:id', async (c) => {
   const ctx = c.get('ctx');
   const accountId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(accountId)) {
@@ -207,22 +207,22 @@ context.get('/account/:id', async (c) => {
   // ============================================
   
   // Debug: First check if account exists at all (helps diagnose tenant mismatch)
-  const { data: accountCheck } = await supabase
+  const { data: accountCheck } = await (supabase
     .from('accounts')
-    .select('id, tenant_id, account_name')
+    .select('id, tenant_id, name')
     .eq('id', accountId)
-    .single();
-  
+    .single() as any);
+
   if (!accountCheck) {
     console.log('[Context API] Account not found:', { accountId });
     throw new NotFoundError('Account', accountId);
   }
-  
+
   // Check for tenant mismatch (common cause of 404)
   if (accountCheck.tenant_id !== ctx.tenantId) {
     console.log('[Context API] Tenant mismatch:', {
       accountId,
-      accountName: accountCheck.account_name,
+      accountName: accountCheck.name,
       accountTenant: accountCheck.tenant_id,
       userTenant: ctx.tenantId,
     });
@@ -233,15 +233,15 @@ context.get('/account/:id', async (c) => {
     };
     throw error;
   }
-  
+
   // Now fetch full account data
-  const { data: accountData, error: accountError } = await supabase
+  const { data: accountData, error: accountError } = await (supabase
     .from('accounts')
     .select('*')
     .eq('id', accountId)
     .eq('tenant_id', ctx.tenantId)
-    .single();
-  
+    .single() as any);
+
   if (accountError || !accountData) {
     console.log('[Context API] Error fetching account:', {
       accountId,
@@ -250,22 +250,22 @@ context.get('/account/:id', async (c) => {
     });
     throw new NotFoundError('Account', accountId);
   }
-  
+
   console.log('[Context API] Account found:', {
     accountId,
-    accountName: accountData.account_name,
+    accountName: accountData.name,
     tenantId: ctx.tenantId,
   });
-  
+
   const account = mapAccountFromDb(accountData);
   
   // ============================================
   // 2. GET BALANCES
   // ============================================
-  const { data: balancesData } = await supabase
-    .from('balances')
+  const { data: balancesData } = await (supabase
+    .from('balances' as any)
     .select('*')
-    .eq('account_id', accountId);
+    .eq('account_id', accountId) as any);
   
   const balances = {
     currencies: (balancesData || []).map((bal: any) => ({
@@ -293,13 +293,13 @@ context.get('/account/:id', async (c) => {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   
   // Get transfers (both sent and received)
-  const { data: transfersData } = await supabase
+  const { data: transfersData } = await (supabase
     .from('transfers')
     .select('*')
     .or(`from_account_id.eq.${accountId},to_account_id.eq.${accountId}`)
     .gte('created_at', thirtyDaysAgo.toISOString())
     .order('created_at', { ascending: false })
-    .limit(100);
+    .limit(100) as any);
   
   const transfers = transfersData || [];
   const successfulTransfers = transfers.filter((t: any) => t.status === 'completed');
@@ -322,24 +322,24 @@ context.get('/account/:id', async (c) => {
         : 100,
     },
     recent_transfers: transfers.slice(0, 5).map((t: any) => ({
-      id: t.id,
-      status: t.status,
-      amount: t.amount,
-      currency: t.currency,
-      direction: t.from_account_id === accountId ? 'outgoing' : 'incoming',
-      created_at: t.created_at,
+      id: t.id as string,
+      status: t.status as string,
+      amount: t.amount as string,
+      currency: t.currency as string,
+      direction: (t.from_account_id === accountId ? 'outgoing' : 'incoming') as 'outgoing' | 'incoming',
+      created_at: t.created_at as string,
     })),
   };
-  
+
   // ============================================
   // 4. GET AGENTS
   // ============================================
-  const { data: agentsData } = await supabase
+  const { data: agentsData } = await (supabase
     .from('agents')
     .select('id, name, status, kya_tier, created_at')
     .eq('parent_account_id', accountId)
     .eq('tenant_id', ctx.tenantId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false }) as any);
   
   const agents = (agentsData || []).map((agent: any) => ({
     id: agent.id,
@@ -380,26 +380,26 @@ context.get('/account/:id', async (c) => {
   // 6. COMPLIANCE & RISK
   // ============================================
   const flags: string[] = [];
-  
+
   // Check for suspended status
   if (account.status === 'suspended') {
     flags.push('account_suspended');
   }
-  
+
   // Check for low verification
-  if (account.verificationTier < 2) {
+  if ((account.verificationTier ?? account.verification.tier) < 2) {
     flags.push('low_verification_tier');
   }
-  
+
   // Check for many agents (potential risk)
   if (agents.length > 10) {
     flags.push('high_agent_count');
   }
-  
+
   const compliance = {
-    kyb_status: account.verificationStatus,
-    kyb_tier: account.verificationTier,
-    risk_level: flags.length > 2 ? 'high' : flags.length > 0 ? 'medium' : 'low',
+    kyb_status: (account.verificationStatus ?? account.verification.status) as string,
+    kyb_tier: (account.verificationTier ?? account.verification.tier) as number,
+    risk_level: (flags.length > 2 ? 'high' : flags.length > 0 ? 'medium' : 'low') as 'high' | 'medium' | 'low',
     flags,
   };
   
@@ -408,7 +408,7 @@ context.get('/account/:id', async (c) => {
   // ============================================
   const suggested_actions: Array<{action: string; description: string; priority: 'high' | 'medium' | 'low'}> = [];
   
-  if (account.verificationTier < 2) {
+  if ((account.verificationTier ?? account.verification.tier) < 2) {
     suggested_actions.push({
       action: 'complete_kyb',
       description: 'Complete KYB verification to increase limits',
@@ -439,17 +439,17 @@ context.get('/account/:id', async (c) => {
     account: {
       id: account.id,
       name: account.name,
-      email: account.email,
-      type: account.type,
-      status: account.status,
-      verification_tier: account.verificationTier,
-      verification_status: account.verificationStatus,
+      email: account.email ?? '',
+      type: account.type as 'person' | 'business',
+      status: (account.status ?? 'active') as 'active' | 'suspended' | 'closed',
+      verification_tier: (account.verificationTier ?? account.verification.tier) as number,
+      verification_status: (account.verificationStatus ?? account.verification.status) as string,
       created_at: account.createdAt,
       updated_at: account.updatedAt,
       metadata: account.metadata,
     },
     balances,
-    activity,
+    activity: activity as AccountContext['activity'],
     agents,
     limits,
     compliance,
@@ -466,7 +466,7 @@ context.get('/account/:id', async (c) => {
 context.get('/transfer/:id', async (c) => {
   const ctx = c.get('ctx');
   const transferId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(transferId)) {
@@ -481,7 +481,7 @@ context.get('/transfer/:id', async (c) => {
   // ============================================
   // 1. GET TRANSFER DETAILS
   // ============================================
-  const { data: transferData, error: transferError } = await supabase
+  const { data: transferDataRaw, error: transferError } = await (supabase
     .from('transfers')
     .select(`
       *,
@@ -490,11 +490,16 @@ context.get('/transfer/:id', async (c) => {
     `)
     .eq('id', transferId)
     .eq('tenant_id', ctx.tenantId)
-    .single();
-  
-  if (transferError || !transferData) {
+    .single() as any);
+
+  if (transferError || !transferDataRaw) {
     throw new NotFoundError('Transfer', transferId);
   }
+
+  // Many of the columns referenced below (rail, fees, approvals, etc.)
+  // are not on the transfers table in the live schema yet — keep `any`
+  // here so existing routes continue to surface them gracefully.
+  const transferData: any = transferDataRaw;
   
   // ============================================
   // 2. BUILD SETTLEMENT DETAILS
@@ -588,17 +593,17 @@ context.get('/transfer/:id', async (c) => {
   // ============================================
   // 4. REFUND ELIGIBILITY
   // ============================================
-  const { data: refundsData } = await supabase
+  const { data: refundsData } = await (supabase
     .from('refunds')
     .select('amount, status')
-    .eq('original_transfer_id', transferId);
+    .eq('original_transfer_id', transferId) as any);
   
   const refunds = refundsData || [];
   const totalRefunded = refunds
     .filter((r: any) => r.status === 'completed')
     .reduce((sum: number, r: any) => sum + parseFloat(r.amount), 0);
   
-  const transferAmount = parseFloat(transferData.amount);
+  const transferAmount = parseFloat(String(transferData.amount));
   const maxRefundable = transferAmount - totalRefunded;
   
   // Refund window: 30 days from completion
@@ -615,7 +620,7 @@ context.get('/transfer/:id', async (c) => {
     !windowExpired &&
     maxRefundable > 0;
   
-  let refundIneligibilityReason = null;
+  let refundIneligibilityReason: string | null = null;
   if (!canRefund) {
     if (transferData.status !== 'completed') {
       refundIneligibilityReason = 'Transfer must be completed to refund';
@@ -637,11 +642,11 @@ context.get('/transfer/:id', async (c) => {
   // ============================================
   // 5. RELATED ENTITIES
   // ============================================
-  const { data: disputeData } = await supabase
+  const { data: disputeData } = await (supabase
     .from('disputes')
     .select('id, status')
     .eq('transfer_id', transferId)
-    .single();
+    .single() as any);
   
   const related = {
     quote_id: transferData.quote_id,
@@ -737,7 +742,7 @@ context.get('/transfer/:id', async (c) => {
 context.get('/agent/:id', async (c) => {
   const ctx = c.get('ctx');
   const agentId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(agentId)) {
@@ -752,7 +757,7 @@ context.get('/agent/:id', async (c) => {
   // ============================================
   // 1. GET AGENT DETAILS
   // ============================================
-  const { data: agentData, error: agentError } = await supabase
+  const { data: agentDataRaw, error: agentError } = await (supabase
     .from('agents')
     .select(`
       *,
@@ -760,21 +765,26 @@ context.get('/agent/:id', async (c) => {
     `)
     .eq('id', agentId)
     .eq('tenant_id', ctx.tenantId)
-    .single();
-  
-  if (agentError || !agentData) {
+    .single() as any);
+
+  if (agentError || !agentDataRaw) {
     throw new NotFoundError('Agent', agentId);
   }
-  
+
+  // Cast to any — extra fields like daily_limit, allowed_currencies,
+  // etc. live in metadata or aren't on the agents table in the live
+  // schema. Keep the original access pattern for runtime safety.
+  const agentData: any = agentDataRaw;
+
   const agent = mapAgentFromDb(agentData);
-  
+
   // ============================================
   // 2. GET WALLET INFO (if exists)
   // ============================================
-  const { data: walletData } = await supabase
-    .from('balances')
+  const { data: walletData } = await (supabase
+    .from('balances' as any)
     .select('*')
-    .eq('account_id', agentId); // Agents may have their own balance records
+    .eq('account_id', agentId) as any); // Agents may have their own balance records
   
   const wallet = {
     balances: (walletData || []).reduce((acc: any, bal: any) => {
@@ -794,12 +804,12 @@ context.get('/agent/:id', async (c) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  const { data: todayTransfers } = await supabase
+  const { data: todayTransfers } = await (supabase
     .from('transfers')
     .select('amount')
-    .eq('created_by_type', 'agent')
-    .eq('created_by_id', agentId)
-    .gte('created_at', today.toISOString());
+    .eq('initiated_by_type', 'agent')
+    .eq('initiated_by_id', agentId)
+    .gte('created_at', today.toISOString()) as any);
   
   const dailyUsed = (todayTransfers || []).reduce((sum: number, t: any) => 
     sum + parseFloat(t.amount || '0'), 0
@@ -810,12 +820,12 @@ context.get('/agent/:id', async (c) => {
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
   
-  const { data: monthTransfers } = await supabase
+  const { data: monthTransfers } = await (supabase
     .from('transfers')
     .select('amount')
-    .eq('created_by_type', 'agent')
-    .eq('created_by_id', agentId)
-    .gte('created_at', monthStart.toISOString());
+    .eq('initiated_by_type', 'agent')
+    .eq('initiated_by_id', agentId)
+    .gte('created_at', monthStart.toISOString()) as any);
   
   const monthlyUsed = (monthTransfers || []).reduce((sum: number, t: any) => 
     sum + parseFloat(t.amount || '0'), 0
@@ -873,13 +883,13 @@ context.get('/agent/:id', async (c) => {
   // ============================================
   // 5. GET MANAGED STREAMS
   // ============================================
-  const { data: streamsData } = await supabase
+  const { data: streamsData } = await (supabase
     .from('streams')
-    .select('id, status, flow_rate, currency, created_at')
+    .select('id, status, flow_rate_per_second, currency, created_at')
     .eq('managed_by_type', 'agent')
     .eq('managed_by_id', agentId)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(10) as any);
   
   const managed_streams = {
     active_count: (streamsData || []).filter((s: any) => s.status === 'active').length,
@@ -887,7 +897,7 @@ context.get('/agent/:id', async (c) => {
     recent: (streamsData || []).map((s: any) => ({
       id: s.id,
       status: s.status,
-      flow_rate: s.flow_rate.toString(),
+      flow_rate: (s.flow_rate ?? s.flow_rate_per_second ?? 0).toString(),
       currency: s.currency,
       created_at: s.created_at,
     })),
@@ -899,14 +909,14 @@ context.get('/agent/:id', async (c) => {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   
-  const { data: recentTransfers } = await supabase
+  const { data: recentTransfers } = await (supabase
     .from('transfers')
     .select('id, amount, currency, status, created_at, type')
-    .eq('created_by_type', 'agent')
-    .eq('created_by_id', agentId)
+    .eq('initiated_by_type', 'agent')
+    .eq('initiated_by_id', agentId)
     .gte('created_at', thirtyDaysAgo.toISOString())
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(10) as any);
   
   const allTransfers = recentTransfers || [];
   const totalAmount = allTransfers.reduce((sum: number, t: any) => 
@@ -942,7 +952,7 @@ context.get('/agent/:id', async (c) => {
   }
   
   // Can create stream if has permission
-  if (permissions.streams?.initiate) {
+  if ((permissions as any).streams?.initiate) {
     available_actions.push('create_stream');
   }
   
@@ -972,7 +982,7 @@ context.get('/agent/:id', async (c) => {
   // ============================================
   const suggested_actions: Array<{action: string; description: string; priority: 'high' | 'medium' | 'low'}> = [];
   
-  if (agent.kyaTier < 1) {
+  if (agent.kya.tier < 1) {
     suggested_actions.push({
       action: 'complete_kya',
       description: 'Complete KYA verification to increase trust',
@@ -988,7 +998,7 @@ context.get('/agent/:id', async (c) => {
     });
   }
   
-  if (managed_streams.active_count === 0 && permissions.streams?.initiate) {
+  if (managed_streams.active_count === 0 && (permissions as any).streams?.initiate) {
     suggested_actions.push({
       action: 'create_stream',
       description: 'Set up automated payment streams',
@@ -1004,9 +1014,9 @@ context.get('/agent/:id', async (c) => {
       id: agent.id,
       name: agent.name,
       status: agent.status,
-      type: agent.type,
-      kya_status: agent.kyaStatus,
-      kya_tier: agent.kyaTier,
+      type: (agent as any).type ?? agentData.type ?? null,
+      kya_status: agent.kya.status,
+      kya_tier: agent.kya.tier,
       created_at: agent.createdAt,
       updated_at: agent.updatedAt,
     },
@@ -1035,7 +1045,7 @@ context.get('/agent/:id', async (c) => {
 context.get('/batch/:id', async (c) => {
   const ctx = c.get('ctx');
   const batchId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(batchId)) {
@@ -1050,27 +1060,36 @@ context.get('/batch/:id', async (c) => {
   // ============================================
   // 1. GET BATCH DETAILS
   // ============================================
-  const { data: batchData, error: batchError } = await supabase
-    .from('batch_transfers')
+  // Live schema names this `transfer_batches`. The route still exposes
+  // some optional columns (simulation_id, workflow_id, approval_*,
+  // rejection_*) that aren't on the table — keep `any` so the
+  // accessors below stay safe at runtime.
+  const { data: batchDataRaw, error: batchError } = await (supabase
+    .from('transfer_batches')
     .select('*')
     .eq('id', batchId)
     .eq('tenant_id', ctx.tenantId)
-    .single();
-  
-  if (batchError || !batchData) {
+    .single() as any);
+
+  if (batchError || !batchDataRaw) {
     throw new NotFoundError('Batch', batchId);
   }
-  
+
+  const batchData: any = batchDataRaw;
+
   // ============================================
   // 2. GET ALL BATCH ITEMS
   // ============================================
-  const { data: itemsData } = await supabase
-    .from('transfers')
-    .select('id, amount, currency, status, from_account_id, to_account_id, failure_reason, failure_code, created_at, completed_at')
+  // Items live in `transfer_batch_items`; the legacy `failure_code`
+  // column doesn't exist there, so we read through `any` and tolerate
+  // its absence.
+  const { data: itemsDataRaw } = await (supabase
+    .from('transfer_batch_items')
+    .select('id, amount, currency, status, from_account_id, to_account_id, failure_reason, created_at')
     .eq('batch_id', batchId)
-    .order('created_at', { ascending: true });
-  
-  const items = itemsData || [];
+    .order('created_at', { ascending: true }) as any);
+
+  const items: any[] = itemsDataRaw || [];
   
   // ============================================
   // 3. CALCULATE STATUS BREAKDOWN

@@ -42,8 +42,18 @@ const updateConnectedAccountSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
+// Helper return type — discriminated union so TS narrows cleanly via 'error' in result.
+type AuthResult =
+  | { error: { status: 401 | 403; body: { error: string } }; user?: undefined; userProfile?: undefined; tenantId?: undefined }
+  | {
+      error?: undefined;
+      user: { id: string; [k: string]: unknown };
+      userProfile: { tenant_id: string; role: string; name: string | null };
+      tenantId: string;
+    };
+
 // Helper to get current user and tenant from JWT
-async function getCurrentUserAndTenant(c: any) {
+async function getCurrentUserAndTenant(c: any): Promise<AuthResult> {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     return { error: { status: 401, body: { error: 'Missing or invalid authorization header' } } };
@@ -71,7 +81,7 @@ async function getCurrentUserAndTenant(c: any) {
 
   return {
     user: userData.user,
-    userProfile: profile,
+    userProfile: profile as { tenant_id: string; role: string; name: string | null },
     tenantId: profile.tenant_id,
   };
 }
@@ -92,8 +102,8 @@ async function logAuditEvent(
     action,
     actor_type: actorType,
     actor_id: actorId,
-    metadata,
-  });
+    metadata: metadata as Record<string, unknown>,
+  } as any);
 }
 
 // ============================================
@@ -101,7 +111,7 @@ async function logAuditEvent(
 // ============================================
 connectedAccounts.get('/', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
+  if (result.error) {
     return c.json(result.error.body, result.error.status);
   }
 
@@ -138,7 +148,7 @@ connectedAccounts.get('/', async (c) => {
 // ============================================
 connectedAccounts.get('/:id', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
+  if (result.error) {
     return c.json(result.error.body, result.error.status);
   }
 
@@ -188,7 +198,7 @@ connectedAccounts.get('/:id', async (c) => {
 // ============================================
 connectedAccounts.post('/', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
+  if (result.error) {
     return c.json(result.error.body, result.error.status);
   }
 
@@ -294,10 +304,10 @@ connectedAccounts.post('/', async (c) => {
       last_verified_at: verificationResult.valid ? new Date().toISOString() : null,
       error_message: verificationResult.error || null,
       metadata: {
-        ...body.metadata,
+        ...(body.metadata || {}),
         ...(verificationResult.accountInfo || {}),
-      },
-    })
+      } as Record<string, unknown>,
+    } as any)
     .select('id, handler_type, handler_name, status, last_verified_at, metadata, created_at')
     .single();
 
@@ -335,7 +345,7 @@ connectedAccounts.post('/', async (c) => {
 // ============================================
 connectedAccounts.patch('/:id', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
+  if (result.error) {
     return c.json(result.error.body, result.error.status);
   }
 
@@ -385,7 +395,7 @@ connectedAccounts.patch('/:id', async (c) => {
   }
 
   if (body.metadata) {
-    updates.metadata = { ...existing.metadata, ...body.metadata };
+    updates.metadata = { ...((existing.metadata as Record<string, unknown>) || {}), ...body.metadata };
   }
 
   if (body.credentials) {
@@ -396,7 +406,7 @@ connectedAccounts.patch('/:id', async (c) => {
     }
 
     // Verify new credentials work
-    let verificationResult = { valid: true, error: undefined as string | undefined };
+    let verificationResult: { valid: boolean; error?: string; accountInfo?: Record<string, unknown> } = { valid: true };
     if (existing.handler_type === 'stripe') {
       verificationResult = await validateStripeCredentials(body.credentials as { api_key: string });
     } else if (existing.handler_type === 'paypal') {
@@ -457,7 +467,7 @@ connectedAccounts.patch('/:id', async (c) => {
 // ============================================
 connectedAccounts.delete('/:id', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
+  if (result.error) {
     return c.json(result.error.body, result.error.status);
   }
 
@@ -510,7 +520,7 @@ connectedAccounts.delete('/:id', async (c) => {
 // ============================================
 connectedAccounts.post('/:id/verify', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
+  if (result.error) {
     return c.json(result.error.body, result.error.status);
   }
 
@@ -544,7 +554,7 @@ connectedAccounts.post('/:id/verify', async (c) => {
   });
 
   // Verify based on handler type
-  let verificationResult = { valid: true, error: undefined as string | undefined, accountInfo: {} as Record<string, unknown> };
+  let verificationResult: { valid: boolean; error?: string; accountInfo?: Record<string, unknown> } = { valid: true, accountInfo: {} };
 
   if (existing.handler_type === 'stripe') {
     verificationResult = await validateStripeCredentials(credentials as { api_key: string });
@@ -571,10 +581,10 @@ connectedAccounts.post('/:id/verify', async (c) => {
       error_message: verificationResult.error || null,
       error_code: verificationResult.valid ? null : 'VERIFICATION_FAILED',
       metadata: {
-        ...existing.metadata,
-        ...verificationResult.accountInfo,
-      },
-    })
+        ...((existing.metadata as Record<string, unknown>) || {}),
+        ...(verificationResult.accountInfo || {}),
+      } as Record<string, unknown>,
+    } as any)
     .eq('id', accountId);
 
   if (updateError) {

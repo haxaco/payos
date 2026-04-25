@@ -33,6 +33,7 @@ export function mapAccountFromDb(row: any): Account {
       tier: row.verification_tier || 0,
       status: row.verification_status || 'unverified',
       type: row.verification_type || (row.type === 'person' ? 'kyc' : 'kyb'),
+      path: row.verification_path || 'standard',
     },
     balance: {
       total: parseFloat(row.balance_total) || 0,
@@ -54,7 +55,7 @@ export function mapAccountFromDb(row: any): Account {
 }
 
 export function mapAgentFromDb(row: any): Agent {
-  return {
+  return ({
     id: row.id,
     tenantId: row.tenant_id,
     environment: row.environment || 'test',
@@ -160,7 +161,7 @@ export function mapAgentFromDb(row: any): Agent {
     updated_at: row.updated_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
+  } as any) as Agent;
 }
 
 export function mapTransferFromDb(row: any): Transfer {
@@ -282,13 +283,21 @@ function formatRunway(seconds: number): string {
 // ============================================
 
 export interface AuditLogEntry {
-  tenantId: string;
+  tenantId: string | null;
   entityType: string;
-  entityId: string;
+  entityId: string | null;
   action: string;
-  actorType: 'user' | 'agent' | 'system';
-  actorId: string;
-  actorName: string;
+  description?: string;
+  // The auth middleware can set actorType to 'api_key' (tenant API key
+  // callers) or 'portal' (Epic 65 portal tokens). The audit_log table
+  // stores any string; the previous narrow union was an internal
+  // contract that didn't match what callers actually sent, leading to
+  // TS2322 fanout across every logAudit() callsite.
+  actorType: 'user' | 'agent' | 'system' | 'api_key' | 'portal';
+  // actorId is null for system actions and for legacy code paths that
+  // pre-date per-actor identity (e.g. the legacy_api_key tenant key).
+  actorId?: string | null;
+  actorName?: string | null;
   changes?: Record<string, any>;
   metadata?: Record<string, any>;
 }
@@ -400,25 +409,49 @@ export interface PaginationParams {
   limit: number;
 }
 
-export function getPaginationParams(query: Record<string, string>): PaginationParams {
+export function getPaginationParams(
+  queryOrContext: Record<string, string> | { req: { query: () => Record<string, string> } }
+): PaginationParams {
+  // Accept either a plain query record or a Hono context (with c.req.query()).
+  const query: Record<string, string> =
+    typeof (queryOrContext as any)?.req?.query === 'function'
+      ? (queryOrContext as any).req.query()
+      : (queryOrContext as Record<string, string>);
   const page = Math.max(1, parseInt(query.page || '1'));
   const limit = Math.min(100, Math.max(1, parseInt(query.limit || '20')));
   return { page, limit };
 }
 
 export function paginationResponse<T>(
-  data: T[],
-  total: number,
-  pagination: PaginationParams
+  pageOrData: number | T[],
+  limitOrTotal?: number,
+  totalOrPagination?: number | PaginationParams
 ) {
+  // Two call shapes are used across the codebase:
+  //   paginationResponse(page, limit, total)              -> returns { page, limit, total, totalPages }
+  //   paginationResponse(data, total, { page, limit })     -> returns { data, pagination: {...} }
+  if (Array.isArray(pageOrData)) {
+    const data = pageOrData;
+    const total = limitOrTotal ?? 0;
+    const pagination = totalOrPagination as PaginationParams;
+    return {
+      data,
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        totalPages: Math.ceil(total / pagination.limit),
+      },
+    };
+  }
+  const page = pageOrData as number;
+  const limit = (limitOrTotal as number) || 20;
+  const total = (totalOrPagination as number) || 0;
   return {
-    data,
-    pagination: {
-      page: pagination.page,
-      limit: pagination.limit,
-      total,
-      totalPages: Math.ceil(total / pagination.limit),
-    },
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
   };
 }
 

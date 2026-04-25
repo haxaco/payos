@@ -42,7 +42,7 @@ app.post('/', async (c) => {
 
     console.log(`[Stripe Webhook] Received: ${eventType}`);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Store webhook event for idempotency
     const { data: existing } = await supabase
@@ -103,7 +103,7 @@ app.post('/', async (c) => {
     try {
       const payload = await c.req.text();
       const event = JSON.parse(payload);
-      const supabase = createClient();
+      const supabase: any = createClient();
       await supabase
         .from('webhook_events')
         .update({
@@ -123,7 +123,7 @@ app.post('/', async (c) => {
 async function handlePaymentIntentSucceeded(paymentIntent: any) {
   console.log(`[Stripe Webhook] Payment succeeded: ${paymentIntent.id}`);
   
-  const supabase = createClient();
+  const supabase: any = createClient();
   const metadata = paymentIntent.metadata || {};
 
   // If this was an ACP payment, update the checkout
@@ -157,7 +157,7 @@ async function handlePaymentIntentSucceeded(paymentIntent: any) {
 async function handlePaymentIntentFailed(paymentIntent: any) {
   console.log(`[Stripe Webhook] Payment failed: ${paymentIntent.id}`);
   
-  const supabase = createClient();
+  const supabase: any = createClient();
   const metadata = paymentIntent.metadata || {};
 
   if (metadata.source === 'acp') {
@@ -192,7 +192,7 @@ async function handlePaymentIntentCanceled(paymentIntent: any) {
   console.log(`[Stripe Webhook] Payment canceled: ${paymentIntent.id}`);
   
   // Similar handling as failed
-  const supabase = createClient();
+  const supabase: any = createClient();
   const metadata = paymentIntent.metadata || {};
 
   if (metadata.source === 'acp') {

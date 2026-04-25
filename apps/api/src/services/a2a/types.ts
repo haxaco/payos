@@ -346,6 +346,14 @@ export interface InputRequiredContext {
   resolve_endpoint?: string;
   required_auth?: 'api_key' | 'agent_token' | 'none';
   details?: Record<string, unknown>;
+  payment_required?: boolean;
+  x402?: {
+    endpoint_id: string;
+    amount: number;
+    currency: string;
+    skill_id: string;
+    provider_agent_id: string;
+  };
 }
 
 // =============================================================================

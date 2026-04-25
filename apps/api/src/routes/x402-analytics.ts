@@ -97,7 +97,7 @@ function getGroupByTrunc(groupBy: string): string {
 app.get('/summary', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
     const query = c.req.query();
     
     // Parse optional period filter
@@ -193,7 +193,7 @@ app.get('/revenue', async (c) => {
     const { start, end } = getPeriodDates(validated.period, validated.startDate, validated.endDate);
     const truncBy = getGroupByTrunc(validated.groupBy);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Build query with time bucketing
     // Note: Using raw SQL for date_trunc functionality
@@ -266,7 +266,7 @@ app.get('/top-endpoints', async (c) => {
     });
 
     const { start, end } = getPeriodDates(validated.period);
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch all endpoints with their stats
     const { data: endpoints, error: endpointsError } = await supabase
@@ -372,7 +372,7 @@ app.get('/endpoint/:endpointId', async (c) => {
     const period = query.period || '30d';
     
     const { start, end } = getPeriodDates(period);
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Verify endpoint belongs to tenant
     const { data: endpoint, error: endpointError } = await supabase

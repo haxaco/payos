@@ -22,7 +22,7 @@ const router = new Hono();
 // ============================================
 router.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const type = c.req.query('type');         // restaurant, bar, hotel, retail
   const country = c.req.query('country');   // PA, CR
@@ -83,7 +83,7 @@ router.get('/', async (c) => {
 router.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Support lookup by account UUID or by invu_merchant_id (e.g. "invu_merch_003")
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);

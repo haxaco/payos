@@ -114,7 +114,7 @@ app.post('/sources', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const source = await orchestrator.createSource(ctx.tenantId, parsed.data);
 
@@ -137,7 +137,7 @@ app.get('/sources', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const { data, total } = await orchestrator.listSources(ctx.tenantId, {
       account_id: accountId,
@@ -170,7 +170,7 @@ app.get('/sources/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const source = await orchestrator.getSource(ctx.tenantId, id);
 
@@ -190,7 +190,7 @@ app.post('/sources/:id/verify', async (c) => {
   const parsed = verifySourceSchema.safeParse(body);
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const source = await orchestrator.verifySource(ctx.tenantId, {
       source_id: id,
@@ -211,7 +211,7 @@ app.delete('/sources/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     await orchestrator.removeSource(ctx.tenantId, id);
 
@@ -238,7 +238,7 @@ app.post('/widget-sessions', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const session = await orchestrator.createWidgetSession(
       ctx.tenantId,
@@ -276,7 +276,7 @@ app.post('/transactions', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const transaction = await orchestrator.initiateFunding(ctx.tenantId, parsed.data);
 
@@ -300,7 +300,7 @@ app.get('/transactions/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const transaction = await orchestrator.getTransaction(ctx.tenantId, id);
 
@@ -322,7 +322,7 @@ app.get('/transactions', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const { data, total } = await orchestrator.listTransactions(ctx.tenantId, {
       source_id: sourceId,
@@ -358,7 +358,7 @@ app.post('/estimate-fees', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const estimate = await orchestrator.estimateFees(
       ctx.tenantId,
@@ -389,7 +389,7 @@ app.post('/conversion-quote', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const conversion = createConversionService(supabase);
     const quote = await conversion.getQuote(
       parsed.data.from_currency,
@@ -407,7 +407,7 @@ app.post('/conversion-quote', async (c) => {
  * GET /v1/funding/providers - List available providers
  */
 app.get('/providers', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const orchestrator = createFundingOrchestrator(supabase);
   return c.json({ data: orchestrator.listProviders() });
 });
@@ -416,7 +416,7 @@ app.get('/providers', async (c) => {
  * GET /v1/funding/conversion-rates - List conversion rates
  */
 app.get('/conversion-rates', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const conversion = createConversionService(supabase);
   return c.json({ data: conversion.getSupportedPairs() });
 });
@@ -448,7 +448,7 @@ app.post('/topup-link', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
       .select('id, tenant_id, status, wallet_address, blockchain, wallet_type, name')
@@ -521,7 +521,7 @@ app.post('/onramp-session', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Get wallet with on-chain address info
     const { data: wallet, error: walletError } = await supabase
@@ -582,7 +582,7 @@ app.post('/stripe-onramp-session', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
@@ -667,7 +667,7 @@ app.post('/offramp-session', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')
@@ -716,7 +716,7 @@ app.post('/crossmint-order', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data: wallet, error: walletError } = await supabase
       .from('wallets')

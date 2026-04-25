@@ -94,7 +94,7 @@ app.post('/', async (c) => {
     // Validate request
     const validated = createEndpointSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Verify account belongs to tenant
     const { data: account, error: accountError } = await supabase
@@ -197,7 +197,7 @@ app.post('/', async (c) => {
 app.get('/', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Parse query params
     const status = c.req.query('status');
@@ -257,7 +257,7 @@ app.get('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     console.log('DEBUG: Fetching endpoint', { endpointId: id, tenantId: ctx.tenantId });
     
@@ -342,7 +342,7 @@ app.patch('/:id', async (c) => {
     // Validate request
     const validated = updateEndpointSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Check endpoint exists and belongs to tenant
     const { data: existing, error: fetchError } = await supabase
@@ -414,7 +414,7 @@ app.delete('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Check endpoint exists and belongs to tenant
     const { data: existing, error: fetchError } = await supabase

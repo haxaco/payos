@@ -49,7 +49,7 @@ router.get('/summary', async (c) => {
 
   const ctx = c.get('ctx');
   const { start, end } = getDateRange(c);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Aggregated totals from operation_events
   const { data: ops, error: opsError } = await (supabase
@@ -118,7 +118,7 @@ router.get('/operations', async (c) => {
   const correlationId = c.req.query('correlation_id');
   const subject = c.req.query('subject');
   const success = c.req.query('success');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let query = (supabase.from('operation_events') as any)
     .select('*', { count: 'exact' })
@@ -163,7 +163,7 @@ router.get('/audit-log', async (c) => {
   const { page, limit } = getPaginationParams(c);
   const entityType = c.req.query('entity_type');
   const action = c.req.query('action');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let query = (supabase.from('audit_log') as any)
     .select('*', { count: 'exact' })
@@ -216,7 +216,7 @@ router.get('/requests', async (c) => {
   const ctx = c.get('ctx');
   const { start, end } = getDateRange(c);
   const groupBy = c.req.query('group_by') || 'path_template'; // path_template, method, actor_type, status_code
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await (supabase.from('api_request_counts') as any)
     .select('method, path_template, status_code, actor_type, count, total_duration_ms, minute_bucket')
@@ -269,7 +269,7 @@ router.get('/costs', async (c) => {
 
   const ctx = c.get('ctx');
   const { start, end } = getDateRange(c);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await (supabase.from('operation_events') as any)
     .select('category, operation, external_cost_usd, data')

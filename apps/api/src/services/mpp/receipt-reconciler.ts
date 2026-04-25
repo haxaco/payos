@@ -74,7 +74,7 @@ export class MppReceiptReconciler {
       await this.supabase
         .from('transfers')
         .update({
-          protocol_metadata: this.supabase.rpc ? undefined : {
+          protocol_metadata: (this.supabase as any).rpc?.length ? undefined : {
             // Will be merged with existing metadata
             receipt_id: params.receiptId,
             receipt_data: params.receiptData,

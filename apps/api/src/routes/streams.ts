@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
+import type { RequestContext } from '../middleware/auth.js';
 import {
   mapStreamFromDb,
   logAudit,
@@ -20,7 +21,7 @@ import {
 } from '../services/streams.js';
 import { ValidationError, NotFoundError, InsufficientBalanceError } from '../middleware/error.js';
 
-const streams = new Hono();
+const streams = new Hono<{ Variables: { ctx: RequestContext } }>();
 
 // ============================================
 // VALIDATION SCHEMAS
@@ -48,7 +49,7 @@ const withdrawSchema = z.object({
 // ============================================
 streams.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Parse query params
   const query = c.req.query();
@@ -57,13 +58,13 @@ streams.get('/', async (c) => {
   const health = query.health;
   const category = query.category;
   
-  let dbQuery = supabase
+  let dbQuery: any = (supabase as any)
     .from('streams')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
     .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false });
-  
+
   if (status) {
     dbQuery = dbQuery.eq('status', status);
   }
@@ -71,7 +72,7 @@ streams.get('/', async (c) => {
   if (category) {
     dbQuery = dbQuery.eq('category', category);
   }
-  
+
   const { data, error } = await dbQuery;
   
   if (error) {
@@ -80,7 +81,7 @@ streams.get('/', async (c) => {
   }
   
   // Calculate real-time state for each stream
-  let streams = (data || []).map(row => {
+  let streams = (data || []).map((row: any) => {
     const stream = mapStreamFromDb(row);
     
     // Update with real-time calculation for active streams
@@ -114,7 +115,7 @@ streams.get('/', async (c) => {
   
   // Apply health filter AFTER real-time calculation (since health changes dynamically)
   if (health) {
-    streams = streams.filter(s => s.health === health);
+    streams = streams.filter((s: any) => s.health === health);
   }
   
   // Apply pagination after filtering
@@ -129,7 +130,7 @@ streams.get('/', async (c) => {
 // ============================================
 streams.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Check for idempotency
   const idempotencyKey = c.req.header('X-Idempotency-Key');
@@ -225,7 +226,7 @@ streams.post('/', async (c) => {
   // If agent is creating, check limits
   if (ctx.actorType === 'agent') {
     const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
-    const limitCheck = await limitService.checkStreamLimit(ctx.actorId, flowRatePerMonth);
+    const limitCheck = await limitService.checkStreamLimit(ctx.actorId!, flowRatePerMonth);
     
     if (!limitCheck.allowed) {
       throw new ValidationError(`Stream creation blocked: ${limitCheck.reason}`, {
@@ -298,14 +299,14 @@ streams.post('/', async (c) => {
   // Update agent stream stats if applicable
   if (ctx.actorType === 'agent') {
     const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
-    await limitService.updateAgentStreamStats(ctx.actorId, 1, flowRatePerMonth);
+    await limitService.updateAgentStreamStats(ctx.actorId!, 1, flowRatePerMonth);
   }
-  
+
   // Log stream event
   await logStreamEvent(supabase, stream.id, ctx.tenantId, 'created', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, {
     fundedAmount: actualFunding,
     flowRatePerMonth,
@@ -338,7 +339,7 @@ streams.post('/', async (c) => {
 streams.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -393,7 +394,7 @@ streams.get('/:id', async (c) => {
 streams.post('/:id/pause', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -455,8 +456,8 @@ streams.post('/:id/pause', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'paused', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, { totalStreamed: calculation.balance.total });
   
   return c.json({ data: mapStreamFromDb(data) });
@@ -468,7 +469,7 @@ streams.post('/:id/pause', async (c) => {
 streams.post('/:id/resume', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -516,8 +517,8 @@ streams.post('/:id/resume', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'resumed', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, { pausedSeconds, totalPausedSeconds });
   
   return c.json({ data: mapStreamFromDb(data) });
@@ -529,7 +530,7 @@ streams.post('/:id/resume', async (c) => {
 streams.post('/:id/cancel', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -607,8 +608,8 @@ streams.post('/:id/cancel', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'cancelled', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, {
     totalStreamed: calculation.balance.total,
     totalWithdrawn: calculation.balance.withdrawn,
@@ -636,7 +637,7 @@ streams.post('/:id/cancel', async (c) => {
 streams.post('/:id/top-up', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -729,8 +730,8 @@ streams.post('/:id/top-up', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'topped_up', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, { amount, newFundedAmount, newRunwaySeconds });
   
   return c.json({ data: mapStreamFromDb(data) });
@@ -742,7 +743,7 @@ streams.post('/:id/top-up', async (c) => {
 streams.post('/:id/withdraw', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -832,8 +833,8 @@ streams.post('/:id/withdraw', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'withdrawn', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, {
     amount: withdrawAmount,
     newTotalWithdrawn,
@@ -856,7 +857,7 @@ streams.post('/:id/withdraw', async (c) => {
 streams.get('/:id/events', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -887,7 +888,7 @@ streams.get('/:id/events', async (c) => {
     return c.json({ error: 'Failed to fetch events' }, 500);
   }
   
-  const events = (data || []).map(row => ({
+  const events = (data || []).map((row: any) => ({
     id: row.id,
     streamId: row.stream_id,
     type: row.event_type,
@@ -908,7 +909,7 @@ streams.get('/:id/events', async (c) => {
 // ============================================
 streams.get('/stats', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const { data: streams } = await supabase
     .from('streams')

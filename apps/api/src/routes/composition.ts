@@ -42,7 +42,7 @@ compositionRouter.post('/agents/:id/tasks/:taskId/settle', async (c) => {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // First evaluate if the task can be settled
   const bridge = new TaskMandateBridge(supabase);
@@ -111,7 +111,7 @@ compositionRouter.get('/agents/:id/mandates/:mid/tasks', async (c) => {
   const limit = parseInt(c.req.query('limit') || '50');
   const offset = parseInt(c.req.query('offset') || '0');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Find transfers linked to this mandate via composition
   const { data: transfers, count } = await supabase
@@ -141,7 +141,7 @@ compositionRouter.get('/audit', async (c) => {
   const offset = parseInt(c.req.query('offset') || '0');
   const protocol = c.req.query('protocol');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Query operations log for composition events
   let query = supabase

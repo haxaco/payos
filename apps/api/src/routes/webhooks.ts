@@ -64,7 +64,7 @@ const replayWebhookSchema = z.object({
 app.get('/stats', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Get date range (default: last 24 hours)
     const hoursBack = parseInt(c.req.query('hours') || '24');
@@ -220,7 +220,7 @@ app.post('/replay', async (c) => {
     const body = await c.req.json();
     const validated = replayWebhookSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Build query for deliveries to replay
     let query = supabase
@@ -331,7 +331,7 @@ app.get('/deliveries/dlq', async (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
     const offset = (page - 1) * limit;
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     const { data, error, count } = await supabase
       .from('webhook_deliveries')
@@ -369,7 +369,7 @@ app.get('/deliveries/dlq', async (c) => {
 app.delete('/deliveries/dlq', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Only purge old DLQ items (>7 days)
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -412,7 +412,7 @@ app.post('/', async (c) => {
     const body = await c.req.json();
     const validated = createWebhookSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Generate webhook secret
     const secret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
@@ -463,7 +463,7 @@ app.post('/', async (c) => {
 app.get('/', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('webhook_endpoints')
@@ -494,7 +494,7 @@ app.get('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('webhook_endpoints')
@@ -528,7 +528,7 @@ app.patch('/:id', async (c) => {
     const body = await c.req.json();
     const validated = updateWebhookSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('webhook_endpoints')
@@ -565,7 +565,7 @@ app.delete('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { error } = await supabase
       .from('webhook_endpoints')
@@ -592,7 +592,7 @@ app.post('/:id/test', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Verify endpoint exists
     const { data: endpoint, error } = await supabase
@@ -658,7 +658,7 @@ app.get('/:id/deliveries', async (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
     const offset = (page - 1) * limit;
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Verify endpoint exists
     const { data: endpoint } = await supabase
@@ -710,7 +710,7 @@ app.post('/deliveries/:id/retry', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Update delivery to pending status
     const { data, error } = await supabase
@@ -752,7 +752,7 @@ app.get('/:id/health', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Get endpoint details
     const { data: endpoint, error: endpointError } = await supabase
@@ -855,7 +855,7 @@ app.post('/:id/rotate-secret', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Verify endpoint exists
     const { data: endpoint, error } = await supabase

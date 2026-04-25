@@ -379,7 +379,7 @@ export class A2ATaskProcessor {
   private async routeSlyFirst(
     taskId: string,
     text: string,
-    intent: { action: string; amount: number; currency: string; recipient: string },
+    intent: { action: string; amount: number; currency: string; destination?: string; description?: string },
     agentCtx: AgentContext,
     msgMetadata?: Record<string, unknown>,
     explicitSkillId?: string,
@@ -450,7 +450,7 @@ export class A2ATaskProcessor {
   private async executeIntentSwitch(
     taskId: string,
     text: string,
-    intent: { action: string; amount: number; currency: string; recipient: string },
+    intent: { action: string; amount: number; currency: string; destination?: string; description?: string },
     agentCtx: AgentContext,
   ): Promise<A2ATask | null> {
     try {
@@ -1556,7 +1556,7 @@ export class A2ATaskProcessor {
   private async forwardViaWebhook(
     taskId: string,
     messageText: string,
-    agent: { id: string; endpoint_url: string; endpoint_secret?: string | null },
+    agent: { id: string; endpoint_url: string; endpoint_secret?: string | null; processing_mode?: string },
     skill: { skill_id: string },
     settlementMandateId?: string,
   ): Promise<A2ATask | null> {

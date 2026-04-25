@@ -143,7 +143,7 @@ app.post('/register', async (c) => {
     // Validate request
     const validated = registerAgentSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // ============================================
     // 1. CREATE ACCOUNT (type: agent)
@@ -369,7 +369,7 @@ app.patch('/:id/config', async (c) => {
     // Validate request
     const validated = updateAgentConfigSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // ============================================
     // 1. FETCH AGENT & WALLET
@@ -505,7 +505,7 @@ app.get('/:id/wallet', async (c) => {
   try {
     const ctx = c.get('ctx');
     const agentId = c.req.param('id');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch agent to verify it exists
     const { data: agent, error: agentError } = await supabase
@@ -606,7 +606,7 @@ app.post('/:id/wallet/fund', async (c) => {
     // Validate request
     const validated = fundWalletSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch agent to verify it exists
     const { data: agent, error: agentError } = await supabase

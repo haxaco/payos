@@ -58,7 +58,7 @@ export interface CreateBatchRequest {
   webhookUrl?: string;
   idempotencyKey?: string;
   createdBy: {
-    type: 'user' | 'api_key' | 'agent';
+    type: 'user' | 'api_key' | 'agent' | 'portal';
     id?: string;
     name?: string;
   };

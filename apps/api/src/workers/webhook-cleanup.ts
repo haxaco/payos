@@ -96,10 +96,14 @@ export class WebhookCleanupWorker {
 
       // Log audit for cleanup
       await logAudit(this.supabase, {
-        entity_type: 'webhook_cleanup',
-        entity_id: null,
+        tenantId: null,
+        actorType: 'system',
+        actorId: null,
+        actorName: 'WebhookCleanup',
+        entityType: 'webhook_cleanup',
+        entityId: null,
         action: 'cleanup',
-        new_values: {
+        changes: {
           deliveries_deleted: deliveriesDeleted,
           dlq_deleted: dlqDeleted,
           duration_ms: duration,

@@ -97,7 +97,7 @@ router.post('/one-click', async (c) => {
       }
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const baseUrl = process.env.API_BASE_URL || 'https://api.getsly.ai';
 
     // Idempotency: check if this key was already used
@@ -698,7 +698,7 @@ router.get('/status', async (c) => {
     return c.json({ error: 'Provide email or applicationId query parameter' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Look up application
   let query = (supabase.from('beta_applications') as any)

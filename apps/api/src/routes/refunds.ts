@@ -34,7 +34,7 @@ const createRefundSchema = z.object({
 // ============================================
 refunds.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const query = c.req.query();
   const { page, limit } = getPaginationParams(query);
@@ -79,7 +79,7 @@ refunds.get('/', async (c) => {
 // ============================================
 refunds.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Check for idempotency key
   const idempotencyKey = c.req.header('X-Idempotency-Key');
@@ -188,12 +188,7 @@ refunds.post('/', async (c) => {
   const sourceBalance = await balanceService.getBalance(transfer.to_account_id);
   
   if (sourceBalance.available < refundAmount) {
-    throw new InsufficientBalanceError(
-      transfer.to_account_id,
-      sourceBalance.available.toString(),
-      refundAmount.toString(),
-      transfer.currency
-    );
+    throw new InsufficientBalanceError(sourceBalance.available, refundAmount);
   }
   
   // Create refund record
@@ -301,7 +296,7 @@ refunds.post('/', async (c) => {
 // ============================================
 refunds.get('/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const refundId = c.req.param('id');
   
   if (!isValidUUID(refundId)) {

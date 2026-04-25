@@ -53,7 +53,7 @@ cards.post('/verify', async (c) => {
   );
 
   // Log the verification attempt
-  const supabase = createClient();
+  const supabase: any = createClient();
   await supabase.from('card_agent_verifications').insert({
     tenant_id: ctx.tenantId,
     network: result.network,
@@ -85,7 +85,7 @@ cards.post('/verify', async (c) => {
  */
 cards.get('/networks', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Get connected accounts for card networks
   const { data: accounts } = await supabase
@@ -97,14 +97,14 @@ cards.get('/networks', async (c) => {
   const networks = {
     visa: {
       configured: false,
-      status: 'not_configured' as const,
+      status: 'not_configured' as 'active' | 'inactive' | 'not_configured',
       accountId: null as string | null,
       sandbox: true,
       connectedAt: null as string | null,
     },
     mastercard: {
       configured: false,
-      status: 'not_configured' as const,
+      status: 'not_configured' as 'active' | 'inactive' | 'not_configured',
       accountId: null as string | null,
       sandbox: true,
       connectedAt: null as string | null,
@@ -167,7 +167,7 @@ cards.post('/networks/:network/test', async (c) => {
     throw new ValidationError('Invalid network. Must be "visa" or "mastercard"');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Get credentials from connected account
   const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
@@ -223,7 +223,7 @@ cards.post('/networks/:network/configure', async (c) => {
     throw new ValidationError('Invalid network. Must be "visa" or "mastercard"');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
   const handlerName = network === 'visa' ? 'Visa Intelligent Commerce' : 'Mastercard Agent Pay';
 
@@ -300,7 +300,7 @@ cards.delete('/networks/:network/disconnect', async (c) => {
     throw new ValidationError('Invalid network. Must be "visa" or "mastercard"');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const handlerType = network === 'visa' ? 'visa_vic' : 'mastercard_agent_pay';
 
   const { error } = await supabase
@@ -334,7 +334,7 @@ cards.post('/visa/instructions', async (c) => {
     throw new ValidationError('Missing required fields: amount, currency, merchant.name, merchant.categoryCode');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Get Visa credentials
   const { data: account, error } = await supabase
@@ -398,7 +398,7 @@ cards.post('/visa/instructions', async (c) => {
  */
 cards.get('/visa/instructions', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const status = c.req.query('status');
   const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
@@ -438,7 +438,7 @@ cards.get('/visa/instructions', async (c) => {
 cards.get('/visa/instructions/:id', async (c) => {
   const ctx = c.get('ctx');
   const instructionId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('visa_payment_instructions')
@@ -472,7 +472,7 @@ cards.post('/mastercard/agents', async (c) => {
     throw new ValidationError('Missing required fields: agentId, publicKey');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify the agent exists and belongs to this tenant
   const { data: agent, error: agentError } = await supabase
@@ -543,7 +543,7 @@ cards.post('/mastercard/agents', async (c) => {
  */
 cards.get('/mastercard/agents', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('mastercard_agents')
@@ -565,7 +565,7 @@ cards.get('/mastercard/agents', async (c) => {
 cards.get('/mastercard/agents/:id', async (c) => {
   const ctx = c.get('ctx');
   const agentId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('mastercard_agents')
@@ -591,7 +591,7 @@ cards.get('/mastercard/agents/:id', async (c) => {
  */
 cards.get('/transactions', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const network = c.req.query('network');
   const status = c.req.query('status');
@@ -635,7 +635,7 @@ cards.get('/transactions', async (c) => {
 cards.get('/transactions/:id', async (c) => {
   const ctx = c.get('ctx');
   const transactionId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('card_network_transactions')
@@ -661,7 +661,7 @@ cards.get('/transactions/:id', async (c) => {
  */
 cards.get('/verifications/stats', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const days = parseInt(c.req.query('days') || '30');
 
@@ -706,7 +706,7 @@ cards.get('/verifications/stats', async (c) => {
  */
 cards.get('/analytics', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const days = parseInt(c.req.query('days') || '30');
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -810,7 +810,7 @@ cards.get('/analytics', async (c) => {
 cards.post('/visa/tokens', async (c) => {
   const ctx = c.get('ctx');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { instructionId, cardToken, metadata } = body;
 
@@ -853,7 +853,7 @@ cards.post('/visa/tokens', async (c) => {
   });
 
   // Provision the token
-  const token = await client.provisionToken({
+  const token = await (client as any).provisionToken({
     instructionId,
     cardToken,
     metadata,
@@ -880,7 +880,7 @@ cards.post('/visa/tokens', async (c) => {
  */
 cards.get('/visa/tokens', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const status = c.req.query('status');
   const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
@@ -920,7 +920,7 @@ cards.get('/visa/tokens', async (c) => {
 cards.get('/visa/tokens/:id', async (c) => {
   const ctx = c.get('ctx');
   const tokenId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await supabase
     .from('visa_agent_tokens')
@@ -943,7 +943,7 @@ cards.get('/visa/tokens/:id', async (c) => {
 cards.delete('/visa/tokens/:id', async (c) => {
   const ctx = c.get('ctx');
   const tokenId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify the token exists
   const { data: token, error: tokenError } = await supabase
@@ -1005,7 +1005,7 @@ cards.delete('/visa/tokens/:id', async (c) => {
 cards.post('/mastercard/tokens', async (c) => {
   const ctx = c.get('ctx');
   const body = await c.req.json();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { agentId, cardToken, metadata, expiresInSeconds } = body;
 
@@ -1055,7 +1055,7 @@ cards.post('/mastercard/tokens', async (c) => {
   await client.initialize();
 
   // Create the agentic token with DTVC
-  const token = await client.createAgenticToken({
+  const token = await (client as any).createAgenticToken({
     mcAgentId: mcAgent.mc_agent_id,
     cardToken,
     expiresInSeconds: expiresInSeconds || 3600, // 1 hour default
@@ -1090,7 +1090,7 @@ cards.post('/mastercard/tokens', async (c) => {
  */
 cards.get('/mastercard/tokens', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const status = c.req.query('status');
   const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
@@ -1131,7 +1131,7 @@ cards.get('/mastercard/tokens/:id', async (c) => {
   const ctx = c.get('ctx');
   const tokenRef = c.req.param('id');
   const refreshDtvc = c.req.query('refresh') === 'true';
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: token, error } = await supabase
     .from('mastercard_agentic_tokens')
@@ -1168,7 +1168,7 @@ cards.get('/mastercard/tokens/:id', async (c) => {
 
         await client.initialize();
 
-        const newDtvc = await client.refreshDTVC(token.token_reference);
+        const newDtvc = await (client as any).refreshDTVC(token.token_reference);
 
         // Update stored DTVC
         await supabase
@@ -1195,7 +1195,7 @@ cards.get('/mastercard/tokens/:id', async (c) => {
 cards.delete('/mastercard/tokens/:id', async (c) => {
   const ctx = c.get('ctx');
   const tokenRef = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify the token exists
   const { data: token, error: tokenError } = await supabase
@@ -1231,7 +1231,7 @@ cards.delete('/mastercard/tokens/:id', async (c) => {
       });
 
       await client.initialize();
-      await client.revokeToken(tokenRef);
+      await (client as any).revokeToken(tokenRef);
     } catch (e) {
       // Log but continue - token might already be revoked
       console.error('Failed to revoke token with Mastercard:', e);

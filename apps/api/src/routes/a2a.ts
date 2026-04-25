@@ -39,7 +39,7 @@ function getBaseUrl(c: any): string {
 
 /** Fetch agent + account + wallet and generate an A2A Agent Card. */
 async function fetchAgentCard(agentId: string, tenantId?: string, baseUrl?: string) {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let query = supabase
     .from('agents')
@@ -238,9 +238,9 @@ a2aPublicRouter.post('/', async (c) => {
     }
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const rpcResponse = await handleGatewayJsonRpc(rpcRequest, supabase, getBaseUrl(c), authContext);
-  return jsonRpc(rpcResponse as Record<string, unknown>);
+  return jsonRpc(rpcResponse as unknown as Record<string, unknown>);
 });
 
 /**
@@ -305,7 +305,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
 
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     if (token.startsWith('pk_')) {
       // API key auth — prefix lookup + hash verification
@@ -351,7 +351,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
   // Always resolve target agent's tenant — tasks must be created in the provider's tenant
   // even when the caller authenticates with their own token (cross-tenant support).
   {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const { data: targetAgent } = await supabase
       .from('agents')
       .select('tenant_id, status')
@@ -401,7 +401,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
         .from('agents')
         .select('id, tenant_id')
         .eq('id', metaAgentId)
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId || '')
         .single();
       if (callerAgent) {
         callerAgentId = callerAgent.id;
@@ -420,12 +420,12 @@ a2aPublicRouter.post('/:agentId', async (c) => {
 
   // ---- SSE streaming for message/stream ----
   if (rpcRequest.method === 'message/stream') {
-    return handleMessageStream(c, rpcRequest, agentId, tenantId);
+    return handleMessageStream(c, rpcRequest, agentId, tenantId || '', callerAgentId);
   }
 
   // Dispatch to JSON-RPC handler
-  const supabase = createClient();
-  const taskService = new A2ATaskService(supabase, tenantId);
+  const supabase: any = createClient();
+  const taskService = new A2ATaskService(supabase, tenantId || '');
   const rpcResponse = await handleJsonRpc(rpcRequest, agentId, taskService, supabase, tenantId || undefined, callerAgentId);
 
   // Track A2A task operations
@@ -443,7 +443,7 @@ a2aPublicRouter.post('/:agentId', async (c) => {
     });
   }
 
-  return jsonRpc(rpcResponse as Record<string, unknown>);
+  return jsonRpc(rpcResponse as unknown as Record<string, unknown>);
 });
 
 /**
@@ -479,7 +479,7 @@ a2aPublicRouter.post('/:agentId/callback', async (c) => {
     return c.json({ error: 'Invalid agent ID format' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Look up the agent and its endpoint secret
   const { data: agent, error: agentError } = await supabase
@@ -697,6 +697,7 @@ async function handleMessageStream(
   rpcRequest: A2AJsonRpcRequest,
   agentId: string,
   tenantId: string,
+  callerAgentId?: string,
 ) {
   const params = rpcRequest.params || {};
   const message = params.message as { role?: string; parts?: A2APart[]; metadata?: Record<string, unknown> } | undefined;
@@ -719,7 +720,7 @@ async function handleMessageStream(
   const callbackUrl = configuration?.callbackUrl;
   const callbackSecret = configuration?.callbackSecret;
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const taskService = new A2ATaskService(supabase, tenantId);
 
   // Resolve or create the task (mirrors message/send logic)
@@ -892,7 +893,7 @@ export const a2aRouter = new Hono();
  * Used by agent backends to find peers for multi-hop task delegation.
  */
 a2aRouter.get('/marketplace', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: agents } = await supabase
     .from('agents')
@@ -986,7 +987,7 @@ a2aRouter.get('/agents/:agentId/config', async (c) => {
   const agentId = c.req.param('agentId');
   if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agent ID format' }, 400);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { data: agent, error } = await supabase
     .from('agents')
     .select('processing_mode, processing_config')
@@ -1037,7 +1038,7 @@ a2aRouter.put('/agents/:agentId/config', async (c) => {
     return c.json({ error: configResult.error }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify agent exists and belongs to tenant
   const { data: existing, error: fetchError } = await supabase
@@ -1151,7 +1152,7 @@ a2aRouter.post('/tasks', async (c) => {
     return c.json({ error: 'message.parts is required' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
   if (body.remoteUrl) {
@@ -1168,7 +1169,7 @@ a2aRouter.post('/tasks', async (c) => {
         body.contextId,
         'outbound',
         body.remoteUrl,
-        result?.result?.id,
+        (result as any)?.result?.id,
       );
 
       trackOp({
@@ -1235,7 +1236,7 @@ a2aRouter.get('/tasks', async (c) => {
   const page = parseInt(c.req.query('page') || '1');
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
   const result = await taskService.listTasks({
@@ -1264,7 +1265,7 @@ a2aRouter.get('/tasks/dlq', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
   const offset = (page - 1) * limit;
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: tasks, count, error } = await supabase
     .from('a2a_tasks')
@@ -1326,7 +1327,7 @@ a2aRouter.patch('/tasks/:taskId', async (c) => {
     return c.json({ error: 'state is required' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Fetch current task
   const { data: task, error: fetchError } = await supabase
@@ -1419,7 +1420,7 @@ a2aRouter.post('/tasks/:taskId/retry', async (c) => {
     return c.json({ error: 'Invalid task ID format' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const webhookHandler = new A2AWebhookHandler(supabase);
 
   const success = await webhookHandler.retryFromDlq(taskId, ctx.tenantId);
@@ -1443,7 +1444,7 @@ a2aRouter.get('/tasks/:taskId', async (c) => {
     return c.json({ error: 'Invalid task ID format' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
   const task = await taskService.getTask(taskId);
@@ -1476,7 +1477,7 @@ a2aRouter.post('/tasks/:taskId/respond', async (c) => {
     return c.json({ error: 'Invalid request body' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify task exists and is in input-required state
   // Try same-tenant first, then cross-tenant for buyer acceptance (result_review)
@@ -1806,7 +1807,7 @@ a2aRouter.get('/agents/:agentId/tasks/stream', async (c) => {
     return c.json({ error: 'Can only subscribe to your own task stream' }, 403);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const SSE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
   const HEARTBEAT = 30_000; // 30s
 
@@ -1942,7 +1943,7 @@ a2aRouter.post('/tasks/:taskId/rate', async (c) => {
     return c.json({ error: 'satisfaction must be excellent|acceptable|partial|unacceptable' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
   // Kill-switch enforcement: suspended agents can't rate.
@@ -2058,7 +2059,7 @@ a2aRouter.post('/tasks/:taskId/complete', async (c) => {
     return c.json({ error: 'Invalid request body' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify task exists, belongs to caller's tenant, and is in working state
   const { data: task, error: fetchError } = await supabase
@@ -2228,7 +2229,7 @@ a2aRouter.post('/tasks/:taskId/cancel', async (c) => {
     return c.json({ error: 'Invalid task ID format' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const taskService = new A2ATaskService(supabase, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
   const task = await taskService.cancelTask(taskId);
@@ -2268,7 +2269,7 @@ a2aRouter.post('/tasks/:taskId/claim', async (c) => {
     return c.json({ error: 'Invalid task ID format' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { data: task, error: fetchError } = await supabase
     .from('a2a_tasks')
     .select('id, state, tenant_id, agent_id')
@@ -2325,7 +2326,7 @@ a2aRouter.post('/tasks/:taskId/process', async (c) => {
     return c.json({ error: 'Invalid task ID format' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
   const processor = new A2ATaskProcessor(supabase, ctx.tenantId);
 
@@ -2350,7 +2351,7 @@ a2aRouter.post('/process', async (c) => {
   const agentId = body.agentId || body.agent_id;
   const paymentThreshold = body.paymentThreshold || body.payment_threshold || 500;
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
   const processor = new A2ATaskProcessor(supabase, ctx.tenantId, {
     agentId,
@@ -2372,7 +2373,7 @@ a2aRouter.post('/process', async (c) => {
     return c.json({ data: { processed: 0, message: 'No submitted tasks found' } });
   }
 
-  const results = [];
+  const results: Array<{ id: string; state: any }> = [];
   for (const row of tasks) {
     if (agentId) {
       const { data: task } = await supabase
@@ -2396,7 +2397,7 @@ a2aRouter.post('/process', async (c) => {
  */
 a2aRouter.get('/stats', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Get task counts by state and direction
   const { data: tasks, error } = await supabase
@@ -2475,7 +2476,7 @@ a2aRouter.get('/stats', async (c) => {
 a2aRouter.get('/sessions/:contextId', async (c) => {
   const ctx = c.get('ctx');
   const contextId = c.req.param('contextId');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // 1. Fetch all tasks in this session, joined with agent names
   const { data: taskRows, error: taskError } = await supabase
@@ -2685,7 +2686,7 @@ a2aRouter.get('/sessions/:contextId', async (c) => {
  */
 a2aRouter.get('/sessions', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Fetch all tasks with a non-null context_id
   const { data: tasks, error } = await supabase
@@ -2922,7 +2923,7 @@ a2aRouter.post('/agents/:agentId/tools', async (c) => {
     return c.json({ error: 'handlerUrl is required for webhook/http handler types' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Verify agent belongs to tenant
   const { data: agent, error: agentErr } = await supabase
@@ -2986,7 +2987,7 @@ a2aRouter.get('/agents/:agentId/tools', async (c) => {
   const agentId = c.req.param('agentId');
   if (!UUID_RE.test(agentId)) return c.json({ error: 'Invalid agentId' }, 400);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: tools, error } = await supabase
     .from('agent_custom_tools')
@@ -3026,7 +3027,7 @@ a2aRouter.delete('/agents/:agentId/tools/:toolId', async (c) => {
     return c.json({ error: 'Invalid agentId or toolId' }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { error } = await supabase
     .from('agent_custom_tools')

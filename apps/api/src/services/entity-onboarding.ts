@@ -319,7 +319,7 @@ export async function onboardEntity(
 
   // Determine ready_for_payments status
   const hasVerifiedPaymentMethod = paymentMethods.some(pm => pm.status === 'verified');
-  const readyForPayments = (skipVerification || verificationStatus === 'verified') && hasVerifiedPaymentMethod;
+  const readyForPayments = (skipVerification || (verificationStatus as string) === 'verified') && hasVerifiedPaymentMethod;
 
   let readyForPaymentsAfter: string | undefined;
   if (!readyForPayments) {

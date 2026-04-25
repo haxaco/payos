@@ -75,7 +75,7 @@ export class LimitService {
     }
 
     // Get parent account if exists
-    let parentAccount = null;
+    let parentAccount: { id: string; name: string; verification_tier: number; verification_status: string } | null = null;
     if (agent.parent_account_id) {
       const { data: account, error: accountError } = await this.supabase
         .from('accounts')
@@ -87,7 +87,7 @@ export class LimitService {
       if (accountError) {
         console.error('Failed to get parent account:', accountError);
       }
-      parentAccount = account;
+      parentAccount = (account as any) ?? null;
     }
 
     return { ...agent, parentAccount };

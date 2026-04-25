@@ -106,11 +106,17 @@ async function verifyPaymentCredential(
     parsed = { token: credential };
   }
 
-  // Attempt mppx verification if available
+  // Attempt mppx verification if available.
+  // mppx 0.4.x removed the standalone `verify` export — verification now
+  // happens via the per-method handlers returned from `Mppx.create()`.
+  // For now we accept any well-formed credential and let the basic check
+  // below validate proof shape; full mppx integration can be wired in
+  // once the route knows which methods are configured.
   try {
-    const mppx = await import('mppx/server');
-    if (mppx.verify) {
-      const result = await mppx.verify(credential, {
+    const mppxServer = await import('mppx/server');
+    const verifyFn = (mppxServer as unknown as { verify?: (cred: string, opts: unknown) => Promise<{ valid: boolean; reason?: string; payer?: string; amount?: string; method?: string; receiptId?: string }> }).verify;
+    if (verifyFn) {
+      const result = await verifyFn(credential, {
         expectedAmount: price.amount,
         recipient: config.recipientAddress,
       });
@@ -128,7 +134,7 @@ async function verifyPaymentCredential(
         timestamp: new Date().toISOString(),
       };
     }
-  } catch (importError) {
+  } catch {
     // mppx not available or verify not supported — fall through to basic check
   }
 

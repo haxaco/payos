@@ -85,7 +85,7 @@ function calculateNextExecution(
 // ============================================
 scheduledTransfers.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const query = c.req.query();
   const { page, limit } = getPaginationParams(query);
@@ -122,7 +122,7 @@ scheduledTransfers.get('/', async (c) => {
 // ============================================
 scheduledTransfers.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   let body;
   try {
@@ -259,7 +259,7 @@ scheduledTransfers.post('/', async (c) => {
 // ============================================
 scheduledTransfers.get('/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const scheduleId = c.req.param('id');
   
   if (!isValidUUID(scheduleId)) {
@@ -301,7 +301,7 @@ scheduledTransfers.get('/:id', async (c) => {
 // ============================================
 scheduledTransfers.post('/:id/pause', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const scheduleId = c.req.param('id');
   
   if (!isValidUUID(scheduleId)) {
@@ -358,7 +358,7 @@ scheduledTransfers.post('/:id/pause', async (c) => {
 // ============================================
 scheduledTransfers.post('/:id/resume', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const scheduleId = c.req.param('id');
   
   if (!isValidUUID(scheduleId)) {
@@ -431,7 +431,7 @@ scheduledTransfers.post('/:id/resume', async (c) => {
 // ============================================
 scheduledTransfers.post('/:id/cancel', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const scheduleId = c.req.param('id');
   
   if (!isValidUUID(scheduleId)) {
@@ -488,7 +488,7 @@ scheduledTransfers.post('/:id/cancel', async (c) => {
 // ============================================
 scheduledTransfers.post('/:id/execute-now', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const scheduleId = c.req.param('id');
   
   if (!isValidUUID(scheduleId)) {

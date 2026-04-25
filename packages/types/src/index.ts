@@ -99,8 +99,13 @@ export interface Account {
   tenantId: string;
   environment: 'test' | 'live';
   type: AccountType;
+  subtype?: string | null;
   name: string;
   email?: string;
+  country?: string;
+  currency?: string;
+  metadata?: Record<string, unknown>;
+  status?: 'active' | 'suspended' | 'closed';
 
   verification: {
     tier: VerificationTier;
@@ -108,6 +113,13 @@ export interface Account {
     type: 'kyc' | 'kyb';
     path: VerificationPath;
   };
+
+  // Flat verification fields — duplicated from the nested struct above
+  // for client compatibility. The DB row mappers (mapAccountFromDb)
+  // populate both shapes, and routes/UI code may access either.
+  verificationTier?: VerificationTier;
+  verificationStatus?: VerificationStatus;
+  verificationType?: 'kyc' | 'kyb';
 
   compliance?: {
     reliancePartnerId?: string;
@@ -117,6 +129,12 @@ export interface Account {
   };
 
   balance: AccountBalance;
+
+  // Flat balance fields — same dual-shape compatibility pattern.
+  balanceTotal?: number;
+  balanceAvailable?: number;
+  balanceInStreams?: number;
+  balanceBuffer?: number;
 
   agents: {
     count: number;
@@ -151,6 +169,7 @@ export interface Agent {
   name: string;
   description: string;
   status: AgentStatus;
+  type?: string;
 
   parentAccount: {
     id: string;

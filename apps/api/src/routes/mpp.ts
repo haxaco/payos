@@ -66,7 +66,7 @@ mppRouter.post('/pay', async (c) => {
   }
 
   const { service_url, amount, currency, description, intent, agent_id, wallet_id } = parsed.data;
-  const supabase = createClient();
+  const supabase: any = createClient();
   const governedClient = new GovernedMppClient(supabase);
 
   const result = await governedClient.charge({
@@ -127,7 +127,7 @@ mppRouter.post('/sessions', async (c) => {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const sessionManager = new MppSessionManager(supabase);
 
   const result = await sessionManager.openSession({
@@ -164,7 +164,7 @@ mppRouter.get('/sessions', async (c) => {
   const limit = parseInt(c.req.query('limit') || '50');
   const offset = parseInt(c.req.query('offset') || '0');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const sessionManager = new MppSessionManager(supabase);
 
   const result = await sessionManager.listSessions(ctx.tenantId, {
@@ -189,7 +189,7 @@ mppRouter.get('/sessions/:sessionId', async (c) => {
   const ctx = c.get('ctx');
   const sessionId = c.req.param('sessionId');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const sessionManager = new MppSessionManager(supabase);
 
   const session = await sessionManager.getSession(sessionId, ctx.tenantId, getEnv(ctx) as 'test' | 'live');
@@ -226,7 +226,7 @@ mppRouter.post('/sessions/:sessionId/voucher', async (c) => {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const sessionManager = new MppSessionManager(supabase);
 
   const result = await sessionManager.signVoucher({
@@ -262,7 +262,7 @@ mppRouter.post('/sessions/:sessionId/close', async (c) => {
   const ctx = c.get('ctx');
   const sessionId = c.req.param('sessionId');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const sessionManager = new MppSessionManager(supabase);
 
   const result = await sessionManager.closeSession(
@@ -290,7 +290,7 @@ mppRouter.post('/sessions/:sessionId/stream', async (c) => {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const streamHandler = new MppStreamHandler(supabase);
 
   const stream = streamHandler.createStream({
@@ -322,7 +322,7 @@ mppRouter.get('/transfers', async (c) => {
   const limit = parseInt(c.req.query('limit') || '50');
   const offset = parseInt(c.req.query('offset') || '0');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const recorder = new MppTransferRecorder(supabase);
 
   if (sessionId) {
@@ -373,7 +373,7 @@ mppRouter.post('/wallets/provision', async (c) => {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const provisioning = new MppWalletProvisioning(supabase);
 
   const wallet = await provisioning.provisionTempoWallet({
@@ -436,7 +436,7 @@ mppRouter.post('/receipts/verify', async (c) => {
     return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const reconciler = new MppReceiptReconciler(supabase);
 
   const result = await reconciler.verifyReceipt(parsed.data.receipt_id, ctx.tenantId);
@@ -451,7 +451,7 @@ mppRouter.get('/analytics', async (c) => {
   const ctx = c.get('ctx');
   const period = c.req.query('period') || '30d';
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Calculate date range
   const now = new Date();
@@ -555,7 +555,7 @@ mppRouter.get('/reconciliation', async (c) => {
   const endDate = c.req.query('end_date');
   const sessionId = c.req.query('session_id');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const reconciler = new MppReceiptReconciler(supabase);
 
   const results = await reconciler.reconcile(ctx.tenantId, {

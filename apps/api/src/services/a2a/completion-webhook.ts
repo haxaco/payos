@@ -43,7 +43,7 @@ export class CompletionWebhookService {
   private async handleTerminalEvent(event: TaskStreamEvent): Promise<void> {
     const taskId = event.taskId;
     const state = event.data.state as string;
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch task's callback_url from DB
     const { data: task, error } = await supabase
@@ -73,7 +73,7 @@ export class CompletionWebhookService {
     tenantId: string,
     state: string,
   ): Promise<Record<string, unknown>> {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch task row
     const { data: taskRow } = await supabase
@@ -210,7 +210,7 @@ export class CompletionWebhookService {
     statusCode?: number,
     error?: string,
   ): Promise<void> {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     if (success) {
       await supabase
@@ -293,7 +293,7 @@ export class CompletionWebhookService {
     const payload = await this.buildPayload(task.id, task.tenant_id, 'completed');
 
     // Re-fetch actual state
-    const supabase = createClient();
+    const supabase: any = createClient();
     const { data: taskRow } = await supabase
       .from('a2a_tasks')
       .select('state')

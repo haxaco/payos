@@ -36,10 +36,10 @@ const app = new Hono();
  * }
  */
 app.get('/me', authMiddleware, async (c) => {
-  const actorType = c.get('actorType');
-  const actorId = c.get('actorId');
-  const tenantId = c.get('tenantId');
-  const supabase = c.get('supabase');
+  const actorType = c.get('actorType' as never) as string | undefined;
+  const actorId = c.get('actorId' as never) as string | undefined;
+  const tenantId = c.get('tenantId' as never) as string | undefined;
+  const supabase = c.get('supabase' as never) as any;
   
   if (actorType === 'user') {
     // User key - get user profile

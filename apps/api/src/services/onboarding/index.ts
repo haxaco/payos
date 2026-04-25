@@ -337,7 +337,7 @@ export async function resetProtocolOnboarding(
   }
 
   const currentSettings = tenant?.settings || {};
-  const onboardingProgress = { ...currentSettings.onboarding_progress } || {};
+  const onboardingProgress = { ...(currentSettings.onboarding_progress || {}) };
 
   // Remove protocol progress
   delete onboardingProgress[protocolId];

@@ -128,6 +128,16 @@ export class InsufficientBalanceError extends ApiError {
   }
 }
 
+export class QuoteExpiredError extends ApiError {
+  constructor(quoteId: string, expiresAt: string) {
+    super('Quote has expired', 400, { quoteId, expiresAt }, {
+      code: 'QUOTE_EXPIRED',
+      suggestion: 'Request a new quote and retry the transfer.',
+    });
+    this.name = 'QuoteExpiredError';
+  }
+}
+
 export class LimitExceededError extends ApiError {
   constructor(
     limitType: string,
@@ -325,7 +335,7 @@ export function errorHandler(err: Error, c: Context) {
         code: 'VALIDATION_ERROR',
         message: 'Request validation failed',
         suggestion: 'Check the request body against the API documentation',
-        docsUrl: 'https://docs.payos.ai/api/validation',
+        docs_url: 'https://docs.payos.ai/api/validation',
         details: (err as any).errors || (err as any).issues,
       },
     };

@@ -44,7 +44,7 @@ app.get('/', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const state = await getTenantOnboardingState(supabase, ctx.tenantId);
 
     // Build response in the format specified by Story 51.7
@@ -59,7 +59,7 @@ app.get('/', async (c) => {
         has_payment_handler: state.has_payment_handler,
         has_any_protocol_enabled: state.has_any_protocol_enabled,
       },
-      recommended_template: state.recommended_template_id || null,
+      recommended_template: state.recommended_template || null,
       sandbox_mode: state.sandbox_mode,
     };
 
@@ -74,7 +74,7 @@ app.get('/', async (c) => {
           completed: step.status === 'completed',
           completed_at: step.completed_at,
         })),
-        current_step: protocolState.current_step_index,
+        current_step: protocolState.current_step,
         progress_percentage: protocolState.progress_percentage,
       };
     }
@@ -120,7 +120,7 @@ app.get('/:protocolId', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const state = await getProtocolOnboardingState(supabase, ctx.tenantId, protocolId as any);
 
     if (!state) {
@@ -137,7 +137,7 @@ app.get('/:protocolId', async (c) => {
       enabled: state.enabled,
       prerequisites_met: state.prerequisites_met,
       progress_percentage: state.progress_percentage,
-      current_step: state.current_step_index,
+      current_step: state.current_step,
       steps: state.steps.map((step: any) => ({
         id: step.id,
         name: step.name,

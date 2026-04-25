@@ -45,7 +45,7 @@ const updateConfigSchema = z.object({
 app.get('/config', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
     const settlementService = createSettlementService(supabase);
 
     const config = await settlementService.getConfig(ctx.tenantId);
@@ -93,7 +93,7 @@ app.patch('/config', async (c) => {
     // Validate request
     const updates = updateConfigSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const settlementService = createSettlementService(supabase);
 
     // Update configuration
@@ -134,7 +134,7 @@ app.post('/preview', async (c) => {
       currency: z.enum(['USDC', 'EURC']).default('USDC'),
     }).parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const settlementService = createSettlementService(supabase);
 
     // Calculate fee
@@ -182,7 +182,7 @@ app.get('/analytics', async (c) => {
     const ctx = c.get('ctx');
     const query = c.req.query();
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const settlementService = createSettlementService(supabase);
 
     const analytics = await settlementService.getSettlementAnalytics(ctx.tenantId, {
@@ -210,7 +210,7 @@ app.get('/status/:transferId', async (c) => {
     const ctx = c.get('ctx');
     const transferId = c.req.param('transferId');
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const settlementService = createSettlementService(supabase);
 
     const status = await settlementService.getSettlementStatus(transferId);
@@ -257,7 +257,7 @@ app.post('/route', async (c) => {
 
     const request = routeSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     const router = createSettlementRouter(supabase);
 
     const decision = await router.routeTransfer({
@@ -332,7 +332,7 @@ app.post('/execute', async (c) => {
 
     const request = settleSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     const router = createSettlementRouter(supabase);
 
     const result = await router.settleTransfer({
@@ -403,7 +403,7 @@ app.post('/batch', async (c) => {
 
     const { transfers } = batchSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     const router = createSettlementRouter(supabase);
 
     const results = await router.settleBatch(
@@ -627,7 +627,7 @@ app.post('/pix', async (c) => {
     });
 
     // Record in database
-    const supabase = createClient();
+    const supabase: any = createClient();
     await supabase.from('settlements').insert({
       tenant_id: ctx.tenantId,
       transfer_id: request.transferId || null,
@@ -766,7 +766,7 @@ app.post('/spei', async (c) => {
     });
 
     // Record in database
-    const supabase = createClient();
+    const supabase: any = createClient();
     await supabase.from('settlements').insert({
       tenant_id: ctx.tenantId,
       transfer_id: request.transferId || null,
@@ -861,7 +861,7 @@ app.get('/payout/:id', async (c) => {
     const payout = await client.getPayout(payoutId);
 
     // Update database record
-    const supabase = createClient();
+    const supabase: any = createClient();
     await supabase
       .from('settlements')
       .update({
@@ -907,7 +907,7 @@ app.get('/payout/:id', async (c) => {
 app.get('/chain-metrics', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const blockchain = c.req.query('blockchain');
     const path = c.req.query('path');

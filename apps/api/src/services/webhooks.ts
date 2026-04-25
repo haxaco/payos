@@ -152,12 +152,12 @@ export class WebhookService {
     event: WebhookEvent,
     options?: WebhookDeliveryOptions
   ): Promise<string[]> {
-    const { data: deliveryIds, error } = await this.supabase
+    const { data: deliveryIds, error } = await (this.supabase as any)
       .rpc('queue_webhook_delivery', {
         p_tenant_id: tenantId,
         p_event_type: event.type,
         p_event_id: event.id,
-        p_payload: event,
+        p_payload: event as any,
         p_idempotency_key: options?.idempotencyKey || null
       });
 
@@ -197,7 +197,7 @@ export class WebhookService {
     for (let i = 0; i < deliveries.length; i += CONCURRENCY) {
       const batch = deliveries.slice(i, i + CONCURRENCY);
       await Promise.allSettled(
-        batch.map(delivery => this.deliverWebhook(delivery))
+        batch.map(delivery => this.deliverWebhook(delivery as any))
       );
     }
   }
@@ -211,7 +211,7 @@ export class WebhookService {
       .select('*')
       .eq('status', 'failed')
       .lte('next_retry_at', new Date().toISOString())
-      .lt('attempts', this.supabase.raw('max_attempts'))
+      .lt('attempts', (this.supabase as any).raw?.('max_attempts') ?? 100)
       .order('next_retry_at', { ascending: true })
       .limit(limit);
 
@@ -227,7 +227,7 @@ export class WebhookService {
     console.log(`[WebhookService] Processing ${deliveries.length} retry deliveries`);
 
     for (const delivery of deliveries) {
-      await this.deliverWebhook(delivery);
+      await this.deliverWebhook(delivery as any);
     }
   }
 

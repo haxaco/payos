@@ -394,9 +394,9 @@ export class TreasuryService {
 
     for (const tx of data || []) {
       if (tx.type === 'inbound' || tx.type === 'rebalance_in') {
-        inbound += parseFloat(tx.amount);
+        inbound += parseFloat(String(tx.amount));
       } else if (tx.type === 'outbound' || tx.type === 'rebalance_out' || tx.type === 'fee') {
-        outbound += parseFloat(tx.amount);
+        outbound += parseFloat(String(tx.amount));
       }
     }
 
@@ -460,12 +460,12 @@ export class TreasuryService {
     let outflows24h = 0;
     
     for (const transfer of (inflowData || [])) {
-      const rate = fxRates[transfer.currency] || 1;
+      const rate = fxRates[(transfer.currency || 'USD') as string] || 1;
       inflows24h += (transfer.amount || 0) * rate;
     }
-    
+
     for (const transfer of (outflowData || [])) {
-      const rate = fxRates[transfer.currency] || 1;
+      const rate = fxRates[(transfer.currency || 'USD') as string] || 1;
       outflows24h += (transfer.amount || 0) * rate;
     }
 
@@ -617,7 +617,7 @@ export class TreasuryService {
         .in('type', ['outbound', 'rebalance_out'])
         .gte('created_at', cutoff);
 
-      const totalOutbound = (txData || []).reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+      const totalOutbound = (txData || []).reduce((sum, tx) => sum + parseFloat(String(tx.amount)), 0);
       const avgDailyVolume = totalOutbound / 7;
 
       // Calculate runway
@@ -660,7 +660,7 @@ export class TreasuryService {
     // Query settlement records for velocity metrics
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: settlements } = await this.supabase
+    const { data: settlements } = await (this.supabase as any)
       .from('settlement_records')
       .select('rail, status, amount, processing_time_ms')
       .eq('tenant_id', tenantId)
@@ -681,7 +681,7 @@ export class TreasuryService {
 
       const rail = railMap.get(s.rail)!;
       rail.count++;
-      rail.totalVolume += parseFloat(s.amount) || 0;
+      rail.totalVolume += parseFloat(String(s.amount)) || 0;
 
       if (s.status === 'completed') {
         rail.successCount++;
@@ -1182,7 +1182,7 @@ export class TreasuryService {
   async getFloatAllocationByPartner(tenantId: string): Promise<FloatAllocation[]> {
     // This would typically query a partner-specific float allocation table
     // For now, we'll aggregate from accounts table
-    const { data: accounts } = await this.supabase
+    const { data: accounts } = await (this.supabase as any)
       .from('accounts')
       .select(`
         id,
@@ -1214,7 +1214,7 @@ export class TreasuryService {
       }
 
       const partner = partnerMap.get(partnerId)!;
-      partner.allocated += parseFloat(account.balance_total) || 0;
+      partner.allocated += parseFloat(String(account.balance_total ?? 0)) || 0;
     }
 
     return Array.from(partnerMap.entries()).map(([partnerId, data]) => ({
@@ -1254,7 +1254,7 @@ export class TreasuryService {
       .eq('id', accountId)
       .single();
 
-    const balanceAfter = (parseFloat(account?.balance_total) || 0) +
+    const balanceAfter = (parseFloat(String(account?.balance_total ?? 0)) || 0) +
       (['inbound', 'rebalance_in', 'adjustment'].includes(data.type) ? data.amount : -data.amount);
 
     // Insert transaction

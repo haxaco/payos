@@ -13,7 +13,8 @@ import { createBalanceService } from '../services/balances.js';
 import {
   ValidationError,
   NotFoundError,
-  InsufficientBalanceError
+  InsufficientBalanceError,
+  QuoteExpiredError
 } from '../middleware/error.js';
 import { storeIdempotencyResponse } from '../middleware/idempotency.js';
 import { ErrorCode } from '@sly/types';
@@ -45,7 +46,7 @@ const createTransferSchema = z.object({
 // ============================================
 transfers.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Parse query params
   const query = c.req.query();
@@ -205,7 +206,7 @@ transfers.get('/', async (c) => {
 // ============================================
 transfers.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Get idempotency key from middleware context or header (fallback)
   const idempotencyKey = c.get('idempotencyKey') || c.req.header('X-Idempotency-Key');
@@ -274,12 +275,7 @@ transfers.post('/', async (c) => {
   // Check sender has sufficient balance
   const availableBalance = parseFloat(fromAccount.balance_available) || 0;
   if (availableBalance < amount) {
-    throw new InsufficientBalanceError(
-      fromAccountId,
-      availableBalance.toString(),
-      amount.toString(),
-      'USD'
-    );
+    throw new InsufficientBalanceError(availableBalance, amount);
   }
   
   // Determine transfer type
@@ -539,7 +535,7 @@ transfers.post('/', async (c) => {
 transfers.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid transfer ID format');
@@ -655,7 +651,7 @@ transfers.get('/:id', async (c) => {
 transfers.post('/:id/cancel', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid transfer ID format');
@@ -846,7 +842,7 @@ transfers.post('/:id/record-settlement', async (c) => {
   }
   const { txHash, network, payer, settledAt, failureReason, responseMetadata, classification, resultQuality } = parsed.data;
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: row, error: fetchErr } = await supabase
     .from('transfers')
@@ -1004,7 +1000,7 @@ transfers.post('/:id/rate-result', async (c) => {
   const parsed = rateResultSchema.safeParse(body);
   if (!parsed.success) throw new ValidationError('Invalid body', parsed.error.issues);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: row, error: fetchErr } = await supabase
     .from('transfers')
@@ -1064,7 +1060,7 @@ transfers.get('/:id/ratings', async (c) => {
   const id = c.req.param('id');
   if (!isValidUUID(id)) throw new ValidationError('Invalid transfer ID format');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: row, error: fetchErr } = await supabase
     .from('transfers')

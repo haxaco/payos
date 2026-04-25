@@ -222,7 +222,7 @@ betaAdmin.get('/funnel', async (c) => {
 // GET /admin/beta/tenants
 // ============================================
 betaAdmin.get('/tenants', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const page = parseInt(c.req.query('page') || '1');
   const limit = parseInt(c.req.query('limit') || '50');
   const filter = c.req.query('filter') || 'all';
@@ -284,7 +284,7 @@ betaAdmin.get('/tenants', async (c) => {
 // GET /admin/beta/tenants/:id
 // ============================================
 betaAdmin.get('/tenants/:id', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
 
   // Fetch tenant
@@ -376,7 +376,7 @@ betaAdmin.patch('/tenants/:id/limits', async (c) => {
 // GET /admin/beta/health
 // ============================================
 betaAdmin.get('/health', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Database connectivity check
   let dbStatus = 'healthy';
@@ -401,7 +401,7 @@ betaAdmin.get('/health', async (c) => {
 // GET /admin/beta/stats
 // ============================================
 betaAdmin.get('/stats', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Parallel count queries
   const [
@@ -463,7 +463,7 @@ betaAdmin.get('/stats', async (c) => {
 // GET /admin/beta/agents - Agent leaderboard
 // ============================================
 betaAdmin.get('/agents', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const page = parseInt(c.req.query('page') || '1');
   const limit = parseInt(c.req.query('limit') || '50');
   const status = c.req.query('status') || '';
@@ -548,7 +548,7 @@ betaAdmin.get('/agents', async (c) => {
 // GET /admin/beta/agents/:id - Agent detail
 // ============================================
 betaAdmin.get('/agents/:id', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
 
   const [agentResult, skillsResult, walletResult, allTasksResult, recentTasksResult] = await Promise.all([
@@ -588,7 +588,7 @@ betaAdmin.get('/agents/:id', async (c) => {
     .single();
 
   // Fetch parent account name
-  let parentAccount = null;
+  let parentAccount: { id: string; name: string } | null = null;
   if (agent.parent_account_id) {
     const { data } = await (supabase.from('accounts') as any)
       .select('id, name')

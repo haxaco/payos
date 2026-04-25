@@ -289,13 +289,13 @@ async function transitionTask(
   toState: string,
   extra?: Record<string, unknown>,
 ) {
-  const { data: task } = await supa.from('a2a_tasks')
+  const { data: task } = await (supa.from('a2a_tasks')
     .select('id, agent_id, client_agent_id, state')
-    .eq('id', taskId).single();
+    .eq('id', taskId).single() as any) as { data: any };
   if (!task) return;
 
   const fromState = task.state;
-  await supa.from('a2a_tasks').update({ state: toState, updated_at: new Date().toISOString() }).eq('id', taskId);
+  await (supa.from('a2a_tasks').update({ state: toState, updated_at: new Date().toISOString() } as any).eq('id', taskId) as any);
 
   taskEventBus.emitTask(taskId, {
     type: 'status',
@@ -396,22 +396,22 @@ async function ensureAgentWallets(supa: ReturnType<typeof createClient>, agents:
   let created = 0, funded = 0;
   for (const agent of agents) {
     // Check if agent has an active wallet
-    const { data: wallet } = await supa.from('wallets')
+    const { data: wallet } = await ((supa.from('wallets') as any)
       .select('id, balance')
       .eq('managed_by_agent_id', agent.id)
       .eq('status', 'active')
       .order('balance', { ascending: false })
       .limit(1)
-      .maybeSingle();
+      .maybeSingle()) as { data: any };
 
     if (!wallet) {
       // Look up parent account
-      const { data: agentRow } = await supa.from('agents')
-        .select('parent_account_id').eq('id', agent.id).single();
+      const { data: agentRow } = await ((supa.from('agents') as any)
+        .select('parent_account_id').eq('id', agent.id).single()) as { data: any };
       if (!agentRow?.parent_account_id) continue;
 
       // Create wallet
-      const { error } = await supa.from('wallets').insert({
+      const { error } = await ((supa.from('wallets') as any).insert({
         tenant_id: agent.tenantId,
         account_id: agentRow.parent_account_id,
         managed_by_agent_id: agent.id,
@@ -419,11 +419,11 @@ async function ensureAgentWallets(supa: ReturnType<typeof createClient>, agents:
         balance: 100,
         currency: 'USDC',
         status: 'active',
-      });
+      })) as { error: any };
       if (!error) created++;
     } else if (Number(wallet.balance) < 10) {
       // Top up to $100
-      await supa.from('wallets').update({ balance: 100 }).eq('id', wallet.id);
+      await ((supa.from('wallets') as any).update({ balance: 100 }).eq('id', wallet.id));
       funded++;
     }
   }
@@ -508,8 +508,8 @@ export async function executeScenario(
   const supa = createClient();
 
   // Load unique agents
-  const { data: allAgents } = await supa.from('agents')
-    .select('id, name, tenant_id').in('status', ['active', 'suspended']).limit(50);
+  const { data: allAgents } = await ((supa.from('agents') as any)
+    .select('id, name, tenant_id').in('status', ['active', 'suspended']).limit(50)) as { data: any[] | null };
   const seen = new Set<string>();
   const agents: Agent[] = [];
   for (const a of (allAgents || [])) {
@@ -580,25 +580,25 @@ async function createExternalMandate(
   currency: string,
 ): Promise<string | null> {
   try {
-    const { data: buyer } = await supa.from('agents')
-      .select('parent_account_id').eq('id', buyerId).single();
+    const { data: buyer } = await ((supa.from('agents') as any)
+      .select('parent_account_id').eq('id', buyerId).single()) as { data: any };
     if (!buyer?.parent_account_id) return null;
 
     // Check buyer wallet has enough balance
-    const { data: wallet } = await supa.from('wallets')
+    const { data: wallet } = await ((supa.from('wallets') as any)
       .select('id, balance')
       .eq('managed_by_agent_id', buyerId)
       .eq('status', 'active')
       .order('balance', { ascending: false })
       .limit(1)
-      .maybeSingle();
+      .maybeSingle()) as { data: any };
     if (!wallet || Number(wallet.balance) < amount) {
       console.log(`[Federation] ${buyerId.slice(0, 8)} insufficient funds for $${amount}`);
       return null;
     }
 
     const mandateId = `federation_${taskId.slice(0, 8)}_${Date.now()}`;
-    const { error } = await supa.from('ap2_mandates').insert({
+    const { error } = await ((supa.from('ap2_mandates') as any).insert({
       tenant_id: tenantId,
       account_id: buyer.parent_account_id,
       agent_id: buyerId,
@@ -616,7 +616,7 @@ async function createExternalMandate(
         externalName,
         payoutAddress,
       },
-    });
+    })) as { error: any };
     if (error) {
       console.error('[Federation Mandate] insert failed:', error.message);
       return null;
@@ -654,22 +654,22 @@ async function settleExternalMandate(
   enableOnChain: boolean,
 ): Promise<{ txHash: string; blockExplorerUrl: string } | null> {
   // 1. Ledger: mark mandate completed + debit buyer wallet
-  await supa.from('ap2_mandates').update({
+  await ((supa.from('ap2_mandates') as any).update({
     status: 'completed',
     used_amount: amount,
-  }).eq('mandate_id', mandateId);
+  }).eq('mandate_id', mandateId));
 
-  const { data: wallet } = await supa.from('wallets')
+  const { data: wallet } = await ((supa.from('wallets') as any)
     .select('id, balance, account_id')
     .eq('managed_by_agent_id', buyerId)
     .eq('status', 'active')
     .order('balance', { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as { data: any };
   if (wallet) {
-    await supa.from('wallets').update({
+    await ((supa.from('wallets') as any).update({
       balance: Math.max(0, Number(wallet.balance) - amount),
-    }).eq('id', wallet.id);
+    }).eq('id', wallet.id));
   }
 
   console.log(`[Federation Payout] $${amount} USDC \u2192 ${payoutAddress}`);
@@ -692,8 +692,8 @@ async function settleExternalMandate(
     console.log(`[Federation Payout] Tx confirmed: ${result.txHash}`);
 
     // 3. Persist tx hash in mandate metadata
-    const { data: existingMandate } = await supa.from('ap2_mandates')
-      .select('metadata').eq('mandate_id', mandateId).single();
+    const { data: existingMandate } = await ((supa.from('ap2_mandates') as any)
+      .select('metadata').eq('mandate_id', mandateId).single()) as { data: any };
     const mergedMetadata = {
       ...(existingMandate?.metadata || {}),
       settlement_tx_hash: result.txHash,
@@ -701,10 +701,10 @@ async function settleExternalMandate(
       settlement_block_explorer: result.blockExplorerUrl,
       settlement_type: 'on_chain',
     };
-    await supa.from('ap2_mandates').update({ metadata: mergedMetadata }).eq('mandate_id', mandateId);
+    await ((supa.from('ap2_mandates') as any).update({ metadata: mergedMetadata }).eq('mandate_id', mandateId));
 
     // 4. Insert transfer record for audit (so On-Chain metric + report pick it up)
-    const { error: transferErr } = await supa.from('transfers').insert({
+    const { error: transferErr } = await ((supa.from('transfers') as any).insert({
       tenant_id: tenantId,
       type: 'ap2',
       status: 'completed',
@@ -731,7 +731,7 @@ async function settleExternalMandate(
       },
       completed_at: new Date().toISOString(),
       settled_at: new Date().toISOString(),
-    });
+    })) as { error: any };
     if (transferErr) {
       console.error('[Federation] transfer insert failed:', transferErr.message);
     }
@@ -741,15 +741,15 @@ async function settleExternalMandate(
     console.error(`[Federation Payout] On-chain transfer failed: ${err.message}`);
     // Record the failure in mandate metadata but don't roll back the ledger debit —
     // the demo chose to trust the mandate. For real production, we'd want atomicity.
-    const { data: existingMandate } = await supa.from('ap2_mandates')
-      .select('metadata').eq('mandate_id', mandateId).single();
-    await supa.from('ap2_mandates').update({
+    const { data: existingMandate } = await ((supa.from('ap2_mandates') as any)
+      .select('metadata').eq('mandate_id', mandateId).single()) as { data: any };
+    await ((supa.from('ap2_mandates') as any).update({
       metadata: {
         ...(existingMandate?.metadata || {}),
         settlement_error: err.message,
         settlement_type: 'on_chain_failed',
       },
-    }).eq('mandate_id', mandateId);
+    }).eq('mandate_id', mandateId));
     return null;
   }
 }
@@ -762,7 +762,7 @@ async function cancelExternalMandate(
   supa: ReturnType<typeof createClient>,
   mandateId: string,
 ): Promise<void> {
-  await supa.from('ap2_mandates').update({ status: 'cancelled' }).eq('mandate_id', mandateId);
+  await ((supa.from('ap2_mandates') as any).update({ status: 'cancelled' }).eq('mandate_id', mandateId));
 }
 
 /**
@@ -788,15 +788,15 @@ async function createMandate(
 ): Promise<string | null> {
   if (amount <= 0) return null;
   try {
-    const { data: buyer } = await supa.from('agents')
-      .select('parent_account_id').eq('id', buyerId).single();
+    const { data: buyer } = await ((supa.from('agents') as any)
+      .select('parent_account_id').eq('id', buyerId).single()) as { data: any };
     if (!buyer?.parent_account_id) {
       console.log(`[Scenario] createMandate: buyer ${buyerId.slice(0, 8)} has no parent_account_id`);
       return null;
     }
 
     const mandateId = `scenario_${taskId.slice(0, 8)}_${Date.now()}`;
-    const { error } = await supa.from('ap2_mandates').insert({
+    const { error } = await ((supa.from('ap2_mandates') as any).insert({
       tenant_id: tenantId,
       account_id: buyer.parent_account_id,
       agent_id: buyerId,
@@ -811,7 +811,7 @@ async function createMandate(
         source: 'scenario_internal',
         providerAgentId: sellerId,
       },
-    });
+    })) as { error: any };
     if (error) {
       console.error(`[Scenario] createMandate insert failed:`, error.message);
       return null;
@@ -836,32 +836,32 @@ async function settleMandate(
   enableOnChain: boolean,
 ): Promise<{ txHash: string; blockExplorerUrl: string } | null> {
   // 1. Mark mandate as completed
-  await supa.from('ap2_mandates').update({ status: 'completed', used_amount: amount }).eq('mandate_id', mandateId);
+  await ((supa.from('ap2_mandates') as any).update({ status: 'completed', used_amount: amount }).eq('mandate_id', mandateId));
 
   // 2. Debit buyer's wallet (ledger)
-  const { data: buyerWallet } = await supa.from('wallets')
+  const { data: buyerWallet } = await ((supa.from('wallets') as any)
     .select('id, balance, account_id')
     .eq('managed_by_agent_id', buyerId)
     .eq('status', 'active')
     .order('balance', { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as { data: any };
   if (buyerWallet) {
     const newBal = Math.max(0, Number(buyerWallet.balance) - amount);
-    await supa.from('wallets').update({ balance: newBal }).eq('id', buyerWallet.id);
+    await ((supa.from('wallets') as any).update({ balance: newBal }).eq('id', buyerWallet.id));
   }
 
   // 3. Credit seller's wallet (ledger)
-  const { data: sellerWallet } = await supa.from('wallets')
+  const { data: sellerWallet } = await ((supa.from('wallets') as any)
     .select('id, balance, account_id')
     .eq('managed_by_agent_id', sellerId)
     .eq('status', 'active')
     .order('balance', { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as { data: any };
   if (sellerWallet) {
     const newBal = Number(sellerWallet.balance) + amount;
-    await supa.from('wallets').update({ balance: newBal }).eq('id', sellerWallet.id);
+    await ((supa.from('wallets') as any).update({ balance: newBal }).eq('id', sellerWallet.id));
   }
 
   // 4. Optional: real on-chain transfer from Sly treasury to itself as proof-of-settlement.
@@ -893,8 +893,8 @@ async function settleMandate(
     console.log(`[Scenario Onchain] Tx confirmed: ${result.txHash}`);
 
     // Persist tx hash in mandate metadata
-    const { data: existingMandate } = await supa.from('ap2_mandates')
-      .select('metadata').eq('mandate_id', mandateId).single();
+    const { data: existingMandate } = await ((supa.from('ap2_mandates') as any)
+      .select('metadata').eq('mandate_id', mandateId).single()) as { data: any };
     const mergedMetadata = {
       ...(existingMandate?.metadata || {}),
       settlement_tx_hash: result.txHash,
@@ -903,10 +903,10 @@ async function settleMandate(
       settlement_type: 'on_chain',
       settlement_note: 'treasury_self_transfer',
     };
-    await supa.from('ap2_mandates').update({ metadata: mergedMetadata }).eq('mandate_id', mandateId);
+    await ((supa.from('ap2_mandates') as any).update({ metadata: mergedMetadata }).eq('mandate_id', mandateId));
 
     // Insert transfer record for audit
-    await supa.from('transfers').insert({
+    await ((supa.from('transfers') as any).insert({
       tenant_id: tenantId,
       type: 'ap2',
       status: 'completed',
@@ -931,20 +931,20 @@ async function settleMandate(
       },
       completed_at: new Date().toISOString(),
       settled_at: new Date().toISOString(),
-    });
+    }));
 
     return { txHash: result.txHash, blockExplorerUrl: result.blockExplorerUrl };
   } catch (err: any) {
     console.error(`[Scenario Onchain] Transfer failed for mandate ${mandateId.slice(0, 16)}: ${err.message}`);
-    const { data: existingMandate } = await supa.from('ap2_mandates')
-      .select('metadata').eq('mandate_id', mandateId).single();
-    await supa.from('ap2_mandates').update({
+    const { data: existingMandate } = await ((supa.from('ap2_mandates') as any)
+      .select('metadata').eq('mandate_id', mandateId).single()) as { data: any };
+    await ((supa.from('ap2_mandates') as any).update({
       metadata: {
         ...(existingMandate?.metadata || {}),
         settlement_error: err.message,
         settlement_type: 'on_chain_failed',
       },
-    }).eq('mandate_id', mandateId);
+    }).eq('mandate_id', mandateId));
     return null;
   }
 }
@@ -1526,7 +1526,7 @@ async function runScenarioLoop(
       const burstSize = randInt(8, 15);
       comment(`Velocity attack: ${attacker.name} firing ${burstSize} rapid txs`, 'alert');
 
-      const rapidTasks = [];
+      const rapidTasks: Array<Promise<{ taskId: string | null; outcome: 'failed' | 'completed' | 'rejected' | 'disputed'; amount: number }>> = [];
       for (let i = 0; i < burstSize; i++) {
         if (!handle.running) break;
         const victim = pick(victims);
@@ -1625,7 +1625,6 @@ async function runScenarioLoop(
         comment(`Cold-start barrier: ${newcomer.name} earned $${newcomerEarned.toFixed(2)} in 5 cycles (vs market avg)`, 'finding');
       }
       if (cycle % 5 === 0 && cycle > 5) {
-        const newcomerRating = state.tasks.length; // proxy
         const newcomerEarned = agentVolume[newcomer.id]?.earned || 0;
         comment(`${newcomer.name} reputation building: $${newcomerEarned.toFixed(2)} earned`, 'finding');
       }
@@ -1703,15 +1702,15 @@ async function runScenarioLoop(
 
       // Top up whale's wallet to ~10x baseline (only on cycle 1)
       if (cycle === 1) {
-        const { data: whaleWallet } = await supa.from('wallets')
+        const { data: whaleWallet } = await ((supa.from('wallets') as any)
           .select('id, balance')
           .eq('managed_by_agent_id', whale.id)
           .eq('status', 'active')
           .order('balance', { ascending: false })
           .limit(1)
-          .maybeSingle();
+          .maybeSingle()) as { data: any };
         if (whaleWallet) {
-          await supa.from('wallets').update({ balance: 1000 }).eq('id', whaleWallet.id);
+          await ((supa.from('wallets') as any).update({ balance: 1000 }).eq('id', whaleWallet.id));
           comment(`${whale.name} entered with $1000 capital — 10x baseline`, 'alert');
         }
       }
@@ -1786,7 +1785,6 @@ async function runScenarioLoop(
       } else {
         // Phase 2 (cycles 5+): scammer targets real victims with their laundered rep
         if (cycle === 5) {
-          const scammerRating = state.ratings ? null : null; // can't easily access viewer state from server
           comment(`${scammer.name} now has inflated rep — targeting real victims`, 'alert');
         }
 
@@ -2002,7 +2000,7 @@ async function runScenarioLoop(
       }
 
       // Extract priced skills with payout addresses from the card
-      const externalSkills = (card?.skills || []).map((s: any) => ({
+      const externalSkills: Array<{ id: string; price: number; payoutAddress: string }> = (card?.skills || []).map((s: any) => ({
         id: s.id,
         price: s.pricing?.amount || 0,
         payoutAddress: s.pricing?.payoutAddress || '0x0000000000000000000000000000000000000000',
@@ -2078,7 +2076,7 @@ async function runScenarioLoop(
         try {
           const response = await client.sendMessage(
             externalUrl + '/a2a',
-            { parts: [{ type: 'text', text: `${buyer.name} requesting ${skill.id}` }], metadata: { skillId: skill.id } },
+            { parts: [{ type: 'text', text: `${buyer.name} requesting ${skill.id}` }] as any, metadata: { skillId: skill.id } },
             undefined,
           );
 

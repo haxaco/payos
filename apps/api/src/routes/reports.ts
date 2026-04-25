@@ -4,11 +4,10 @@
  */
 
 import { Hono } from 'hono';
-import { AppContext } from '../middleware/context.js';
 import { createClient } from '../db/client.js';
 import { ValidationError } from '../middleware/error.js';
 
-const reports = new Hono<AppContext>();
+const reports = new Hono();
 
 // ============================================
 // GET /v1/reports/dashboard/summary
@@ -16,7 +15,7 @@ const reports = new Hono<AppContext>();
 // ============================================
 reports.get('/dashboard/summary', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   try {
     // 1. Get account stats
@@ -219,7 +218,7 @@ reports.get('/dashboard/summary', async (c) => {
 // ============================================
 reports.get('/treasury/summary', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   try {
     // 1. Get currency balances
@@ -325,7 +324,7 @@ reports.get('/summary', async (c) => {
 // ============================================
 reports.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Parse pagination params
   const query = c.req.query();

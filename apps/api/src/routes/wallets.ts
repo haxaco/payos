@@ -265,7 +265,10 @@ app.post('/', async (c) => {
     }
 
     // Get the account ID (prefer new name, fall back to old)
-    const accountId = validated.accountId || accountId;
+    const accountId = validated.accountId || validated.ownerAccountId;
+    if (!accountId) {
+      return c.json({ error: 'accountId is required' }, 400);
+    }
 
     const supabase = createClient();
 
@@ -448,7 +451,7 @@ app.post('/', async (c) => {
             wallet_id: wallet.id,
             operation: 'initial_deposit'
           }
-        });
+        } as any);
     }
 
     // Auto-fund gas for Circle custodial wallets in sandbox
@@ -473,7 +476,7 @@ app.post('/', async (c) => {
       subject: `wallet/${wallet.id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { blockchain, currency: validated.currency },
     });
@@ -597,6 +600,9 @@ app.post('/external', async (c) => {
 
     // Get the account ID (prefer new name, fall back to old)
     const accountId = validated.accountId || validated.ownerAccountId;
+    if (!accountId) {
+      return c.json({ error: 'accountId is required' }, 400);
+    }
 
     const supabase = createClient();
 
@@ -695,7 +701,7 @@ app.post('/external', async (c) => {
         kyc_status: 'pending',
         aml_cleared: false,
         sanctions_status: 'not_screened'
-      })
+      } as any)
       .select()
       .single();
 
@@ -773,7 +779,7 @@ app.post('/:id/verify', async (c) => {
     // Verify signature (mock for now)
     const circleService = getCircleService(ctx.tenantId);
     const verifyResult = await circleService.verifyWalletOwnership(
-      wallet.wallet_address,
+      wallet.wallet_address ?? '',
       signature,
       message
     );
@@ -945,11 +951,11 @@ app.get('/:id', async (c) => {
         id: tx.id,
         fromAccountId: tx.from_account_id,
         toAccountId: tx.to_account_id,
-        amount: parseFloat(tx.amount),
+        amount: Number(tx.amount ?? 0),
         currency: tx.currency,
         status: tx.status,
         type: tx.type,
-        operation: tx.protocol_metadata?.operation,
+        operation: (tx.protocol_metadata as Record<string, unknown> | null)?.operation,
         createdAt: tx.created_at
       })) || []
     };
@@ -1124,7 +1130,7 @@ app.get('/:id/balance', async (c) => {
 
     return c.json({
       data: {
-        balance: parseFloat(wallet.balance),
+        balance: Number(wallet.balance ?? 0),
         currency: wallet.currency,
         syncStatus: (onChainBalance !== null || circleReported !== null) ? 'synced' : syncStatus,
         onChain,
@@ -1228,6 +1234,9 @@ app.post('/:id/deposit', async (c) => {
 
     // Get the from account ID (prefer new name, fall back to old)
     const fromAccountId = validated.fromAccountId || validated.sourceAccountId;
+    if (!fromAccountId) {
+      return c.json({ error: 'fromAccountId is required' }, 400);
+    }
 
     const supabase = createClient();
 
@@ -1267,7 +1276,7 @@ app.post('/:id/deposit', async (c) => {
     }
 
     // Update wallet balance
-    const newBalance = parseFloat(wallet.balance) + validated.amount;
+    const newBalance = Number(wallet.balance ?? 0) + validated.amount;
 
     const { error: updateError } = await supabase
       .from('wallets')
@@ -1302,7 +1311,7 @@ app.post('/:id/deposit', async (c) => {
           wallet_id: wallet.id,
           operation: 'deposit'
         }
-      })
+      } as any)
       .select()
       .single();
 
@@ -1325,7 +1334,7 @@ app.post('/:id/deposit', async (c) => {
       subject: `wallet/${wallet.id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { amount: validated.amount, currency: wallet.currency, newBalance },
     });
@@ -1333,7 +1342,7 @@ app.post('/:id/deposit', async (c) => {
     return c.json({
       data: {
         walletId: wallet.id,
-        previousBalance: parseFloat(wallet.balance),
+        previousBalance: Number(wallet.balance ?? 0),
         depositAmount: validated.amount,
         newBalance,
         transferId: transfer?.id,
@@ -1390,7 +1399,7 @@ app.post('/:id/withdraw', async (c) => {
     }
 
     // Check sufficient balance
-    const currentBalance = parseFloat(wallet.balance);
+    const currentBalance = Number(wallet.balance ?? 0);
     if (currentBalance < validated.amount) {
       return c.json({
         error: 'Insufficient balance',
@@ -1450,7 +1459,7 @@ app.post('/:id/withdraw', async (c) => {
           wallet_id: wallet.id,
           operation: 'withdrawal'
         }
-      })
+      } as any)
       .select()
       .single();
 
@@ -1473,7 +1482,7 @@ app.post('/:id/withdraw', async (c) => {
       subject: `wallet/${wallet.id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { amount: validated.amount, currency: wallet.currency, newBalance },
     });
@@ -1526,14 +1535,14 @@ app.delete('/:id', async (c) => {
     }
 
     // Check balance is 0
-    if (parseFloat(wallet.balance) > 0) {
+    if (Number(wallet.balance ?? 0) > 0) {
       const force = c.req.query('force') === 'true';
 
       if (!force) {
         return c.json({
           error: 'Wallet has non-zero balance',
           message: 'Withdraw all funds before deleting. Add ?force=true to delete anyway.',
-          balance: parseFloat(wallet.balance)
+          balance: Number(wallet.balance ?? 0)
         }, 409);
       }
     }
@@ -1674,8 +1683,8 @@ app.post('/:id/sync', async (c) => {
       const verificationService = getWalletVerificationService();
 
       const [walletInfo, tokenBalance] = await Promise.all([
-        verificationService.getWalletInfo(wallet.wallet_address),
-        verificationService.syncBalance(wallet.wallet_address, wallet.token_contract),
+        verificationService.getWalletInfo(wallet.wallet_address ?? ''),
+        verificationService.syncBalance(wallet.wallet_address ?? '', wallet.token_contract ?? undefined),
       ]);
 
       formattedBalance = parseFloat(tokenBalance.balance) / Math.pow(10, tokenBalance.decimals);
@@ -1697,7 +1706,7 @@ app.post('/:id/sync', async (c) => {
       .update({
         balance: formattedBalance,
         last_synced_at: new Date().toISOString(),
-        sync_data: syncData,
+        sync_data: syncData as any,
         updated_at: new Date().toISOString(),
       })
       .eq('id', walletId)
@@ -1832,7 +1841,7 @@ app.post('/:id/test-fund', async (c) => {
     }
 
     // Update wallet balance
-    const previousBalance = parseFloat(wallet.balance);
+    const previousBalance = Number(wallet.balance ?? 0);
     const newBalance = previousBalance + validated.amount;
 
     const { error: updateError } = await supabase
@@ -1975,7 +1984,7 @@ app.post('/:id/fund', async (c) => {
     );
 
     // For Circle custodial wallets, poll on-chain balance and sync DB
-    const previousBalance = parseFloat(wallet.balance);
+    const previousBalance = Number(wallet.balance ?? 0);
     let newBalance = previousBalance;
 
     if (walletType === 'circle_custodial' && providerWalletId) {
@@ -2025,7 +2034,7 @@ app.post('/:id/fund', async (c) => {
       subject: `wallet/${id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { currency: validated.currency, source: 'circle_faucet', walletType },
     });
@@ -2071,10 +2080,11 @@ app.post('/:id/fund', async (c) => {
           note: 'The Circle faucet rate-limits to ~20 USDC per address per 2 hours.',
         }, 429);
       }
+      const sc = error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 502;
       return c.json({
         error: error.message,
         code: 'CIRCLE_API_ERROR',
-      }, error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 502);
+      }, sc as any);
     }
     return c.json({ error: 'Internal server error' }, 500);
   }
@@ -2187,13 +2197,13 @@ app.post('/:id/transfer', async (c) => {
         return c.json({ error: `Destination wallet is ${dw.status}` }, 400);
       }
       destWallet = dw;
-      destAddress = dw.wallet_address;
+      destAddress = dw.wallet_address ?? '';
     } else {
       destAddress = validated.destinationAddress!;
     }
 
     // 3. Check balance
-    const sourceBalance = parseFloat(sourceWallet.balance);
+    const sourceBalance = Number(sourceWallet.balance ?? 0);
     if (sourceBalance < validated.amount) {
       return c.json({
         error: 'Insufficient balance',
@@ -2230,7 +2240,7 @@ app.post('/:id/transfer', async (c) => {
         initiated_by_id: ctx.actorType === 'agent' ? ctx.actorId : ctx.apiKeyId,
         initiated_by_name: ctx.actorType === 'agent' ? ctx.actorName : 'api',
         protocol_metadata: transferMetadata,
-      })
+      } as any)
       .select('id')
       .single();
 
@@ -2243,7 +2253,7 @@ app.post('/:id/transfer', async (c) => {
     const settlement = await settleWalletTransfer({
       supabase,
       tenantId: ctx.tenantId,
-      sourceWallet,
+      sourceWallet: sourceWallet as any,
       destinationWallet: destWallet,
       amount: validated.amount,
       transferId: transfer.id,

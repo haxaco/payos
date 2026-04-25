@@ -91,7 +91,7 @@ app.post('/checkouts', async (c) => {
     const body = await c.req.json();
     const validated = createCheckoutSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Check for duplicate checkout_id
     const { data: existing } = await supabase
@@ -236,7 +236,7 @@ app.post('/checkouts', async (c) => {
       subject: `acp/checkout/${checkout.id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId') as string | undefined,
       success: true,
     });
 
@@ -248,11 +248,11 @@ app.post('/checkouts', async (c) => {
         agent_name: checkout.agent_name,
         merchant_id: checkout.merchant_id,
         merchant_name: checkout.merchant_name,
-        subtotal: parseFloat(checkout.subtotal),
-        tax_amount: parseFloat(checkout.tax_amount),
-        shipping_amount: parseFloat(checkout.shipping_amount),
-        discount_amount: parseFloat(checkout.discount_amount),
-        total_amount: parseFloat(checkout.total_amount),
+        subtotal: parseFloat(checkout.subtotal as any),
+        tax_amount: parseFloat(checkout.tax_amount as any),
+        shipping_amount: parseFloat(checkout.shipping_amount as any),
+        discount_amount: parseFloat(checkout.discount_amount as any),
+        total_amount: parseFloat(checkout.total_amount as any),
         currency: checkout.currency,
         status: checkout.status,
         items: items?.map(item => ({
@@ -260,8 +260,8 @@ app.post('/checkouts', async (c) => {
           item_id: item.item_id,
           name: item.name,
           quantity: item.quantity,
-          unit_price: parseFloat(item.unit_price),
-          total_price: parseFloat(item.total_price),
+          unit_price: parseFloat(item.unit_price as any),
+          total_price: parseFloat(item.total_price as any),
         })),
         created_at: checkout.created_at,
         expires_at: checkout.expires_at,
@@ -293,7 +293,7 @@ app.post('/checkouts/batch', async (c) => {
     const body = await c.req.json();
     const validated = batchCreateCheckoutSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const results: Array<{ checkout_id?: string; id?: string; status: string; error?: string }> = [];
 
     // Batch-verify all unique account_ids upfront
@@ -431,7 +431,7 @@ app.post('/checkouts/batch', async (c) => {
       subject: `acp/batch/${validated.checkouts.length}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId') as string | undefined,
       success: true,
     });
 
@@ -457,7 +457,7 @@ app.post('/checkouts/batch', async (c) => {
 app.get('/checkouts', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Query parameters
     const limit = parseInt(c.req.query('limit') || '20');
@@ -510,7 +510,7 @@ app.get('/checkouts', async (c) => {
         merchant_name: co.merchant_name,
         customer_id: co.customer_id,
         customer_email: co.customer_email,
-        total_amount: parseFloat(co.total_amount),
+        total_amount: parseFloat(co.total_amount as any),
         currency: co.currency,
         status: co.status,
         transfer_id: co.transfer_id || null,
@@ -538,7 +538,7 @@ app.get('/checkouts/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch checkout
     const { data: checkout, error: checkoutError } = await supabase
@@ -573,11 +573,11 @@ app.get('/checkouts/:id', async (c) => {
         merchant_id: checkout.merchant_id,
         merchant_name: checkout.merchant_name,
         merchant_url: checkout.merchant_url,
-        subtotal: parseFloat(checkout.subtotal),
-        tax_amount: parseFloat(checkout.tax_amount),
-        shipping_amount: parseFloat(checkout.shipping_amount),
-        discount_amount: parseFloat(checkout.discount_amount),
-        total_amount: parseFloat(checkout.total_amount),
+        subtotal: parseFloat(checkout.subtotal as any),
+        tax_amount: parseFloat(checkout.tax_amount as any),
+        shipping_amount: parseFloat(checkout.shipping_amount as any),
+        discount_amount: parseFloat(checkout.discount_amount as any),
+        total_amount: parseFloat(checkout.total_amount as any),
         currency: checkout.currency,
         status: checkout.status,
         shared_payment_token: checkout.shared_payment_token,
@@ -598,8 +598,8 @@ app.get('/checkouts/:id', async (c) => {
           description: item.description,
           image_url: item.image_url,
           quantity: item.quantity,
-          unit_price: parseFloat(item.unit_price),
-          total_price: parseFloat(item.total_price),
+          unit_price: parseFloat(item.unit_price as any),
+          total_price: parseFloat(item.total_price as any),
           currency: item.currency,
           item_data: item.item_data,
           created_at: item.created_at,
@@ -626,7 +626,7 @@ app.post('/checkouts/:id/complete', async (c) => {
     const body = await c.req.json();
     const validated = completeCheckoutSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch and validate checkout
     const { data: checkout, error: checkoutError } = await supabase
@@ -700,7 +700,7 @@ app.post('/checkouts/:id/complete', async (c) => {
       const spendingPolicyService = createSpendingPolicyService(supabase);
       const approvalWorkflowService = createApprovalWorkflowService(supabase);
       
-      const checkoutAmount = parseFloat(checkout.total_amount);
+      const checkoutAmount = parseFloat(checkout.total_amount as any);
       const policyContext: PolicyContext = {
         protocol: 'acp',
         vendor: checkout.merchant_name || checkout.merchant_id,
@@ -711,7 +711,7 @@ app.post('/checkouts/:id/complete', async (c) => {
         walletId,
         checkoutAmount,
         policyContext,
-        c.get('requestId')
+        (c as any).get('requestId') as string | undefined
       );
 
       if (!policyCheck.allowed) {
@@ -726,7 +726,7 @@ app.post('/checkouts/:id/complete', async (c) => {
             recipient: {
               checkout_id: checkout.checkout_id,
               merchant_id: checkout.merchant_id,
-              merchant_name: checkout.merchant_name,
+              merchant_name: checkout.merchant_name ?? undefined,
             },
             paymentContext: {
               checkout_id: checkout.id,
@@ -737,14 +737,14 @@ app.post('/checkouts/:id/complete', async (c) => {
               items: items?.map(i => ({
                 name: i.name,
                 quantity: i.quantity,
-                price: parseFloat(i.unit_price),
+                price: parseFloat(i.unit_price as any),
               })),
               shared_payment_token: validated.shared_payment_token,
             },
             requestedByType: ctx.actorType,
             requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
             requestedByName: ctx.userName || ctx.actorName || undefined,
-            correlationId: c.get('requestId'),
+            correlationId: (c as any).get('requestId') as string | undefined,
           });
 
           return c.json({
@@ -768,13 +768,13 @@ app.post('/checkouts/:id/complete', async (c) => {
           event_type: 'checkout.policy_blocked',
           success: false,
           merchant_id: checkout.merchant_id,
-          merchant_domain: checkout.merchant_url,
-          merchant_name: checkout.merchant_name,
+          merchant_domain: checkout.merchant_url ?? undefined,
+          merchant_name: checkout.merchant_name ?? undefined,
           failure_reason: policyCheck.reason || 'Spending policy violation',
           failure_code: 'POLICY_VIOLATION',
           agent_id: checkout.agent_id,
-          agent_name: checkout.agent_name,
-          amount: parseFloat(checkout.total_amount),
+          agent_name: checkout.agent_name ?? undefined,
+          amount: parseFloat(checkout.total_amount as any),
           currency: checkout.currency,
         });
         return c.json({
@@ -837,7 +837,7 @@ app.post('/checkouts/:id/complete', async (c) => {
     }
 
     // Try wallet payment first (agent has funded USDC wallet)
-    let stripePaymentIntent = null;
+    let stripePaymentIntent: any = null;
     let paymentStatus = 'completed';
     let walletPaymentUsed = false;
 
@@ -859,8 +859,8 @@ app.post('/checkouts/:id/complete', async (c) => {
           .limit(1)
           .maybeSingle();
 
-        const checkoutAmount = parseFloat(checkout.total_amount);
-        if (agentWallet && parseFloat(agentWallet.balance) >= checkoutAmount) {
+        const checkoutAmount = parseFloat(checkout.total_amount as any);
+        if (agentWallet && parseFloat(agentWallet.balance as any) >= checkoutAmount) {
           try {
             const { authorizeWalletTransfer } = await import('../services/wallet-settlement.js');
 
@@ -909,7 +909,11 @@ app.post('/checkouts/:id/complete', async (c) => {
               const result = await authorizeWalletTransfer({
                 supabase,
                 tenantId: ctx.tenantId,
-                sourceWallet: agentWallet,
+                // SettlementWallet wants `wallet_address: string`, but the
+                // generated row type has `string | null`. The wallets we're
+                // passing here are filtered for active status — cast at
+                // the boundary.
+                sourceWallet: agentWallet as any,
                 destinationWallet,
                 amount: checkoutAmount,
                 transferId: walletTransfer.id,
@@ -954,7 +958,7 @@ app.post('/checkouts/:id/complete', async (c) => {
         const stripe = getStripeClient();
         
         // Convert amount to cents for Stripe (assuming USDC amounts are in dollars)
-        const amountInCents = Math.round(parseFloat(checkout.total_amount) * 100);
+        const amountInCents = Math.round(parseFloat(checkout.total_amount as any) * 100);
         
         // Map currency (USDC → USD for Stripe)
         const stripeCurrency = checkout.currency === 'USDC' ? 'usd' : checkout.currency.toLowerCase();
@@ -990,12 +994,16 @@ app.post('/checkouts/:id/complete', async (c) => {
         console.error('[ACP] Stripe payment failed:', stripeError.message);
 
         // Update checkout with failure
+        // checkout_data is a Json column — narrow to a record before
+        // spreading so it typechecks (Json union includes scalar/array
+        // arms that aren't spreadable).
+        const failedCheckoutData = (checkout.checkout_data as Record<string, unknown>) ?? {};
         await supabase
           .from('acp_checkouts')
           .update({
             status: 'failed',
             checkout_data: {
-              ...(checkout.checkout_data || {}),
+              ...failedCheckoutData,
               stripe_error: stripeError.message,
             },
           })
@@ -1007,13 +1015,13 @@ app.post('/checkouts/:id/complete', async (c) => {
           event_type: 'checkout.payment_failed',
           success: false,
           merchant_id: checkout.merchant_id,
-          merchant_domain: checkout.merchant_url,
-          merchant_name: checkout.merchant_name,
+          merchant_domain: checkout.merchant_url ?? undefined,
+          merchant_name: checkout.merchant_name ?? undefined,
           failure_reason: stripeError.message,
           failure_code: 'PAYMENT_FAILED',
           agent_id: checkout.agent_id,
-          agent_name: checkout.agent_name,
-          amount: parseFloat(checkout.total_amount),
+          agent_name: checkout.agent_name ?? undefined,
+          amount: parseFloat(checkout.total_amount as any),
           currency: checkout.currency,
         });
 
@@ -1030,7 +1038,7 @@ app.post('/checkouts/:id/complete', async (c) => {
     // Create transfer record. `to_account_id` now routes to the merchant's
     // account (resolved above) — falls back to buyer's account only if
     // resolution failed, preserving legacy behavior on unknown merchants.
-    const { data: transfer, error: transferError } = await supabase
+    const { data: transfer, error: transferError } = await (supabase as any)
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
@@ -1054,7 +1062,7 @@ app.post('/checkouts/:id/complete', async (c) => {
           cart_items: items?.map(i => ({
             name: i.name,
             quantity: i.quantity,
-            price: parseFloat(i.unit_price),
+            price: parseFloat(i.unit_price as any),
           })),
           shared_payment_token: validated.shared_payment_token,
           stripe_payment_intent_id: stripePaymentIntent?.id,
@@ -1072,7 +1080,9 @@ app.post('/checkouts/:id/complete', async (c) => {
     }
 
     // Update checkout status
-    const { data: updatedCheckout, error: updateError } = await supabase
+    // checkout_data is a Json column — narrow to a record before spreading.
+    const baseCheckoutData = (checkout.checkout_data as Record<string, unknown>) ?? {};
+    const { data: updatedCheckout, error: updateError } = await (supabase as any)
       .from('acp_checkouts')
       .update({
         status: paymentStatus === 'completed' ? 'completed' : 'processing',
@@ -1081,7 +1091,7 @@ app.post('/checkouts/:id/complete', async (c) => {
         payment_method: validated.payment_method || 'stripe',
         completed_at: paymentStatus === 'completed' ? new Date().toISOString() : null,
         checkout_data: {
-          ...(checkout.checkout_data || {}),
+          ...baseCheckoutData,
           stripe_payment_intent_id: stripePaymentIntent?.id,
           stripe_payment_status: stripePaymentIntent?.status,
         },
@@ -1098,13 +1108,13 @@ app.post('/checkouts/:id/complete', async (c) => {
     // Record spending if payment completed and we have a wallet (Story 18.R3)
     if (walletId && paymentStatus === 'completed') {
       const spendingPolicyService = createSpendingPolicyService(supabase);
-      await spendingPolicyService.recordSpending(walletId, parseFloat(checkout.total_amount));
+      await spendingPolicyService.recordSpending(walletId, parseFloat(checkout.total_amount as any));
     }
 
     // Record agent daily usage when payment completed
     if (paymentStatus === 'completed' && checkout.agent_id) {
       const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
-      await limitService.recordUsage(checkout.agent_id, parseFloat(checkout.total_amount));
+      await limitService.recordUsage(checkout.agent_id, parseFloat(checkout.total_amount as any));
     }
 
     // Record successful checkout telemetry
@@ -1114,11 +1124,11 @@ app.post('/checkouts/:id/complete', async (c) => {
       event_type: 'checkout.completed',
       success: true,
       merchant_id: checkout.merchant_id,
-      merchant_domain: checkout.merchant_url,
-      merchant_name: checkout.merchant_name,
+      merchant_domain: checkout.merchant_url ?? undefined,
+      merchant_name: checkout.merchant_name ?? undefined,
       agent_id: checkout.agent_id,
-      agent_name: checkout.agent_name,
-      amount: parseFloat(checkout.total_amount),
+      agent_name: checkout.agent_name ?? undefined,
+      amount: parseFloat(checkout.total_amount as any),
       currency: checkout.currency,
     });
 
@@ -1128,7 +1138,7 @@ app.post('/checkouts/:id/complete', async (c) => {
       subject: `acp/checkout/${id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId') as string | undefined,
       success: true,
     });
 
@@ -1140,7 +1150,7 @@ app.post('/checkouts/:id/complete', async (c) => {
         payment_status: paymentStatus,
         stripe_payment_intent_id: stripePaymentIntent?.id,
         completed_at: updatedCheckout.completed_at,
-        total_amount: parseFloat(updatedCheckout.total_amount),
+        total_amount: parseFloat(updatedCheckout.total_amount as any),
         currency: updatedCheckout.currency,
       },
     }, 200);
@@ -1161,7 +1171,7 @@ app.patch('/checkouts/:id/cancel', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data: checkout, error } = await supabase
       .from('acp_checkouts')
@@ -1185,7 +1195,7 @@ app.patch('/checkouts/:id/cancel', async (c) => {
       subject: `acp/checkout/${id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId') as string | undefined,
       success: true,
     });
 
@@ -1211,7 +1221,7 @@ app.patch('/checkouts/:id', async (c) => {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
     const body = await c.req.json();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Allowlist of editable fields
     const allowed: Record<string, boolean> = {
@@ -1260,7 +1270,7 @@ app.patch('/checkouts/:id', async (c) => {
     // Record agent usage when status changes to completed
     if (updates.status === 'completed' && checkout.agent_id && checkout.total_amount) {
       const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
-      await limitService.recordUsage(checkout.agent_id, parseFloat(checkout.total_amount));
+      await limitService.recordUsage(checkout.agent_id, parseFloat(checkout.total_amount as any));
     }
 
     return c.json({ data: checkout });
@@ -1282,7 +1292,7 @@ app.delete('/checkouts/:id', async (c) => {
 
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Verify checkout exists and belongs to tenant
     const { data: checkout, error: fetchErr } = await supabase
@@ -1343,7 +1353,7 @@ app.get('/analytics', async (c) => {
   try {
     const ctx = c.get('ctx');
     const period = c.req.query('period') || '30d';
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Calculate date range
     const end = new Date();
@@ -1374,8 +1384,8 @@ app.get('/analytics', async (c) => {
       .eq('tenant_id', ctx.tenantId)
       .eq('environment', getEnv(ctx));
 
-    const revenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount), 0) || 0;
-    const fees = transfers?.reduce((sum, t) => sum + parseFloat(t.fee_amount || '0'), 0) || 0;
+    const revenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount as any), 0) || 0;
+    const fees = transfers?.reduce((sum, t) => sum + parseFloat((t.fee_amount as any) || '0'), 0) || 0;
 
     const completedCheckouts = checkouts?.filter(c => c.status === 'completed').length || 0;
     const pendingCheckouts = checkouts?.filter(c => c.status === 'pending').length || 0;

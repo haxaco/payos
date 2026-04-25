@@ -13,7 +13,7 @@ const paymentHandlersList = new Hono();
 
 paymentHandlersList.get('/', async (c) => {
   const ctx = c.get('ctx') as { tenantId: string };
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Fetch global handlers (tenant_id IS NULL) and tenant-specific handlers
   const { data, error } = await supabase

@@ -98,7 +98,7 @@ export async function deriveSmartAccountAddress(
   const smartAccount = await toCoinbaseSmartAccount({
     client,
     owners: [ownerAccount],
-  });
+  } as any);
 
   // Coinbase Smart Wallet factory (same address on mainnet + testnet)
   const factoryAddress = '0x0BA5ED0c6AA8c49038F819E587E2633c4A9F428a' as Address;
@@ -170,7 +170,7 @@ export async function signMessageViaSmartAccount(
   const smartAccount = await toCoinbaseSmartAccount({
     client,
     owners: [ownerAccount],
-  });
+  } as any);
 
   const signature = await smartAccount.signMessage({ message });
 
@@ -200,7 +200,7 @@ export async function signTypedDataViaSmartAccount(
   const smartAccount = await toCoinbaseSmartAccount({
     client,
     owners: [ownerAccount],
-  });
+  } as any);
 
   const signature = await smartAccount.signTypedData(typedData);
 
@@ -258,7 +258,7 @@ export async function sendUsdcViaSmartAccount(params: {
   const smartAccount = await toCoinbaseSmartAccount({
     client: publicClient,
     owners: [ownerAccount],
-  });
+  } as any);
 
   // Encode the USDC.transfer(to, value) calldata
   const erc20Abi = parseAbi(['function transfer(address to, uint256 value)']);

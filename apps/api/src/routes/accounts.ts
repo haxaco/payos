@@ -98,6 +98,7 @@ accounts.get('/', async (c) => {
     
     if (agentData) {
       for (const agent of agentData) {
+        if (!agent.parent_account_id) continue;
         if (!agentCounts[agent.parent_account_id]) {
           agentCounts[agent.parent_account_id] = { count: 0, active: 0 };
         }
@@ -201,7 +202,7 @@ accounts.post('/', async (c) => {
     subject: `account/${data.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId'),
     success: true,
   });
 
@@ -387,7 +388,7 @@ accounts.patch('/:id', async (c) => {
     subject: `account/${id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId'),
     success: true,
   });
 
@@ -426,7 +427,7 @@ accounts.delete('/:id', async (c) => {
   }
 
   // Check for non-zero balance
-  const balance = parseFloat(existing.balance_total) || 0;
+  const balance = Number(existing.balance_total ?? 0) || 0;
   if (balance > 0) {
     throw new ValidationError('Cannot delete account with non-zero balance', {
       balance,
@@ -526,21 +527,21 @@ accounts.get('/:id/balances', async (c) => {
   const outgoingStreams = streams?.filter(s => s.sender_account_id === id) || [];
   const incomingStreams = streams?.filter(s => s.receiver_account_id === id) || [];
   
-  const outflowPerMonth = outgoingStreams.reduce((sum, s) => sum + parseFloat(s.flow_rate_per_month), 0);
-  const inflowPerMonth = incomingStreams.reduce((sum, s) => sum + parseFloat(s.flow_rate_per_month), 0);
-  const availableBalance = parseFloat(data.balance_available) || 0;
-  
+  const outflowPerMonth = outgoingStreams.reduce((sum, s) => sum + Number(s.flow_rate_per_month ?? 0), 0);
+  const inflowPerMonth = incomingStreams.reduce((sum, s) => sum + Number(s.flow_rate_per_month ?? 0), 0);
+  const availableBalance = Number(data.balance_available ?? 0) || 0;
+
   const responseBody: any = {
     data: {
       accountId: data.id,
       accountName: data.name,
       balance: {
-        total: parseFloat(data.balance_total) || 0,
+        total: Number(data.balance_total ?? 0) || 0,
         available: availableBalance,
         inStreams: {
-          total: parseFloat(data.balance_in_streams) || 0,
-          buffer: parseFloat(data.balance_buffer) || 0,
-          streaming: (parseFloat(data.balance_in_streams) || 0) - (parseFloat(data.balance_buffer) || 0),
+          total: Number(data.balance_in_streams ?? 0) || 0,
+          buffer: Number(data.balance_buffer ?? 0) || 0,
+          streaming: (Number(data.balance_in_streams ?? 0) || 0) - (Number(data.balance_buffer ?? 0) || 0),
         },
         currency: 'USDC',
       },
@@ -621,9 +622,9 @@ accounts.get('/:id/agents', async (c) => {
     const agent = mapAgentFromDb(row);
     agent.parentAccount = {
       id: account.id,
-      type: account.type,
+      type: account.type as any,
       name: account.name,
-      verificationTier: account.verification_tier,
+      verificationTier: (account.verification_tier ?? 0) as any,
     };
     return agent;
   });
@@ -747,9 +748,9 @@ accounts.get('/:id/transactions', async (c) => {
   const transactions = (data || []).map(entry => ({
     id: entry.id,
     type: entry.type, // credit or debit
-    amount: parseFloat(entry.amount),
+    amount: Number(entry.amount ?? 0),
     currency: entry.currency || 'USDC',
-    balanceAfter: parseFloat(entry.balance_after),
+    balanceAfter: Number(entry.balance_after ?? 0),
     referenceType: entry.reference_type,
     referenceId: entry.reference_id,
     description: entry.description,
@@ -835,7 +836,7 @@ accounts.get('/:id/transfers', async (c) => {
     fromAccountName: transfer.from_account_name,
     toAccountId: transfer.to_account_id,
     toAccountName: transfer.to_account_name,
-    amount: parseFloat(transfer.amount),
+    amount: Number(transfer.amount ?? 0),
     currency: transfer.currency || 'USDC',
     description: transfer.description,
     createdAt: transfer.created_at,
@@ -847,7 +848,7 @@ accounts.get('/:id/transfers', async (c) => {
     // Include protocol metadata if present
     protocolMetadata: transfer.protocol_metadata || undefined,
     // @deprecated - for backward compatibility
-    x402Metadata: transfer.protocol_metadata || transfer.x402_metadata || undefined,
+    x402Metadata: transfer.protocol_metadata || (transfer as any).x402_metadata || undefined,
   }));
   
   return c.json(paginationResponse(transfers, count || 0, { page, limit }));
@@ -1321,7 +1322,7 @@ accounts.post('/:id/activate', async (c) => {
   }
 
   // Restore status based on verification tier
-  const newStatus = existing.verification_tier > 0 ? 'verified' : 'unverified';
+  const newStatus = (existing.verification_tier ?? 0) > 0 ? 'verified' : 'unverified';
 
   const { error: updateError } = await supabase
     .from('accounts')

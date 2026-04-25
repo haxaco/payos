@@ -45,7 +45,7 @@ export function recordChainMetric(metric: ChainMetric): void {
     console.warn('[ChainMetrics] Skipping metric — tenantId is required');
     return;
   }
-  const supabase = createClient();
+  const supabase: any = createClient();
   supabase
     .from('chain_performance_metrics')
     .insert({
@@ -329,7 +329,7 @@ export async function executeOnChainTransfer(
 
       // EVM external wallet path (Base)
       const { transferUsdc } = await import('../config/blockchain.js');
-      const result = await transferUsdc(destinationAddress, amount);
+      const result = await transferUsdc(destinationAddress, String(amount));
       return withMetric({ success: true, txHash: result.txHash, path: 'viem' });
     }
 

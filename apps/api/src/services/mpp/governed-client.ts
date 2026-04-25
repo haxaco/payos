@@ -44,7 +44,7 @@ export interface GovernedChargeOptions {
   /** Correlation ID for tracing */
   correlationId?: string;
   /** Actor type */
-  actorType?: 'api_key' | 'user' | 'agent';
+  actorType?: 'api_key' | 'user' | 'agent' | 'portal';
   /** Actor ID */
   actorId?: string;
 }

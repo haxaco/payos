@@ -67,7 +67,7 @@ const FALLBACK_RESOLUTION = [
 
 support.get('/explain-rejection', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const errorCode = c.req.query('error_code');
   const transactionId = c.req.query('transaction_id');
@@ -186,7 +186,7 @@ const createLimitRequestSchema = z.object({
 
 support.post('/limit-requests', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -285,7 +285,7 @@ support.post('/limit-requests', async (c) => {
 
 support.get('/limit-requests/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const requestId = c.req.param('id');
 
   if (!isValidUUID(requestId)) {
@@ -327,7 +327,7 @@ support.get('/limit-requests/:id', async (c) => {
 
 support.post('/limit-requests/:id/approve', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const requestId = c.req.param('id');
 
   if (!isValidUUID(requestId)) {
@@ -393,13 +393,13 @@ support.post('/limit-requests/:id/approve', async (c) => {
     .single();
 
   if (wallet) {
-    const existingPolicy = wallet.spending_policy || {};
+    const existingPolicy = (wallet.spending_policy as Record<string, unknown>) ?? {};
     const mergedPolicy = {
       ...existingPolicy,
       [policyField]: parseFloat(request.requested_amount),
       // Preserve spend counters
-      dailySpent: existingPolicy.dailySpent || 0,
-      monthlySpent: existingPolicy.monthlySpent || 0,
+      dailySpent: (existingPolicy.dailySpent as number) || 0,
+      monthlySpent: (existingPolicy.monthlySpent as number) || 0,
       dailyResetAt: existingPolicy.dailyResetAt,
       monthlyResetAt: existingPolicy.monthlyResetAt,
     };
@@ -446,7 +446,7 @@ support.post('/limit-requests/:id/approve', async (c) => {
 
 support.post('/limit-requests/:id/reject', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const requestId = c.req.param('id');
 
   if (!isValidUUID(requestId)) {
@@ -536,7 +536,7 @@ const RESPONSE_TIME_BY_PRIORITY: Record<string, string> = {
 
 support.post('/escalations', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -612,7 +612,7 @@ support.post('/escalations', async (c) => {
 
 support.get('/escalations/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const escalationId = c.req.param('id');
 
   if (!isValidUUID(escalationId)) {

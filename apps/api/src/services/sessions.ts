@@ -75,13 +75,16 @@ export async function createSession(
   clientInfo: ClientInfo,
   expiresIn: number = 7 * 24 * 60 * 60 * 1000 // 7 days default
 ): Promise<string> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
   const refreshTokenHash = hashRefreshToken(refreshToken);
   
   const expiresAt = new Date(Date.now() + expiresIn);
 
-  const { data, error } = await supabase
-    .from('user_sessions')
+  // Note: `user_sessions` is not present in generated database.types.ts
+  // (schema has diverged / migration not yet applied to types). Cast at the
+  // query boundary so service-layer code keeps working until types are regen'd.
+  const { data, error } = await (supabase
+    .from('user_sessions' as any)
     .insert({
       user_id: userId,
       refresh_token_hash: refreshTokenHash,
@@ -92,7 +95,7 @@ export async function createSession(
       is_used: false,
     })
     .select('id')
-    .single();
+    .single() as any);
 
   if (error) {
     console.error('Failed to create session:', error);
@@ -119,15 +122,15 @@ export async function createSession(
 export async function validateRefreshToken(
   refreshToken: string
 ): Promise<SessionData | null> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
   const refreshTokenHash = hashRefreshToken(refreshToken);
 
-  const { data, error } = await supabase
-    .from('user_sessions')
+  const { data, error } = await (supabase
+    .from('user_sessions' as any)
     .select('*')
     .eq('refresh_token_hash', refreshTokenHash)
     .is('revoked_at', null)
-    .single();
+    .single() as any);
 
   if (error || !data) {
     return null;
@@ -162,7 +165,7 @@ export async function refreshSession(
   refreshToken: string,
   clientInfo: ClientInfo
 ): Promise<RefreshSessionResult> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
   
   // Validate the refresh token
   const session = await validateRefreshToken(refreshToken);
@@ -194,13 +197,13 @@ export async function refreshSession(
   }
 
   // Mark the old token as used
-  const { error: markError } = await supabase
-    .from('user_sessions')
+  const { error: markError } = await (supabase
+    .from('user_sessions' as any)
     .update({
       is_used: true,
       last_activity_at: new Date().toISOString(),
     })
-    .eq('id', session.id);
+    .eq('id', session.id) as any);
 
   if (markError) {
     console.error('Failed to mark token as used:', markError);
@@ -265,11 +268,11 @@ export async function refreshSession(
  * Revoke a specific session
  */
 export async function revokeSession(sessionId: string, userId?: string): Promise<boolean> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
 
-  const query = supabase
-    .from('user_sessions')
-    .update({ revoked_at: new Date().toISOString() })
+  const query: any = (supabase
+    .from('user_sessions' as any)
+    .update({ revoked_at: new Date().toISOString() }) as any)
     .eq('id', sessionId)
     .is('revoked_at', null);
 
@@ -296,9 +299,9 @@ export async function revokeSession(sessionId: string, userId?: string): Promise
  * Revoke all sessions for a user (security breach response)
  */
 export async function revokeAllUserSessions(userId: string): Promise<number> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
 
-  const { data, error } = await supabase.rpc('revoke_all_user_sessions', {
+  const { data, error } = await (supabase as any).rpc('revoke_all_user_sessions', {
     target_user_id: userId,
   });
 
@@ -323,15 +326,15 @@ export async function revokeAllUserSessions(userId: string): Promise<number> {
  * Get all active sessions for a user
  */
 export async function getUserSessions(userId: string): Promise<SessionData[]> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
 
-  const { data, error } = await supabase
-    .from('user_sessions')
+  const { data, error } = await (supabase
+    .from('user_sessions' as any)
     .select('*')
     .eq('user_id', userId)
     .is('revoked_at', null)
     .gt('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false }) as any);
 
   if (error) {
     console.error('Failed to get user sessions:', error);
@@ -358,17 +361,17 @@ export async function getRecentSessions(
   userId: string,
   days: number = 30
 ): Promise<SessionData[]> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
 
-  const { data, error } = await supabase
-    .from('user_sessions')
+  const { data, error } = await (supabase
+    .from('user_sessions' as any)
     .select('*')
     .eq('user_id', userId)
     .gte('created_at', cutoffDate.toISOString())
     .order('created_at', { ascending: false })
-    .limit(100);
+    .limit(100) as any);
 
   if (error) {
     console.error('Failed to get recent sessions:', error);
@@ -457,9 +460,9 @@ export async function detectAnomalies(
  * Clean up expired sessions (call this via cron job)
  */
 export async function cleanupExpiredSessions(): Promise<number> {
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
 
-  const { data, error } = await supabase.rpc('cleanup_expired_sessions');
+  const { data, error } = await (supabase as any).rpc('cleanup_expired_sessions');
 
   if (error) {
     console.error('Failed to cleanup expired sessions:', error);

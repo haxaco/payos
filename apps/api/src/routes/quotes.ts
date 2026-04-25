@@ -81,7 +81,7 @@ function calculateFees(
 // ============================================
 quotes.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Parse and validate body
   let body;
@@ -235,7 +235,7 @@ quotes.get('/fx', async (c) => {
 // ============================================
 quotes.post('/fx', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   let body;
   try {
@@ -410,7 +410,7 @@ quotes.get('/multi', async (c) => {
  */
 quotes.post('/multi', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   let body;
   try {
@@ -605,7 +605,7 @@ quotes.post('/multi/compare', async (c) => {
 quotes.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const { data: quote, error } = await supabase
     .from('quotes')

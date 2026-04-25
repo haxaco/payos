@@ -31,7 +31,7 @@ export async function logAuthAttempt(
   errorReason?: string
 ): Promise<void> {
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     await supabase.from('auth_log').insert({
       success,
       token_type: tokenType,
@@ -128,7 +128,7 @@ export function requireAgentPermission(
     }
 
     // For agents, check permissions from database
-    const supabase = createClient();
+    const supabase: any = createClient();
     const { data: agent } = await supabase
       .from('agents')
       .select('permissions')
@@ -165,14 +165,14 @@ export function requireKyaTier(minTier: number) {
       return next();
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const { data: agent } = await supabase
       .from('agents')
       .select('kya_tier, kya_status')
       .eq('id', ctx.actorId)
       .single();
 
-    if (!agent || agent.kya_tier < minTier) {
+    if (!agent || (agent.kya_tier ?? 0) < minTier) {
       return c.json({
         error: 'Insufficient KYA verification tier',
         currentTier: agent?.kya_tier || 0,

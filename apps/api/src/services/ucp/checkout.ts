@@ -750,7 +750,7 @@ export async function completeCheckout(
 
       // Try wallet payment first if agent_id is present
       let walletPaymentUsed = false;
-      const agentId = existing.agent_id || existing.metadata?.agent_id;
+      const agentId: string | null = existing.agent_id || (existing.metadata?.agent_id as string | undefined) || null;
       console.log(`[UCP Checkout] Wallet path: agentId=${agentId}, totalAmount=${totalAmount}`);
       if (agentId) {
         const { data: agentWallet, error: walletQueryErr } = await supabase
@@ -989,7 +989,9 @@ export async function completeCheckout(
 
           // Record daily/monthly usage for limit tracking
           const limitService = new LimitService(supabase, environment);
-          await limitService.recordUsage(agentId, usdAmount);
+          if (agentId) {
+            await limitService.recordUsage(agentId, usdAmount);
+          }
           console.log(`[UCP Checkout] Recorded agent ${agentId} daily usage: +$${usdAmount}`);
         } catch (agentErr: any) {
           // Non-fatal: log but don't fail the checkout

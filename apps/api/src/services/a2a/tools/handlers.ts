@@ -15,7 +15,7 @@ import type { AgentContext } from './context-injector.js';
 export interface ToolResult {
   success: boolean;
   data?: unknown;
-  error?: { code: string; message: string; suggestedAction?: string };
+  error?: { code: string; message: string; suggestedAction?: string; data?: unknown };
 }
 
 type ToolHandler = (
@@ -359,8 +359,8 @@ async function handleSendA2aTask(
       return {
         success: true,
         data: {
-          taskId: result?.result?.id || null,
-          state: result?.result?.status?.state || 'submitted',
+          taskId: (result?.result as any)?.id || null,
+          state: (result?.result as any)?.status?.state || 'submitted',
           remote: true,
           url: remoteUrl,
         },

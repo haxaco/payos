@@ -98,7 +98,7 @@ export function createStripeHandler(credentials: StripeCredentials): PaymentHand
     },
 
     async createPaymentIntent(params: PaymentIntentParams): Promise<PaymentIntent> {
-      const paymentMethodTypes: Stripe.PaymentIntentCreateParams.PaymentMethodType[] = [];
+      const paymentMethodTypes: string[] = [];
 
       // Map PayOS payment methods to Stripe payment method types
       if (params.method === 'card') {
@@ -114,7 +114,7 @@ export function createStripeHandler(credentials: StripeCredentials): PaymentHand
       const intent = await stripe.paymentIntents.create({
         amount: params.amount,
         currency: params.currency.toLowerCase(),
-        payment_method_types: paymentMethodTypes.length > 0 ? paymentMethodTypes : ['card'],
+        payment_method_types: (paymentMethodTypes.length > 0 ? paymentMethodTypes : ['card']) as any,
         description: params.description,
         metadata: params.metadata,
         receipt_email: params.customer?.email,
@@ -133,8 +133,8 @@ export function createStripeHandler(credentials: StripeCredentials): PaymentHand
         clientSecret: intent.client_secret || undefined,
         nextAction: intent.next_action
           ? {
-              type: intent.next_action.type === 'redirect_to_url' ? 'redirect' : 'await_payment',
-              redirectUrl: intent.next_action.redirect_to_url?.url,
+              type: (intent.next_action.type === 'redirect_to_url' ? 'redirect' : 'await_payment') as 'redirect' | 'display_qr' | 'await_payment',
+              redirectUrl: intent.next_action.redirect_to_url?.url ?? undefined,
             }
           : undefined,
         metadata: intent.metadata as Record<string, string>,
