@@ -659,6 +659,15 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'whoami',
+    description: 'Identify the calling identity — who AM I, what wallet do I have, what scopes can I act on. CALL THIS FIRST when starting a task involving paid actions or wallet reads, especially after a fresh session. When connected via an agent token (agent_* or sess_*), returns the agent\'s id, name, KYA tier, parent account, environment, and the agent\'s primary on-chain wallet (address + USDC balance). When connected via a tenant API key (pk_live_* / pk_test_*), returns tenant info and `defaultAgentId: null` — meaning the caller must pass `agentId` explicitly on every paid tool. Tools like x402_fetch and agent_x402_sign auto-default `agentId` to the calling agent\'s id when present, so prefer agent-token auth. Reading this before paid calls prevents the "wrong wallet" / "no funds" confusion when a tenant has multiple agents.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: 'create_agent',
     description: 'Register a new AI agent under a business account. The agent can then be verified and given spending mandates.',
     inputSchema: {

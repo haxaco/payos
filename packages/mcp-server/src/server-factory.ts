@@ -542,6 +542,21 @@ export function createMcpServer(
         };
       }
 
+      case 'whoami': {
+        // Same backing endpoint as get_tenant_info, but framed for the
+        // "verify identity before paying" use case. The endpoint returns
+        // tenant + agent wallet + default_agent_id when applicable.
+        const result = await ctx.sly.request('/v1/context/whoami');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
       case 'create_agent': {
         const { accountId, name: agentName, description } = args as {
           accountId: string;

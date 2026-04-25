@@ -19,25 +19,72 @@ const context = new Hono();
 
 // ============================================
 // GET /v1/context/whoami
-// Returns current auth context + tenant info
+// Returns calling identity, scope, and (for agent-bound auth) the
+// agent's primary wallet so MCP-connected LLMs can verify "who am I"
+// and "do I have funds" in a single call. Foundation for Epic 82
+// scoped capability tokens — exposes `defaultAgentId` so MCP tools can
+// auto-fill the `agentId` parameter when the caller is agent-bound.
 // ============================================
 context.get('/whoami', async (c) => {
   const ctx = c.get('ctx');
   const supabase = createClient();
 
-  const { data: tenant } = await supabase
-    .from('tenants')
+  const { data: tenant } = await (supabase
+    .from('tenants') as any)
     .select('id, name, status')
     .eq('id', ctx.tenantId)
     .single();
 
+  // Surface the calling agent's wallet — short-circuits "do I have
+  // funds?" without forcing the LLM to know its own agentId or wallet.
+  let agentDetail: any = null;
+  if (ctx.actorType === 'agent' && ctx.actorId) {
+    const [{ data: agentRow }, { data: walletRow }] = await Promise.all([
+      (supabase
+        .from('agents') as any)
+        .select('id, name, kya_tier, status, environment, parent_account_id')
+        .eq('id', ctx.actorId)
+        .single(),
+      (supabase
+        .from('wallets') as any)
+        .select('id, wallet_address, balance, wallet_type, status')
+        .eq('managed_by_agent_id', ctx.actorId)
+        .eq('wallet_type', 'agent_eoa')
+        .eq('environment', ctx.environment)
+        .maybeSingle(),
+    ]);
+    agentDetail = {
+      id: (agentRow as any)?.id ?? ctx.actorId,
+      name: (agentRow as any)?.name ?? ctx.actorName ?? null,
+      kya_tier: (agentRow as any)?.kya_tier ?? ctx.kyaTier ?? null,
+      status: (agentRow as any)?.status ?? null,
+      parent_account_id: (agentRow as any)?.parent_account_id ?? ctx.parentAccountId ?? null,
+      wallet: walletRow ? {
+        id: (walletRow as any).id,
+        address: (walletRow as any).wallet_address,
+        balance: Number((walletRow as any).balance ?? 0),
+        type: (walletRow as any).wallet_type,
+        status: (walletRow as any).status,
+      } : null,
+    };
+  }
+
   return c.json({
-    tenant: { id: tenant?.id, name: tenant?.name, status: tenant?.status },
+    tenant: { id: (tenant as any)?.id, name: (tenant as any)?.name, status: (tenant as any)?.status },
     actor: {
       type: ctx.actorType,
       id: ctx.actorId || ctx.userId || ctx.apiKeyId,
       name: ctx.actorName || ctx.userName,
+      environment: ctx.environment,
     },
+    // The agent the caller IS, when actorType === 'agent'. Other paths
+    // (api_key, user JWT) get null and must specify agentId explicitly.
+    default_agent_id: ctx.actorType === 'agent' ? (ctx.actorId ?? null) : null,
+    agent: agentDetail,
+    // Foundation for Epic 82 — populated when scope grants land.
+    active_scopes: ctx.actorType === 'agent' ? ['agent'] : ['tenant_read', 'tenant_write'],
+    elevated_scope: (ctx as any).elevatedScope ?? null,
+    session_based: (ctx as any).sessionBased ?? false,
   });
 });
 
