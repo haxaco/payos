@@ -661,8 +661,14 @@ export interface UCPAuthorizationResponse {
 
 /**
  * OAuth 2.0 Token Request
+ *
+ * Note: previously named `UCPTokenRequest`, but that collided with the
+ * legacy settlement-token alias above. esbuild (via tsup) refuses the
+ * duplicate declaration even though TypeScript itself was lenient.
+ * Renamed to `UCPOAuthTokenRequest` — no live consumers used the
+ * OAuth shape via the `UCPTokenRequest` name.
  */
-export interface UCPTokenRequest {
+export interface UCPOAuthTokenRequest {
   /** Grant type */
   grant_type: 'authorization_code' | 'refresh_token';
   /** Client/platform identifier */
