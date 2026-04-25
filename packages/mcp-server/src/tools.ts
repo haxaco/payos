@@ -705,7 +705,7 @@ export const tools: Tool[] = [
           description: 'KYA verification tier (1=Standard, 2=Advanced, 3=Enterprise)',
         },
       },
-      required: ['agentId', 'tier'],
+      required: ['tier'],
     },
   },
   {
@@ -719,7 +719,7 @@ export const tools: Tool[] = [
           description: 'UUID of the agent',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -733,7 +733,7 @@ export const tools: Tool[] = [
           description: 'UUID of the agent',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -763,7 +763,7 @@ export const tools: Tool[] = [
           description: 'Filter to date (ISO 8601, optional)',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
 
@@ -778,7 +778,7 @@ export const tools: Tool[] = [
           description: 'UUID of the agent to delete',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
 
@@ -1371,7 +1371,7 @@ export const tools: Tool[] = [
           description: 'Wallet address of external counterparty (optional)',
         },
       },
-      required: ['agentId', 'amount'],
+      required: ['amount'],
     },
   },
   {
@@ -1385,7 +1385,7 @@ export const tools: Tool[] = [
           description: 'UUID of the agent',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1407,7 +1407,7 @@ export const tools: Tool[] = [
           description: 'Results per page (optional)',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1421,7 +1421,7 @@ export const tools: Tool[] = [
           description: 'UUID of the agent',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1435,7 +1435,7 @@ export const tools: Tool[] = [
           description: 'UUID of the agent whose wallet to freeze',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1449,7 +1449,7 @@ export const tools: Tool[] = [
           description: 'UUID of the agent whose wallet to unfreeze',
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1471,7 +1471,7 @@ export const tools: Tool[] = [
           description: 'UUID of the source wallet to fund from (optional, defaults to parent account primary wallet)',
         },
       },
-      required: ['agentId', 'amount'],
+      required: ['amount'],
     },
   },
   {
@@ -1556,7 +1556,7 @@ export const tools: Tool[] = [
           },
         },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
 
@@ -1729,7 +1729,7 @@ export const tools: Tool[] = [
       properties: {
         agentId: { type: 'string', description: 'UUID of the agent' },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1740,7 +1740,7 @@ export const tools: Tool[] = [
       properties: {
         agentId: { type: 'string', description: 'UUID of the agent' },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1757,7 +1757,7 @@ export const tools: Tool[] = [
         validAfter: { type: 'number', description: 'Unix seconds start time (default 0)', default: 0 },
         nonce: { type: 'string', description: '32-byte hex nonce (auto-generated if omitted)' },
       },
-      required: ['agentId', 'to', 'value', 'validBefore', 'chainId'],
+      required: ['to', 'value', 'validBefore', 'chainId'],
     },
   },
   {
@@ -1844,7 +1844,7 @@ export const tools: Tool[] = [
           description: 'Optional transfer id from a prior x402_probe that surfaced this endpoint — lets the dashboard chain "probed → paid → rated."',
         },
       },
-      required: ['agentId', 'url'],
+      required: ['url'],
     },
   },
   {
@@ -1856,7 +1856,7 @@ export const tools: Tool[] = [
         agentId: { type: 'string', description: 'UUID of the agent' },
         amount: { type: 'string', description: 'USDC amount as decimal string (default "1")', default: '1' },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1867,7 +1867,7 @@ export const tools: Tool[] = [
       properties: {
         agentId: { type: 'string', description: 'UUID of the agent' },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1960,7 +1960,7 @@ export const tools: Tool[] = [
         target: { type: 'number', description: 'USDC balance the worker will refill UP TO (must be > threshold). E.g. 1.00' },
         dailyCap: { type: 'number', description: 'Max USDC auto-refilled per UTC day. Default: 5.00' },
       },
-      required: ['agentId', 'threshold', 'target'],
+      required: ['threshold', 'target'],
     },
   },
   {
@@ -1971,7 +1971,7 @@ export const tools: Tool[] = [
       properties: {
         agentId: { type: 'string', description: 'UUID of the agent' },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
   {
@@ -1982,7 +1982,7 @@ export const tools: Tool[] = [
       properties: {
         agentId: { type: 'string', description: 'UUID of the agent' },
       },
-      required: ['agentId'],
+      required: [],
     },
   },
 

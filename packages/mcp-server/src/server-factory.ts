@@ -16,6 +16,12 @@ import { tools } from './tools.js';
 /**
  * Mutable runtime context for the MCP server.
  * Allows switching environments (sandbox ↔ production) without restart.
+ *
+ * `defaultAgentId` is lazily resolved from `/v1/context/whoami` on first
+ * use — populated when the calling token authenticates AS an agent
+ * (agent_* / sess_*), null when authenticated as a tenant API key.
+ * `whoamiResolved` is the latch flag so we don't refetch on every call;
+ * it also gets reset by `switch_environment` since identity is per-env.
  */
 export interface McpContext {
   sly: Sly;
@@ -24,6 +30,51 @@ export interface McpContext {
   environment: string;
   keys: Record<string, string>;
   urls: Record<string, string>;
+  defaultAgentId?: string | null;
+  whoamiResolved?: boolean;
+}
+
+/**
+ * Resolve the agentId to use for a tool call:
+ *   1. If the LLM passed `agentId` explicitly, honor it (works for both
+ *      tenant API keys and agent tokens — useful for scripted/admin use).
+ *   2. Otherwise lazy-load `/v1/context/whoami` once; if the auth context
+ *      resolved as an agent, fall back to its id (the `default_agent_id`
+ *      field returned by the enriched whoami endpoint).
+ *   3. If no agentId is available, throw a clear error pointing the LLM
+ *      at how to fix it.
+ *
+ * Caches the lookup on the McpContext for the session, so a chain of
+ * paid calls only pays one whoami round-trip total.
+ */
+async function resolveAgentId(
+  ctx: McpContext,
+  providedAgentId: string | undefined,
+  toolName: string,
+): Promise<string> {
+  if (providedAgentId) return providedAgentId;
+
+  if (!ctx.whoamiResolved) {
+    try {
+      const whoami = await ctx.sly.request('/v1/context/whoami') as any;
+      ctx.defaultAgentId = whoami?.default_agent_id ?? null;
+    } catch (e: any) {
+      // Don't crash the tool call on whoami failure — let the explicit
+      // error below carry the hint instead.
+      console.error(`[mcp] whoami lookup failed (${e?.message || e}); falling back to explicit agentId.`);
+      ctx.defaultAgentId = null;
+    }
+    ctx.whoamiResolved = true;
+  }
+
+  if (ctx.defaultAgentId) return ctx.defaultAgentId;
+
+  throw new Error(
+    `${toolName} requires \`agentId\`. The current auth context is a tenant API key, ` +
+    `which can act on behalf of multiple agents — pass \`agentId\` explicitly. ` +
+    `(If you want auto-fill, swap your MCP client to an agent token via the dashboard ` +
+    `→ Settings → Auth, then call whoami first to confirm identity.)`,
+  );
 }
 
 /**
@@ -582,7 +633,8 @@ export function createMcpServer(
       }
 
       case 'verify_agent': {
-        const { agentId, tier } = args as { agentId: string; tier: number };
+        const { agentId: _providedAgentId, tier } = args as { agentId?: string; tier: number };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/verify`, {
           method: 'POST',
           body: JSON.stringify({ tier }),
@@ -598,7 +650,8 @@ export function createMcpServer(
       }
 
       case 'get_agent': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}`);
         return {
           content: [
@@ -611,7 +664,8 @@ export function createMcpServer(
       }
 
       case 'get_agent_limits': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/limits`);
         return {
           content: [
@@ -624,13 +678,14 @@ export function createMcpServer(
       }
 
       case 'get_agent_transactions': {
-        const { agentId, limit: txLimit, offset: txOffset, from, to } = args as {
-          agentId: string;
+        const { agentId: _providedAgentId, limit: txLimit, offset: txOffset, from, to } = args as {
+          agentId?: string;
           limit?: number;
           offset?: number;
           from?: string;
           to?: string;
         };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const params = new URLSearchParams();
         if (txLimit) params.set('limit', String(txLimit));
         if (txOffset) params.set('offset', String(txOffset));
@@ -649,7 +704,8 @@ export function createMcpServer(
       }
 
       case 'delete_agent': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}`, {
           method: 'DELETE',
         });
@@ -1120,9 +1176,9 @@ export function createMcpServer(
       // ======================================================================
 
       case 'agent_wallet_evaluate_policy': {
-        const { agentId, amount, currency, action_type, contract_type, counterparty_agent_id, counterparty_address } =
+        const { agentId: _providedAgentId, amount, currency, action_type, contract_type, counterparty_agent_id, counterparty_address } =
           args as {
-            agentId: string;
+            agentId?: string;
             amount: number;
             currency?: string;
             action_type?: string;
@@ -1130,6 +1186,7 @@ export function createMcpServer(
             counterparty_agent_id?: string;
             counterparty_address?: string;
           };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/policy/evaluate`, {
           method: 'POST',
           body: JSON.stringify({
@@ -1147,7 +1204,8 @@ export function createMcpServer(
       }
 
       case 'agent_wallet_get_exposures': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/exposures`);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -1155,7 +1213,8 @@ export function createMcpServer(
       }
 
       case 'agent_wallet_get_evaluations': {
-        const { agentId, page, limit } = args as { agentId: string; page?: number; limit?: number };
+        const { agentId: _providedAgentId, page, limit } = args as { agentId?: string; page?: number; limit?: number };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const params = new URLSearchParams();
         if (page) params.set('page', String(page));
         if (limit) params.set('limit', String(limit));
@@ -1167,7 +1226,8 @@ export function createMcpServer(
       }
 
       case 'agent_wallet_get': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet`);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -1175,7 +1235,8 @@ export function createMcpServer(
       }
 
       case 'agent_wallet_freeze': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/freeze`, {
           method: 'POST',
         });
@@ -1185,7 +1246,8 @@ export function createMcpServer(
       }
 
       case 'agent_wallet_unfreeze': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/unfreeze`, {
           method: 'POST',
         });
@@ -1195,11 +1257,12 @@ export function createMcpServer(
       }
 
       case 'agent_wallet_fund': {
-        const { agentId, amount, sourceWalletId } = args as {
-          agentId: string;
+        const { agentId: _providedAgentId, amount, sourceWalletId } = args as {
+          agentId?: string;
           amount: number;
           sourceWalletId?: string;
         };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/request-funds`, {
           method: 'POST',
           body: JSON.stringify({
@@ -1213,14 +1276,15 @@ export function createMcpServer(
       }
 
       case 'agent_wallet_set_policy': {
-        const { agentId, ...policyFields } = args as {
-          agentId: string;
+        const { agentId: _providedAgentId, ...policyFields } = args as {
+          agentId?: string;
           dailySpendLimit?: number;
           monthlySpendLimit?: number;
           requiresApprovalAbove?: number;
           approvedVendors?: string[];
           contractPolicy?: Record<string, unknown>;
         };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/policy`, {
           method: 'PUT',
           body: JSON.stringify(policyFields),
@@ -1365,7 +1429,8 @@ export function createMcpServer(
       }
 
       case 'agent_evm_key_provision': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/evm-keys`, {
           method: 'POST',
           body: '{}',
@@ -1374,7 +1439,8 @@ export function createMcpServer(
       }
 
       case 'agent_x402_wallet': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         // One call gets us the EOA (idempotent — returns existing key if present).
         const keyRes: any = await ctx.sly.request(`/v1/agents/${agentId}/evm-keys`, {
           method: 'POST',
@@ -1458,8 +1524,8 @@ export function createMcpServer(
       }
 
       case 'agent_x402_sign': {
-        const { agentId, to, value, chainId, validBefore, validAfter, nonce } = args as {
-          agentId: string;
+        const { agentId: _providedAgentId, to, value, chainId, validBefore, validAfter, nonce } = args as {
+          agentId?: string;
           to: string;
           value: string;
           chainId?: number;
@@ -1470,6 +1536,7 @@ export function createMcpServer(
         if (chainId === undefined || chainId === null) {
           throw new Error('chainId is required. 8453 = Base mainnet, 84532 = Base Sepolia. Read it from the 402 challenge\'s `network` field.');
         }
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/x402-sign`, {
           method: 'POST',
           body: JSON.stringify({ to, value, chainId, validBefore, validAfter: validAfter || 0, nonce }),
@@ -1762,7 +1829,7 @@ export function createMcpServer(
 
       case 'x402_fetch': {
         const {
-          agentId,
+          agentId: _providedAgentId,
           url,
           method = 'GET',
           body,
@@ -1772,7 +1839,7 @@ export function createMcpServer(
           expectedFields,
           linkedProbeTransferId,
         } = args as {
-          agentId: string;
+          agentId?: string;
           url: string;
           method?: string;
           body?: string;
@@ -1782,6 +1849,7 @@ export function createMcpServer(
           expectedFields?: string[];
           linkedProbeTransferId?: string;
         };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
 
         const baseHeaders: Record<string, string> = { 'Accept': 'application/json', ...headers };
         const firstInit: RequestInit = { method, headers: baseHeaders };
@@ -2087,7 +2155,8 @@ export function createMcpServer(
       }
 
       case 'agent_fund_eoa': {
-        const { agentId, amount } = args as { agentId: string; amount?: string };
+        const { agentId: _providedAgentId, amount } = args as { agentId?: string; amount?: string };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/fund-eoa`, {
           method: 'POST',
           body: JSON.stringify({ amount: amount || '1' }),
@@ -2096,7 +2165,8 @@ export function createMcpServer(
       }
 
       case 'agent_refill_faucet': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/wallet/refill-faucet`, {
           method: 'POST',
           body: '{}',
@@ -2174,12 +2244,13 @@ export function createMcpServer(
       }
 
       case 'agent_enable_auto_refill': {
-        const { agentId, threshold, target, dailyCap } = args as {
-          agentId: string;
+        const { agentId: _providedAgentId, threshold, target, dailyCap } = args as {
+          agentId?: string;
           threshold: number;
           target: number;
           dailyCap?: number;
         };
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
           method: 'PATCH',
           body: JSON.stringify({
@@ -2193,7 +2264,8 @@ export function createMcpServer(
       }
 
       case 'agent_disable_auto_refill': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
           method: 'PATCH',
           body: JSON.stringify({ enabled: false }),
@@ -2202,7 +2274,8 @@ export function createMcpServer(
       }
 
       case 'agent_auto_refill_status': {
-        const { agentId } = args as { agentId: string };
+        const _providedAgentId = (args as { agentId?: string }).agentId;
+        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
         const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
           method: 'GET',
         });
@@ -2517,6 +2590,12 @@ export function createMcpServer(
         ctx.apiKey = targetKey;
         ctx.apiUrl = targetUrl;
         ctx.environment = targetEnv;
+        // Identity is per-environment: sandbox token authenticates as a
+        // different agent (or no agent at all) than the production token.
+        // Drop the cached default_agent_id so the next paid call re-asks
+        // whoami in the new env.
+        ctx.defaultAgentId = undefined;
+        ctx.whoamiResolved = false;
         return { content: [{ type: 'text', text: JSON.stringify({ message: `Switched to ${targetEnv} environment`, environment: ctx.environment, apiKeyPrefix: ctx.apiKey.slice(0, 12) + '***' }, null, 2) }] };
       }
 
