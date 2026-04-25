@@ -3,12 +3,12 @@
   "buildCommand": "pnpm vercel-build",
   "installCommand": "cd ../.. && pnpm install",
   "framework": null,
-  "experimentalServices": [
-    {
-      "name": "scanner",
-      "source": "."
+  "experimentalServices": {
+    "scanner": {
+      "entrypoint": ".",
+      "routePrefix": "/"
     }
-  ],
+  },
   "headers": [
     {
       "source": "/(.*)",
