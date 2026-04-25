@@ -19,24 +19,60 @@ import { verifyApiKey, getKeyPrefix } from '../utils/crypto.js';
 const mcpRouter = new Hono();
 
 /**
- * Validate a bearer token against the api_keys table.
- * Returns tenant_id on success, null on failure.
+ * Validate a bearer token (any of the 3 agent-relevant flavors) and
+ * resolve it to the calling tenant. Returns tenant_id on success,
+ * null on failure.
+ *
+ * Supported prefixes:
+ *   pk_*    — tenant API key (api_keys table)
+ *   agent_* — long-lived agent token (agents.auth_token_hash) — Epic 65
+ *   sess_*  — Ed25519 session token (agent_sessions) — Epic 72
+ *
+ * Earlier versions of this validator only matched pk_*, which made
+ * agent-bound MCP clients hit a misleading "Invalid API key" 401 even
+ * though the standard authMiddleware on /v1 happily accepts all three.
+ * Bringing parity here so agent-token auth works on the remote MCP
+ * endpoint too.
  */
 async function validateBearerToken(token: string): Promise<string | null> {
-  if (!token.startsWith('pk_')) return null;
-
-  const prefix = getKeyPrefix(token);
   const supabase = createClient();
 
-  const { data: apiKey } = await (supabase.from('api_keys') as any)
-    .select('id, tenant_id, key_hash')
-    .eq('key_prefix', prefix)
-    .single();
+  if (token.startsWith('pk_')) {
+    const prefix = getKeyPrefix(token);
+    const { data: apiKey } = await (supabase.from('api_keys') as any)
+      .select('id, tenant_id, key_hash, status')
+      .eq('key_prefix', prefix)
+      .single();
 
-  if (!apiKey?.key_hash) return null;
-  if (!verifyApiKey(token, apiKey.key_hash)) return null;
+    if (!apiKey?.key_hash) return null;
+    if (!verifyApiKey(token, apiKey.key_hash)) return null;
+    if (apiKey.status && apiKey.status !== 'active' && apiKey.status !== 'grace_period') return null;
 
-  return apiKey.tenant_id;
+    return apiKey.tenant_id;
+  }
+
+  if (token.startsWith('agent_')) {
+    const prefix = getKeyPrefix(token);
+    const { data: agent } = await (supabase.from('agents') as any)
+      .select('tenant_id, status, auth_token_hash')
+      .eq('auth_token_prefix', prefix)
+      .single();
+
+    if (!agent?.auth_token_hash) return null;
+    if (!verifyApiKey(token, agent.auth_token_hash)) return null;
+    if (agent.status !== 'active') return null;
+
+    return agent.tenant_id;
+  }
+
+  if (token.startsWith('sess_')) {
+    const { validateSession } = await import('../services/agent-auth/session.js');
+    const session = await validateSession(supabase, token);
+    if (!session) return null;
+    return session.tenantId;
+  }
+
+  return null;
 }
 
 /**
