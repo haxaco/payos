@@ -286,7 +286,7 @@ async function handleSearchScans(args: {
 }
 
 async function handleCompareMerchants(args: { domains: string[] }) {
-  const results = [];
+  const results: any[] = [];
   for (const domain of args.domains.slice(0, 10)) {
     const normalized = normalizeDomain(domain);
     const scan = await queries.getMerchantScanByDomain(normalized);
