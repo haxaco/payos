@@ -2,6 +2,9 @@
 
 **Epic 56** · Intelligence engine that scans merchant readiness for agentic commerce.
 
+> Deployed on Vercel as `sly-scanner`. Auto-deploys on `main` when files
+> under `apps/scanner/` (or its workspace dependencies) change.
+
 ## Directory Structure
 
 ```
