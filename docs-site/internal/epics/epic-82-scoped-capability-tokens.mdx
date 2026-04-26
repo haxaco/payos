@@ -1,0 +1,82 @@
+---
+title: "Epic 82 — Scoped capability tokens"
+description: "Per-intent agent permission elevation. Internal status, validation history, and pointers to the code."
+---
+
+**Status:** Feature-complete (2026-04-26). Story 82.9 deferred — gated on Epic 84a (tenant-held KEKs).
+
+User-facing docs: [Scope grants](/agents/scope-grants).
+Source spec: [`docs/prd/epics/epic-82-scoped-capability-tokens.md`](https://github.com/sly-ai/platform/blob/main/docs/prd/epics/epic-82-scoped-capability-tokens.md).
+
+## What ships
+
+| Story  | Status     | Landed in |
+|--------|------------|-----------|
+| 82.1   | ✅          | Migration `apps/api/supabase/migrations/20260426_auth_scope_grants.sql` + env-denorm migration applied via Supabase tool (`auth_scope_env_denorm`). Tables: `auth_scope_grants`, `auth_scope_audit`. |
+| 82.2   | ✅          | `apps/api/src/services/auth/scopes/index.ts` (`requireScope`, `requestScope`, `issueGrant`, `cascadeRevokeForAgent`, `recordScopeUse`, `revokeGrant`, `listActiveGrants`); `apps/api/src/services/auth/scopes/guard.ts` (`guardSiblingScope` helper). |
+| 82.3   | ✅          | `apps/api/src/middleware/auth.ts` — `lookupElevatedScope()` runs on every request, including cache hits. Closes the cache-invalidation bug found during validation. |
+| 82.4   | ✅          | `apps/api/src/routes/auth-scopes.ts` mounted at `/v1/auth/scopes/{request,active,:requestId}`. |
+| 82.5   | ✅          | `apps/api/src/routes/organization/scopes.ts` (issue / decide / list / revoke / audit). Kill-switch cascade in `apps/api/src/routes/agents.ts` (`POST /:id/kill-switch`). Wallet-freeze cascade in `apps/api/src/routes/agent-wallets.ts` (`POST /:agentId/wallet/freeze`). |
+| 82.6   | ✅          | `packages/mcp-server@0.5.0` — `request_scope`, `scope_status`, `whoami` tools. `agentId` auto-fill via `resolveAgentId()` in `server-factory.ts`. |
+| 82.7   | ✅          | `apps/web/src/app/dashboard/security/scopes/page.tsx` (full CRUD, search/filter, issue modal, refresh, agent picker popover). Per-agent `Scopes` tab on `apps/web/src/app/dashboard/agents/[id]/page.tsx`. |
+| 82.8   | ✅          | `apps/api/src/workers/scope-expiration-sweeper.ts` (5-min tick, flips `expires_at` past → `expired`) + `apps/api/src/workers/scope-heartbeat.ts` (1h tick, emits `scope_heartbeat` per active standing grant per 24h). |
+| 82.9   | ⏸ Deferred  | Blocked on Epic 84a (tenant-held KEKs). `intent_payload` is currently stored unencrypted but server-side only. |
+| 82.10  | ✅          | `ConfirmApprovalModal` in `apps/web/src/app/dashboard/security/scopes/page.tsx`. Typed-confirmation gate on Approve for `tenant_write` and `treasury`. |
+
+## Bonus shipped (not in original spec)
+
+- **API-key path for issue / decide / revoke** — tenant API keys can drive the lifecycle without a JWT login. `granted_by_user_id` auto-resolves to the tenant's primary owner. Audit marker: `request_summary.granted_via_api_key: true`.
+- **Environment scoping** — `auth_scope_grants` and `auth_scope_audit` carry an `environment` column denormalized from agent.environment at insert time. All read endpoints default to caller-env scoping; `?env=all` opts out.
+- **Treasury gates** — `POST /v1/agents/:id/smart-wallet/send-usdc` and `POST /v1/agents/:id/fund-eoa` previously hardcoded "agent can only act on own wallet." Now route through `treasury` scope when calling on a sibling. Self-action bypasses the gate.
+- **Searchable agent filter popover** — replaces the chip wall once tenants have many agents. Backed by `@sly/ui` Popover, scoped to current env.
+- **`?agent_id=` param** on `/v1/organization/scopes` and `.../audit` — powers the per-agent tab.
+
+### Side-fixes surfaced by validation (not Epic 82 scope but related)
+
+- `apps/api/src/middleware/response-wrapper.ts` — ApiError subclasses (`LimitExceededError`, etc.) were getting routed through the supabase-error path → misleading `DATABASE_ERROR retryable:true`. Reordered dispatch.
+- `apps/api/src/routes/agents.ts` — `POST /v1/agents` now accepts `parent_account_id` (snake_case) alongside `accountId` and `parentAccountId`. Was silently dropped before, creating parent-less agents.
+
+## Validation history
+
+End-to-end validated via spawned subagent harness across multiple runs.
+
+### First run — found two CRITICAL cache-invalidation bugs
+
+After a one_shot was consumed, subsequent calls still slipped through. After a standing grant was revoked, the same. Root cause: the `AGENT_TOKEN_CACHE` (60s TTL) was retaining `ctx.elevatedScope` and `ctx.elevatedGrantId` past the grant's lifecycle change. Fixed in `99e065f` — every request re-queries `lookupElevatedScope` even on cache hits. The cache still amortizes the expensive constant-time hash compare + agent-row fetch; only the cheap indexed scope lookup runs every request.
+
+### Second run — `listActiveGrants` mapper stripped `environment` field
+
+DB row was correct (`environment: "test"`), but the API response shape didn't include it. Fixed in `1551993` — added `environment: row.environment ?? null` to the mapper.
+
+### Third run — treasury scope E2E
+
+Closed the last untested code path. All six AC PASS. Self-action exemption verified (Alice can fund-eoa her own wallet without scope; sibling fund-eoa returns 403 SCOPE_REQUIRED until treasury grant approved).
+
+## Currently gated routes
+
+| Method | Path                                            | Required scope (sibling only) |
+|--------|-------------------------------------------------|-------------------------------|
+| GET    | `/v1/agents/:id`                                | `tenant_read`                 |
+| PATCH  | `/v1/agents/:id`                                | `tenant_write`                |
+| POST   | `/v1/agents/:agentId/wallet/freeze`             | `tenant_write`                |
+| POST   | `/v1/agents/:agentId/wallet/unfreeze`           | `tenant_write`                |
+| PUT    | `/v1/agents/:agentId/wallet/policy`             | `tenant_write`                |
+| POST   | `/v1/agents/:id/smart-wallet/send-usdc`         | `treasury`                    |
+| POST   | `/v1/agents/:id/fund-eoa`                       | `treasury`                    |
+
+Adding more gates: import `guardSiblingScope` from `apps/api/src/services/auth/scopes/guard.ts`, call it at the top of the handler with the target agent id and the required scope. Same-agent / non-agent callers pass through unchanged.
+
+## Workers wired into `apps/api/src/index.ts`
+
+- `startScopeExpirationSweeper(5 * 60 * 1000)` — flips expired active grants to `expired` + emits `scope_expired` audit row.
+- `startScopeHeartbeatWorker(60 * 60 * 1000)` — emits one `scope_heartbeat` per active standing grant per 24h.
+
+Both have stop-handles wired into the SIGTERM/SIGINT shutdown sequence.
+
+## Related epics
+
+- **Epic 72** — Agent keypair auth (`sess_*` tokens). Session-anchored one_shot grants only apply to the originating session.
+- **Epic 73** — KYA tiers. Independent permission axis: KYA is "what the agent has been verified for"; scope is "what permission was just granted."
+- **Epic 78** — Agentic credential vault. Sibling concept for external secrets (Anthropic key, OpenAI key) — vault is "use a secret"; scope is "act across siblings."
+- **Epic 83** — Pending approvals queue + push notification + MCP elicit channels. Will give tenant owners more channels than just the dashboard for approving scope requests. **Not yet started.**
+- **Epic 84a** — Tenant-held KEKs. Required dependency for Story 82.9 (`intent_payload` encryption).

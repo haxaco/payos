@@ -123,7 +123,8 @@
           {
             "group": "In-Flight Epics",
             "pages": [
-              "epics/overview"
+              "epics/overview",
+              "epics/epic-82-scoped-capability-tokens"
             ]
           }
         ]

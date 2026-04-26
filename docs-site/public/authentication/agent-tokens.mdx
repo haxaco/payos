@@ -109,6 +109,12 @@ curl -X DELETE https://api.getsly.ai/v1/agents/$AGENT_ID \
 
 See [Ed25519 sessions](/authentication/ed25519-sessions) for the upgrade path. Migration requires zero changes to route code — both methods produce identical `RequestContext`.
 
+## Cross-agent operations require explicit elevation
+
+By default, an `agent_*` token is **single-agent-scoped** — the agent can only act on its own resources. Reading sibling agents, mutating their state, or moving funds between them returns `403 SCOPE_REQUIRED` with a hint to call `request_scope`. Tenant owners approve the request via the dashboard or the API.
+
+See [Scope grants](/agents/scope-grants) for the full lifecycle, the three tiers (`tenant_read`, `tenant_write`, `treasury`), and the canonical list of currently-gated routes.
+
 ## Comparison with API keys
 
 Agent tokens and API keys both send a long-lived secret in the header. The differences:

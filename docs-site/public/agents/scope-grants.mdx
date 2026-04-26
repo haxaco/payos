@@ -1,0 +1,256 @@
+---
+title: "Scope grants"
+description: "Sudo-style per-intent capability elevation for agents. Audited, tier-capped, kill-switch revocable."
+---
+
+By default, an agent token (`agent_*` or `sess_*`) is **single-agent-scoped** — the agent can only act on its own resources. Reading sibling agents, mutating their state, or moving funds between agents requires an **explicit, audited capability grant** issued by a tenant owner.
+
+This is the same model as Unix `sudo`: low-friction baseline, traceable elevation, no global admin keys floating around in agent configs.
+
+## The three scope tiers
+
+<CardGroup cols={3}>
+  <Card title="tenant_read" icon="eye">
+    Read any sibling agent — wallets, balances, transfers, audit. Standing grants capped at 60 minutes.
+  </Card>
+  <Card title="tenant_write" icon="pen-to-square">
+    Mutate sibling agent state — policies, skills, status, freeze. Standing grants capped at 15 minutes.
+  </Card>
+  <Card title="treasury" icon="vault">
+    Move funds between sibling agents — `send-usdc`, `fund-eoa`. **One_shot only** (DB-enforced).
+  </Card>
+</CardGroup>
+
+The default `agent` tier is implicit — every agent token already has it. You only request elevation when you hit a `403 SCOPE_REQUIRED`.
+
+## Lifecycle
+
+```
+agent calls request_scope     →   scope_requested  audit row (pending)
+tenant owner approves         →   scope_granted    audit row + grant row (active)
+agent calls gated route       →   scope_used       audit row + grant (consumed if one_shot)
+tenant owner revokes          →   scope_revoked    audit row + grant (revoked)
+expires_at passes             →   scope_expired    audit row + grant (expired)
+24h elapsed (standing only)   →   scope_heartbeat  audit row (long-lived grant reminder)
+```
+
+Every transition writes a row to `auth_scope_audit` with the actor, route, and environment. Audit rows persist past agent deletion — you always have a complete trail.
+
+## For the calling agent
+
+### Detect that you need a scope
+
+Hit any privileged endpoint with default scope and you'll get:
+
+```json
+{
+  "error": "Scope 'tenant_read' required; caller has 'agent'. Call request_scope({ scope: 'tenant_read', purpose: '...' }) and have the tenant owner approve, or have them issue a standing grant from the dashboard.",
+  "code": "SCOPE_REQUIRED",
+  "required_scope": "tenant_read",
+  "current_scope": "agent",
+  "hint": "Call request_scope(...)"
+}
+```
+
+### Request elevation
+
+<CodeGroup>
+```bash HTTP
+curl -X POST https://api.getsly.ai/v1/auth/scopes/request \
+  -H "Authorization: Bearer agent_YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "tenant_read",
+    "lifecycle": "one_shot",
+    "purpose": "Read sibling agent Tina-2 wallet to plan a fund split"
+  }'
+```
+
+```ts MCP (Claude Desktop)
+// @sly_ai/mcp-server@0.5.0+ exposes request_scope
+await tools.request_scope({
+  scope: "tenant_read",
+  lifecycle: "one_shot",
+  purpose: "Read sibling agent Tina-2 wallet to plan a fund split"
+});
+// → { request_id: "uuid", status: "pending" }
+```
+</CodeGroup>
+
+Response (`202`):
+
+```json
+{
+  "data": {
+    "request_id": "uuid",
+    "status": "pending",
+    "message": "Scope request submitted. A tenant owner must approve it via the dashboard before the elevation takes effect."
+  }
+}
+```
+
+### Poll for the decision
+
+<CodeGroup>
+```bash HTTP
+curl https://api.getsly.ai/v1/auth/scopes/<request_id> \
+  -H "Authorization: Bearer agent_YOUR_TOKEN"
+```
+
+```ts MCP
+await tools.scope_status({ requestId: "<request_id>" });
+// → { status: "pending" | "approved" | "denied", grant?, denial_reason? }
+```
+</CodeGroup>
+
+Possible terminal states:
+
+| `status`   | What to do                                                                          |
+|------------|-------------------------------------------------------------------------------------|
+| `pending`  | Wait. Operator hasn't decided yet. Polling once every 5–15s is fine.                |
+| `approved` | Retry the privileged call. The grant is live.                                       |
+| `denied`   | Surface `denial_reason` to your model. Don't retry the same scope without a new ask. |
+
+### Inspect current scope
+
+<CodeGroup>
+```bash HTTP
+curl https://api.getsly.ai/v1/auth/scopes/active \
+  -H "Authorization: Bearer agent_YOUR_TOKEN"
+```
+
+```ts MCP
+await tools.scope_status();
+// → { current_scope: "agent" | "tenant_read" | ..., grants: [...] }
+```
+</CodeGroup>
+
+Returns `current_scope` (your effective tier right now) and the active grants applicable to the current call.
+
+### Lifecycle gotchas
+
+<Tip>
+**`one_shot` is one shot.** First successful gated call consumes the grant. Subsequent calls 403 until you request again.
+</Tip>
+
+<Tip>
+**Concurrency-safe.** Gated routes await `recordScopeUse` before responding, so two parallel calls can't share one one_shot — exactly one wins.
+</Tip>
+
+<Tip>
+**No cache lag.** The auth middleware re-queries `auth_scope_grants` on every request, so revoke and consumption reflect immediately.
+</Tip>
+
+## For tenant owners
+
+### Approve / deny via the dashboard
+
+Open `/dashboard/security/scopes` (Settings → Scope Grants). Pending requests appear at the top with the agent name, requested scope, lifecycle, purpose, and timestamp.
+
+- **`tenant_read`** approves with a single click.
+- **`tenant_write` and `treasury`** open a typed-confirmation modal — you must type the agent's name to enable the green button. Per-scope risk callouts (`move funds`, `mutate sibling agent state`) make the blast radius explicit.
+- **Deny** prompts for a reason. The reason surfaces back to the agent's `scope_status` poll.
+
+Below pending: every active grant in the tenant with a Revoke button. Below that: a filtered audit feed with action chips, agent picker, and free-text search.
+
+### Issue a standing grant directly
+
+Click **+ Issue grant** on the Active grants section. Pick agent, scope, lifecycle, duration, and purpose. Treasury auto-locks lifecycle to `one_shot`.
+
+### Per-agent view
+
+`/dashboard/agents/[id]` has a **Scopes** tab showing just that agent's grants + audit history. Useful for ops review of a single agent.
+
+### API path for server-to-server automation
+
+Tenant API keys (`pk_*`) carry full owner-equivalent privilege and can drive the lifecycle without a JWT login.
+
+```bash
+# Issue a standing grant
+curl -X POST https://api.getsly.ai/v1/organization/scopes \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "...",
+    "scope": "tenant_read",
+    "lifecycle": "standing",
+    "duration_minutes": 30,
+    "purpose": "..."
+  }'
+
+# Decide a pending request
+curl -X POST https://api.getsly.ai/v1/organization/scopes/<requestId>/decide \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "decision": "approve" }'   # or { "decision": "deny", "reason": "..." }
+
+# Revoke
+curl -X DELETE https://api.getsly.ai/v1/organization/scopes/<grantId> \
+  -H "Authorization: Bearer pk_live_..."
+
+# List active grants (defaults to current env; ?env=all spans both)
+curl https://api.getsly.ai/v1/organization/scopes \
+  -H "Authorization: Bearer pk_live_..."
+
+# Audit feed (filters: ?agent_id=... ?env=all ?limit=200)
+curl https://api.getsly.ai/v1/organization/scopes/audit \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+When issuing via API key, `granted_by_user_id` is auto-resolved to the tenant's primary owner so the "every elevation has a real human approver" invariant holds. The audit row records `actor_type='api_key'` + `granted_via_api_key: true` for traceability.
+
+## Auto-cascading revokes
+
+Two operator actions wipe **every active grant** for an agent:
+
+| Action | Cascade |
+|---|---|
+| **Kill switch** ([`/v1/agents/:id/kill-switch`](/agents/kill-switch)) | Suspends the agent + revokes all active grants. Response includes `scopeGrantsRevoked: N`. |
+| **Wallet freeze** (`/v1/agents/:agentId/wallet/freeze`) | Locks the wallet + revokes all active grants. |
+
+Audit rows for cascaded revokes carry `request_summary.reason: "kill_switch_cascade"` so the trail distinguishes operator-driven revokes from manual ones.
+
+## Environment scoping
+
+`auth_scope_grants` and `auth_scope_audit` carry an `environment` column populated from the **target agent's** env (not the issuer's). All read endpoints default to caller-env scoping; pass `?env=all` to opt out (intended for cross-env tooling, not the dashboard).
+
+A live-env dashboard never shows test-env scope events and vice versa. Issuing a grant via a tenant API key with `X-Environment: live` for a test-env agent still tags the grant `test` — env follows the agent.
+
+## Currently gated routes
+
+| Method | Path                                            | Required scope (sibling only) |
+|--------|-------------------------------------------------|-------------------------------|
+| GET    | `/v1/agents/:id`                                | `tenant_read`                 |
+| PATCH  | `/v1/agents/:id`                                | `tenant_write`                |
+| POST   | `/v1/agents/:agentId/wallet/freeze`             | `tenant_write`                |
+| POST   | `/v1/agents/:agentId/wallet/unfreeze`           | `tenant_write`                |
+| PUT    | `/v1/agents/:agentId/wallet/policy`             | `tenant_write`                |
+| POST   | `/v1/agents/:id/smart-wallet/send-usdc`         | `treasury`                    |
+| POST   | `/v1/agents/:id/fund-eoa`                       | `treasury`                    |
+
+Same-agent calls (where caller's `actorId` equals the target id) bypass the gate. Tenant API keys + JWT users are unaffected — their existing tenant-wide auth is preserved.
+
+## Failure-mode debugging
+
+<AccordionGroup>
+  <Accordion title="`SCOPE_REQUIRED` 403 when I expect to have permission">
+    Hit `GET /v1/auth/scopes/active`. If `current_scope` is `agent` but you expected an elevation:
+    - Grant might be `consumed` (one_shot used) or `expired`
+    - `parent_session_id` might not match your current session — session-anchored grants only apply to the originating `sess_*`
+    - Env mismatch — agent is `test`, calling endpoint with `X-Environment: live`
+  </Accordion>
+
+  <Accordion title="Approve button doesn't appear / dashboard empty">
+    The logged-in user might be on a different tenant than the requesting agent. JWT auth derives tenant from `user_profiles.tenant_id`. The audit endpoint also defaults to env-scoping — switch dashboard env or use `?env=all`.
+  </Accordion>
+
+  <Accordion title="Stuck-cache after revoke">
+    Should not happen — every request re-queries scope. If you see this, file a regression.
+  </Accordion>
+</AccordionGroup>
+
+## Related
+
+- [Agent tokens](/authentication/agent-tokens) — the `agent_*` bearer credential
+- [Ed25519 sessions](/authentication/ed25519-sessions) — `sess_*` per-session tokens
+- [Kill-switch](/agents/kill-switch) — break-glass with cascade
+- [Wallet policies](/agents/wallet-policies) — same-agent spending caps (lower tier than `treasury` scope)
