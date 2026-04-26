@@ -152,6 +152,7 @@
             "group": "Agent Platform",
             "pages": [
               "agents/overview",
+              "agents/quickstart",
               "agents/kya-tiers",
               "agents/wallet-policies",
               "agents/ed25519-keypair-auth",
