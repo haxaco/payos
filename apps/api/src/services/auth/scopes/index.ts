@@ -301,11 +301,12 @@ export interface ScopeGrantSummary {
   lifecycle: ScopeLifecycle;
   status: 'active' | 'consumed' | 'revoked' | 'expired';
   purpose: string;
-  granted_by_user_id: string;
+  granted_by_user_id: string | null;
   granted_at: string;
   expires_at: string;
   last_used_at: string | null;
   use_count: number;
+  environment: 'test' | 'live' | null;
 }
 
 export async function listActiveGrants(
@@ -338,6 +339,7 @@ export async function listActiveGrants(
     expires_at: row.expires_at,
     last_used_at: row.last_used_at,
     use_count: row.use_count,
+    environment: row.environment ?? null,
   }));
 }
 

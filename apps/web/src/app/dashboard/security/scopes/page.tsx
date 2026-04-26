@@ -43,11 +43,12 @@ interface ActiveGrant {
   lifecycle: Lifecycle;
   status: 'active' | 'consumed' | 'revoked' | 'expired';
   purpose: string;
-  granted_by_user_id: string;
+  granted_by_user_id: string | null;
   granted_at: string;
   expires_at: string;
   last_used_at: string | null;
   use_count: number;
+  environment?: 'test' | 'live' | null;
 }
 
 type AuditAction =
