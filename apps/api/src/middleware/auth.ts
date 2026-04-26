@@ -551,7 +551,23 @@ export async function authMiddleware(c: Context, next: Next) {
     // Check agent token cache first (avoids DB round-trip on repeat requests)
     const cached = getCachedAgent(tokenPrefix, tokenHash);
     if (cached) {
-      c.set('ctx', cached.ctx);
+      // Epic 82 — scope state must be FRESH on every request. The
+      // grant lifecycle (consume / revoke / kill-switch cascade) flips
+      // rows in auth_scope_grants and we cannot let a 60s ctx cache
+      // mask those changes. Re-query the active set every time and
+      // overwrite the cached elevation fields before handing ctx off.
+      const elevated = await lookupElevatedScope(
+        supabase,
+        cached.ctx.tenantId,
+        cached.ctx.actorId!,
+        null,
+      );
+      const refreshedCtx: RequestContext = {
+        ...cached.ctx,
+        elevatedScope: elevated.scope,
+        elevatedGrantId: elevated.grantId,
+      };
+      c.set('ctx', refreshedCtx);
       c.set('agentRow', cached.agentRow);
       return next();
     }

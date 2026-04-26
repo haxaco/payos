@@ -674,10 +674,16 @@ agents.get('/:id', async (c) => {
     try {
       requireScope(ctx, 'tenant_read');
       if (ctx.elevatedGrantId) {
-        // Fire-and-forget audit + one_shot consumption.
-        recordScopeUse(supabase, ctx.tenantId, ctx.elevatedGrantId, ctx, {
-          route: `GET /v1/agents/${id}`,
-        }).catch((err) => console.error('[scopes] recordScopeUse failed:', err));
+        // Synchronous so that one_shot consumption / use_count increment
+        // lands BEFORE the response. Otherwise a concurrent second
+        // request could read the still-active row and slip through.
+        try {
+          await recordScopeUse(supabase, ctx.tenantId, ctx.elevatedGrantId, ctx, {
+            route: `GET /v1/agents/${id}`,
+          });
+        } catch (err) {
+          console.error('[scopes] recordScopeUse failed:', err);
+        }
       }
     } catch (err) {
       if (err instanceof ScopeRequiredError) {
