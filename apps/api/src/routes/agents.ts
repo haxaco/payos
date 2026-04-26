@@ -25,7 +25,7 @@ import { checkAgentLimit } from '../services/tenant-limits.js';
 import { registerAgent } from '../services/erc8004/registry.js';
 import { checkT2Eligibility, processEnterpriseOverride } from '../services/kya/verification.js';
 import { recordObservation } from '../services/kya/observation.js';
-import { cascadeRevokeForAgent } from '../services/auth/scopes/index.js';
+import { cascadeRevokeForAgent, requireScope, ScopeRequiredError, recordScopeUse } from '../services/auth/scopes/index.js';
 
 const agents = new Hono();
 
@@ -658,7 +658,7 @@ agents.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
   const supabase = createClient();
-  
+
   if (!isValidUUID(id)) {
     const error: any = new ValidationError('Invalid agent ID format');
     error.details = {
@@ -667,7 +667,35 @@ agents.get('/:id', async (c) => {
     };
     throw error;
   }
-  
+
+  // Epic 82 — agent-bound callers reading a SIBLING agent need
+  // tenant_read elevation. Reading their own agent is always allowed.
+  if (ctx.actorType === 'agent' && ctx.actorId && ctx.actorId !== id) {
+    try {
+      requireScope(ctx, 'tenant_read');
+      if (ctx.elevatedGrantId) {
+        // Fire-and-forget audit + one_shot consumption.
+        recordScopeUse(supabase, ctx.tenantId, ctx.elevatedGrantId, ctx, {
+          route: `GET /v1/agents/${id}`,
+        }).catch((err) => console.error('[scopes] recordScopeUse failed:', err));
+      }
+    } catch (err) {
+      if (err instanceof ScopeRequiredError) {
+        return c.json(
+          {
+            error: err.message,
+            code: err.code,
+            required_scope: err.requiredScope,
+            current_scope: err.currentScope,
+            hint: err.hint,
+          },
+          err.statusCode,
+        );
+      }
+      throw err;
+    }
+  }
+
   const { data, error } = await supabase
     .from('agents')
     .select(`
