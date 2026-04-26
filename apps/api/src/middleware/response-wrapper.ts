@@ -860,14 +860,26 @@ export function structuredErrorHandler(err: Error, c: Context) {
     // Get HTTP status from error metadata
     const metadata = getErrorMetadata(errorCode);
     httpStatus = metadata.httpStatus;
+  } else if ('statusCode' in err && 'code' in err) {
+    // Legacy ApiError subclass (LimitExceededError, NotFoundError,
+    // ValidationError, etc.). Has BOTH `code` (e.g. 'LIMIT_EXCEEDED')
+    // and `statusCode`. Must come BEFORE the supabase branch — the
+    // supabase branch matches on .code being a string, which would
+    // otherwise swallow these and stamp them as DATABASE_ERROR.
+    const legacyError = err as any;
+    errorCode = mapLegacyErrorToCode(err);
+    httpStatus = legacyError.statusCode || 500;
+    details = legacyError.details || {};
+    customMessage = err.message;
   } else if ('code' in err && typeof (err as any).code === 'string') {
-    // Supabase error (has .code but not an ErrorCode)
+    // Supabase error (has .code but not an ErrorCode and not an
+    // ApiError subclass)
     const transformed = transformSupabaseError(err);
     errorCode = transformed.code;
     details = transformed.details;
     httpStatus = errorCode === ErrorCode.ACCOUNT_NOT_FOUND ? 404 : 400;
   } else if ('statusCode' in err) {
-    // Legacy ApiError
+    // Legacy ApiError without an explicit `code` field (older code paths)
     const legacyError = err as any;
     errorCode = mapLegacyErrorToCode(err);
     httpStatus = legacyError.statusCode || 500;
