@@ -26,8 +26,11 @@ import {
   Clock,
   Plus,
   RefreshCw,
+  Search,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Popover, PopoverContent, PopoverTrigger } from '@sly/ui';
 
 type Scope = 'tenant_read' | 'tenant_write' | 'treasury';
 type Lifecycle = 'one_shot' | 'standing';
@@ -129,7 +132,7 @@ function formatRemaining(iso: string): string {
 
 export default function ScopesPage() {
   const apiFetch = useApiFetch();
-  const { isConfigured, isLoading: authLoading, apiUrl } = useApiConfig();
+  const { isConfigured, isLoading: authLoading, apiUrl, apiEnvironment } = useApiConfig();
   const queryClient = useQueryClient();
 
   const ready = isConfigured && !authLoading;
@@ -186,7 +189,9 @@ export default function ScopesPage() {
   });
 
   // Normalize whatever shape /v1/agents returns into a flat array.
-  const agents: AgentMini[] = useMemo(() => {
+  // This is the FULL cross-env list — used purely for name resolution
+  // so audit rows from any env still display readable names.
+  const allAgents: AgentMini[] = useMemo(() => {
     const raw = agentsQuery.data as any;
     if (!raw) return [];
     if (Array.isArray(raw)) return raw;
@@ -195,11 +200,19 @@ export default function ScopesPage() {
     return [];
   }, [agentsQuery.data]);
 
+  // Filter UI + Issue Grant agent picker scope to the CURRENT env so
+  // owners only see agents they're contextually managing. Audit rows
+  // from the OTHER env still resolve to names via allAgents map below,
+  // but you'd switch env to filter against them in the dropdown.
+  const agents: AgentMini[] = useMemo(() => {
+    return allAgents.filter((a) => !a.environment || a.environment === apiEnvironment);
+  }, [allAgents, apiEnvironment]);
+
   const agentNameMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const a of agents) m.set(a.id, a.name);
+    for (const a of allAgents) m.set(a.id, a.name);
     return m;
-  }, [agents]);
+  }, [allAgents]);
 
   const agentLabel = (agentId: string | null | undefined): string => {
     if (!agentId) return '—';
@@ -579,35 +592,34 @@ export default function ScopesPage() {
             })}
           </div>
 
-          {agents.length > 0 && (
+          <AgentFilterPopover
+            agents={agents}
+            selected={selectedAgentIds}
+            onToggle={toggleAgent}
+            onClear={() => setSelectedAgentIds(new Set())}
+            currentEnv={apiEnvironment}
+          />
+          {selectedAgentIds.size > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Agent</span>
-              {agents.map((a) => {
-                const active = selectedAgentIds.has(a.id);
-                const isTest = a.environment === 'test';
-                const isSuspended = a.status === 'suspended';
+              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Filtering to
+              </span>
+              {Array.from(selectedAgentIds).map((id) => {
+                const name = agentNameMap.get(id) ?? `${id.slice(0, 8)}…`;
                 return (
-                  <button
-                    key={a.id}
-                    onClick={() => toggleAgent(a.id)}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-                      active
-                        ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                        : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
-                    }`}
-                    title={`${a.id}${isSuspended ? ' · suspended' : ''}`}
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-900 bg-slate-900 px-2 py-0.5 text-[11px] text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
                   >
-                    <span className={isSuspended ? 'line-through opacity-60' : ''}>{a.name}</span>
-                    {isTest && (
-                      <span
-                        className={`rounded px-1 text-[9px] uppercase tracking-wide ${
-                          active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        test
-                      </span>
-                    )}
-                  </button>
+                    {name}
+                    <button
+                      onClick={() => toggleAgent(id)}
+                      className="opacity-70 hover:opacity-100"
+                      aria-label={`Remove ${name} from filter`}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
                 );
               })}
             </div>
@@ -850,5 +862,122 @@ function IssueGrantModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Agent filter popover — searchable multi-select scoped to current env
+// ============================================================
+
+function AgentFilterPopover({
+  agents,
+  selected,
+  onToggle,
+  onClear,
+  currentEnv,
+}: {
+  agents: AgentMini[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onClear: () => void;
+  currentEnv?: 'test' | 'live';
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return agents;
+    const q = query.trim().toLowerCase();
+    return agents.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        a.id.toLowerCase().includes(q),
+    );
+  }, [agents, query]);
+
+  const label =
+    selected.size === 0
+      ? 'Filter by agent'
+      : selected.size === 1
+        ? '1 agent selected'
+        : `${selected.size} agents selected`;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <Bot className="h-3 w-3" />
+          {label}
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 p-0">
+        <div className="border-b border-slate-200 p-2 dark:border-slate-800">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              autoFocus
+              type="text"
+              placeholder={`Search ${agents.length} ${currentEnv ?? ''} agents…`.trim()}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white py-1.5 pl-7 pr-2 text-xs text-slate-900 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            />
+          </div>
+          {selected.size > 0 && (
+            <button
+              onClick={onClear}
+              className="mt-2 text-[11px] text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+            >
+              Clear {selected.size} selected
+            </button>
+          )}
+        </div>
+        <div className="max-h-72 overflow-y-auto p-1">
+          {filtered.length === 0 ? (
+            <div className="p-4 text-center text-xs text-slate-500">
+              No agents match.
+            </div>
+          ) : (
+            filtered.map((a) => {
+              const checked = selected.has(a.id);
+              const isSuspended = a.status === 'suspended';
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => onToggle(a.id)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <span
+                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                      checked
+                        ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                        : 'border-slate-300 dark:border-slate-700'
+                    }`}
+                  >
+                    {checked && <Check className="h-2.5 w-2.5" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className={`truncate font-medium text-slate-900 dark:text-slate-100 ${isSuspended ? 'line-through opacity-60' : ''}`}>
+                      {a.name}
+                    </div>
+                    <div className="font-mono text-[10px] text-slate-400">{a.id.slice(0, 8)}…</div>
+                  </div>
+                  {isSuspended && (
+                    <span className="rounded bg-amber-100 px-1 text-[9px] uppercase text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                      suspended
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
