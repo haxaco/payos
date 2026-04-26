@@ -3434,8 +3434,15 @@ agents.post('/:id/smart-wallet/send-usdc', async (c) => {
     throw new ValidationError('Invalid agent ID format');
   }
 
+  const supabase = createClient();
+
+  // Epic 82 — sending from a sibling's smart wallet is the canonical
+  // treasury action. Default agent scope blocks it; an explicit
+  // `treasury` grant (always one_shot, never standing) is the only
+  // path. Same-agent (self-spend) keeps its existing semantics.
   if (ctx.actorType === 'agent' && ctx.actorId !== id) {
-    return c.json({ error: 'Agent can only spend from their own smart wallet' }, 403);
+    const denied = await guardSiblingScope(c, supabase, id, 'treasury', `POST /v1/agents/${id}/smart-wallet/send-usdc`);
+    if (denied) return denied;
   }
 
   let body: any;
@@ -3447,8 +3454,6 @@ agents.post('/:id/smart-wallet/send-usdc', async (c) => {
   if (!to || !value) {
     throw new ValidationError('Missing required fields: to, value (USDC units as decimal string)');
   }
-
-  const supabase = createClient();
 
   // Use cached agent row from auth middleware if available (avoids re-query)
   const cachedAgent = ctx.actorType === 'agent' && ctx.actorId === id ? (c as any).get('agentRow') : null;
@@ -3659,8 +3664,15 @@ agents.post('/:id/fund-eoa', async (c) => {
     throw new ValidationError('Invalid agent ID format');
   }
 
+  const supabase = createClient();
+
+  // Epic 82 — funding a sibling's EOA pulls money from the tenant
+  // treasury INTO another agent's wallet. That's the same blast
+  // radius as treasury moves; gate it accordingly. Self-fund keeps
+  // its existing pre-Epic-82 behavior (any agent can top up itself).
   if (ctx.actorType === 'agent' && ctx.actorId !== id) {
-    return c.json({ error: 'Agent can only fund their own EOA' }, 403);
+    const denied = await guardSiblingScope(c, supabase, id, 'treasury', `POST /v1/agents/${id}/fund-eoa`);
+    if (denied) return denied;
   }
 
   let body: any = {};
@@ -3670,8 +3682,6 @@ agents.post('/:id/fund-eoa', async (c) => {
   if (!Number.isFinite(amountNum) || amountNum <= 0) {
     throw new ValidationError('amount must be a positive number');
   }
-
-  const supabase = createClient();
 
   // Verify agent exists, is active, and belongs to the caller's tenant
   const { data: agent } = await supabase
