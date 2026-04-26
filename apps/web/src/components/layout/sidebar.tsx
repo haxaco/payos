@@ -305,6 +305,7 @@ export function Sidebar() {
   ];
 
   const settingsNav: NavItemDef[] = [
+    { href: '/dashboard/security/scopes', label: 'Scope Grants', icon: Shield },
     { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   ];
 

@@ -98,6 +98,8 @@ import compositionRouter from './routes/composition.js';
 import mcpRouter from './routes/mcp.js';
 import supportRouter from './routes/support.js';
 import { agentConnectPublicRouter, agentConnectAuthRouter } from './routes/agent-connect.js';
+import authScopesRouter from './routes/auth-scopes.js';
+import organizationScopesRouter from './routes/organization/scopes.js';
 
 const app = new Hono();
 
@@ -346,6 +348,8 @@ v1.use('*', idempotencyMiddleware);
 
 // Mount route handlers
 v1.route('/context', contextRouter);
+v1.route('/auth/scopes', authScopesRouter); // Epic 82 — agent-side scope request/inspect
+v1.route('/organization/scopes', organizationScopesRouter); // Epic 82 — tenant-owner issue/decide/revoke
 v1.route('/accounts', accountsRouter);
 v1.route('/accounts', merchantStatsOnAccountsRouter); // GET /v1/accounts/:id/merchant-stats
 v1.route('/merchants', merchantsAliasRouter);         // Cleaner namespace alias for /v1/ucp/merchants

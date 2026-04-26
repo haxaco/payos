@@ -27,6 +27,19 @@ export interface RequestContext {
   portalScopes?: string[];
   // For session token auth (Epic 72)
   sessionBased?: boolean;
+  // Session id (PK on agent_sessions) — anchor for one_shot scope
+  // grants. Set when the calling token is a sess_*.
+  sessionId?: string;
+  // Epic 82 — populated by the auth middleware after agent token
+  // verification. The highest-tier active scope grant the calling
+  // session/agent currently holds. Defaults to 'agent' (the implicit
+  // baseline for any agent-bound auth) and gets bumped to
+  // 'tenant_read' / 'tenant_write' / 'treasury' when a matching grant
+  // row in auth_scope_grants is active.
+  elevatedScope?: 'agent' | 'tenant_read' | 'tenant_write' | 'treasury';
+  // Set when the elevated scope came from a one_shot grant — the
+  // service layer consumes the grant atomically on first use.
+  elevatedGrantId?: string;
 }
 
 declare module 'hono' {
@@ -149,6 +162,58 @@ function setCachedAgent(tokenPrefix: string, tokenHash: string, ctx: RequestCont
     tokenHash,
     expiresAt: Date.now() + AGENT_TOKEN_CACHE_TTL_MS,
   });
+}
+
+// ============================================
+// Epic 82 — elevated-scope lookup
+// ============================================
+
+const SCOPE_TIER_ORDER: Record<string, number> = {
+  tenant_read: 1,
+  tenant_write: 2,
+  treasury: 3,
+};
+
+/**
+ * Pull the highest-tier active scope grant that applies to the calling
+ * agent/session. Defaults to 'agent' baseline if no row matches.
+ *
+ * - agent_* tokens (no session): only un-anchored grants apply
+ *   (parent_session_id IS NULL — i.e., standing grants issued by a
+ *   tenant owner from the dashboard).
+ * - sess_* tokens: both un-anchored grants AND one_shot grants
+ *   anchored to the calling session apply.
+ *
+ * One round-trip per request — falls within the 60s ctx cache window
+ * for agent_* tokens; sess_* path queries on every request (no ctx
+ * cache for sessions).
+ */
+async function lookupElevatedScope(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  agentId: string,
+  sessionId: string | null,
+): Promise<{ scope: 'agent' | 'tenant_read' | 'tenant_write' | 'treasury'; grantId?: string }> {
+  const { data, error } = await ((supabase as any).from('auth_scope_grants'))
+    .select('id, scope, parent_session_id')
+    .eq('tenant_id', tenantId)
+    .eq('agent_id', agentId)
+    .eq('status', 'active')
+    .gt('expires_at', new Date().toISOString());
+
+  if (error || !data || data.length === 0) return { scope: 'agent' };
+
+  const applicable = (data as any[]).filter((row) => {
+    if (!row.parent_session_id) return true;
+    return sessionId !== null && row.parent_session_id === sessionId;
+  });
+  if (applicable.length === 0) return { scope: 'agent' };
+
+  applicable.sort(
+    (a, b) => (SCOPE_TIER_ORDER[b.scope] ?? 0) - (SCOPE_TIER_ORDER[a.scope] ?? 0),
+  );
+  const top = applicable[0];
+  return { scope: top.scope, grantId: top.id };
 }
 
 /**
@@ -531,6 +596,14 @@ export async function authMiddleware(c: Context, next: Next) {
 
     logAuthAttempt(true, 'agent', agent.tenant_id, agent.id, ip, userAgent).catch(() => {});
 
+    // Epic 82 — pick up any active elevated-scope grant for this agent.
+    const elevated = await lookupElevatedScope(
+      supabase,
+      agent.tenant_id,
+      agent.id,
+      null, // agent_* tokens have no session anchor
+    );
+
     const ctx: RequestContext = {
       tenantId: agent.tenant_id,
       actorType: 'agent',
@@ -540,6 +613,8 @@ export async function authMiddleware(c: Context, next: Next) {
       kyaTier: agent.kya_tier,
       parentAccountId: agent.parent_account_id,
       apiKeyEnvironment: agent.environment || 'test',
+      elevatedScope: elevated.scope,
+      elevatedGrantId: elevated.grantId,
     };
 
     // Cache the agent row + context for subsequent requests
@@ -643,6 +718,16 @@ export async function authMiddleware(c: Context, next: Next) {
 
     logAuthAttempt(true, 'agent', agent.tenant_id, agent.id, ip, userAgent).catch(() => {});
 
+    // Epic 82 — pick up active scope grants. For sess_* tokens we
+    // include grants anchored to this specific session (one_shot
+    // request_scope flow) plus un-anchored standing grants.
+    const elevated = await lookupElevatedScope(
+      supabase,
+      agent.tenant_id,
+      agent.id,
+      session.sessionId,
+    );
+
     const ctx: RequestContext = {
       tenantId: agent.tenant_id,
       actorType: 'agent',
@@ -654,6 +739,9 @@ export async function authMiddleware(c: Context, next: Next) {
       apiKeyEnvironment: agent.environment || 'test',
       // Epic 72: flag for audit differentiation
       sessionBased: true,
+      sessionId: session.sessionId,
+      elevatedScope: elevated.scope,
+      elevatedGrantId: elevated.grantId,
     };
 
     c.set('ctx', ctx);

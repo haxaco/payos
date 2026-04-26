@@ -1927,6 +1927,51 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'request_scope',
+    description: 'Ask the tenant owner for elevated permission to perform a privileged action across sibling agents or treasury. Default agent-token scope (`agent`) only lets you act on your OWN agent — read your wallet, sign your own x402 calls, etc. To read other agents in the tenant (`tenant_read`), modify their policies (`tenant_write`), or move funds between agents (`treasury`), you MUST first call this and have a tenant owner approve. Until approved, you will hit 403 SCOPE_REQUIRED on the privileged route. The request is async — it writes a pending audit row and returns a request_id. The tenant owner sees it in /dashboard/security/scopes and approves or denies. Re-call the privileged tool only after `scope_status({ requestId })` returns `approved`. Pick `lifecycle: "one_shot"` for a single call, `"standing"` for a session-bound burst (capped: tenant_read=60min, tenant_write=15min, treasury=one_shot only).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'string',
+          enum: ['tenant_read', 'tenant_write', 'treasury'],
+          description: 'Privilege tier. `tenant_read` = read sibling agents/balances/transfers. `tenant_write` = mutate sibling agent state (policies, skills, status). `treasury` = move funds between agents (always one_shot).',
+        },
+        lifecycle: {
+          type: 'string',
+          enum: ['one_shot', 'standing'],
+          description: '`one_shot` = consumed on first use, anchored to your current session. `standing` = persists until expiry (or revoke), capped per scope.',
+        },
+        purpose: {
+          type: 'string',
+          description: 'Plain-English explanation shown to the tenant owner at decision time. Min 8 / max 500 chars. Always concrete — "Read agent Tina-2\'s wallet balance to plan a fund split", not "Read sibling agent".',
+        },
+        durationMinutes: {
+          type: 'number',
+          description: 'Standing-grant duration; ignored for one_shot. Hard ceilings: tenant_read=60, tenant_write=15.',
+        },
+        intent: {
+          type: 'object',
+          description: 'Optional structured context — { mcp_tool, route, target_agent_id, target_account_id, args } — written to the audit trail.',
+        },
+      },
+      required: ['scope', 'lifecycle', 'purpose'],
+    },
+  },
+  {
+    name: 'scope_status',
+    description: 'Check the current elevated-scope context for the calling agent, or the status of a previously-submitted scope request. With no `requestId`, returns `current_scope` (`agent` baseline or `tenant_read`/`tenant_write`/`treasury`) plus all active grants currently applicable. With `requestId`, returns the lifecycle of that specific request: `pending` (awaiting tenant owner), `approved` (with the issued grant), or `denied` (with reason).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        requestId: {
+          type: 'string',
+          description: 'Optional UUID of a request returned from request_scope. Omit to inspect the current effective scope of the calling session.',
+        },
+      },
+    },
+  },
+  {
     name: 'x402_list_vendors',
     description: 'List every x402 vendor this tenant has tried, sorted by volume, with per-vendor reliability scores. Returns the same shape as x402_endpoint_reputation but for every host. Useful for "which vendors have I wasted money on?" audits or picking alternatives in a category. Default window 30d.',
     inputSchema: {

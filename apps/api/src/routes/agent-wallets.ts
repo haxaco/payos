@@ -26,6 +26,7 @@ import { negotiationEvaluateRequestSchema, contractPolicySchema } from '../schem
 import { invalidatePolicyCache } from '../services/spending-policy.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { isValidUUID, getPaginationParams, paginationResponse, getEnv } from '../utils/helpers.js';
+import { cascadeRevokeForAgent } from '../services/auth/scopes/index.js';
 
 function mapWalletFromDb(row: any) {
   return {
@@ -129,6 +130,21 @@ agentWallets.post('/:agentId/wallet/freeze', async (c) => {
     .single();
 
   if (error) throw new Error('Failed to freeze wallet');
+
+  // Epic 82 — freezing the wallet pulls every elevated scope this
+  // agent holds. A frozen wallet means the agent shouldn't be moving
+  // money OR mutating sibling agent state.
+  try {
+    await cascadeRevokeForAgent(
+      supabase,
+      ctx.tenantId,
+      agentId,
+      ctx.userId || ctx.actorId || 'system',
+    );
+  } catch (err) {
+    console.error('[wallet/freeze] scope cascade failed:', err);
+  }
+
   return c.json(mapWalletFromDb(updated));
 });
 

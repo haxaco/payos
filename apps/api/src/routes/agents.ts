@@ -25,6 +25,7 @@ import { checkAgentLimit } from '../services/tenant-limits.js';
 import { registerAgent } from '../services/erc8004/registry.js';
 import { checkT2Eligibility, processEnterpriseOverride } from '../services/kya/verification.js';
 import { recordObservation } from '../services/kya/observation.js';
+import { cascadeRevokeForAgent } from '../services/auth/scopes/index.js';
 
 const agents = new Hono();
 
@@ -2119,6 +2120,21 @@ agents.post('/:id/kill-switch', async (c) => {
 
   const pendingCancelled = cancelledTransfers?.length || 0;
 
+  // Epic 82 — cascade-revoke any active scope grants this agent holds.
+  // A killed agent must lose every elevation in the same atomic action.
+  let scopeGrantsRevoked = 0;
+  try {
+    const cascade = await cascadeRevokeForAgent(
+      supabase,
+      ctx.tenantId,
+      id,
+      ctx.userId || ctx.actorId || 'system',
+    );
+    scopeGrantsRevoked = cascade.revokedCount;
+  } catch (err) {
+    console.error('[kill-switch] scope cascade failed:', err);
+  }
+
   await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'agent',
@@ -2130,6 +2146,7 @@ agents.post('/:id/kill-switch', async (c) => {
     metadata: {
       agentName: agent.name,
       pendingTransfersCancelled: pendingCancelled,
+      scopeGrantsRevoked,
       activatedBy: ctx.actorName || ctx.actorId,
     },
   });
@@ -2137,6 +2154,7 @@ agents.post('/:id/kill-switch', async (c) => {
   return c.json({
     suspended: true,
     pendingCancelled,
+    scopeGrantsRevoked,
   });
 });
 

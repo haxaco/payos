@@ -2218,6 +2218,39 @@ export function createMcpServer(
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
+      case 'request_scope': {
+        const { scope, lifecycle, purpose, durationMinutes, intent } = args as {
+          scope: 'tenant_read' | 'tenant_write' | 'treasury';
+          lifecycle: 'one_shot' | 'standing';
+          purpose: string;
+          durationMinutes?: number;
+          intent?: Record<string, unknown>;
+        };
+        if (!scope || !lifecycle || !purpose) {
+          return { content: [{ type: 'text', text: JSON.stringify({ error: 'scope, lifecycle, and purpose are required' }, null, 2) }] };
+        }
+        const result = await ctx.sly.request('/v1/auth/scopes/request', {
+          method: 'POST',
+          body: JSON.stringify({
+            scope,
+            lifecycle,
+            purpose,
+            duration_minutes: durationMinutes,
+            intent,
+          }),
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'scope_status': {
+        const { requestId } = args as { requestId?: string };
+        const path = requestId
+          ? `/v1/auth/scopes/${encodeURIComponent(requestId)}`
+          : '/v1/auth/scopes/active';
+        const result = await ctx.sly.request(path);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
       case 'x402_list_vendors': {
         const { window, env } = args as { window?: string; env?: 'live' | 'test' };
         const qs = new URLSearchParams();
