@@ -160,7 +160,8 @@ agents.get('/', async (c) => {
   const kyaTier = query.kyaTier;
   const parentAccountId = query.parentAccountId;
   const connected = query.connected; // Epic 72: filter by SSE connection status
-  
+  const env = query.env; // Epic 82 dashboards — pass `env=all` to span both envs
+
   // Build query with parent account join
   let dbQuery = supabase
     .from('agents')
@@ -171,9 +172,14 @@ agents.get('/', async (c) => {
       )
     `, { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
-    .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
+
+  // env=all opts out of the implicit env filter; everything else
+  // (test/live/undefined) keeps the existing per-env scoping.
+  if (env !== 'all') {
+    dbQuery = dbQuery.eq('environment', getEnv(ctx));
+  }
   
   if (search) {
     const safe = sanitizeSearchInput(search);

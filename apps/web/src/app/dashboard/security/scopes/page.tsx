@@ -71,6 +71,8 @@ interface AuditEvent {
 interface AgentMini {
   id: string;
   name: string;
+  environment?: 'test' | 'live';
+  status?: string;
 }
 
 const SCOPE_COLORS: Record<Scope, string> = {
@@ -167,12 +169,16 @@ export default function ScopesPage() {
     refetchInterval: 30_000,
   });
 
-  // Pulled once for name resolution AND the agent-filter dropdown
-  // and the Issue Grant modal's agent picker.
+  // Pulled once for name resolution AND the agent-filter dropdown and
+  // the Issue Grant modal's agent picker. `env=all` so both test and
+  // live agents resolve — the audit feed is tenant-scoped (not env-
+  // scoped), so a live-env dashboard view still surfaces test agents
+  // in past events. Without env=all those rows would only show as
+  // truncated UUIDs.
   const agentsQuery = useQuery({
     queryKey: ['org', 'scopes', 'agents-mini'],
     queryFn: async () => {
-      const res = await apiFetch(`${apiUrl}/v1/agents?limit=100`);
+      const res = await apiFetch(`${apiUrl}/v1/agents?limit=200&env=all`);
       return unwrap<{ data: AgentMini[] } | AgentMini[] | { agents: AgentMini[] }>(res);
     },
     enabled: ready,
@@ -578,17 +584,29 @@ export default function ScopesPage() {
               <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Agent</span>
               {agents.map((a) => {
                 const active = selectedAgentIds.has(a.id);
+                const isTest = a.environment === 'test';
+                const isSuspended = a.status === 'suspended';
                 return (
                   <button
                     key={a.id}
                     onClick={() => toggleAgent(a.id)}
-                    className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
                       active
                         ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
                         : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
                     }`}
+                    title={`${a.id}${isSuspended ? ' · suspended' : ''}`}
                   >
-                    {a.name}
+                    <span className={isSuspended ? 'line-through opacity-60' : ''}>{a.name}</span>
+                    {isTest && (
+                      <span
+                        className={`rounded px-1 text-[9px] uppercase tracking-wide ${
+                          active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        test
+                      </span>
+                    )}
                   </button>
                 );
               })}
