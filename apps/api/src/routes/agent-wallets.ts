@@ -27,6 +27,7 @@ import { invalidatePolicyCache } from '../services/spending-policy.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 import { isValidUUID, getPaginationParams, paginationResponse, getEnv } from '../utils/helpers.js';
 import { cascadeRevokeForAgent } from '../services/auth/scopes/index.js';
+import { guardSiblingScope } from '../services/auth/scopes/guard.js';
 
 function mapWalletFromDb(row: any) {
   return {
@@ -111,6 +112,13 @@ agentWallets.post('/:agentId/wallet/freeze', async (c) => {
   }
 
   const supabase: any = createClient();
+
+  // Epic 82 — freezing a sibling agent's wallet requires tenant_write.
+  // (Freezing your own wallet is allowed because you're locking down
+  // your own movement; freezing a sibling is admin-style action.)
+  const denied = await guardSiblingScope(c, supabase, agentId, 'tenant_write', `POST /v1/agents/${agentId}/wallet/freeze`);
+  if (denied) return denied;
+
   const wallet = await getAgentWallet(supabase, agentId, ctx.tenantId, getEnv(ctx));
 
   if (!wallet) {
@@ -162,6 +170,11 @@ agentWallets.post('/:agentId/wallet/unfreeze', async (c) => {
   }
 
   const supabase: any = createClient();
+
+  // Epic 82 — unfreezing a sibling requires tenant_write.
+  const denied = await guardSiblingScope(c, supabase, agentId, 'tenant_write', `POST /v1/agents/${agentId}/wallet/unfreeze`);
+  if (denied) return denied;
+
   const wallet = await getAgentWallet(supabase, agentId, ctx.tenantId, getEnv(ctx));
 
   if (!wallet) {
@@ -214,6 +227,12 @@ agentWallets.put('/:agentId/wallet/policy', async (c) => {
   }
 
   const supabase: any = createClient();
+
+  // Epic 82 — modifying a sibling agent's spending policy requires
+  // tenant_write. Setting your own policy stays unrestricted.
+  const denied = await guardSiblingScope(c, supabase, agentId, 'tenant_write', `PUT /v1/agents/${agentId}/wallet/policy`);
+  if (denied) return denied;
+
   const wallet = await getAgentWallet(supabase, agentId, ctx.tenantId, getEnv(ctx));
 
   if (!wallet) {

@@ -25,7 +25,8 @@ import { checkAgentLimit } from '../services/tenant-limits.js';
 import { registerAgent } from '../services/erc8004/registry.js';
 import { checkT2Eligibility, processEnterpriseOverride } from '../services/kya/verification.js';
 import { recordObservation } from '../services/kya/observation.js';
-import { cascadeRevokeForAgent, requireScope, ScopeRequiredError, recordScopeUse } from '../services/auth/scopes/index.js';
+import { cascadeRevokeForAgent } from '../services/auth/scopes/index.js';
+import { guardSiblingScope } from '../services/auth/scopes/guard.js';
 
 const agents = new Hono();
 
@@ -668,39 +669,9 @@ agents.get('/:id', async (c) => {
     throw error;
   }
 
-  // Epic 82 — agent-bound callers reading a SIBLING agent need
-  // tenant_read elevation. Reading their own agent is always allowed.
-  if (ctx.actorType === 'agent' && ctx.actorId && ctx.actorId !== id) {
-    try {
-      requireScope(ctx, 'tenant_read');
-      if (ctx.elevatedGrantId) {
-        // Synchronous so that one_shot consumption / use_count increment
-        // lands BEFORE the response. Otherwise a concurrent second
-        // request could read the still-active row and slip through.
-        try {
-          await recordScopeUse(supabase, ctx.tenantId, ctx.elevatedGrantId, ctx, {
-            route: `GET /v1/agents/${id}`,
-          });
-        } catch (err) {
-          console.error('[scopes] recordScopeUse failed:', err);
-        }
-      }
-    } catch (err) {
-      if (err instanceof ScopeRequiredError) {
-        return c.json(
-          {
-            error: err.message,
-            code: err.code,
-            required_scope: err.requiredScope,
-            current_scope: err.currentScope,
-            hint: err.hint,
-          },
-          err.statusCode,
-        );
-      }
-      throw err;
-    }
-  }
+  // Epic 82 — sibling reads require tenant_read.
+  const denied = await guardSiblingScope(c, supabase, id, 'tenant_read', `GET /v1/agents/${id}`);
+  if (denied) return denied;
 
   const { data, error } = await supabase
     .from('agents')
@@ -793,7 +764,7 @@ agents.patch('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
   const supabase = createClient();
-  
+
   if (!isValidUUID(id)) {
     const error: any = new ValidationError('Invalid agent ID format');
     error.details = {
@@ -802,7 +773,11 @@ agents.patch('/:id', async (c) => {
     };
     throw error;
   }
-  
+
+  // Epic 82 — mutating a sibling agent requires tenant_write.
+  const denied = await guardSiblingScope(c, supabase, id, 'tenant_write', `PATCH /v1/agents/${id}`);
+  if (denied) return denied;
+
   // Check agent exists
   const { data: existing, error: fetchError } = await supabase
     .from('agents')

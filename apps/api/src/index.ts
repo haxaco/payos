@@ -4,6 +4,7 @@ import app from './app.js';
 import { getScheduledTransferWorker } from './workers/scheduled-transfers.js';
 import { startIdempotencyCleanupWorker } from './workers/idempotency-cleanup.js';
 import { startX402ExpiredCleanupWorker } from './workers/x402-expired-cleanup.js';
+import { startScopeExpirationSweeper } from './workers/scope-expiration-sweeper.js';
 import { startAutoRefillWorker } from './workers/agent-auto-refill.js';
 import { startAgentEoaSyncWorker, stopAgentEoaSyncWorker } from './workers/agent-eoa-sync.js';
 import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
@@ -97,6 +98,12 @@ const stopIdempotencyCleanup = startIdempotencyCleanupWorker(60 * 60 * 1000);
 // pile up as "pending forever" in the dashboard).
 const stopX402ExpiredCleanup = startX402ExpiredCleanupWorker(2 * 60 * 1000);
 
+// Epic 82 — sweep expired scope grants every 5 min. The middleware
+// already filters by expires_at > now() so unswept rows never
+// authorize requests; this sweep is for accuracy of stored state and
+// audit completeness (each expiration writes a scope_expired row).
+const stopScopeExpirationSweeper = startScopeExpirationSweeper(5 * 60 * 1000);
+
 // Start smart wallet balance sync worker (syncs on-chain balances every 5 min)
 startSmartWalletSyncWorker();
 
@@ -180,6 +187,7 @@ const shutdown = async (signal: string) => {
   }
   stopIdempotencyCleanup();
   stopX402ExpiredCleanup();
+  stopScopeExpirationSweeper();
   if (enableWebhookCleanup) {
     webhookCleanupWorker.stop();
   }
