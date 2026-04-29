@@ -28,6 +28,12 @@ import type { Context, MiddlewareHandler, Next } from 'hono';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createClient } from '../db/client.js';
 import { getCdpCredentials } from '../services/coinbase/cdp-client.js';
+import {
+  encodePaymentRequiredHeader,
+  decodePaymentSignatureHeader,
+  HTTPFacilitatorClient,
+} from '@x402/core/http';
+import { createFacilitatorConfig } from '@coinbase/x402';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Config
@@ -445,24 +451,7 @@ async function callCdpVerifyAndSettle(input: {
     };
   }
 
-  let HTTPFacilitatorClient: any;
-  let createFacilitatorConfig: any;
-  let decodePaymentSignatureHeader: any;
-  try {
-    const httpMod: any = await import('@x402/core/http');
-    const cbMod: any = await import('@coinbase/x402');
-    HTTPFacilitatorClient = httpMod.HTTPFacilitatorClient;
-    decodePaymentSignatureHeader = httpMod.decodePaymentSignatureHeader;
-    createFacilitatorConfig = cbMod.createFacilitatorConfig;
-  } catch (err: any) {
-    return {
-      ok: false,
-      status: 500,
-      error: `x402 SDK load failed: ${err?.message || 'unknown'}`,
-    };
-  }
-
-  // Decode the buyer's X-PAYMENT header → PaymentPayload object.
+  // Decode the buyer's X-PAYMENT/PAYMENT-SIGNATURE header → PaymentPayload.
   let paymentPayload: any;
   try {
     paymentPayload = decodePaymentSignatureHeader(input.paymentHeader);
@@ -818,11 +807,9 @@ async function dispatchGatewayRequest(
     // accepts v1.
     let paymentRequiredHeader = '';
     try {
-      const httpMod: any = await import('@x402/core/http');
-      paymentRequiredHeader = httpMod.encodePaymentRequiredHeader(body);
-    } catch {
-      // If the encoder isn't available (test envs), fall back to the body
-      // and let v1 clients work via the body-fallback path.
+      paymentRequiredHeader = encodePaymentRequiredHeader(body as any);
+    } catch (err: any) {
+      console.error('[gateway] encodePaymentRequiredHeader failed:', err?.message || err);
     }
 
     const headers: Record<string, string> = {
