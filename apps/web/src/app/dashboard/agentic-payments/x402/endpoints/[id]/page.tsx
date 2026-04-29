@@ -440,7 +440,8 @@ const response = await client.fetch('https://your-api.com${endpoint?.path || '/a
                         return (
                           <tr
                             key={tx.id}
-                            className="border-b hover:bg-gray-50 dark:hover:bg-gray-900"
+                            className="border-b hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer"
+                            onClick={() => router.push(`/dashboard/transfers/${tx.id}`)}
                           >
                             <td className="p-3 text-sm">
                               {new Date(tx.createdAt).toLocaleString()}
