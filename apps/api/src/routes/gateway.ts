@@ -956,7 +956,10 @@ async function dispatchGatewayRequest(
   // `acme.x402.getsly.ai/weather/today?units=metric` proxies to
   // `{backend_url}/today?units=metric`. For path-based routing, the prefix
   // is `/x402/{tenant}/{service}` instead of just `/{service}`.
-  const remainder = url.pathname.slice(ctx.pathPrefix.length) || '/';
+  // Don't synthesize a trailing slash when the buyer hit the bare service
+  // URL — many backends (httpbin's /json, REST handlers using exact-match
+  // routing) return 404 for `/path/` when only `/path` is registered.
+  const remainder = url.pathname.slice(ctx.pathPrefix.length);
   const backendBase = endpoint.backend_url.replace(/\/+$/, '');
   const backendTarget = `${backendBase}${remainder}${url.search}`;
 
