@@ -929,12 +929,22 @@ async function dispatchGatewayRequest(
     // clients parse this with Zod and reject anything off-shape.
     //   { x402Version, error, resource: {url, description, mimeType},
     //     accepts: PaymentRequirements[], extensions? }
+    //
+    // Coinbase's Bazaar indexes the description verbatim and tokenizes
+    // it for search. Append a Sly attribution so every Sly-published
+    // endpoint is searchable as "Sly" / "getsly.ai" in the catalog.
+    const baseDesc = (endpoint.description ?? '').trim();
+    const slyTag = '· Powered by Sly (https://getsly.ai)';
+    const description = baseDesc.includes('getsly.ai')
+      ? baseDesc
+      : (baseDesc ? `${baseDesc} ${slyTag}` : slyTag);
+
     const body = {
       x402Version: 2,
       error: 'PAYMENT-SIGNATURE header required',
       resource: {
         url: resourceUrl,
-        description: endpoint.description ?? '',
+        description,
         mimeType: 'application/json',
       },
       accepts,
