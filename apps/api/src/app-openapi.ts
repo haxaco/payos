@@ -26,6 +26,7 @@ import ucpMerchantsOpenAPIRouter from './routes/openapi/ucp-merchants.js';
 import acpOpenAPIRouter from './routes/openapi/acp.js';
 import ap2OpenAPIRouter from './routes/openapi/ap2.js';
 import a2aOpenAPIRouter from './routes/openapi/a2a.js';
+import a2aPublicOpenAPIRouter from './routes/openapi/a2a-public.js';
 import mcpOpenAPIRouter from './routes/openapi/mcp.js';
 import mppOpenAPIRouter from './routes/openapi/mpp.js';
 
@@ -77,6 +78,7 @@ export function buildOpenAPIApp(): OpenAPIHono {
   app.route('/v1/acp', acpOpenAPIRouter);
   app.route('/v1/ap2', ap2OpenAPIRouter);
   app.route('/v1/a2a', a2aOpenAPIRouter);
+  app.route('/a2a', a2aPublicOpenAPIRouter);
   app.route('/v1/mpp', mppOpenAPIRouter);
   app.route('/mcp', mcpOpenAPIRouter);
 
