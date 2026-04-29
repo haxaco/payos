@@ -18,6 +18,7 @@ import {
   SuggestedAction,
 } from '@sly/types';
 import { ZodError } from 'zod';
+import { ScopeRequiredError } from '../services/auth/scopes/index.js';
 
 // ============================================
 // TIMING TRACKING
@@ -846,7 +847,22 @@ export function structuredErrorHandler(err: Error, c: Context) {
   let customMessage: string | undefined;
 
   // Transform based on error type
-  if (err instanceof ZodError) {
+  if (err instanceof ScopeRequiredError) {
+    // Epic 82 — scope elevation required. Mirror the JSON shape that
+    // requireTenantScope and guardSiblingScope emit directly so callers
+    // see a consistent SCOPE_REQUIRED envelope regardless of where in
+    // the stack the error was thrown.
+    return c.json(
+      {
+        error: err.message,
+        code: err.code,
+        required_scope: err.requiredScope,
+        current_scope: err.currentScope,
+        hint: err.hint,
+      },
+      err.statusCode as ContentfulStatusCode,
+    );
+  } else if (err instanceof ZodError) {
     // Zod validation error
     const transformed = transformZodError(err);
     errorCode = transformed.code;

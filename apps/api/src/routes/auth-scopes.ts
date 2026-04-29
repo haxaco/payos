@@ -113,14 +113,26 @@ router.get('/active', async (c) => {
   // The auth middleware has already populated ctx.elevatedScope by
   // looking up the highest-tier active grant. Mirror it back so the
   // caller can self-check before trying a privileged op.
-  const supabase = createClient();
-  const { data: grants } = await ((supabase as any).from('auth_scope_grants'))
-    .select('id, scope, lifecycle, status, purpose, granted_at, expires_at, last_used_at, use_count, parent_session_id')
-    .eq('tenant_id', ctx.tenantId)
-    .eq('agent_id', ctx.actorId)
-    .eq('status', 'active')
-    .gt('expires_at', new Date().toISOString())
-    .order('granted_at', { ascending: false });
+  const supabase: any = createClient();
+  const [{ data: grants }, { data: agentRow }, { data: walletRow }] = await Promise.all([
+    (supabase.from('auth_scope_grants') as any)
+      .select('id, scope, lifecycle, status, purpose, granted_at, expires_at, last_used_at, use_count, parent_session_id')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('agent_id', ctx.actorId)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+      .order('granted_at', { ascending: false }),
+    (supabase.from('agents') as any)
+      .select('id, name, kya_tier, status')
+      .eq('id', ctx.actorId)
+      .single(),
+    (supabase.from('wallets') as any)
+      .select('id, wallet_address, balance, wallet_type, status')
+      .eq('managed_by_agent_id', ctx.actorId)
+      .eq('wallet_type', 'agent_eoa')
+      .eq('environment', ctx.environment)
+      .maybeSingle(),
+  ]);
 
   // Filter for grants that apply to THIS call (un-anchored or matching session).
   const applicable = ((grants ?? []) as any[]).filter((g) => {
@@ -128,10 +140,29 @@ router.get('/active', async (c) => {
     return ctx.sessionId && g.parent_session_id === ctx.sessionId;
   });
 
+  const currentScope = ctx.elevatedScope ?? 'agent';
+  const nudge = currentScope === 'agent'
+    ? 'You are operating at the agent baseline. Tenant-wide list endpoints will 403 — prefer self-scoped tools (whoami, agent_wallet_get, get_agent_transactions) or call request_scope first.'
+    : `You currently hold scope '${currentScope}'. Use it sparingly; one_shot grants are consumed on first use.`;
+
   return c.json({
-    current_scope: ctx.elevatedScope ?? 'agent',
+    current_scope: currentScope,
     elevated_grant_id: ctx.elevatedGrantId ?? null,
     session_id: ctx.sessionId ?? null,
+    agent: agentRow ? {
+      id: (agentRow as any).id,
+      name: (agentRow as any).name,
+      kya_tier: (agentRow as any).kya_tier,
+      status: (agentRow as any).status,
+      wallet: walletRow ? {
+        id: (walletRow as any).id,
+        address: (walletRow as any).wallet_address,
+        balance: Number((walletRow as any).balance ?? 0),
+        type: (walletRow as any).wallet_type,
+        status: (walletRow as any).status,
+      } : null,
+    } : null,
+    nudge,
     grants: applicable.map((g) => ({
       id: g.id,
       scope: g.scope,

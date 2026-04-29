@@ -14,6 +14,24 @@ import {
   isValidUUID,
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
+import { effectiveScope } from '../services/auth/scopes/index.js';
+
+// Tools an agent can ALWAYS call without scope elevation. Surfaced in
+// whoami so an LLM acting as an agent picks self-scoped tools instead
+// of reaching for tenant-wide list endpoints (which now 403 for
+// unscoped agents per Epic 82).
+const AGENT_BASELINE_TOOLS: ReadonlyArray<string> = [
+  'whoami',
+  'scope_status',
+  'request_scope',
+  'get_agent',
+  'get_agent_limits',
+  'get_agent_transactions',
+  'agent_wallet_get',
+  'agent_wallet_fund',
+  'agent_x402_sign',
+  'agent_x402_wallet',
+];
 
 const context = new Hono();
 
@@ -69,6 +87,8 @@ context.get('/whoami', async (c) => {
     };
   }
 
+  const effective = effectiveScope(ctx);
+
   return c.json({
     tenant: { id: (tenant as any)?.id, name: (tenant as any)?.name, status: (tenant as any)?.status },
     actor: {
@@ -81,10 +101,18 @@ context.get('/whoami', async (c) => {
     // (api_key, user JWT) get null and must specify agentId explicitly.
     default_agent_id: ctx.actorType === 'agent' ? (ctx.actorId ?? null) : null,
     agent: agentDetail,
-    // Foundation for Epic 82 — populated when scope grants land.
-    active_scopes: ctx.actorType === 'agent' ? ['agent'] : ['tenant_read', 'tenant_write'],
-    elevated_scope: (ctx as any).elevatedScope ?? null,
-    session_based: (ctx as any).sessionBased ?? false,
+    // Effective scope tier this caller currently holds — drives gating
+    // on tenant-wide MCP tools. Agents start at 'agent' baseline and
+    // must `request_scope` to access tenant_read / tenant_write / treasury.
+    active_scope: effective,
+    elevated_scope: ctx.elevatedScope ?? null,
+    elevated_grant_id: ctx.elevatedGrantId ?? null,
+    session_based: ctx.sessionBased ?? false,
+    // For agent callers, surface the tools that don't need elevation
+    // so an LLM can pick self-scoped operations first. Other actor
+    // types (api_key / user JWT) already see tenant-wide tools by
+    // virtue of their effective scope.
+    available_agent_tools: ctx.actorType === 'agent' ? AGENT_BASELINE_TOOLS : null,
   });
 });
 

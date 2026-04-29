@@ -100,6 +100,7 @@ import supportRouter from './routes/support.js';
 import { agentConnectPublicRouter, agentConnectAuthRouter } from './routes/agent-connect.js';
 import authScopesRouter from './routes/auth-scopes.js';
 import organizationScopesRouter from './routes/organization/scopes.js';
+import { requireTenantScope } from './middleware/require-tenant-scope.js';
 
 const app = new Hono();
 
@@ -345,6 +346,71 @@ v1.use('*', requestCounterMiddleware);
 
 // Idempotency (after auth to have tenant context)
 v1.use('*', idempotencyMiddleware);
+
+// ============================================
+// Epic 82 — TENANT-WIDE SCOPE GATING
+// Mounted AFTER authMiddleware so ctx.elevatedScope is populated, and
+// BEFORE the route mounts so the gate runs first. Each group declares
+// its own override table for treasury / agent-baseline endpoints; pure
+// method-mapping (GET → tenant_read, POST/PATCH/PUT/DELETE → tenant_write)
+// applies elsewhere. List endpoints with `selfScopeShortcut` allow an
+// agent caller to fetch its own data via `?agent_id=<self>` without a
+// grant — the existing handler filter does the narrowing.
+// ============================================
+v1.use('/accounts/*', requireTenantScope());
+v1.use('/merchants/*', requireTenantScope());
+v1.use('/wallets/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/wallets/:id/fund', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/transfer', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/withdraw', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/deposit', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/test-fund', scope: 'treasury' },
+  ],
+}));
+v1.use('/x402/*', requireTenantScope({
+  overrides: [
+    // POST /pay moves USDC; treasury required.
+    { method: 'POST', path: '/v1/x402/pay', scope: 'treasury' },
+    // POST /verify is read-shaped (cryptographic signature check); ease
+    // it back to tenant_read so agents with a read grant can use it.
+    { method: 'POST', path: '/v1/x402/verify', scope: 'tenant_read' },
+  ],
+}));
+v1.use('/ap2/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/ap2/mandates/:id/execute', scope: 'treasury' },
+  ],
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/acp/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/acp/checkouts/:id/complete', scope: 'treasury' },
+    { method: 'POST', path: '/v1/acp/checkouts/batch', scope: 'treasury' },
+  ],
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/ucp/checkouts/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/ucp/checkouts/:id/complete', scope: 'treasury' },
+    { method: 'POST', path: '/v1/ucp/checkouts/batch', scope: 'treasury' },
+    { method: 'POST', path: '/v1/ucp/checkouts/batch-complete', scope: 'treasury' },
+  ],
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/ucp/orders/*', requireTenantScope({
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/mpp/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/mpp/pay', scope: 'treasury' },
+    // Receipt verification is a stateless cryptographic check.
+    { method: 'POST', path: '/v1/mpp/receipts/verify', scope: 'tenant_read' },
+  ],
+}));
+v1.use('/a2a/tasks*', requireTenantScope({
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
 
 // Mount route handlers
 v1.route('/context', contextRouter);

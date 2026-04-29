@@ -82,7 +82,7 @@ export function requireScope(ctx: RequestContext, required: Scope): void {
  * middleware. Tenant keys + owner JWTs implicitly get 'tenant_write'
  * (their existing power); member/viewer JWTs get 'tenant_read'.
  */
-function effectiveScope(ctx: RequestContext): 'agent' | Scope {
+export function effectiveScope(ctx: RequestContext): 'agent' | Scope {
   if (ctx.elevatedScope && ctx.elevatedScope !== 'agent') return ctx.elevatedScope;
   if (ctx.actorType === 'api_key') return 'tenant_write';
   if (ctx.actorType === 'user') {
