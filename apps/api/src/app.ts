@@ -101,7 +101,7 @@ import { agentConnectPublicRouter, agentConnectAuthRouter } from './routes/agent
 import authScopesRouter from './routes/auth-scopes.js';
 import organizationScopesRouter from './routes/organization/scopes.js';
 import { requireTenantScope } from './middleware/require-tenant-scope.js';
-import { gatewayMiddleware } from './routes/gateway.js';
+import { gatewayMiddleware, handlePathBasedGatewayRequest } from './routes/gateway.js';
 
 const app = new Hono();
 
@@ -123,6 +123,14 @@ app.use('*', timingMiddleware);
 // its own security model. Non-gateway hosts fall through.
 // ============================================
 app.use('*', gatewayMiddleware());
+
+// Path-based gateway fallback for use while wildcard DNS for
+// `*.x402.getsly.ai` is being provisioned. URL shape:
+//   https://api.getsly.ai/x402/{tenant}/{service}/...
+// Same handler as the host-based gateway — both share dispatchGatewayRequest.
+// Retire this mount once DNS is live.
+app.all('/x402/:tenant/:service', (c) => handlePathBasedGatewayRequest(c));
+app.all('/x402/:tenant/:service/*', (c) => handlePathBasedGatewayRequest(c));
 
 // CORS preflight for admin round viewer — must be BEFORE response wrapper
 app.use('/admin/round/*', async (c, next) => {

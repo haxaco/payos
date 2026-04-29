@@ -17,6 +17,7 @@
 
 import { Hono } from 'hono';
 import { createClient } from '../db/client.js';
+import { getCdpCredentials } from '../services/coinbase/cdp-client.js';
 
 const router = new Hono();
 
@@ -112,14 +113,14 @@ async function proxyToCdp(
   body: unknown,
   endpoint: EndpointMode
 ): Promise<Response> {
-  const apiKeyId = process.env.CDP_API_KEY_ID;
-  const apiKeySecret = process.env.CDP_API_KEY_SECRET;
-  if (!apiKeyId || !apiKeySecret) {
+  const creds = getCdpCredentials();
+  if (!creds) {
     return new Response(
       JSON.stringify({ error: 'CDP credentials not configured' }),
       { status: 500, headers: { 'content-type': 'application/json' } }
     );
   }
+  const { apiKeyId, apiKeySecret } = creds;
 
   const upstream = await fetch(`${CDP_FACILITATOR_URL}${path}`, {
     method: 'POST',

@@ -326,3 +326,31 @@ export function createCDPClient(config: CDPConfig): CDPClient {
   return new CDPClient(config);
 }
 
+/**
+ * Resolve CDP credentials from any of the env-var names this codebase has used
+ * historically. Returns null when neither half is configured.
+ *
+ * Naming variants in the wild:
+ *   - id:     CDP_API_KEY_ID     (Worktree B / publish flow / new code)
+ *             CDP_API_KEY_NAME   (legacy / prod env / cdp-client)
+ *   - secret: CDP_API_KEY_SECRET       (Worktree B / publish flow / new code)
+ *             CDP_API_KEY_PRIVATE_KEY  (legacy / prod env)
+ *             CDP_PRIVATE_KEY          (cdp-client.ts)
+ *
+ * `walletSecret` is required by `@coinbase/cdp-sdk` for any wallet
+ * create/sign operation (CDP 1.40+ split API auth from wallet authority).
+ * Obtained from portal.cdp.coinbase.com under the API key's Wallet Secret tab.
+ */
+export function getCdpCredentials():
+  | { apiKeyId: string; apiKeySecret: string; walletSecret?: string }
+  | null {
+  const apiKeyId = process.env.CDP_API_KEY_ID || process.env.CDP_API_KEY_NAME;
+  const apiKeySecret =
+    process.env.CDP_API_KEY_SECRET ||
+    process.env.CDP_PRIVATE_KEY ||
+    process.env.CDP_API_KEY_PRIVATE_KEY;
+  const walletSecret = process.env.CDP_WALLET_SECRET || undefined;
+  if (!apiKeyId || !apiKeySecret) return null;
+  return { apiKeyId, apiKeySecret, walletSecret };
+}
+
