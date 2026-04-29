@@ -41,6 +41,12 @@ import disputesOpenAPIRouter from './routes/openapi/disputes.js';
 import webhooksOpenAPIRouter from './routes/openapi/webhooks.js';
 import apiKeysOpenAPIRouter from './routes/openapi/api-keys.js';
 import fundingOpenAPIRouter from './routes/openapi/funding.js';
+import settlementOpenAPIRouter from './routes/openapi/settlement.js';
+import settlementRulesOpenAPIRouter from './routes/openapi/settlement-rules.js';
+import settlementWindowsOpenAPIRouter from './routes/openapi/settlement-windows.js';
+import reconciliationOpenAPIRouter from './routes/openapi/reconciliation.js';
+import treasuryOpenAPIRouter from './routes/openapi/treasury.js';
+import scheduledTransfersOpenAPIRouter from './routes/openapi/scheduled-transfers.js';
 
 export function buildOpenAPIApp(): OpenAPIHono {
   const app = new OpenAPIHono();
@@ -78,6 +84,12 @@ export function buildOpenAPIApp(): OpenAPIHono {
   app.route('/v1/webhooks', webhooksOpenAPIRouter);
   app.route('/v1/api-keys', apiKeysOpenAPIRouter);
   app.route('/v1/funding', fundingOpenAPIRouter);
+  app.route('/v1/settlement', settlementOpenAPIRouter);
+  app.route('/v1/settlement-rules', settlementRulesOpenAPIRouter);
+  app.route('/v1/settlement-windows', settlementWindowsOpenAPIRouter);
+  app.route('/v1/reconciliation', reconciliationOpenAPIRouter);
+  app.route('/v1/treasury', treasuryOpenAPIRouter);
+  app.route('/v1/scheduled-transfers', scheduledTransfersOpenAPIRouter);
 
   return app;
 }

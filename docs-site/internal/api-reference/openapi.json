@@ -13389,6 +13389,4170 @@
           }
         }
       }
+    },
+    "/v1/settlement/config": {
+      "get": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Get settlement config",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementConfig"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Update settlement config",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementConfig"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement/preview": {
+      "post": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Preview a settlement",
+        "description": "Show projected fees, FX, and settlement time for a hypothetical settlement before committing.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementRouteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_fee": {
+                      "type": "string"
+                    },
+                    "net_amount": {
+                      "type": "string"
+                    },
+                    "rail": {
+                      "type": "string"
+                    },
+                    "expected_settlement": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "total_fee",
+                    "net_amount",
+                    "rail",
+                    "expected_settlement"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement/analytics": {
+      "get": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Settlement analytics",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d",
+                "30d",
+                "90d"
+              ],
+              "default": "30d"
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_volume": {
+                      "type": "string"
+                    },
+                    "total_fees": {
+                      "type": "string"
+                    },
+                    "settlements_count": {
+                      "type": "number"
+                    },
+                    "by_rail": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "count": {
+                            "type": "number"
+                          },
+                          "volume": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "count",
+                          "volume"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "total_volume",
+                    "total_fees",
+                    "settlements_count",
+                    "by_rail"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement/status/{transferId}": {
+      "get": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Settlement status for a transfer",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "transferId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementStatus"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement/route": {
+      "post": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Suggest a settlement route",
+        "description": "Propose the optimal rail + path for a settlement. Returns one or more route options ranked by cost / time.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementRouteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "routes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rail": {
+                            "type": "string"
+                          },
+                          "fee": {
+                            "type": "string"
+                          },
+                          "eta_seconds": {
+                            "type": "integer"
+                          },
+                          "score": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "rail",
+                          "fee",
+                          "eta_seconds",
+                          "score"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "routes"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement/execute": {
+      "post": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Execute a settlement",
+        "description": "Force-execute a settlement using the supplied transfer + route. Bypass auto-settlement for cases that need manual control.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transfer_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "rail": {
+                    "type": "string"
+                  },
+                  "idempotency_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "transfer_id",
+                  "rail"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Executed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementStatus"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already settled or invalid state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement/batch": {
+      "post": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "Batch-settle transfers",
+        "description": "Settle many pending transfers in one call. Mostly used by ops + auto-settlement workers.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transfer_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 500
+                  },
+                  "rail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "transfer_ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "number"
+                    },
+                    "succeeded": {
+                      "type": "number"
+                    },
+                    "failed": {
+                      "type": "number"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "transfer_id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "transfer_id",
+                          "status"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "succeeded",
+                    "failed",
+                    "results"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement/rails": {
+      "get": {
+        "tags": [
+          "Settlement"
+        ],
+        "summary": "List active settlement rails",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SettlementRail"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-rules": {
+      "get": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "List rules",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "wallet_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "balance_threshold",
+                "time_based",
+                "event_based",
+                "manual",
+                "transaction_count"
+              ]
+            },
+            "required": false,
+            "name": "trigger_type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "enabled_only",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SettlementRule"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "Create a rule",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "wallet_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "trigger_type": {
+                    "type": "string",
+                    "enum": [
+                      "balance_threshold",
+                      "time_based",
+                      "event_based",
+                      "manual",
+                      "transaction_count"
+                    ]
+                  },
+                  "trigger_config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "action_type": {
+                    "type": "string",
+                    "enum": [
+                      "settle_to_bank",
+                      "settle_to_account",
+                      "settle_to_wallet",
+                      "hold",
+                      "notify"
+                    ]
+                  },
+                  "action_config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "trigger_type",
+                  "trigger_config",
+                  "action_type",
+                  "action_config",
+                  "enabled",
+                  "priority"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementRule"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-rules/{id}": {
+      "get": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "Get a rule",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementRule"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "Update a rule",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "wallet_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "trigger_type": {
+                    "type": "string",
+                    "enum": [
+                      "balance_threshold",
+                      "time_based",
+                      "event_based",
+                      "manual",
+                      "transaction_count"
+                    ]
+                  },
+                  "trigger_config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "action_type": {
+                    "type": "string",
+                    "enum": [
+                      "settle_to_bank",
+                      "settle_to_account",
+                      "settle_to_wallet",
+                      "hold",
+                      "notify"
+                    ]
+                  },
+                  "action_config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementRule"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "Delete a rule",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-rules/{id}/executions": {
+      "get": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "Per-rule execution history",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Executions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuleExecution"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "number"
+                        },
+                        "limit": {
+                          "type": "number"
+                        },
+                        "total": {
+                          "type": "number"
+                        },
+                        "totalPages": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pagination"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-rules/executions/all": {
+      "get": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "Tenant-wide execution log",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "triggered",
+                "executed",
+                "skipped",
+                "failed"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Executions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RuleExecution"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "number"
+                        },
+                        "limit": {
+                          "type": "number"
+                        },
+                        "total": {
+                          "type": "number"
+                        },
+                        "totalPages": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pagination"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-rules/manual-withdrawal": {
+      "post": {
+        "tags": [
+          "Settlement Rules"
+        ],
+        "summary": "Force a manual withdrawal",
+        "description": "Bypass all rules and trigger a settlement immediately. Used during incident recovery or month-end close.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "wallet_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "wallet_id",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Withdrawal queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execution_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "execution_id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows": {
+      "get": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "List windows",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Windows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SettlementWindow"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows/schedule": {
+      "get": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Upcoming schedule",
+        "description": "Next N window firings across all configured rails.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 168,
+              "default": 24
+            },
+            "required": false,
+            "name": "horizon_hours",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "window_id": {
+                            "type": "string"
+                          },
+                          "rail": {
+                            "type": "string"
+                          },
+                          "fires_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "window_id",
+                          "rail",
+                          "fires_at"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows/queue": {
+      "get": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Pending settlement queue",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "rail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queued items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SettlementQueueItem"
+                      }
+                    },
+                    "totals": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "number"
+                        },
+                        "amount": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "count",
+                        "amount"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "totals"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Add transfer to settlement queue",
+        "description": "Manually enqueue a transfer for the next matching window. Usually managed automatically.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transfer_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "rail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "transfer_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SettlementQueueItem"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows/emergency": {
+      "post": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Emergency-flush a rail",
+        "description": "Bypass batching and force-settle everything pending on the given rail. Use sparingly — sacrifices batching economics.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rail": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "rail",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Flush initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execution_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "execution_id"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows/holidays": {
+      "get": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Rail holiday calendar",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "rail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 2020,
+              "maximum": 2100
+            },
+            "required": false,
+            "name": "year",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Holidays",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RailHoliday"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Override rail holiday",
+        "description": "Add a tenant-specific holiday (e.g. internal company closure) that windows will skip.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "rail": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "date",
+                  "rail",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RailHoliday"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows/holidays/check": {
+      "get": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Is a date a rail holiday?",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "rail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD"
+            },
+            "required": true,
+            "description": "YYYY-MM-DD",
+            "name": "date",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Holiday lookup",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "is_holiday": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "next_business_day": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "is_holiday"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows/executions": {
+      "get": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Window execution history",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "window_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Executions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "window_id": {
+                            "type": "string"
+                          },
+                          "batch_size": {
+                            "type": "number"
+                          },
+                          "total_amount": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "executed_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "window_id",
+                          "batch_size",
+                          "total_amount",
+                          "status",
+                          "executed_at"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/settlement-windows/dashboard": {
+      "get": {
+        "tags": [
+          "Settlement Windows"
+        ],
+        "summary": "Settlement-windows dashboard",
+        "description": "High-level operational view — recent firings, queue depth, upcoming schedule.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "queue_depth": {
+                      "type": "number"
+                    },
+                    "pending_amount": {
+                      "type": "string"
+                    },
+                    "next_fire": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "window_id": {
+                          "type": "string"
+                        },
+                        "fires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "window_id",
+                        "fires_at"
+                      ]
+                    },
+                    "last_fire": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "window_id": {
+                          "type": "string"
+                        },
+                        "executed_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "batch_size": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "window_id",
+                        "executed_at",
+                        "batch_size"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "queue_depth",
+                    "pending_amount",
+                    "next_fire",
+                    "last_fire"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/reports": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "List reconciliation reports",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "rail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "running",
+                "completed",
+                "failed"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reports",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReconciliationReport"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "number"
+                        },
+                        "limit": {
+                          "type": "number"
+                        },
+                        "total": {
+                          "type": "number"
+                        },
+                        "totalPages": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pagination"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/reports/{id}": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "Report detail",
+        "description": "Includes per-discrepancy breakdown.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ReconciliationReport"
+                    },
+                    "discrepancies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReconciliationDiscrepancy"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "discrepancies"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/run": {
+      "post": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "Run a reconciliation",
+        "description": "Trigger a recon for a specific rail + date range. Runs async; subscribe to `reconciliation.completed` for completion.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rail": {
+                    "type": "string"
+                  },
+                  "date_from": {
+                    "type": "string"
+                  },
+                  "date_to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rail",
+                  "date_from",
+                  "date_to"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Reconciliation started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ReconciliationReport"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/discrepancies": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "List discrepancies",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "report_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ledger_only",
+                "rail_only",
+                "amount_mismatch",
+                "timing_mismatch",
+                "duplicate"
+              ]
+            },
+            "required": false,
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "unresolved_only",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Discrepancies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReconciliationDiscrepancy"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/discrepancies/{id}/resolve": {
+      "post": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "Resolve a discrepancy",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "resolution": {
+                    "type": "string",
+                    "enum": [
+                      "adjusted",
+                      "written_off",
+                      "chasing",
+                      "no_action"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "adjustment_entry_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "resolution"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ReconciliationDiscrepancy"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/rails": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "List supported rails",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rail": {
+                            "type": "string"
+                          },
+                          "supports_reconciliation": {
+                            "type": "boolean"
+                          },
+                          "file_cadence": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "rail",
+                          "supports_reconciliation",
+                          "file_cadence"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/rails/{rail}/balance": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "Rail-side balance snapshot",
+        "description": "Authoritative balance per the rail provider. Compare to your Sly-side wallet balance for spot-check sanity.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "rail",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rail": {
+                      "type": "string"
+                    },
+                    "balance": {
+                      "type": "string"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "as_of": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "rail",
+                    "balance",
+                    "currency",
+                    "as_of"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/rails/{rail}/transactions": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "Rail-side transaction list",
+        "description": "Raw transactions as reported by the rail. Useful for matching against Sly ledger entries when investigating discrepancies.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "rail",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rail transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "rail_reference": {
+                            "type": "string"
+                          },
+                          "amount": {
+                            "type": "string"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "rail_reference",
+                          "amount",
+                          "currency",
+                          "at"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/summary": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "Reconciliation summary",
+        "description": "Discrepancy counts + delta totals across all recent recons. Health overview.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "default": "7d"
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_discrepancies": {
+                      "type": "number"
+                    },
+                    "total_delta_cents": {
+                      "type": "integer"
+                    },
+                    "by_type": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "unresolved": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "total_discrepancies",
+                    "total_delta_cents",
+                    "by_type",
+                    "unresolved"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reconciliation/dashboard": {
+      "get": {
+        "tags": [
+          "Reconciliation"
+        ],
+        "summary": "Reconciliation dashboard",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "last_run": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "rail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "rail"
+                      ]
+                    },
+                    "open_discrepancies": {
+                      "type": "number"
+                    },
+                    "recently_resolved": {
+                      "type": "number"
+                    },
+                    "stale_count": {
+                      "type": "number",
+                      "description": "Discrepancies older than 3 days still unresolved"
+                    }
+                  },
+                  "required": [
+                    "last_run",
+                    "open_discrepancies",
+                    "recently_resolved",
+                    "stale_count"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/dashboard": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Treasury dashboard",
+        "description": "Comprehensive snapshot — balances by currency, exposure, alerts, recent activity.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "as_of": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "balances_by_currency": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "total_cents": {
+                            "type": "integer"
+                          },
+                          "available_cents": {
+                            "type": "integer"
+                          },
+                          "pending_cents": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "total_cents",
+                          "available_cents",
+                          "pending_cents"
+                        ]
+                      }
+                    },
+                    "exposure_by_currency": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "alerts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TreasuryAlert"
+                      }
+                    },
+                    "account_count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "as_of",
+                    "balances_by_currency",
+                    "exposure_by_currency",
+                    "alerts",
+                    "account_count"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/exposure": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Currency exposure breakdown",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "currency",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exposure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "active_mandates_cents": {
+                            "type": "integer"
+                          },
+                          "scheduled_transfers_cents": {
+                            "type": "integer"
+                          },
+                          "open_streams_runway_cents": {
+                            "type": "integer"
+                          },
+                          "pending_disputes_cents": {
+                            "type": "integer"
+                          },
+                          "reserve_holds_cents": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "active_mandates_cents",
+                          "scheduled_transfers_cents",
+                          "open_streams_runway_cents",
+                          "pending_disputes_cents",
+                          "reserve_holds_cents"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/runway": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Runway forecast",
+        "description": "Projects when current balances will be exhausted at recent burn rate.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 180,
+              "default": 30
+            },
+            "required": false,
+            "name": "horizon_days",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runway_days": {
+                      "type": "number"
+                    },
+                    "burn_rate_cents_per_day": {
+                      "type": "integer"
+                    },
+                    "depletion_date": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "runway_days",
+                    "burn_rate_cents_per_day",
+                    "depletion_date"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/velocity": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Velocity / throughput stats",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "default": "7d"
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Velocity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inbound_cents": {
+                      "type": "integer"
+                    },
+                    "outbound_cents": {
+                      "type": "integer"
+                    },
+                    "net_cents": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "inbound_cents",
+                    "outbound_cents",
+                    "net_cents"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/history": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Historical balance time-series",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "currency",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "1y"
+              ],
+              "default": "30d"
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day",
+                "week"
+              ],
+              "default": "day"
+            },
+            "required": false,
+            "name": "granularity",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "balance_cents": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "balance_cents"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/partners": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Partner exposure breakdown",
+        "description": "For platforms — how much each end-customer (sub-tenant) holds.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Partners",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "partner_id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "balance_cents": {
+                            "type": "integer"
+                          },
+                          "currency": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "partner_id",
+                          "name",
+                          "balance_cents",
+                          "currency"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/sync": {
+      "post": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Force-sync rail balances",
+        "description": "Pulls authoritative balances from each rail and refreshes Sly's cached treasury view.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Sync queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/snapshot": {
+      "post": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Capture a treasury snapshot",
+        "description": "Stores a point-in-time treasury record for compliance / audit purposes.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "captured_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "captured_at"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/accounts": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "List treasury accounts",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TreasuryAccount"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Create a treasury account",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "rail": {
+                    "type": "string"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "min_balance_cents": {
+                    "type": "integer"
+                  },
+                  "target_balance_cents": {
+                    "type": "integer"
+                  },
+                  "max_balance_cents": {
+                    "type": "integer"
+                  },
+                  "destination_bank_account_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "rail",
+                  "currency",
+                  "min_balance_cents",
+                  "target_balance_cents",
+                  "max_balance_cents",
+                  "active"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TreasuryAccount"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/accounts/{id}": {
+      "patch": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Update a treasury account",
+        "description": "Adjust min/target/max balance limits. Used to retune rebalancing thresholds.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "min_balance_cents": {
+                    "type": "integer"
+                  },
+                  "target_balance_cents": {
+                    "type": "integer"
+                  },
+                  "max_balance_cents": {
+                    "type": "integer"
+                  },
+                  "active": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TreasuryAccount"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/transactions": {
+      "post": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Record a treasury transaction",
+        "description": "For non-customer-originated movements (e.g. wires from corporate bank). Creates a ledger entry tied to a treasury account.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "account_id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "inbound",
+                      "outbound",
+                      "rebalance",
+                      "fee",
+                      "adjustment"
+                    ]
+                  },
+                  "amount_cents": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reference": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "account_id",
+                  "type",
+                  "amount_cents",
+                  "currency"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TreasuryTransaction"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "List treasury transactions",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "account_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inbound",
+                "outbound",
+                "rebalance",
+                "fee",
+                "adjustment"
+              ]
+            },
+            "required": false,
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TreasuryTransaction"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/rebalancing": {
+      "post": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Trigger a rebalance",
+        "description": "Move funds between treasury accounts (e.g. excess operating → reserve).",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from_account_id": {
+                    "type": "string"
+                  },
+                  "to_account_id": {
+                    "type": "string"
+                  },
+                  "amount_cents": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "from_account_id",
+                  "to_account_id",
+                  "amount_cents"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Rebalance queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TreasuryTransaction"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/treasury/alerts": {
+      "get": {
+        "tags": [
+          "Treasury"
+        ],
+        "summary": "Active treasury alerts",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "info",
+                "warning",
+                "critical"
+              ]
+            },
+            "required": false,
+            "name": "severity",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "acknowledged",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alerts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TreasuryAlert"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scheduled-transfers": {
+      "get": {
+        "tags": [
+          "Scheduled Transfers"
+        ],
+        "summary": "List scheduled transfers",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "paused",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "account_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated schedules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ScheduledTransfer"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "number"
+                        },
+                        "limit": {
+                          "type": "number"
+                        },
+                        "total": {
+                          "type": "number"
+                        },
+                        "totalPages": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "pagination"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Scheduled Transfers"
+        ],
+        "summary": "Create a schedule",
+        "description": "Configure a recurring or future-dated transfer. Use `frequency: custom` with a cron expression for arbitrary cadences.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScheduledTransferInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Schedule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ScheduledTransfer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scheduled-transfers/{id}": {
+      "get": {
+        "tags": [
+          "Scheduled Transfers"
+        ],
+        "summary": "Get a schedule",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ScheduledTransfer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scheduled-transfers/{id}/pause": {
+      "post": {
+        "tags": [
+          "Scheduled Transfers"
+        ],
+        "summary": "Pause a schedule",
+        "description": "Skips executions until resumed. In-flight executions complete.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ScheduledTransfer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid state transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scheduled-transfers/{id}/resume": {
+      "post": {
+        "tags": [
+          "Scheduled Transfers"
+        ],
+        "summary": "Resume a schedule",
+        "description": "Resume after pause. Next execution lands on the next scheduled time.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ScheduledTransfer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid state transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scheduled-transfers/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Scheduled Transfers"
+        ],
+        "summary": "Cancel a schedule",
+        "description": "Permanently cancels remaining executions. Schedule transitions to `cancelled` (irreversible).",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Canceld",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ScheduledTransfer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid state transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scheduled-transfers/{id}/execute-now": {
+      "post": {
+        "tags": [
+          "Scheduled Transfers"
+        ],
+        "summary": "Execute a scheduled transfer now",
+        "description": "Bypasses the schedule and triggers a one-off execution immediately. Counts toward `maxOccurrences` if set.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Execution queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "transfer_id"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Schedule not active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -17527,6 +21691,931 @@
         "required": [
           "session_url",
           "expires_at"
+        ]
+      },
+      "SettlementConfig": {
+        "type": "object",
+        "properties": {
+          "x402_fee_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "auto_settlement_enabled": {
+            "type": "boolean"
+          },
+          "settlement_schedule": {
+            "type": "string",
+            "enum": [
+              "immediate",
+              "hourly",
+              "daily",
+              "weekly"
+            ]
+          },
+          "holdback_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reserve_amount": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "x402_fee_percentage",
+          "auto_settlement_enabled",
+          "settlement_schedule",
+          "holdback_percentage",
+          "reserve_amount"
+        ]
+      },
+      "SettlementRouteRequest": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "currency": {
+            "type": "string"
+          },
+          "destination_currency": {
+            "type": "string"
+          },
+          "destination_country": {
+            "type": "string"
+          },
+          "preferred_rails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ]
+      },
+      "SettlementStatus": {
+        "type": "object",
+        "properties": {
+          "transfer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed"
+            ]
+          },
+          "rail": {
+            "type": "string"
+          },
+          "rail_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "settlement_window_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amount": {
+            "type": "string"
+          },
+          "fee": {
+            "type": "string"
+          },
+          "expected_settlement": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "actual_settlement": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "transfer_id",
+          "status",
+          "rail",
+          "amount",
+          "fee"
+        ]
+      },
+      "SettlementRail": {
+        "type": "object",
+        "properties": {
+          "rail": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "supported_currencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "min_amount": {
+            "type": "string"
+          },
+          "max_amount": {
+            "type": "string"
+          },
+          "typical_settlement": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rail",
+          "active",
+          "supported_currencies",
+          "min_amount",
+          "max_amount",
+          "typical_settlement"
+        ]
+      },
+      "SettlementRule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "wallet_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "trigger_type": {
+            "type": "string",
+            "enum": [
+              "balance_threshold",
+              "time_based",
+              "event_based",
+              "manual",
+              "transaction_count"
+            ]
+          },
+          "trigger_config": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "settle_to_bank",
+              "settle_to_account",
+              "settle_to_wallet",
+              "hold",
+              "notify"
+            ]
+          },
+          "action_config": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "trigger_type",
+          "trigger_config",
+          "action_type",
+          "action_config",
+          "enabled",
+          "priority",
+          "created_at"
+        ]
+      },
+      "RuleExecution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "triggered",
+              "executed",
+              "skipped",
+              "failed"
+            ]
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "rule_id",
+          "status",
+          "triggered_at"
+        ]
+      },
+      "SettlementWindow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "realtime",
+              "hourly",
+              "4_per_day",
+              "daily",
+              "weekly",
+              "custom"
+            ]
+          },
+          "schedule_utc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cron_expression": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "min_batch_amount_cents": {
+            "type": "integer"
+          },
+          "max_batch_size": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "rail",
+          "frequency",
+          "currency",
+          "min_batch_amount_cents",
+          "max_batch_size",
+          "enabled"
+        ]
+      },
+      "SettlementQueueItem": {
+        "type": "object",
+        "properties": {
+          "transfer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "scheduled_for": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "transfer_id",
+          "amount",
+          "currency",
+          "rail",
+          "scheduled_for"
+        ]
+      },
+      "RailHoliday": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "system",
+              "tenant_override"
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "rail",
+          "name",
+          "source"
+        ]
+      },
+      "ReconciliationReport": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ]
+          },
+          "period": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "ledger_entries": {
+                "type": "integer"
+              },
+              "rail_entries": {
+                "type": "integer"
+              },
+              "matched": {
+                "type": "integer"
+              },
+              "unmatched_ledger": {
+                "type": "integer"
+              },
+              "unmatched_rail": {
+                "type": "integer"
+              },
+              "discrepancies": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "ledger_entries",
+              "rail_entries",
+              "matched",
+              "unmatched_ledger",
+              "unmatched_rail",
+              "discrepancies"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "rail",
+          "status",
+          "period",
+          "totals",
+          "created_at"
+        ]
+      },
+      "ReconciliationDiscrepancy": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "report_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ledger_only",
+              "rail_only",
+              "amount_mismatch",
+              "timing_mismatch",
+              "duplicate"
+            ]
+          },
+          "ledger_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rail_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delta_cents": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "adjusted",
+              "written_off",
+              "chasing",
+              "no_action"
+            ]
+          },
+          "resolution_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "report_id",
+          "type",
+          "created_at"
+        ]
+      },
+      "TreasuryAlert": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acknowledged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "message",
+          "triggered_at"
+        ]
+      },
+      "TreasuryAccount": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "balance_cents": {
+            "type": "integer"
+          },
+          "min_balance_cents": {
+            "type": "integer"
+          },
+          "target_balance_cents": {
+            "type": "integer"
+          },
+          "max_balance_cents": {
+            "type": "integer"
+          },
+          "destination_bank_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "rail",
+          "currency",
+          "balance_cents",
+          "min_balance_cents",
+          "target_balance_cents",
+          "max_balance_cents",
+          "active",
+          "created_at"
+        ]
+      },
+      "TreasuryTransaction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "account_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound",
+              "rebalance",
+              "fee",
+              "adjustment"
+            ]
+          },
+          "amount_cents": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "account_id",
+          "type",
+          "amount_cents",
+          "currency",
+          "recorded_at"
+        ]
+      },
+      "ScheduledTransfer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fromAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toAccountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "toPaymentMethodId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "biweekly",
+              "monthly",
+              "custom"
+            ]
+          },
+          "intervalValue": {
+            "type": "integer",
+            "default": 1
+          },
+          "dayOfMonth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 31
+          },
+          "dayOfWeek": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 6
+          },
+          "cronExpression": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "default": "UTC"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "maxOccurrences": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "retryEnabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxRetryAttempts": {
+            "type": "integer",
+            "default": 3
+          },
+          "retryWindowDays": {
+            "type": "integer",
+            "default": 14
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "next_execution_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_execution_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "executions_completed": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "fromAccountId",
+          "amount",
+          "currency",
+          "frequency",
+          "startDate",
+          "status",
+          "executions_completed",
+          "created_at"
+        ]
+      },
+      "CreateScheduledTransferInput": {
+        "type": "object",
+        "properties": {
+          "fromAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toPaymentMethodId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "default": "USDC"
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "biweekly",
+              "monthly",
+              "custom"
+            ]
+          },
+          "intervalValue": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "default": 1
+          },
+          "dayOfMonth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "dayOfWeek": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          },
+          "cronExpression": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string",
+            "default": "UTC"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxOccurrences": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "retryEnabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxRetryAttempts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 3
+          },
+          "retryWindowDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 14
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "fromAccountId",
+          "amount",
+          "frequency",
+          "startDate"
         ]
       }
     },
