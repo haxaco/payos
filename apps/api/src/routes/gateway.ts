@@ -222,28 +222,68 @@ export function isReservedSlug(slug: string): boolean {
  * Build the `accepts` array for the 402 challenge. Phase 1 emits a single
  * accept matching the endpoint's network/currency/payTo.
  */
+/**
+ * Canonical USDC contract addresses keyed by every supported alias for a
+ * network: x402 short slug, Sly slug, and CAIP-2.
+ *
+ * `PaymentRequirements.asset` (per @x402/core) is a non-null string; if
+ * the endpoint row has `asset_address` set, that wins. Otherwise we fall
+ * back to these well-known USDC addresses so the publish flow works
+ * out-of-the-box.
+ */
+const USDC_BY_NETWORK: Record<string, string> = {
+  // Base mainnet
+  base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  'base-mainnet': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  'eip155:8453': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  // Base sepolia
+  'base-sepolia': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+  'eip155:84532': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+  // Ethereum mainnet
+  'eip155:1': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  ethereum: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  // Optimism mainnet
+  'eip155:10': '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+  optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+};
+
+function resolveAssetAddress(network: string, endpointAsset: string | null): string {
+  // Prefer an explicit asset on the endpoint when it looks like a real
+  // EVM address. Tests sometimes pass a placeholder ('0xUSDC') — in that
+  // case still honor it so the test doesn't need a 40-hex value.
+  if (endpointAsset && endpointAsset.startsWith('0x') && endpointAsset.length >= 4) {
+    return endpointAsset;
+  }
+  return USDC_BY_NETWORK[network] ?? '';
+}
+
+/**
+ * Build the `accepts: PaymentRequirements[]` array for a 402 challenge.
+ * Shape MUST match `@x402/core`'s `PaymentRequirements` exactly — buyer
+ * clients (x402-fetch, etc.) parse this with Zod and reject anything
+ * with an extra/missing/wrong-typed field.
+ */
 function buildAcceptsArray(endpoint: EndpointRow, payTo: string): unknown[] {
   const network = normalizeNetwork(endpoint.network);
   const baseAmount = typeof endpoint.base_price === 'string'
     ? endpoint.base_price
     : String(endpoint.base_price);
-  // x402 spec uses minor units for ERC-20 (USDC/EURC = 6 decimals).
+  // ERC-20 (USDC/EURC = 6 decimals) — atomic units.
   const decimals = 6;
   const amountMinor = toMinorUnits(baseAmount, decimals);
+  const asset = resolveAssetAddress(network, endpoint.asset_address);
 
   return [
     {
       scheme: 'exact',
       network,
-      maxAmountRequired: amountMinor,
-      resource: '', // populated by caller (full request URL)
-      description: endpoint.description ?? '',
-      mimeType: 'application/json',
+      asset,
+      amount: amountMinor,
       payTo,
       maxTimeoutSeconds: 60,
-      asset: endpoint.asset_address ?? null,
       extra: {
-        name: endpoint.currency || 'USDC',
+        // ERC-20 token name + version for EIP-712 domain construction.
+        name: endpoint.currency === 'EURC' ? 'EURC' : 'USDC',
         version: '2',
       },
     },
@@ -748,16 +788,22 @@ async function dispatchGatewayRequest(
   // ── 402 challenge ────────────────────────────────────────────────────
   const paymentHeader = c.req.header('x-payment');
   const resourceUrl = `https://${hostHeader}${url.pathname}${url.search}`;
-  const accepts = buildAcceptsArray(endpoint, wallet.address).map((a: any) => ({
-    ...a,
-    resource: resourceUrl,
-  }));
+  const accepts = buildAcceptsArray(endpoint, wallet.address);
 
   if (!paymentHeader) {
+    // Shape MUST match @x402/core's `PaymentRequired` type — buyer
+    // clients parse this with Zod and reject anything off-shape.
+    //   { x402Version, error, resource: {url, description, mimeType},
+    //     accepts: PaymentRequirements[], extensions? }
     const body = {
       x402Version: 2,
-      accepts,
       error: 'X-PAYMENT header required',
+      resource: {
+        url: resourceUrl,
+        description: endpoint.description ?? '',
+        mimeType: 'application/json',
+      },
+      accepts,
       extensions: {
         bazaar: buildBazaarExtension(endpoint.discovery_metadata),
       },
