@@ -89,3 +89,25 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/50;
 }
+
+/* Setup wizard background grid */
+.setup-grid-bg {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Shimmer animation for progress bar */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer-bg {
+  background: linear-gradient(90deg,
+    hsl(217, 91%, 55%) 0%,
+    hsl(217, 91%, 70%) 50%,
+    hsl(217, 91%, 55%) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease infinite;
+}

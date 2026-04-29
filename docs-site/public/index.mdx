@@ -1,0 +1,84 @@
+---
+title: "Sly Documentation"
+description: "The agentic economy platform — stablecoin payments, agent wallets, and multi-protocol commerce for AI agents."
+---
+
+Sly is the payments platform for AI agents. Agents transact with merchants, each other, and humans using real money — stablecoins, card networks, and fiat rails — under formal identity, spending, and governance controls.
+
+## What you can build
+
+<CardGroup cols={2}>
+  <Card title="Agent-driven payments" icon="robot" href="/agents/overview">
+    Let AI agents pay merchants, subscribe to services, and settle invoices under policy-bound wallets and KYA verification tiers.
+  </Card>
+  <Card title="Multi-protocol commerce" icon="network-wired" href="/protocols/overview">
+    One SDK, eight protocols: UCP, ACP, AP2, x402, MPP, A2A, MCP, and Cards. Pick the one that fits your integration partner.
+  </Card>
+  <Card title="Money streaming" icon="water" href="/guides/start-money-stream">
+    Per-second payment flows with configurable buffers, runways, and programmable termination.
+  </Card>
+  <Card title="Stablecoin payouts" icon="coins" href="/guides/cross-border-transfer">
+    Cross-border transfers in seconds with live FX quoting, auditable settlement, and on-chain receipts.
+  </Card>
+</CardGroup>
+
+## Two paths to your first integration
+
+<CardGroup cols={2}>
+  <Card title="Guided wizard (recommended)" icon="wand-magic-sparkles" href="/onboarding/overview">
+    Pick a use-case template — API monetization, e-commerce, agent commerce, or recurring payments. The wizard walks you through every step and hands you working credentials in 10-15 minutes.
+  </Card>
+  <Card title="5-minute API quickstart" icon="bolt" href="/get-started/quickstart">
+    Raw cURL or Node SDK. Best if you've integrated payments before and want to understand the primitives first.
+  </Card>
+</CardGroup>
+
+## Or start from scratch
+
+<Steps>
+  <Step title="Apply for beta access">
+    [app.getsly.ai/auth/signup](https://app.getsly.ai/auth/signup) — Sly is currently invitation-only. Approval in 1-3 business days.
+  </Step>
+  <Step title="Complete signup with your invite code">
+    Choose email + password or Google/GitHub SSO.
+  </Step>
+  <Step title="Pick your onboarding path">
+    Guided wizard or raw API — [see the onboarding overview](/onboarding/overview).
+  </Step>
+  <Step title="Ship">
+    Move to [live](/get-started/environments) when you're ready. Swap `pk_test_` for `pk_live_` — same API, real money.
+  </Step>
+</Steps>
+
+## Built for agents
+
+Sly is agent-first from the ground up. Every core capability has a corresponding MCP tool, A2A skill, and Ed25519-authenticated session interface, so autonomous agents can transact without human-readable credentials ever touching the wire.
+
+- **[KYA tiers](/agents/kya-tiers)** — formal verification levels (0–3) with graduated spending limits
+- **[Wallet policies](/agents/wallet-policies)** — per-agent spending rules, kill-switch, and approval workflows
+- **[Ed25519 auth](/agents/ed25519-keypair-auth)** — short-lived session tokens issued via challenge-response
+- **[MCP catalog](/agents/mcp-tool-catalog)** — drop-in Claude Desktop integration
+- **[A2A marketplace](/agents/a2a-agent-card)** — agents discover each other's skills and transact peer-to-peer
+
+## Looking for something specific?
+
+<CardGroup cols={3}>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Full REST reference for every endpoint.
+  </Card>
+  <Card title="SDKs" icon="cube" href="/sdks/overview">
+    Node.js SDK, CLI, and MCP server.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/webhooks/overview">
+    Event catalog, signing, and replay.
+  </Card>
+  <Card title="Recipes" icon="code-branch" href="/recipes/overview">
+    Copy-paste solutions — transfers, refunds, agents, protocols, webhooks.
+  </Card>
+  <Card title="Architecture patterns" icon="diagram-project" href="/architecture/overview">
+    Reference shapes — event-driven, queue-backed workers, state machines.
+  </Card>
+  <Card title="Migrating from elsewhere?" icon="right-left" href="/migration/overview">
+    Compose Sly with existing Stripe / Circle / card-network integrations.
+  </Card>
+</CardGroup>

@@ -12,16 +12,18 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import type { AppContext } from '../types.js';
+import type { RequestContext } from '../middleware/auth.js';
 import { ErrorCode } from '@sly/types';
 import { createClient } from '../db/client.js';
 import { getExchangeRate } from '@sly/utils';
 import { createLimitService } from '../services/limits.js';
 
-// Create supabase client
-const supabase = createClient();
+// Create supabase client (cast to any: Supabase Database<> generic
+// over-narrows .insert/.update payload shapes for many of our tables
+// that have intentional column drift; runtime behaviour is unchanged.)
+const supabase: any = createClient();
 
-const app = new Hono<AppContext>();
+const app = new Hono<{ Variables: { ctx: RequestContext } }>();
 
 // =============================================================================
 // Types
@@ -33,6 +35,7 @@ export interface SimulationWarning {
   field?: string;
   threshold?: string;
   current?: string;
+  details?: Record<string, unknown>;
 }
 
 export interface SimulationError {
@@ -408,7 +411,7 @@ async function getTodayTransferVolume(accountId: string): Promise<number> {
 
   if (!transfers) return 0;
 
-  return transfers.reduce((sum, t) => sum + parseFloat(t.amount || '0'), 0);
+  return transfers.reduce((sum: number, t: any) => sum + parseFloat(t.amount || '0'), 0);
 }
 
 /**
@@ -427,7 +430,7 @@ async function getMonthlyTransferVolume(accountId: string): Promise<number> {
 
   if (!transfers) return 0;
 
-  return transfers.reduce((sum, t) => sum + parseFloat(t.amount || '0'), 0);
+  return transfers.reduce((sum: number, t: any) => sum + parseFloat(t.amount || '0'), 0);
 }
 
 /**
@@ -861,7 +864,7 @@ async function simulateRefund(
     .eq('original_transfer_id', payload.transfer_id)
     .eq('status', 'completed');
 
-  const alreadyRefunded = existingRefunds?.reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0) || 0;
+  const alreadyRefunded = existingRefunds?.reduce((sum: number, r: any) => sum + parseFloat(r.amount || '0'), 0) || 0;
   const originalAmount = parseFloat(originalTransfer.amount);
   const remainingRefundable = originalAmount - alreadyRefunded;
 
@@ -1135,7 +1138,7 @@ async function simulateStream(
   const willComplete = durationSeconds === 0 || totalCost <= currentBalance;
 
   // Projections at different time intervals
-  const projections = {
+  const projections: StreamPreview['projections'] = {
     one_day: {
       cost: Math.min(costPerDay, totalCost).toFixed(2),
       balance_after: Math.max(0, currentBalance - Math.min(costPerDay, totalCost)).toFixed(2),
@@ -1586,8 +1589,8 @@ app.post('/:id/execute', async (c) => {
     const rateChange = Math.abs((currentRate - originalRate) / originalRate);
 
     if (rateChange > 0.02) { // 2% threshold
-      throw Object.assign(new Error('FX rate has changed significantly since simulation'), { 
-        code: ErrorCode.SIMULATION_FX_VARIANCE_EXCEEDED,
+      throw Object.assign(new Error('FX rate has changed significantly since simulation'), {
+        code: 'SIMULATION_FX_VARIANCE_EXCEEDED' as ErrorCode,
         details: { 
           simulation_id: simulationId,
           original_rate: originalRate.toFixed(4),
@@ -1606,8 +1609,8 @@ app.post('/:id/execute', async (c) => {
   const feeChangePercent = originalFees > 0 ? feeChange / originalFees : 0;
 
   if (feeChange > 5 || feeChangePercent > 0.10) {
-    throw Object.assign(new Error('Fees have changed significantly since simulation'), { 
-      code: ErrorCode.SIMULATION_FEE_VARIANCE_EXCEEDED,
+    throw Object.assign(new Error('Fees have changed significantly since simulation'), {
+      code: 'SIMULATION_FEE_VARIANCE_EXCEEDED' as ErrorCode,
       details: { 
         simulation_id: simulationId,
         original_fees: originalFees.toFixed(2),
@@ -1811,7 +1814,7 @@ app.post('/batch', async (c) => {
     .eq('tenant_id', tenantId)
     .in('id', Array.from(uniqueAccountIds));
 
-  const accountMap = new Map(accounts?.map(a => [a.id, a]) || []);
+  const accountMap = new Map<string, any>(accounts?.map((a: any) => [a.id, a]) || []);
 
   // Process each simulation
   for (let index = 0; index < simulationRequests.length; index++) {

@@ -30,10 +30,14 @@ export default async function DashboardLayout({
         cache: 'no-store',
       });
       if (meResponse.ok) {
-        const meData = await meResponse.json();
-        if (!meData.tenant) {
+        const meJson = await meResponse.json();
+        const me = meJson.data || meJson;
+        if (!me.tenant) {
           redirect('/auth/setup');
         }
+      } else {
+        // 403/401 = no tenant or no profile
+        redirect('/auth/setup');
       }
     }
   } catch {

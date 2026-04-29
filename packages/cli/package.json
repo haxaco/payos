@@ -1,0 +1,22 @@
+{
+  "name": "@sly_ai/cli",
+  "version": "0.1.4",
+  "description": "Sly CLI \u2014 command-line interface for the Sly agentic economy platform",
+  "type": "module",
+  "bin": {
+    "sly": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@sly_ai/sdk": "^0.1.3",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -207,6 +207,19 @@ async function autoDetectStepCompletion(
     }
   }
 
+  // Check for funded wallets
+  if (stepId === 'fund-wallet') {
+    const { data: fundedWallets } = await supabase
+      .from('wallets')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .gt('balance', 0)
+      .limit(1);
+    if (fundedWallets && fundedWallets.length > 0) {
+      return 'completed';
+    }
+  }
+
   // Check for x402 endpoints
   if (stepId === 'register-endpoint' && protocolId === 'x402') {
     const { data: endpoints } = await supabase
@@ -324,7 +337,7 @@ export async function resetProtocolOnboarding(
   }
 
   const currentSettings = tenant?.settings || {};
-  const onboardingProgress = { ...currentSettings.onboarding_progress } || {};
+  const onboardingProgress = { ...(currentSettings.onboarding_progress || {}) };
 
   // Remove protocol progress
   delete onboardingProgress[protocolId];

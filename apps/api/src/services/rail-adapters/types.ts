@@ -64,6 +64,8 @@ export interface RailBalance {
   pending: number;
   reserved: number;
   lastUpdated: string;
+  /** Total balance (available + pending + reserved). Optional — adapters may compute differently. */
+  total?: number;
 }
 
 export interface SubmitSettlementRequest {

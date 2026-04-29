@@ -1,0 +1,74 @@
+---
+title: "Overview"
+description: "What Sly is, who it's for, and how the pieces fit together."
+---
+
+Sly is an API platform for moving money with AI agents in the loop. It sits between your application (or your agent) and the payment networks — stablecoin rails, card networks, banking infrastructure — and adds three things those networks don't give you directly:
+
+1. **Identity for agents.** Every AI agent is a first-class actor with a verifiable [KYA tier](/agents/kya-tiers), spending limits, and cryptographic credentials. Not a shared service account.
+2. **Policy enforcement.** Agents transact under [wallet policies](/agents/wallet-policies) that the network itself honors — kill-switches, per-merchant allowlists, daily caps, approval workflows.
+3. **Protocol compatibility.** Six agentic commerce protocols ([UCP, ACP, AP2, x402, A2A, MCP](/protocols/overview)) are supported behind one SDK — you integrate once and speak to any of them.
+
+## Who this is for
+
+<CardGroup cols={2}>
+  <Card title="Integration developers" icon="terminal">
+    Backend engineers at fintechs, marketplaces, and platforms integrating agentic payments into an existing product. You want REST, SDKs, webhooks, a sandbox, and a clean `pk_test` / `pk_live` split.
+  </Card>
+  <Card title="Agent builders" icon="robot">
+    Developers shipping autonomous agents that need to pay for things. You want Ed25519 auth, MCP tools, A2A discovery, and wallet policies you can configure from code.
+  </Card>
+</CardGroup>
+
+## Architecture at a glance
+
+```
+┌─────────────────────┐    ┌──────────────────────┐    ┌─────────────────┐
+│   Your app / agent  │───▶│     Sly API          │───▶│  Payment rails  │
+│   (SDK / CLI / MCP) │    │   (api.getsly.ai)    │    │  (stablecoin,   │
+│                     │    │                      │    │   cards, banks) │
+└─────────────────────┘    │  • Auth (5 methods)  │    └─────────────────┘
+                           │  • Protocol adapter  │
+                           │  • Policy engine     │
+                           │  • Tenant isolation  │
+                           │  • Webhook delivery  │
+                           └──────────────────────┘
+```
+
+Your integration touches three surfaces:
+
+| Surface | Purpose | When to use |
+|---------|---------|-------------|
+| **REST API** | Full programmatic access | Server-side integrations, backends |
+| **Node SDK** (`@sly_ai/sdk`) | Typed client with retry + auth | Node.js/TypeScript applications |
+| **CLI** (`@sly_ai/cli`) | Terminal + scripting | Ops, scripts, CI/CD |
+| **MCP server** (`@sly_ai/mcp-server`) | Model Context Protocol | Claude Desktop, agent runtimes |
+
+## Core objects
+
+Every integration works with a handful of core objects. Familiarize yourself with these before writing code:
+
+- **[Tenant](/core-concepts/tenants)** — your organization. All data is tenant-scoped.
+- **[Account](/core-concepts/accounts)** — a person or business that holds funds. Has a KYC tier.
+- **[Agent](/core-concepts/agents)** — an AI actor attached to an Account. Has a KYA tier and wallet policy.
+- **[Wallet](/core-concepts/wallets)** — the actual fund-holding primitive; one per Account or Agent.
+- **[Transfer](/core-concepts/transfers)** — a one-time movement of money.
+- **[Stream](/core-concepts/streams)** — a continuous per-second flow of money.
+- **[Quote](/core-concepts/quotes)** — an expiring FX rate for cross-border moves.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Environments" icon="flask" href="/get-started/environments">
+    Understand test vs. live and what data is isolated between them.
+  </Card>
+  <Card title="Sign up" icon="key" href="/get-started/sign-up">
+    Create your account and provision sandbox API keys.
+  </Card>
+  <Card title="Quickstart" icon="bolt" href="/get-started/quickstart">
+    First API call and first transfer in 5 minutes.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/authentication/overview">
+    The five auth methods and when to use each.
+  </Card>
+</CardGroup>

@@ -17,6 +17,7 @@ import {
   RegisterAgentStep,
   CreateMandateStep,
   TestPaymentStep,
+  FundWalletStep,
 } from '@/components/onboarding/steps';
 import { WIZARD_TEMPLATES, type TemplateId } from '@/types/wizard';
 
@@ -162,6 +163,14 @@ export default function WizardPage() {
               recommendedNetwork="base"
               helpText="Your wallet will receive micropayments from x402 API calls. We recommend Base for lowest fees."
               onWalletCreated={(walletId) => handleStepComplete({ walletId })}
+            />
+          );
+        case 'fund-wallet':
+          return (
+            <FundWalletStep
+              walletId={(stepData['create-wallet'] as any)?.walletId || ''}
+              helpText={currentStepDef.helpText}
+              onComplete={(data) => handleStepComplete(data)}
             />
           );
         case 'register-endpoint':
@@ -335,6 +344,14 @@ export default function WizardPage() {
               onWalletCreated={(walletId) => handleStepComplete({ walletId })}
             />
           );
+        case 'fund-wallet':
+          return (
+            <FundWalletStep
+              walletId={(stepData['create-agent-wallet'] as any)?.walletId || ''}
+              helpText={currentStepDef.helpText}
+              onComplete={(data) => handleStepComplete(data)}
+            />
+          );
         case 'configure-limits':
           return (
             <ConfigureLimitsStep
@@ -362,6 +379,14 @@ export default function WizardPage() {
               recommendedNetwork="base"
               helpText="This wallet will receive all recurring payment deposits."
               onWalletCreated={(walletId) => handleStepComplete({ walletId })}
+            />
+          );
+        case 'fund-wallet':
+          return (
+            <FundWalletStep
+              walletId={(stepData['create-wallet'] as any)?.walletId || ''}
+              helpText={currentStepDef.helpText}
+              onComplete={(data) => handleStepComplete(data)}
             />
           );
         case 'register-agent':

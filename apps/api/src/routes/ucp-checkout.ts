@@ -35,6 +35,7 @@ import {
   type CheckoutStatus,
 } from '../services/ucp/index.js';
 import { createClient } from '../db/client.js';
+import { getEnv } from '../utils/helpers.js';
 import { getCircleFXService } from '../services/circle/fx.js';
 import { createCheckoutTelemetryService } from '../services/telemetry/checkout-telemetry.js';
 import { trackOp } from '../services/ops/track-op.js';
@@ -152,7 +153,7 @@ router.post('/', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const checkout = await createCheckout(ctx.tenantId, body as CreateCheckoutRequest, supabase);
 
     trackOp({
@@ -171,7 +172,7 @@ router.post('/', async (c) => {
       return c.json({ error: error.message }, 400);
     }
     console.error('[UCP Checkout] Create error:', error);
-    const supabase = createClient();
+    const supabase: any = createClient();
     const telemetry = createCheckoutTelemetryService(supabase);
     telemetry.record({
       protocol: 'ucp',
@@ -199,7 +200,7 @@ router.get('/', async (c) => {
   const offset = parseInt(c.req.query('offset') || '0', 10);
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const result = await listCheckouts(ctx.tenantId, { status, agent_id, limit, offset }, supabase);
 
     return c.json({
@@ -225,11 +226,12 @@ router.get('/stats', async (c) => {
   const ctx = c.get('ctx');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const { data, error } = await supabase
       .from('ucp_checkout_sessions')
       .select('currency, totals, status')
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
 
     if (error) {
       return c.json({ error: 'Failed to fetch checkout stats' }, 500);
@@ -308,7 +310,7 @@ router.post('/batch', async (c) => {
   }
 
   const { checkouts, auto_complete, default_payment_instrument } = parsed.data;
-  const supabase = createClient();
+  const supabase: any = createClient();
   const results: Array<{ checkout_id: string; order_id?: string; status: string; error?: string }> = [];
 
   for (const spec of checkouts) {
@@ -421,7 +423,7 @@ router.post('/batch-complete', async (c) => {
     }));
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const results: Array<{ checkout_id: string; order_id?: string; status: string; error?: string }> = [];
 
   for (const item of items) {
@@ -467,7 +469,7 @@ router.get('/:id', async (c) => {
   const checkoutId = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const checkout = await getCheckout(ctx.tenantId, checkoutId, supabase);
 
     if (!checkout) {
@@ -499,7 +501,7 @@ router.put('/:id', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const checkout = await updateCheckout(ctx.tenantId, checkoutId, body as UpdateCheckoutRequest, supabase);
 
     trackOp({
@@ -534,7 +536,7 @@ router.post('/:id/complete', async (c) => {
   const checkoutId = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const checkout = await completeCheckout(ctx.tenantId, checkoutId, supabase);
 
     // Record successful checkout telemetry
@@ -543,7 +545,7 @@ router.post('/:id/complete', async (c) => {
       protocol: 'ucp',
       event_type: 'checkout.completed',
       success: true,
-      agent_id: checkout.agent_id,
+      agent_id: checkout.agent_id ?? undefined,
       currency: checkout.currency,
       protocol_metadata: { checkout_id: checkoutId },
     });
@@ -567,7 +569,7 @@ router.post('/:id/complete', async (c) => {
       return c.json({ error: error.message }, 409);
     }
     if (error.message.includes('Payment failed')) {
-      const supabase = createClient();
+      const supabase: any = createClient();
       const telemetry = createCheckoutTelemetryService(supabase);
       telemetry.record({
         protocol: 'ucp',
@@ -580,7 +582,7 @@ router.post('/:id/complete', async (c) => {
       return c.json({ error: error.message }, 402); // Payment Required
     }
     console.error('[UCP Checkout] Complete error:', error);
-    const supabase = createClient();
+    const supabase: any = createClient();
     const telemetry = createCheckoutTelemetryService(supabase);
     telemetry.record({
       protocol: 'ucp',
@@ -603,7 +605,7 @@ router.post('/:id/cancel', async (c) => {
   const checkoutId = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const checkout = await cancelCheckout(ctx.tenantId, checkoutId, supabase);
 
     trackOp({
@@ -649,7 +651,7 @@ router.patch('/:id/edit', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Allowlist of editable fields
     const allowed: Record<string, boolean> = {
@@ -676,6 +678,7 @@ router.patch('/:id/edit', async (c) => {
       .update(updates)
       .eq('id', checkoutId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .select('*')
       .single();
 
@@ -703,7 +706,7 @@ router.delete('/:id', async (c) => {
   const checkoutId = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const success = await deleteCheckout(ctx.tenantId, checkoutId, supabase);
 
     if (!success) {
@@ -735,7 +738,7 @@ router.post('/:id/instruments', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const checkout = await addPaymentInstrument(ctx.tenantId, checkoutId, body, supabase);
 
     trackOp({
@@ -771,7 +774,7 @@ router.put('/:id/instruments/:instrumentId', async (c) => {
   const instrumentId = c.req.param('instrumentId');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const checkout = await selectPaymentInstrument(ctx.tenantId, checkoutId, instrumentId, supabase);
 
     return c.json(checkout);

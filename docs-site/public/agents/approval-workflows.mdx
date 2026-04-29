@@ -1,0 +1,182 @@
+---
+title: "Approval workflows"
+description: "Route high-value spends through a human approver before execution."
+---
+
+Approval workflows insert a human checkpoint between "agent wants to spend" and "transaction executes." They're the dial between full autonomy and full oversight.
+
+## When approvals fire
+
+Configure thresholds on your [wallet policy](/agents/wallet-policies):
+
+```json
+{
+  "approval_threshold": {
+    "amount": "500.00",
+    "currency": "USD",
+    "approver_role": "admin",
+    "timeout_seconds": 3600
+  }
+}
+```
+
+Any transaction `amount >= 500 USD` → approval required. Below threshold → direct execution.
+
+You can have multiple thresholds for different conditions (per-merchant, per-merchant-category, per-time-of-day). See [wallet policies](/agents/wallet-policies) for the full rule grammar.
+
+## The flow
+
+```
+1. Agent attempts spend
+2. Policy evaluation: over threshold → create approval request
+3. Approval request sent to approvers (Slack, email, dashboard)
+4. Approver approves or rejects
+5. On approve → transaction executes
+   On reject → recorded; agent notified
+   On timeout → treated as reject (configurable)
+```
+
+## Create an approval (automatic)
+
+When an agent calls a spending endpoint and the amount is over threshold, Sly automatically creates an approval instead of executing:
+
+```bash
+# Agent attempts
+curl -X POST https://api.getsly.ai/v1/transfers \
+  -H "Authorization: Bearer sess_..." \
+  -d '{ "amount": "750.00", ... }'
+
+# Response
+{
+  "status": "requires_approval",
+  "approval_id": "apr_...",
+  "estimated_time_to_decision": "5m"
+}
+```
+
+The transfer doesn't execute. It's pending on `apr_...`.
+
+## Approver perspective
+
+```bash
+# List pending approvals
+curl https://api.getsly.ai/v1/approvals?status=pending \
+  -H "Authorization: Bearer pk_live_..."
+
+# Get details
+curl https://api.getsly.ai/v1/approvals/apr_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Response:
+
+```json
+{
+  "id": "apr_...",
+  "status": "pending",
+  "amount": "750.00",
+  "currency": "USD",
+  "agent": { "id": "agt_...", "name": "Payables Bot" },
+  "merchant": { "id": "mer_...", "name": "AWS" },
+  "description": "Monthly EC2 bill",
+  "created_at": "2026-04-22T14:00:00Z",
+  "expires_at": "2026-04-22T15:00:00Z",
+  "context": {
+    "agent_today_spend": "342.00",
+    "agent_month_spend": "8102.50",
+    "prior_approvals_this_merchant": 12,
+    "policy_evaluation": { ... }
+  }
+}
+```
+
+The `context` block is purpose-built for approvers — "has this been approved before? how much has this agent spent today?" — so approvers don't need to go hunting for signal.
+
+## Approve
+
+```bash
+curl -X POST https://api.getsly.ai/v1/approvals/apr_.../approve \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "comment": "Expected monthly bill, matches forecast" }'
+```
+
+The pending transaction executes immediately. The approver's identity and comment are attached to the audit trail.
+
+## Reject
+
+```bash
+curl -X POST https://api.getsly.ai/v1/approvals/apr_.../reject \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "reason": "Amount unusually high; need to verify with vendor" }'
+```
+
+The transaction does not execute. Agent receives a push event (`approval_rejected`) if connected via SSE; otherwise can poll.
+
+## Notifications
+
+Approvers are notified via configured channels:
+
+- **Sly dashboard** — always
+- **Email** — if enabled on the tenant
+- **Slack** — via OAuth integration (Settings → Integrations → Slack)
+- **SMS** — for tenants on the Enterprise tier
+
+Each notification includes a one-click deep link to the approval detail page.
+
+## Auto-approve rules
+
+For lower-friction workflows, define auto-approval rules:
+
+```json
+{
+  "auto_approve_rules": [
+    {
+      "condition": { "merchant_id": "mer_aws", "max_amount": "2000.00" },
+      "reason": "Trusted merchant — AWS billing"
+    },
+    {
+      "condition": { "merchant_category": "saas", "max_amount": "500.00", "prior_approvals_at_merchant_gte": 3 },
+      "reason": "Known SaaS vendor with history"
+    }
+  ]
+}
+```
+
+Auto-approved transactions still appear in the audit log with the rule that matched.
+
+## Timeout behavior
+
+If no approver responds within `timeout_seconds`:
+
+- Default: `timeout_seconds` → reject
+- Configurable: `on_timeout: "auto_approve"` (only for low-sensitivity tenants)
+
+Pending-too-long approvals surface in the dashboard so they don't silently accumulate.
+
+## Escalation
+
+If the primary approver is unavailable, escalate to a higher role:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/approvals/apr_.../escalate \
+  -d '{ "to_role": "owner", "reason": "Primary admin on vacation" }'
+```
+
+Escalations re-trigger notifications to the escalation target and extend the timeout.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/approvals` | List approvals |
+| `GET /v1/approvals/:id` | Get approval details |
+| `POST /v1/approvals/:id/approve` | Approve |
+| `POST /v1/approvals/:id/reject` | Reject |
+| `POST /v1/approvals/:id/escalate` | Escalate to higher role |
+| `GET /v1/agentic-payments` | Alternative entry point for agent-initiated approvals |
+
+## Good defaults
+
+- **Starting out:** $100 threshold, approver_role `admin`, 1-hour timeout
+- **Mature:** tiered thresholds ($100 → `admin`, $1000 → `owner`), faster timeouts with auto-approve for trusted merchants
+- **Production-ready:** all of the above + Slack notifications + auto-approve for known merchants with history

@@ -344,7 +344,7 @@ app.post('/', async (c) => {
     
     console.log(`[CircleWebhook] Received: ${event.notificationType} (${event.notificationId})`);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Check for duplicate notification (idempotency)
     const { data: existing } = await supabase
@@ -438,7 +438,7 @@ app.post('/', async (c) => {
  * Health check for Circle webhook endpoint
  */
 app.get('/health', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Get recent webhook stats
   const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

@@ -1,0 +1,115 @@
+---
+title: "Settlement overview"
+description: "How Sly moves money between accounts and out to rails."
+---
+
+**Settlement** is the process that turns logical transfers into actual money movement. Most partners don't think about settlement day-to-day because Sly handles it automatically — this section is for when you need to customize fees, schedules, rules, or reconcile against external accounting.
+
+## The layers
+
+```
+┌───────────────────────────────────────┐
+│ Transfers  (logical — app-visible)    │   Partner creates via /v1/transfers
+├───────────────────────────────────────┤
+│ Settlement Rules  (when to settle)    │   Thresholds, schedules, manual
+├───────────────────────────────────────┤
+│ Settlement Windows  (batch cadence)   │   Hourly / daily / custom
+├───────────────────────────────────────┤
+│ Execution  (actual rail moves)        │   ACH, wire, stablecoin transfers
+├───────────────────────────────────────┤
+│ Reconciliation  (match internal→rail) │   Catch drift, gaps
+└───────────────────────────────────────┘
+```
+
+## Default behavior
+
+When you do nothing special, Sly:
+- Settles **same-currency internal transfers** instantly (just a ledger move)
+- Settles **cross-border / cross-rail transfers** at the next [settlement window](/settlement/windows) — default every 4 hours for most rails
+- Takes configurable **fees** (default `x402FeePercentage: 0.029` = 2.9% on x402 volume, zero on other flows)
+- Reconciles nightly against rail settlement files
+
+For many integrations, defaults are fine. You customize when:
+- You want instant settlement for specific rails
+- You want different cadence per merchant / agent
+- You need rule-based routing (auto-sweep balances, split fees)
+- Your accounting team needs matched reconciliation
+
+## What lives in this section
+
+<CardGroup cols={2}>
+  <Card title="Rules" icon="sliders" href="/settlement/rules">
+    Triggers for when settlement happens — balance thresholds, time-based, manual requests, event-driven.
+  </Card>
+  <Card title="Windows" icon="calendar" href="/settlement/windows">
+    Batch cadence configuration — per rail, per tenant, with holiday calendars.
+  </Card>
+  <Card title="Reconciliation" icon="magnifying-glass-chart" href="/settlement/reconciliation">
+    Match Sly's internal ledger against rail settlement files; resolve discrepancies.
+  </Card>
+  <Card title="Treasury" icon="vault" href="/settlement/treasury">
+    Real-time view of cash positions, exposure, rebalancing, and liquidity alerts.
+  </Card>
+  <Card title="Scheduled transfers" icon="clock-rotate-left" href="/settlement/scheduled-transfers">
+    Recurring transfers (daily / weekly / monthly) with retry policies.
+  </Card>
+</CardGroup>
+
+## Tenant-level configuration
+
+```bash
+curl https://api.getsly.ai/v1/settlement/config \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Returns your current config:
+
+```json
+{
+  "x402FeePercentage": 0.029,
+  "autoSettlementEnabled": true,
+  "settlementSchedule": "immediate",
+  "holdbackPercentage": 0.00,
+  "reserveAmount": "0.00"
+}
+```
+
+Update:
+
+```bash
+curl -X PATCH https://api.getsly.ai/v1/settlement/config \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "x402FeePercentage": 0.025,
+    "settlementSchedule": "daily"
+  }'
+```
+
+## When settlement matters
+
+- **Payouts to merchants** — cadence affects their cash flow; schedule matters
+- **High-volume x402** — batching many tiny payments reduces rail fees
+- **Compliance** — holdback reserves for chargebacks / refunds
+- **Accounting close** — reconciliation reports feed your GL
+- **Regulatory reporting** — settlement timing feeds transaction monitoring
+
+## When it doesn't
+
+- **Same-currency internal transfers** — happen instantly regardless of config
+- **Sandbox** — most settlement happens mock-instantly for development speed
+- **Stablecoin-only integrations** — on-chain settlement is the rail; no off-chain batching
+
+## Endpoints (section-wide)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/settlement/config` | Read tenant settlement config |
+| `PATCH /v1/settlement/config` | Update fees, schedule, holdback |
+| `GET /v1/settlement-rules` | List rules |
+| `POST /v1/settlement-rules/request-manual` | Force immediate settlement run |
+| `GET /v1/settlement-windows` | List configured windows |
+| `GET /v1/reconciliation/reports` | Recon report list |
+| `GET /v1/treasury/dashboard` | Treasury summary |
+| `GET /v1/scheduled-transfers` | Scheduled transfer list |
+
+Each page in this section covers its endpoints in detail.

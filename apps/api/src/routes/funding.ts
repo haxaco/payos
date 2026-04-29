@@ -14,6 +14,16 @@ import {
   createConversionService,
   createFundingFeeService,
 } from '../services/funding/index.js';
+import {
+  createOnrampToken,
+  createOfframpToken,
+  BLOCKCHAIN_TO_COINBASE,
+  createStripeOnrampSession,
+  BLOCKCHAIN_TO_STRIPE,
+} from '../services/funding/stripe-payment-intent.js';
+import {
+  createCrossmintOrder,
+} from '../services/funding/crossmint.js';
 import type {
   FundingSourceType,
   FundingProvider,
@@ -48,8 +58,21 @@ const initiateFundingSchema = z.object({
   source_id: z.string().uuid(),
   amount_cents: z.number().int().positive().max(100_000_000), // Max $1M
   currency: z.string().min(3).max(4),
+  wallet_id: z.string().uuid().optional(),
   idempotency_key: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
+});
+
+const onrampSessionSchema = z.object({
+  wallet_id: z.string().uuid(),
+  source_amount: z.string().optional(),
+  source_currency: z.string().optional(),
+});
+
+const crossmintOrderSchema = z.object({
+  wallet_id: z.string().uuid(),
+  amount: z.string().default('5.00'),
+  receipt_email: z.string().email().optional(),
 });
 
 const estimateFeesSchema = z.object({
@@ -91,7 +114,7 @@ app.post('/sources', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const source = await orchestrator.createSource(ctx.tenantId, parsed.data);
 
@@ -114,7 +137,7 @@ app.get('/sources', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const { data, total } = await orchestrator.listSources(ctx.tenantId, {
       account_id: accountId,
@@ -147,7 +170,7 @@ app.get('/sources/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const source = await orchestrator.getSource(ctx.tenantId, id);
 
@@ -167,7 +190,7 @@ app.post('/sources/:id/verify', async (c) => {
   const parsed = verifySourceSchema.safeParse(body);
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const source = await orchestrator.verifySource(ctx.tenantId, {
       source_id: id,
@@ -188,7 +211,7 @@ app.delete('/sources/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     await orchestrator.removeSource(ctx.tenantId, id);
 
@@ -215,7 +238,7 @@ app.post('/widget-sessions', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const session = await orchestrator.createWidgetSession(
       ctx.tenantId,
@@ -253,7 +276,7 @@ app.post('/transactions', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const transaction = await orchestrator.initiateFunding(ctx.tenantId, parsed.data);
 
@@ -277,7 +300,7 @@ app.get('/transactions/:id', async (c) => {
   const id = c.req.param('id');
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const transaction = await orchestrator.getTransaction(ctx.tenantId, id);
 
@@ -299,7 +322,7 @@ app.get('/transactions', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const { data, total } = await orchestrator.listTransactions(ctx.tenantId, {
       source_id: sourceId,
@@ -335,7 +358,7 @@ app.post('/estimate-fees', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const orchestrator = createFundingOrchestrator(supabase);
     const estimate = await orchestrator.estimateFees(
       ctx.tenantId,
@@ -366,7 +389,7 @@ app.post('/conversion-quote', async (c) => {
   }
 
   try {
-    const supabase = createClient();
+    const supabase: any = createClient();
     const conversion = createConversionService(supabase);
     const quote = await conversion.getQuote(
       parsed.data.from_currency,
@@ -384,7 +407,7 @@ app.post('/conversion-quote', async (c) => {
  * GET /v1/funding/providers - List available providers
  */
 app.get('/providers', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const orchestrator = createFundingOrchestrator(supabase);
   return c.json({ data: orchestrator.listProviders() });
 });
@@ -393,9 +416,350 @@ app.get('/providers', async (c) => {
  * GET /v1/funding/conversion-rates - List conversion rates
  */
 app.get('/conversion-rates', async (c) => {
-  const supabase = createClient();
+  const supabase: any = createClient();
   const conversion = createConversionService(supabase);
   return c.json({ data: conversion.getSupportedPairs() });
+});
+
+// ============================================
+// Crypto Onramp (Stripe Crypto Onramp)
+// ============================================
+
+/**
+ * POST /v1/funding/topup-link
+ *
+ * Chat-first top-up. Returns a standalone Coinbase Pay URL the tenant
+ * can click to buy USDC with a card/bank and deliver it directly to
+ * the specified wallet address. No embedded widget, no session token
+ * roundtrip on the client — the URL is self-contained, suitable for
+ * posting into chat (e.g. an agent saying "tap this to top me up").
+ *
+ * Body: { wallet_id: string, preset_amount_usdc?: number }
+ * Returns: { url, walletAddress, network, expiresAt }
+ */
+app.post('/topup-link', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json().catch(() => ({}));
+  const wallet_id = body?.wallet_id as string | undefined;
+  const presetAmount = Number(body?.preset_amount_usdc) > 0 ? Number(body.preset_amount_usdc) : undefined;
+
+  if (!wallet_id) {
+    return c.json({ error: 'wallet_id is required' }, 400);
+  }
+
+  try {
+    const supabase: any = createClient();
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, status, wallet_address, blockchain, wallet_type, name')
+      .eq('id', wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+    if (wallet.status !== 'active') {
+      return c.json({ error: `Wallet is ${wallet.status}, must be active` }, 400);
+    }
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({
+        error: 'no_onchain_address',
+        message: 'Internal wallets cannot receive fiat top-ups. Use an on-chain wallet (agent_eoa, circle_custodial, external).',
+      }, 400);
+    }
+
+    // Mint a CDP session token — this is the preferred approach over
+    // bare appId links because it pins the destination address on the
+    // Coinbase side (prevents URL tampering and carries onramp config).
+    const tokenResult = await createOnrampToken({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+    });
+    const network = BLOCKCHAIN_TO_COINBASE[wallet.blockchain || 'base'] || 'base';
+
+    // Construct the hosted Coinbase Pay URL. Session tokens are valid
+    // for ~5 min; Coinbase refuses reuse after redemption.
+    const params = new URLSearchParams();
+    params.set('sessionToken', tokenResult.token);
+    params.set('defaultAsset', 'USDC');
+    params.set('defaultNetwork', network);
+    if (presetAmount) params.set('presetFiatAmount', String(presetAmount));
+    const url = `https://pay.coinbase.com/buy/select-asset?${params.toString()}`;
+    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+
+    return c.json({
+      url,
+      walletAddress: wallet.wallet_address,
+      walletName: wallet.name,
+      network,
+      blockchain: wallet.blockchain,
+      asset: 'USDC',
+      presetAmountUsdc: presetAmount ?? null,
+      expiresAt,
+      instructions: 'Open this URL in a browser to pay by card/bank. USDC arrives at the listed address on Base within ~2 minutes.',
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * POST /v1/funding/onramp-session - Create Coinbase Onramp Session Token
+ *
+ * Returns a session token and wallet details for embedding the Coinbase onramp widget.
+ * Coinbase handles fiat payment, USDC purchase, and delivery to the wallet address.
+ * Sly never holds money.
+ */
+app.post('/onramp-session', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json();
+  const parsed = onrampSessionSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const supabase: any = createClient();
+
+    // Get wallet with on-chain address info
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, owner_account_id, status, wallet_address, blockchain, wallet_type')
+      .eq('id', parsed.data.wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+
+    if (wallet.status !== 'active') {
+      return c.json({ error: `Wallet is ${wallet.status}, must be active` }, 400);
+    }
+
+    // Check wallet has a real on-chain address
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({
+        error: 'no_onchain_address',
+        message: 'This wallet does not have an on-chain address. Create a Circle wallet to deposit real USDC.',
+      }, 400);
+    }
+
+    // Create Coinbase Onramp session token
+    const tokenResult = await createOnrampToken({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+    });
+
+    const network = BLOCKCHAIN_TO_COINBASE[wallet.blockchain || 'base'] || 'base';
+
+    return c.json({
+      session_token: tokenResult.token,
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain,
+      network,
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * POST /v1/funding/stripe-onramp-session - Create Stripe Crypto Onramp Session
+ *
+ * Returns a client_secret for embedding Stripe's crypto onramp widget.
+ * Stripe handles fiat payment, USDC purchase, and delivery to the wallet address.
+ */
+app.post('/stripe-onramp-session', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json();
+  const parsed = onrampSessionSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const supabase: any = createClient();
+
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, owner_account_id, status, wallet_address, blockchain, wallet_type')
+      .eq('id', parsed.data.wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+
+    if (wallet.status !== 'active') {
+      return c.json({ error: `Wallet is ${wallet.status}, must be active` }, 400);
+    }
+
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({
+        error: 'no_onchain_address',
+        message: 'This wallet does not have an on-chain address. Create a Circle wallet to deposit real USDC.',
+      }, 400);
+    }
+
+    // Get user profile for pre-filling customer info
+    let customerEmail: string | undefined;
+    let customerFirstName: string | undefined;
+    let customerLastName: string | undefined;
+
+    if (ctx.userId) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('email, full_name')
+        .eq('id', ctx.userId)
+        .single();
+
+      if (profile) {
+        customerEmail = profile.email;
+        const nameParts = (profile.full_name || '').trim().split(/\s+/);
+        customerFirstName = nameParts[0];
+        customerLastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+      }
+    }
+
+    const sessionResult = await createStripeOnrampSession({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+      tenant_id: ctx.tenantId,
+      wallet_id: wallet.id,
+      account_id: wallet.owner_account_id,
+      customer_email: customerEmail || ctx.userEmail,
+      customer_first_name: customerFirstName || ctx.userName?.split(' ')[0],
+      customer_last_name: customerLastName || ctx.userName?.split(' ').slice(1).join(' '),
+    });
+
+    const network = BLOCKCHAIN_TO_STRIPE[wallet.blockchain || 'base'] || 'base';
+
+    return c.json({
+      client_secret: sessionResult.client_secret,
+      session_id: sessionResult.session_id,
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain,
+      network,
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * POST /v1/funding/offramp-session - Create Coinbase Offramp Session Token
+ *
+ * Returns a session token for the Coinbase sell/offramp widget.
+ * User sells USDC → receives fiat to their bank/PayPal.
+ */
+app.post('/offramp-session', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json();
+  const parsed = onrampSessionSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const supabase: any = createClient();
+
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, owner_account_id, status, wallet_address, blockchain, wallet_type')
+      .eq('id', parsed.data.wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) return c.json({ error: 'Wallet not found' }, 404);
+    if (wallet.status !== 'active') return c.json({ error: `Wallet is ${wallet.status}` }, 400);
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({ error: 'no_onchain_address', message: 'Wallet needs an on-chain address.' }, 400);
+    }
+
+    const tokenResult = await createOfframpToken({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+    });
+
+    const network = BLOCKCHAIN_TO_COINBASE[wallet.blockchain || 'base'] || 'base';
+
+    return c.json({
+      session_token: tokenResult.token,
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain,
+      network,
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * POST /v1/funding/crossmint-order - Create Crossmint Onramp Order
+ *
+ * Returns orderId and clientSecret for the embedded checkout component.
+ * Crossmint handles fiat payment, USDC purchase, and delivery to wallet.
+ */
+app.post('/crossmint-order', async (c) => {
+  const ctx = c.get('ctx') as any;
+  const body = await c.req.json();
+  const parsed = crossmintOrderSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const supabase: any = createClient();
+
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('id, tenant_id, owner_account_id, status, wallet_address, blockchain, wallet_type')
+      .eq('id', parsed.data.wallet_id)
+      .eq('tenant_id', ctx.tenantId)
+      .single();
+
+    if (walletError || !wallet) {
+      return c.json({ error: 'Wallet not found' }, 404);
+    }
+
+    if (!wallet.wallet_address || wallet.wallet_address.startsWith('internal://')) {
+      return c.json({ error: 'no_onchain_address', message: 'Wallet needs an on-chain address.' }, 400);
+    }
+
+    // Get user email for Crossmint
+    let userEmail = parsed.data.receipt_email;
+    if (!userEmail && ctx.userId) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('email')
+        .eq('id', ctx.userId)
+        .single();
+      userEmail = profile?.email;
+    }
+
+    const orderResult = await createCrossmintOrder({
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain || 'base',
+      amount: parsed.data.amount,
+      receipt_email: userEmail || ctx.userEmail,
+    });
+
+    return c.json({
+      order_id: orderResult.order_id,
+      client_secret: orderResult.client_secret,
+      wallet_address: wallet.wallet_address,
+      blockchain: wallet.blockchain,
+    }, 201);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
 });
 
 // ============================================
@@ -443,6 +807,7 @@ function mapTransactionResponse(tx: any) {
     id: tx.id,
     source_id: tx.funding_source_id,
     account_id: tx.account_id,
+    wallet_id: tx.wallet_id,
     amount_cents: tx.amount_cents,
     currency: tx.currency,
     converted_amount_cents: tx.converted_amount_cents,

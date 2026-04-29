@@ -1,0 +1,185 @@
+---
+title: "Card networks (Visa VIC + Mastercard Agent Pay)"
+description: "Route agent spend through real card rails with network-level verification."
+---
+
+Sly integrates with two card-network agent programs: **Visa Intelligent Commerce (VIC)** and **Mastercard Agent Pay**. Both allow AI agents to transact at merchants that accept cards — adding card-network identity verification on top of Sly's own [KYA tiers](/agents/kya-tiers) and [wallet policies](/agents/wallet-policies).
+
+When to use card rails over stablecoin:
+
+- The merchant accepts cards but not stablecoin
+- You need chargeback rights (disputes protected by network rules, not just platform policy)
+- Settlement in the merchant's local currency without FX round-trip
+- Card-issuer rewards / rebates matter for your agent's economics
+
+## How it fits
+
+```
+┌─────────┐   Web Bot Auth   ┌──────────────┐   Network       ┌─────────┐
+│ Agent   ├─────(signed)───▶ │   Sly Card   ├─────token─────▶ │ Merchant│
+│         │                  │   API        │   transaction   │         │
+│         │                  │              │                 │         │
+│         │◀───settlement────┤              │◀────auth────────┤         │
+└─────────┘                  └──────────────┘                 └─────────┘
+                                     │
+                                     ▼
+                              ┌──────────────┐
+                              │ Vault        │
+                              │ (tokenized   │
+                              │  card)       │
+                              └──────────────┘
+```
+
+Two surfaces cover this:
+- **`/v1/cards`** — network configuration + Web Bot Auth verification
+- **`/v1/cards/vault`** — tokenized card storage per agent
+
+## Supported networks
+
+| Network | Program | Status |
+|---|---|---|
+| Visa | Intelligent Commerce (VIC) | GA |
+| Mastercard | Agent Pay | GA |
+| Amex | — | Not yet |
+| Discover | — | Not yet |
+
+Check live network status:
+
+```bash
+curl https://sandbox.getsly.ai/v1/cards/networks \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+## Web Bot Auth verification
+
+Both VIC and Agent Pay require agents to authenticate with a signed bot-identity token on each transaction. Sly verifies these on your behalf:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/cards/verify \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "network": "visa",
+    "agent_id": "agt_...",
+    "transaction_intent": {
+      "merchant_id": "mer_...",
+      "amount": "49.99",
+      "currency": "USD"
+    },
+    "signed_bot_identity": "<JWS>"
+  }'
+```
+
+Returns `{ verified: true, network_ref: "visa_vic_abc..." }` or a specific rejection reason.
+
+On success, the `network_ref` can be used as an authorization token for the card transaction.
+
+## Vault a card
+
+Agents can't carry raw PAN. Instead, a card is **vaulted** (tokenized) through your connected payment processor (Stripe / Adyen / etc.), and the agent references the vault entry:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/cards/vault \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "accountId": "acc_...",
+    "processor": "stripe",
+    "processorToken": "tok_visa",
+    "cardLastFour": "4242",
+    "cardBrand": "visa",
+    "expiryMonth": 12,
+    "expiryYear": 2028,
+    "label": "Travel Ops",
+    "billingAddress": {
+      "line1": "1 Market St",
+      "city": "San Francisco",
+      "state": "CA",
+      "postal_code": "94105",
+      "country": "US"
+    }
+  }'
+```
+
+Returns a `card_vault_id`. Cards are stored tokenized at your processor — Sly never sees PAN or CVV.
+
+## Set spending limits per card
+
+Separate from agent-level wallet policies, you can cap usage on a specific vaulted card:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/cards/vault/cvi_.../limits \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "per_tx_cap": "200.00",
+    "daily_cap": "500.00",
+    "monthly_cap": "3000.00",
+    "currency": "USD",
+    "allowed_merchant_categories": ["travel", "lodging"]
+  }'
+```
+
+Per-card limits compose with [wallet policies](/agents/wallet-policies) — the narrowest rule wins.
+
+## List vaulted cards
+
+```bash
+curl "https://sandbox.getsly.ai/v1/cards/vault?account_id=acc_..." \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Response shows each card's `last_four`, `brand`, expiry, label, and current spend counters against limits.
+
+## Per-card transaction history
+
+```bash
+curl "https://sandbox.getsly.ai/v1/cards/vault/cvi_.../transactions" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Or aggregate across all cards:
+
+```bash
+curl "https://sandbox.getsly.ai/v1/card-transactions?account_id=acc_..." \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Transaction records include `paymentMethodId`, `type`, `status`, `amount`, `merchantName`, `cardLastFour`, `isDisputed`.
+
+## Remove a card
+
+```bash
+curl -X DELETE https://sandbox.getsly.ai/v1/cards/vault/cvi_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Revokes the token at your processor too. Any pending authorizations on the card continue; no new ones accepted.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/cards/networks` | List configured networks + status |
+| `POST /v1/cards/verify` | Verify Web Bot Auth signature (VIC / Mastercard Agent Pay) |
+| `POST /v1/cards/vault` | Tokenize + store a card |
+| `GET /v1/cards/vault` | List vaulted cards |
+| `POST /v1/cards/vault/:id/limits` | Set per-card spending limits |
+| `GET /v1/cards/vault/:id/transactions` | Per-card history |
+| `DELETE /v1/cards/vault/:id` | Remove vault entry |
+| `GET /v1/card-transactions` | Aggregate card transactions |
+
+## Disputes on card rails
+
+Card transactions dispute through the **card network**, not Sly's own dispute flow. Partners get a window (typically 120 days from the transaction) to respond with evidence. See [handle disputes](/guides/handle-dispute) for the Sly-side workflow.
+
+Sly surfaces network-originated disputes as `card.dispute.opened` events on your webhooks.
+
+## When not to use card rails
+
+- **Micropayments under ~$1** — card interchange makes them uneconomic; use [x402](/protocols/x402) or [MPP](/protocols/mpp) stablecoin instead
+- **Cross-border payouts** — card networks charge FX margins; [UCP](/protocols/ucp) with stablecoin settlement is cheaper
+- **Agent-to-agent** — no card-network support; use [A2A](/protocols/a2a) with stablecoin
+
+## Prerequisites
+
+- Active merchant account with either Stripe or Adyen (connected via OAuth — see [e-commerce onboarding](/onboarding/e-commerce))
+- Agent at KYA Tier 1 or higher (card networks reject Tier 0 for identity reasons)
+- Enrolled in VIC and/or Agent Pay programs (check `/v1/cards/networks` status)

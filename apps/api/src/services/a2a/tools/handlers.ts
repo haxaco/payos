@@ -15,7 +15,7 @@ import type { AgentContext } from './context-injector.js';
 export interface ToolResult {
   success: boolean;
   data?: unknown;
-  error?: { code: string; message: string; suggestedAction?: string };
+  error?: { code: string; message: string; suggestedAction?: string; data?: unknown };
 }
 
 type ToolHandler = (
@@ -330,12 +330,24 @@ async function handleSendA2aTask(
   if (!messageText) {
     return { success: false, error: { code: 'MISSING_PARAM', message: 'message is required' } };
   }
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (targetAgentId && !UUID_RE.test(targetAgentId)) {
+    return { success: false, error: { code: 'INVALID_PARAM', message: 'agent_id must be a valid UUID' } };
+  }
+
+  // Hop depth limit — prevent infinite delegation chains
+  const MAX_HOP_DEPTH = 3;
+  const parentHopDepth = (args.hop_depth as number) || 0;
+  if (parentHopDepth >= MAX_HOP_DEPTH) {
+    return { success: false, error: { code: 'HOP_LIMIT', message: `Maximum delegation depth (${MAX_HOP_DEPTH}) reached. Cannot delegate further.` } };
+  }
 
   // Build parts from string message
   const parts = [{ text: messageText }];
   const metadata: Record<string, unknown> = {
     initiatingAgentId: ctx.agentId,
     initiatingTaskId: ctx.currentTaskId,
+    hopDepth: parentHopDepth + 1,
   };
 
   if (remoteUrl) {
@@ -347,8 +359,8 @@ async function handleSendA2aTask(
       return {
         success: true,
         data: {
-          taskId: result?.result?.id || null,
-          state: result?.result?.status?.state || 'submitted',
+          taskId: (result?.result as any)?.id || null,
+          state: (result?.result as any)?.status?.state || 'submitted',
           remote: true,
           url: remoteUrl,
         },
@@ -358,21 +370,26 @@ async function handleSendA2aTask(
     }
   }
 
-  // Intra-platform: verify target agent exists in same tenant
+  // Intra-platform: verify target agent exists and allows cross-tenant if needed
   const { data: targetAgent } = await supabase
     .from('agents')
-    .select('id, status, tenant_id')
+    .select('id, status, tenant_id, allow_cross_tenant')
     .eq('id', targetAgentId)
-    .eq('tenant_id', ctx.tenantId)
     .single();
 
   if (!targetAgent || targetAgent.status !== 'active') {
     return { success: false, error: { code: 'AGENT_NOT_FOUND', message: `Agent ${targetAgentId} not found or inactive` } };
   }
 
-  // Create child task directly via TaskService
+  // Cross-tenant opt-in check
+  const isCrossTenant = targetAgent.tenant_id !== ctx.tenantId;
+  if (isCrossTenant && targetAgent.allow_cross_tenant === false) {
+    return { success: false, error: { code: 'CROSS_TENANT_BLOCKED', message: `Agent ${targetAgentId} does not accept cross-tenant tasks` } };
+  }
+
+  // Create child task in the TARGET agent's tenant (cross-tenant support)
   const { A2ATaskService } = await import('../task-service.js');
-  const taskService = new A2ATaskService(supabase, ctx.tenantId);
+  const taskService = new A2ATaskService(supabase, targetAgent.tenant_id);
 
   const childTask = await taskService.createTask(
     targetAgentId,

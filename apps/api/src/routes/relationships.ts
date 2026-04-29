@@ -38,7 +38,7 @@ const updateRelationshipSchema = z.object({
 relationships.get('/:accountId/relationships', async (c) => {
   const accountId = c.req.param('accountId');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(accountId)) {
@@ -48,7 +48,7 @@ relationships.get('/:accountId/relationships', async (c) => {
   // Get query parameters
   const relationshipType = c.req.query('type');
   const status = c.req.query('status') || 'active';
-  const { page, limit } = getPaginationParams(c.req);
+  const { page, limit } = getPaginationParams(c.req.query() as Record<string, string>);
   const offset = (page - 1) * limit;
   
   // Verify account exists and belongs to tenant
@@ -111,10 +111,9 @@ relationships.get('/:accountId/relationships', async (c) => {
     updatedAt: rel.updated_at,
   })) || [];
   
-  return c.json(paginationResponse(transformedRelationships, {
+  return c.json(paginationResponse(transformedRelationships, count || 0, {
     page,
     limit,
-    total: count || 0,
   }));
 });
 
@@ -125,7 +124,7 @@ relationships.get('/:accountId/relationships', async (c) => {
 relationships.get('/:accountId/contractors', async (c) => {
   const accountId = c.req.param('accountId');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(accountId)) {
@@ -188,7 +187,7 @@ relationships.get('/:accountId/contractors', async (c) => {
 relationships.get('/:accountId/employers', async (c) => {
   const accountId = c.req.param('accountId');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(accountId)) {
@@ -251,7 +250,7 @@ relationships.get('/:accountId/employers', async (c) => {
 relationships.post('/:accountId/relationships', async (c) => {
   const accountId = c.req.param('accountId');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUID
   if (!isValidUUID(accountId)) {
@@ -325,8 +324,8 @@ relationships.post('/:accountId/relationships', async (c) => {
       relatedAccountId: validated.relatedAccountId,
       relationshipType: validated.relationshipType,
     },
-  });
-  
+  } as any);
+
   // Transform response
   const transformedRelationship = {
     id: relationship.id,
@@ -353,7 +352,7 @@ relationships.patch('/:accountId/relationships/:relationshipId', async (c) => {
   const accountId = c.req.param('accountId');
   const relationshipId = c.req.param('relationshipId');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUIDs
   if (!isValidUUID(accountId) || !isValidUUID(relationshipId)) {
@@ -407,7 +406,7 @@ relationships.patch('/:accountId/relationships/:relationshipId', async (c) => {
     metadata: {
       changes: validated,
     },
-  });
+  } as any);
   
   // Transform response
   const transformedRelationship = {
@@ -435,7 +434,7 @@ relationships.delete('/:accountId/relationships/:relationshipId', async (c) => {
   const accountId = c.req.param('accountId');
   const relationshipId = c.req.param('relationshipId');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Validate UUIDs
   if (!isValidUUID(accountId) || !isValidUUID(relationshipId)) {
@@ -481,7 +480,7 @@ relationships.delete('/:accountId/relationships/:relationshipId', async (c) => {
         accountId,
         hardDelete: true,
       },
-    });
+    } as any);
   } else {
     // Soft delete (set status to inactive)
     const { error } = await supabase
@@ -505,7 +504,7 @@ relationships.delete('/:accountId/relationships/:relationshipId', async (c) => {
         accountId,
         hardDelete: false,
       },
-    });
+    } as any);
   }
   
   return c.json({ 

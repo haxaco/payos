@@ -1,0 +1,62 @@
+---
+title: "Protocols overview"
+description: "Six agentic commerce protocols, one SDK. What each is for and when to use it."
+---
+
+Sly speaks six protocols that let AI agents transact with merchants, services, and each other. You integrate once, and the platform adapts to whichever protocol a counterparty uses.
+
+| Protocol | Origin | Best for | Typical flow |
+|---|---|---|---|
+| [**UCP**](/protocols/ucp) | Sly-native | Merchant checkout, tokenized commerce, settlement rules | Merchant issues UCP token → agent exchanges for settlement |
+| [**ACP**](/protocols/acp) | Stripe + OpenAI | Agentic checkout sessions with card networks | Agent opens checkout → completes payment → merchant confirms |
+| [**AP2**](/protocols/ap2) | Google | Pre-authorized spending mandates | Agent presents mandate → merchant executes within policy |
+| [**x402**](/protocols/x402) | Coinbase | Micropayments for APIs (HTTP 402 revival) | API returns 402 → agent pays → retries with proof |
+| [**MPP**](/protocols/mpp) | Sly-native | Recurring M2M micropayments with session vouchers | Agent opens session + deposit → signs vouchers per call → closes |
+| [**A2A**](/protocols/a2a) | Google | Agent-to-agent task delegation and discovery | Agent A sends task to Agent B → gets deliverable → pays |
+| [**MCP**](/protocols/mcp) | Anthropic | Tool catalogs and resources for LLM agents | LLM discovers tools → invokes → receives results |
+| [**Cards**](/protocols/cards) | Visa VIC + Mastercard Agent Pay | Card-rail transactions with network identity verification | Agent presents Web Bot Auth → vaulted card → network authorizes |
+
+## How to pick
+
+Most integrations use **one or two protocols** aligned to their partner ecosystem. Start here:
+
+- Selling on **Stripe / OpenAI** marketplaces → [ACP](/protocols/acp)
+- Selling on **Google Cloud / Gemini** ecosystem → [AP2](/protocols/ap2) and [A2A](/protocols/a2a)
+- Monetizing **APIs** via one-off micropayments → [x402](/protocols/x402)
+- Monetizing **APIs** via recurring sessions with vouchers → [MPP](/protocols/mpp)
+- Building a **traditional checkout** with agentic capabilities → [UCP](/protocols/ucp)
+- Routing agent spend over **card rails** with Visa / Mastercard programs → [Cards](/protocols/cards)
+- Shipping **Claude Desktop / agent tools** → [MCP](/protocols/mcp)
+
+If in doubt, see the [decision tree](/protocols/decision-tree).
+
+## One SDK, all protocols
+
+The `@sly_ai/sdk` exposes each protocol behind a dedicated client:
+
+```ts
+import { Sly } from '@sly_ai/sdk';
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+
+// Pick your protocol
+await sly.ucp.createToken({...});
+await sly.acp.createCheckout({...});
+await sly.ap2.createMandate({...});
+await sly.x402.pay({...});
+await sly.a2a.sendTask({...});
+await sly.mcp.listTools();
+```
+
+## Composition
+
+Protocols compose — you can issue a UCP token that settles on-chain via x402, or accept an AP2 mandate that executes through an ACP checkout. See `/v1/composition` and the [composition guide](/api-reference) for cross-protocol routing.
+
+## Discovery
+
+Every protocol Sly supports is self-describing:
+
+```bash
+curl https://api.getsly.ai/v1/protocols
+```
+
+Returns the full list of enabled protocols for your tenant, their versions, and machine-readable capability specs. Agents can use this to negotiate at runtime.

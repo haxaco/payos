@@ -20,10 +20,14 @@ import type {
   InputRequiredContext,
 } from './types.js';
 import { normalizeParts } from './types.js';
-import { taskEventBus } from './task-event-bus.js';
+import { taskEventBus, type AuditContext } from './task-event-bus.js';
+
+/** Default maximum messages to include in context window (Story 58.18). */
+const DEFAULT_MAX_CONTEXT_MESSAGES = 100;
 
 export interface ListTasksFilters {
   agentId?: string | null;
+  callerAgentId?: string | null;
   state?: A2ATaskState;
   direction?: 'inbound' | 'outbound';
   contextId?: string | null;
@@ -35,7 +39,26 @@ export class A2ATaskService {
   constructor(
     private supabase: SupabaseClient,
     private tenantId: string,
+    private environment: 'test' | 'live' = 'test',
   ) {}
+
+  /**
+   * Look up an existing task by its idempotency key (scoped to tenant + target agent).
+   * Returns null if no match. Used by message/send to deduplicate retried requests.
+   */
+  async findByIdempotencyKey(agentId: string, idempotencyKey: string): Promise<A2ATask | null> {
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('id')
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
+      .eq('agent_id', agentId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+
+    if (!taskRow) return null;
+    return this.getTask((taskRow as any).id);
+  }
 
   /**
    * Create a new A2A task with an initial message.
@@ -50,12 +73,30 @@ export class A2ATaskService {
     callbackUrl?: string,
     callbackSecret?: string,
     clientAgentId?: string,
+    idempotencyKey?: string,
   ): Promise<A2ATask> {
+    // Validate callback security: if a callback URL is provided, a secret is required
+    // to prevent callback hijacking (attacker sets callback to their server without auth).
+    // The secret is used for HMAC signing on delivery — without it, anyone could
+    // intercept completion notifications by pointing callbacks to their own endpoint.
+    if (callbackUrl && !callbackSecret) {
+      throw new Error('callbackSecret is required when callbackUrl is provided. This prevents callback hijacking — the secret is used for HMAC verification on delivery.');
+    }
+
+    // Propagate skillId from message metadata to task metadata
+    // so the worker can create settlement mandates for priced skills.
+    // Also propagate externallyManaged so the worker knows to skip auto-processing
+    // when an external harness (e.g. marketplace-sim) drives the lifecycle.
+    const taskMetadata: Record<string, unknown> = {};
+    if (message.metadata?.skillId) taskMetadata.skillId = message.metadata.skillId;
+    if (message.metadata?.externallyManaged === true) taskMetadata.externallyManaged = true;
+
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
       .from('a2a_tasks')
       .insert({
         tenant_id: this.tenantId,
+        environment: this.environment,
         agent_id: agentId,
         context_id: contextId || crypto.randomUUID(),
         state: 'submitted',
@@ -65,11 +106,18 @@ export class A2ATaskService {
         callback_url: callbackUrl || null,
         callback_secret: callbackSecret || null,
         client_agent_id: clientAgentId || null,
+        idempotency_key: idempotencyKey || null,
+        ...(Object.keys(taskMetadata).length > 0 ? { metadata: taskMetadata } : {}),
       })
       .select()
       .single();
 
     if (taskError || !taskRow) {
+      // If this was an idempotency conflict (unique index violation), fetch and return the existing task
+      if (idempotencyKey && taskError?.code === '23505') {
+        const existing = await this.findByIdempotencyKey(agentId, idempotencyKey);
+        if (existing) return existing;
+      }
       throw new Error(`Failed to create task: ${taskError?.message || 'unknown error'}`);
     }
 
@@ -78,6 +126,7 @@ export class A2ATaskService {
       .from('a2a_messages')
       .insert({
         tenant_id: this.tenantId,
+        environment: this.environment,
         task_id: taskRow.id,
         role: message.role || 'user',
         parts: normalizeParts(message.parts),
@@ -95,30 +144,53 @@ export class A2ATaskService {
 
   /**
    * Get a task by ID with its messages and artifacts.
+   *
+   * Story 58.18: Context window management — limits messages to the most
+   * recent N (not oldest N). Applies a default cap of 100 if no explicit
+   * historyLength is provided and the agent hasn't configured one.
    */
-  async getTask(taskId: string, historyLength?: number): Promise<A2ATask | null> {
+  async getTask(taskId: string, historyLength?: number, callerAgentId?: string): Promise<A2ATask | null> {
     const { data: taskRow, error: taskError } = await this.supabase
       .from('a2a_tasks')
       .select('*')
       .eq('id', taskId)
       .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
       .single();
 
     if (taskError || !taskRow) return null;
 
-    // Fetch messages
-    let messagesQuery = this.supabase
+    // Ownership check: if caller is an agent, they must be either the target or the initiator
+    if (callerAgentId && taskRow.agent_id !== callerAgentId && taskRow.client_agent_id !== callerAgentId) {
+      return null; // Treat as not found — don't leak existence of other agents' tasks
+    }
+
+    // Resolve effective context window limit:
+    // 1. Explicit historyLength from caller (e.g. A2AConfiguration)
+    // 2. Agent-level max_context_messages setting
+    // 3. Global default (100)
+    let effectiveLimit = historyLength;
+    if (!effectiveLimit) {
+      const { data: agentRow } = await this.supabase
+        .from('agents')
+        .select('max_context_messages')
+        .eq('id', taskRow.agent_id)
+        .eq('tenant_id', this.tenantId)
+        .eq('environment', this.environment)
+        .maybeSingle();
+      effectiveLimit = agentRow?.max_context_messages || DEFAULT_MAX_CONTEXT_MESSAGES;
+    }
+
+    // Fetch the most recent N messages (descending), then reverse to chronological order
+    const { data: messagesDesc } = await this.supabase
       .from('a2a_messages')
       .select('*')
       .eq('task_id', taskId)
       .eq('tenant_id', this.tenantId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(effectiveLimit ?? 50);
 
-    if (historyLength) {
-      messagesQuery = messagesQuery.limit(historyLength);
-    }
-
-    const { data: messages } = await messagesQuery;
+    const messages = (messagesDesc || []).reverse();
 
     // Fetch artifacts
     const { data: artifacts } = await this.supabase
@@ -143,19 +215,31 @@ export class A2ATaskService {
     state: A2ATaskState,
     statusMessage?: string,
     metadata?: Record<string, unknown>,
+    callerAgentId?: string,
   ): Promise<A2ATask | null> {
     const updateData: Record<string, unknown> = { state };
     if (statusMessage !== undefined) updateData.status_message = statusMessage;
 
-    // Read-merge-write metadata so existing keys aren't lost
+    // Read current state + metadata before the update (for audit trail from_state)
+    const { data: currentRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('state, metadata, agent_id, client_agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
+      .single();
+
+    // Ownership check: if caller is an agent, they must be the target or initiator
+    if (callerAgentId && currentRow &&
+        currentRow.agent_id !== callerAgentId && currentRow.client_agent_id !== callerAgentId) {
+      return null; // Not authorized to update this task
+    }
+
+    const previousState = currentRow?.state !== state ? currentRow?.state : undefined;
+
+    // Merge metadata so existing keys aren't lost
     if (metadata) {
-      const { data: existing } = await this.supabase
-        .from('a2a_tasks')
-        .select('metadata')
-        .eq('id', taskId)
-        .eq('tenant_id', this.tenantId)
-        .single();
-      updateData.metadata = { ...(existing?.metadata || {}), ...metadata };
+      updateData.metadata = { ...(currentRow?.metadata || {}), ...metadata };
     }
 
     // When re-submitting a task, clear processor claim so worker can re-acquire it
@@ -170,7 +254,8 @@ export class A2ATaskService {
       .from('a2a_tasks')
       .update(updateData)
       .eq('id', taskId)
-      .eq('tenant_id', this.tenantId);
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment);
 
     // If transitioning to a terminal state, guard against already-terminal
     if (terminalStates.includes(state)) {
@@ -184,8 +269,14 @@ export class A2ATaskService {
     taskEventBus.emitTask(taskId, {
       type: 'status',
       taskId,
-      data: { state, statusMessage: statusMessage || null },
+      data: { state, statusMessage: statusMessage || null, clientAgentId: taskRow.client_agent_id || null, providerAgentId: taskRow.agent_id },
       timestamp: new Date().toISOString(),
+    }, {
+      tenantId: this.tenantId,
+      agentId: taskRow.agent_id,
+      actorType: 'system',
+      fromState: previousState,
+      toState: state,
     });
 
     return this.getTask(taskId);
@@ -204,6 +295,7 @@ export class A2ATaskService {
       .from('a2a_messages')
       .insert({
         tenant_id: this.tenantId,
+        environment: this.environment,
         task_id: taskId,
         role,
         parts: normalizeParts(parts),
@@ -218,12 +310,25 @@ export class A2ATaskService {
 
     const msg = this.rowToMessage(msgRow as A2AMessageRow);
 
+    // Look up agent_id for audit context
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
+      .maybeSingle();
+
     taskEventBus.emitTask(taskId, {
       type: 'message',
       taskId,
       data: { messageId: msg.messageId, role, parts: msg.parts },
       timestamp: new Date().toISOString(),
-    });
+    }, taskRow ? {
+      tenantId: this.tenantId,
+      agentId: taskRow.agent_id,
+      actorType: role === 'user' ? 'user' : 'agent',
+    } : undefined);
 
     return msg;
   }
@@ -240,6 +345,7 @@ export class A2ATaskService {
       .from('a2a_artifacts')
       .insert({
         tenant_id: this.tenantId,
+        environment: this.environment,
         task_id: taskId,
         label: artifact.name || null,
         mime_type: artifact.mediaType || 'text/plain',
@@ -255,6 +361,15 @@ export class A2ATaskService {
 
     const art = this.rowToArtifact(row as A2AArtifactRow);
 
+    // Look up agent_id for audit context
+    const { data: artTaskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
+      .maybeSingle();
+
     taskEventBus.emitTask(taskId, {
       type: 'artifact',
       taskId,
@@ -265,7 +380,11 @@ export class A2ATaskService {
         parts: art.parts,
       },
       timestamp: new Date().toISOString(),
-    });
+    }, artTaskRow ? {
+      tenantId: this.tenantId,
+      agentId: artTaskRow.agent_id,
+      actorType: 'agent',
+    } : undefined);
 
     return art;
   }
@@ -294,18 +413,20 @@ export class A2ATaskService {
   /**
    * List tasks with filtering and pagination.
    */
-  async listTasks(filters: ListTasksFilters = {}) {
-    const { agentId, state, direction, contextId, page = 1, limit = 20 } = filters;
+  async listTasks(filters: ListTasksFilters & { scopeToAgentId?: string } = {}) {
+    const { agentId, callerAgentId, scopeToAgentId, state, direction, contextId, page = 1, limit = 20 } = filters;
     const offset = (page - 1) * limit;
 
     let query = this.supabase
       .from('a2a_tasks')
       .select('*, agents!inner(name)', { count: 'exact' })
       .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (agentId) query = query.eq('agent_id', agentId);
+    if (callerAgentId) query = query.eq('client_agent_id', callerAgentId);
     if (state) query = query.eq('state', state);
     if (direction) query = query.eq('direction', direction);
     if (contextId) query = query.eq('context_id', contextId);
@@ -316,8 +437,17 @@ export class A2ATaskService {
       throw new Error(`Failed to list tasks: ${error.message}`);
     }
 
+    // Ownership scoping: when an agent calls listTasks, filter to tasks they're involved in.
+    // Applied in-memory because Supabase PostgREST .or() interacts poorly with !inner joins.
+    let filteredRows = rows || [];
+    if (scopeToAgentId && filteredRows.length > 0) {
+      filteredRows = filteredRows.filter((r: any) =>
+        r.agent_id === scopeToAgentId || r.client_agent_id === scopeToAgentId
+      );
+    }
+
     // Batch-fetch transfer amounts for tasks with linked transfers
-    const transferIds = (rows || [])
+    const transferIds = filteredRows
       .map((r: any) => r.transfer_id)
       .filter(Boolean) as string[];
     const transferAmounts = new Map<string, { amount: number; currency: string; status: string }>();
@@ -333,7 +463,7 @@ export class A2ATaskService {
     }
 
     // Batch-fetch message counts per task
-    const taskIds = (rows || []).map((r: any) => r.id);
+    const taskIds = filteredRows.map((r: any) => r.id);
     const messageCounts = new Map<string, number>();
     if (taskIds.length > 0) {
       const { data: msgCounts } = await this.supabase
@@ -346,7 +476,7 @@ export class A2ATaskService {
       }
     }
 
-    const tasks = (rows || []).map((row: any) => {
+    const tasks = filteredRows.map((row: any) => {
       const transfer = row.transfer_id ? transferAmounts.get(row.transfer_id) : undefined;
       return {
         id: row.id,
@@ -384,16 +514,25 @@ export class A2ATaskService {
   /**
    * Find an existing task by contextId for multi-turn conversations.
    */
-  async findTaskByContext(agentId: string, contextId: string): Promise<A2ATask | null> {
-    const { data: taskRow } = await this.supabase
+  async findTaskByContext(agentId: string, contextId: string, callerAgentId?: string): Promise<A2ATask | null> {
+    let query = this.supabase
       .from('a2a_tasks')
       .select('*')
       .eq('agent_id', agentId)
       .eq('context_id', contextId)
       .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    // Ownership check: if caller is known, verify they initiated the conversation.
+    // Prevents contextId hijacking where an attacker injects messages into an
+    // existing conversation by reusing its contextId.
+    if (callerAgentId) {
+      query = query.eq('client_agent_id', callerAgentId);
+    }
+
+    const { data: taskRow } = await query.maybeSingle();
 
     if (!taskRow) return null;
     return this.getTask(taskRow.id);
@@ -411,6 +550,7 @@ export class A2ATaskService {
       .eq('agent_id', agentId)
       .eq('client_agent_id', callerAgentId)
       .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
       .not('context_id', 'is', null)
       .gte('updated_at', cutoff)
       .order('updated_at', { ascending: false })
@@ -435,7 +575,8 @@ export class A2ATaskService {
       .from('a2a_tasks')
       .update(update)
       .eq('id', taskId)
-      .eq('tenant_id', this.tenantId);
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment);
   }
 
   // ==========================================================================
@@ -454,6 +595,10 @@ export class A2ATaskService {
     remoteAgentUrl?: string;
     clientAgentId?: string;
   } {
+    // Extract input_required_context for top-level surfacing
+    const meta = row.metadata as Record<string, unknown> | null;
+    const inputContext = meta?.input_required_context as Record<string, unknown> | undefined;
+
     return {
       id: row.id,
       contextId: row.context_id || undefined,
@@ -461,6 +606,12 @@ export class A2ATaskService {
         state: row.state,
         message: row.status_message || undefined,
         timestamp: row.updated_at,
+        // Surface reason directly in status so clients don't have to dig into metadata
+        ...(row.state === 'input-required' && inputContext ? {
+          reason: inputContext.reason_code as string,
+          nextAction: inputContext.next_action as string,
+          resolveEndpoint: inputContext.resolve_endpoint as string | undefined,
+        } : {}),
       },
       history: messages.map((m) => this.rowToMessage(m)),
       artifacts: artifacts.map((a) => this.rowToArtifact(a)),

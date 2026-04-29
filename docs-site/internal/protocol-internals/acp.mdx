@@ -1,0 +1,41 @@
+---
+title: "ACP internals"
+description: "Agentic Commerce Protocol (Stripe + OpenAI) implementation notes."
+---
+
+## File
+
+- `apps/api/src/routes/acp.ts` — 34 endpoints
+
+## External spec
+
+Stripe + OpenAI maintain the canonical spec. Our implementation must stay compliant with their updates — treat the spec as frozen unless they publish a new version.
+
+## Sly-specific extensions
+
+Beyond the canonical spec:
+- KYA tier enforcement at `POST /v1/acp/checkouts/:id/complete`
+- Wallet policy evaluation
+- Composition with other protocols (UCP-funded ACP checkouts, etc.)
+- Approval workflow hooks
+
+Extensions use `x-` prefixed fields; never modify spec-defined fields.
+
+## Connection to Stripe
+
+Via `@stripe/*` official SDK. Credentials per-tenant in `tenants.stripe_connect_account_id`.
+
+## Gotchas
+
+- **Stripe webhooks vs. our webhooks** — we receive from Stripe at `/webhooks/stripe`, then re-emit our own events. Don't forward Stripe webhooks directly to partners.
+- **Checkout session expiry** — Stripe defaults 24h; we mirror in our records but use our own TTL field for faster expiry in some configurations.
+- **Batch checkouts** — Sly-specific batching over the Stripe session API. Each child is a real Stripe session; we just group them.
+
+## Migration to OpenAPIHono
+
+Planned. Size: ~34 endpoints, moderate complexity.
+
+## Related
+
+- Public docs: [ACP protocol page](https://docs.getsly.ai/protocols/acp)
+- Stripe docs: https://stripe.com/docs/payments

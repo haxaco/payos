@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
+import { getTenantResourceUsage } from '../services/tenant-limits.js';
 
 const organization = new Hono();
 
@@ -24,7 +25,7 @@ async function getCurrentUserAndTenant(c: any) {
   }
 
   const accessToken = authHeader.slice(7);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Use Supabase client to get user from access token
   const { data: userData, error } = await (supabase as any).auth.getUser(accessToken);
@@ -47,7 +48,7 @@ async function getCurrentUserAndTenant(c: any) {
 
   const { data: tenant, error: tenantError } = await (supabase
     .from('tenants') as any)
-    .select('id, name, status, created_at, updated_at')
+    .select('id, name, status, max_team_members, max_agents, created_at, updated_at')
     .eq('id', profile.tenant_id)
     .single();
 
@@ -67,11 +68,17 @@ async function getCurrentUserAndTenant(c: any) {
 // ============================================
 organization.get('/', async (c) => {
   const result = await getCurrentUserAndTenant(c);
-  if ('error' in result) {
-    return c.json(result.error.body, result.error.status);
+  if ('error' in result && result.error) {
+    return c.json(result.error.body, result.error.status as any);
   }
 
   const { tenant } = result;
+
+  // Fetch resource usage if tenant has limits set
+  let resourceUsage;
+  if (tenant.max_team_members || tenant.max_agents) {
+    resourceUsage = await getTenantResourceUsage(tenant.id).catch(() => null);
+  }
 
   return c.json(
     {
@@ -82,6 +89,13 @@ organization.get('/', async (c) => {
         createdAt: tenant.created_at,
         updatedAt: tenant.updated_at,
       },
+      ...(tenant.max_team_members ? { maxTeamMembers: tenant.max_team_members } : {}),
+      ...(tenant.max_agents ? { maxAgents: tenant.max_agents } : {}),
+      ...(resourceUsage ? {
+        teamMemberCount: resourceUsage.teamMembers.current,
+        agentCount: resourceUsage.agents.current,
+        resourceUsage,
+      } : {}),
     },
     200
   );
@@ -94,8 +108,8 @@ organization.get('/', async (c) => {
 organization.patch('/', async (c) => {
   try {
     const result = await getCurrentUserAndTenant(c);
-    if ('error' in result) {
-      return c.json(result.error.body, result.error.status);
+    if ('error' in result && result.error) {
+      return c.json(result.error.body, result.error.status as any);
     }
 
     const { userProfile, tenant } = result;
@@ -112,7 +126,7 @@ organization.patch('/', async (c) => {
       return c.json({ error: 'No changes provided' }, 400);
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const updates: any = {};
     if (validated.name) updates.name = validated.name;
     if (validated.metadata) updates.settings = validated.metadata;

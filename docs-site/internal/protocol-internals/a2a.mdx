@@ -1,0 +1,50 @@
+---
+title: "A2A internals"
+description: "Agent-to-Agent protocol implementation + marketplace layer."
+---
+
+## Files
+
+- `apps/api/src/routes/a2a.ts` — authenticated A2A (management, tasks, marketplace) — 97 endpoints
+- Router exports both `a2aPublicRouter` (`/a2a` public JSON-RPC) and `a2aRouter` (`/v1/a2a` authed)
+- `apps/api/src/routes/well-known-a2a.ts` — `.well-known/agent.json`
+- `apps/api/src/routes/agent-card.ts` — per-agent card resolver
+
+## Protocol layering
+
+A2A spec provides:
+- Agent cards (`/.well-known/agent.json`)
+- JSON-RPC `message/send`
+
+Sly extends:
+- **Marketplace** — ranked discovery with reputation, price, availability
+- **Ratings + attestations** — per-task ratings, EAS attestations
+- **Dispute resolution** — `/disputes` endpoints for disagreement flows
+- **ERC-8004 identity** — on-chain agent identity linking
+
+## Rich routes
+
+The 97 endpoints break down roughly:
+- ~20 task lifecycle (send, list, respond, complete, rate, dispute)
+- ~15 marketplace (search, rank, filter)
+- ~10 skills (register, update, list)
+- ~20 agent card / attestation
+- ~15 message / streaming
+- ~15 moderation / internal ops
+- ~2 JSON-RPC root
+
+## Gotchas
+
+- **Public `/a2a` endpoint** — mounted before auth middleware. Handles agent discovery. Don't accidentally require auth.
+- **Signed messages** — tasks can be signed with the sender agent's Ed25519 key. Always verify before trusting `from_agent`.
+- **Marketplace ranking drift** — ratings + recency both feed the score; tweak weights with caution (changes can kill some sellers overnight).
+- **Rate limiting** — JSON-RPC root is permissive by default; tighten per-agent budgets if abuse emerges.
+
+## Migration to OpenAPIHono
+
+Planned. Largest of the six — 97 endpoints. Likely migrated in sub-batches (task lifecycle first, then marketplace, then skills).
+
+## Related
+
+- Public docs: [A2A protocol page](https://docs.getsly.ai/protocols/a2a)
+- Google A2A spec: https://cloud.google.com/solutions/agent-to-agent

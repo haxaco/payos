@@ -1,0 +1,102 @@
+---
+title: "ACP (Agentic Commerce Protocol)"
+description: "Stripe + OpenAI's protocol for agent-driven checkout. Card-network-native."
+---
+
+ACP is the Agentic Commerce Protocol developed by Stripe and OpenAI. It defines how AI agents conduct checkout against merchants in the Stripe / OpenAI ecosystem — notably including the OpenAI Agent marketplace and ChatGPT shopping.
+
+Sly provides a full ACP implementation compatible with the published spec, plus server-side policy enforcement (KYA tiers, wallet limits) that ACP itself doesn't define.
+
+## Core concept: the checkout session
+
+ACP works in terms of **checkout sessions** — stateful objects that represent a purchase in progress. The session transitions through states as the agent and merchant interact.
+
+```
+created ─▶ pending_payment ─▶ paid ─▶ fulfilled
+                   │
+                   ▼
+               failed / expired / cancelled
+```
+
+## Create a checkout session (agent side)
+
+```bash
+curl -X POST https://api.getsly.ai/v1/acp/checkouts \
+  -H "Authorization: Bearer agent_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "merchant_id": "mer_stripe_...",
+    "items": [
+      { "sku": "widget-pro", "quantity": 2, "unit_price": "24.99", "currency": "USD" }
+    ],
+    "shipping_address": { ... },
+    "payment_method": "card"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "acp_chk_...",
+  "status": "pending_payment",
+  "total": "49.98",
+  "currency": "USD",
+  "client_secret": "cs_...",
+  "expires_at": "2026-04-22T14:30:00Z"
+}
+```
+
+## Complete payment
+
+```bash
+curl -X POST https://api.getsly.ai/v1/acp/checkouts/acp_chk_.../complete \
+  -H "Authorization: Bearer agent_..." \
+  -d '{
+    "payment_method_id": "pm_..."
+  }'
+```
+
+Payment is executed synchronously against the card network (or async for deferred methods). On success the session transitions to `paid`; on failure, to `failed` with a reason code.
+
+## Fulfillment
+
+Merchants report fulfillment back to Sly; buyers poll or subscribe to `acp.checkout.fulfilled` webhooks:
+
+```bash
+curl https://api.getsly.ai/v1/acp/checkouts/acp_chk_.../events \
+  -H "Authorization: Bearer agent_..."
+```
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/acp/checkouts` | Create checkout session |
+| `GET /v1/acp/checkouts` | List sessions |
+| `GET /v1/acp/checkouts/:id` | Get session state |
+| `PATCH /v1/acp/checkouts/:id` | Update (e.g. swap payment method) |
+| `POST /v1/acp/checkouts/:id/complete` | Complete payment |
+| `POST /v1/acp/checkouts/:id/cancel` | Cancel session |
+| `POST /v1/acp/checkouts/batch` | Batch checkout (marketplace baskets) |
+| `POST /v1/acp/checkouts/:id/refund` | Refund completed checkout |
+
+Plus 26+ sub-resource endpoints for items, shipping, discounts, tax calculation, and webhook replay. See [API reference](/api-reference) for the complete list.
+
+## Differences from the canonical ACP spec
+
+Sly's implementation adheres to the Stripe/OpenAI spec, plus:
+
+- **KYA tier enforcement** — agents cannot complete checkouts that exceed their [KYA tier limits](/agents/kya-tiers)
+- **Wallet policies** — per-merchant allowlists/blocklists enforce at checkout time
+- **Composition** — checkouts can be funded by UCP tokens, AP2 mandates, or x402 bridged payments
+- **Approval workflow** — checkouts above a policy threshold auto-trigger human approval
+
+## When to use ACP
+
+- Merchant is on Stripe Connect or listed in the OpenAI Agent marketplace
+- Buyer is a ChatGPT agent or OpenAI-ecosystem agent
+- You want card-network-native payment (Visa, Mastercard, Amex)
+- You need the Stripe / OpenAI compliance posture out of the box
+
+For non-Stripe merchants or non-card rails, prefer [UCP](/protocols/ucp).

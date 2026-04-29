@@ -1,0 +1,248 @@
+---
+title: "Recipes: Protocols"
+description: "Per-protocol quick flows — x402 retry, ACP checkout, AP2 execute, A2A task, MPP session."
+---
+
+## x402: auto-handle 402 with the SDK
+
+The SDK wraps the HTTP-402 dance so you don't have to:
+
+```ts
+import { Sly } from '@sly_ai/sdk';
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+
+// Auto-pays on 402, retries with proof, returns the real response
+const response = await sly.x402.fetch('https://inference.example.com/api/complete', {
+  walletId: 'wal_...',
+  maxSpend: '0.50',   // optional cap per call — throws if endpoint demands more
+});
+
+const result = await response.json();
+```
+
+Under the hood: fetch returns 402 → SDK calls `/v1/x402/pay` → retries with `X-Payment-Proof` → returns the real 200.
+
+## x402: register an endpoint with volume discounts
+
+```ts
+await sly.x402.registerEndpoint({
+  name: 'Inference API',
+  path: '/v1/infer',
+  method: 'POST',
+  accountId: 'acc_...',
+  basePrice: 0.05,
+  currency: 'USDC',
+  volumeDiscounts: [
+    { threshold: 100, priceMultiplier: 0.8 },    // 100+ calls → 20% off
+    { threshold: 1000, priceMultiplier: 0.5 },   // 1000+ calls → 50% off
+  ],
+});
+```
+
+See [x402 protocol](/protocols/x402) for the full lifecycle.
+
+## ACP: create + complete a checkout
+
+```ts
+const checkout = await sly.acp.createCheckout({
+  merchant_id: 'mer_...',
+  items: [{ sku: 'widget', quantity: 2, unit_price: '24.99', currency: 'USD' }],
+  payment_method: 'card',
+});
+
+// checkout.client_secret — use with Stripe.js to collect payment client-side
+// OR complete server-side with a pre-tokenized payment method:
+
+await sly.acp.completeCheckout(checkout.id, { payment_method_id: 'pm_...' });
+```
+
+## AP2: create a mandate + execute
+
+```ts
+// Merchant / partner creates the mandate
+const mandate = await sly.ap2.createMandate({
+  account_id: 'acc_...',
+  agent_id: 'agt_...',
+  scope: {
+    max_per_tx: '100.00',
+    max_per_day: '500.00',
+    max_per_month: '5000.00',
+    currency: 'USD',
+    allowed_merchant_categories: ['saas', 'api'],
+  },
+  expires_at: '2027-01-01T00:00:00Z',
+});
+
+// Agent later executes against the mandate
+await sly.ap2.executeMandate(mandate.id, {
+  merchant_id: 'mer_openai',
+  amount: '49.00',
+  currency: 'USD',
+  description: 'ChatGPT Plus — April',
+});
+```
+
+Each execution re-verifies scope + remaining caps.
+
+## AP2: update a mandate's caps without revoking
+
+```ts
+// User upgrades subscription — raise the cap in-place
+await sly.ap2.updateMandate(mandateId, {
+  scope: { max_per_month: '10000.00' },
+});
+```
+
+The audit log retains the prior scope; the mandate JWT updates.
+
+## UCP: issue a token for a merchant checkout
+
+```ts
+const token = await sly.ucp.createToken({
+  merchant_id: 'mer_...',
+  items: [{ sku: 'PRO-PLAN', quantity: 1, unit_price: '49.00', currency: 'USD' }],
+  settlement_preferences: {
+    accepted_rails: ['usdc', 'ach', 'card'],
+    settlement_window: 'T+1',
+  },
+  expires_in: 900,
+});
+
+// Return token.token to the buyer — they settle it themselves
+```
+
+The buyer's client calls `POST /v1/ucp/settle` with the token to complete payment.
+
+## A2A: discover an agent and send a task
+
+```ts
+// Find an agent with the skill you need
+const candidates = await sly.a2a.marketplaceSearch({
+  skill: 'code.review',
+  min_rating: 4.5,
+  max_price: '10.00',
+});
+const targetAgent = candidates.data[0];
+
+// Send the task
+const task = await sly.a2a.sendTask({
+  to: targetAgent.agent_id,
+  skill_id: 'code.review',
+  payload: { diff: gitDiff, language: 'typescript' },
+  payment: { method: 'ucp', token: ucpToken },
+});
+
+// Wait for completion (or subscribe to the push channel)
+const final = await sly.a2a.waitForCompletion(task.task_id);
+if (final.status === 'completed') {
+  console.log(final.deliverable);
+  await sly.a2a.rate(task.task_id, { rating: 5, comment: 'Thorough review' });
+}
+```
+
+## A2A: register a skill on your agent
+
+```ts
+await sly.agents.registerSkill(MY_AGENT_ID, {
+  id: 'pdf.summarize',
+  name: 'Summarize a PDF',
+  description: 'Produces a 5-bullet summary of a PDF document',
+  input_schema: {
+    type: 'object',
+    required: ['pdf_url'],
+    properties: {
+      pdf_url: { type: 'string', format: 'uri' },
+      max_words: { type: 'integer', default: 250 },
+    },
+  },
+  output_schema: {
+    type: 'object',
+    properties: { summary: { type: 'string' }, key_points: { type: 'array' } },
+  },
+  pricing: { amount: '0.50', currency: 'USDC' },
+  estimated_duration: 'PT15S',
+});
+```
+
+Your agent is now discoverable by peer agents searching for `pdf.summarize`.
+
+## MPP: open a session + sign vouchers
+
+```ts
+// Open session with $50 budget
+const session = await sly.mpp.openSession({
+  service_url: 'https://inference.example.com',
+  deposit_amount: '50.00',
+  currency: 'USDC',
+  agent_id: 'agt_...',
+  wallet_id: 'wal_...',
+});
+
+// Sign voucher per call
+for (const request of inferenceRequests) {
+  await sly.mpp.signVoucher(session.id, {
+    amount: '0.05',
+    description: `Completion ${request.id}`,
+    request_id: request.id,
+  });
+  // ... actually make the inference call
+}
+
+// Close — unspent budget returns
+await sly.mpp.closeSession(session.id);
+```
+
+## MPP: stream live session costs
+
+```ts
+const stream = await fetch(`${API}/v1/mpp/sessions/${sessionId}/stream`, {
+  headers: { Authorization: `Bearer ${sessionToken}` },
+});
+const reader = stream.body!.getReader();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  const lines = new TextDecoder().decode(value).split('\n');
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const event = JSON.parse(line.slice(6));
+      console.log('Voucher:', event.amount, 'Remaining:', event.budget_remaining);
+    }
+  }
+}
+```
+
+## MCP: install into Claude Desktop and use via natural language
+
+```bash
+npx @sly_ai/mcp-server install
+```
+
+Then in Claude: "Using the Sly tools, create a test account, register an agent with KYA tier 1, and send a $5 test transfer."
+
+Claude picks the right tools from the catalog — KYA tiers, wallet policies, and idempotency are all enforced server-side regardless.
+
+## Cross-protocol: fund an ACP checkout with a UCP token
+
+Compose protocols through `/v1/composition`:
+
+```ts
+// UCP token wraps the merchant offer
+const ucpToken = await sly.ucp.createToken({ ... });
+
+// ACP checkout funds from that UCP token rather than a raw card
+const acpCheckout = await sly.acp.createCheckout({
+  merchant_id: 'mer_...',
+  items: [...],
+  funding_source: { type: 'ucp_token', token: ucpToken.token },
+});
+```
+
+Useful for multi-step commerce flows where different protocols cover different stages.
+
+## See also
+
+- [Protocols overview](/protocols/overview) — picking the right protocol
+- [Decision tree](/protocols/decision-tree) — flowchart by use case
+- Individual protocol deep-dives under [Protocols](/protocols/ucp)

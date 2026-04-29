@@ -20,6 +20,13 @@ import {
   CheckCircle,
   XCircle,
   Pause,
+  Store,
+  Package,
+  TrendingUp,
+  Zap,
+  Star,
+  Banknote,
+  Gauge,
 } from 'lucide-react';
 import type { Account, Agent, Stream, LedgerEntry, Transfer, Wallet as WalletData } from '@sly/api-client';
 import { useLocale } from '@/lib/locale';
@@ -28,7 +35,7 @@ import { formatCurrency } from '@sly/ui';
 import { ScreeningTab } from '@/components/dashboard/account-360/screening-tab';
 import { toast } from 'sonner';
 
-type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'wallets' | 'screening';
+type TabType = 'overview' | 'transactions' | 'streams' | 'agents' | 'wallets' | 'screening' | 'commerce' | 'catalog' | 'endpoints' | 'ratings' | 'payouts' | 'friendliness';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -50,6 +57,23 @@ export default function AccountDetailPage() {
 
   // Handle double-nested response
   const account = (accountResponse as any)?.data || accountResponse;
+  const isMerchant = account?.subtype === 'merchant';
+
+  // Merchant stats — only fetch when the account IS a merchant and user is
+  // on a merchant-specific tab. Graceful 404 when account exists but isn't a merchant.
+  const { data: merchantStatsResp } = useQuery({
+    queryKey: ['account', accountId, 'merchant-stats'],
+    queryFn: () => api!.accounts.getMerchantStats(accountId, { minutes: 43200 }), // 30 days
+    enabled: !!api && isMerchant && (activeTab === 'commerce' || activeTab === 'catalog' || activeTab === 'endpoints' || activeTab === 'overview' || activeTab === 'friendliness'),
+  });
+  const merchantStats = (merchantStatsResp as any)?.data;
+
+  const { data: merchantRatingsResp } = useQuery({
+    queryKey: ['account', accountId, 'merchant-ratings'],
+    queryFn: () => api!.merchants.listRatings(accountId, { limit: 20 }),
+    enabled: !!api && isMerchant && (activeTab === 'ratings' || activeTab === 'overview'),
+  });
+  const merchantRatings = (merchantRatingsResp as any)?.data;
 
   // Agents tab: Only load when tab is active
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
@@ -198,9 +222,21 @@ export default function AccountDetailPage() {
   const agentsCount = agents.length;
   const walletsCount = (walletsCountData as any)?.pagination?.total || wallets.length;
 
+  const catalogCount = merchantStats?.merchant?.catalog?.products?.length ?? 0;
+  const endpointsCount = merchantStats?.endpoints?.length ?? 0;
+  const ratingsCount = merchantRatings?.totalRatings ?? 0;
+
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: Wallet },
     { id: 'transactions' as TabType, label: 'Transactions', icon: FileText, count: transactionsCount },
+    ...(isMerchant ? [
+      { id: 'commerce' as TabType, label: 'Commerce', icon: TrendingUp },
+      { id: 'friendliness' as TabType, label: 'Friendliness', icon: Gauge },
+      { id: 'catalog' as TabType, label: 'Catalog', icon: Package, count: catalogCount },
+      ...(endpointsCount > 0 ? [{ id: 'endpoints' as TabType, label: 'Endpoints', icon: Zap, count: endpointsCount }] : []),
+      { id: 'ratings' as TabType, label: 'Ratings', icon: Star, count: ratingsCount },
+      { id: 'payouts' as TabType, label: 'Payouts', icon: Banknote },
+    ] : []),
     { id: 'streams' as TabType, label: 'Streams', icon: Activity, count: streams.length },
     { id: 'agents' as TabType, label: 'Agents', icon: Bot, count: agentsCount },
     { id: 'wallets' as TabType, label: 'Wallets', icon: Wallet, count: walletsCount },
@@ -243,7 +279,34 @@ export default function AccountDetailPage() {
             )}
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{account.name}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{account.name}</h1>
+              {isMerchant && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                  <Store className="h-3.5 w-3.5" />
+                  Merchant
+                  {account.metadata?.merchant_type && ` · ${account.metadata.merchant_type}`}
+                </span>
+              )}
+              {isMerchant && merchantRatings?.overallAverage != null && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                  {Number(merchantRatings.overallAverage).toFixed(1)}
+                  <span className="text-amber-500 dark:text-amber-500/70">/5</span>
+                </span>
+              )}
+              {isMerchant && merchantStats?.friendliness?.score != null && (
+                <button
+                  onClick={() => setActiveTab('friendliness')}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full transition-opacity hover:opacity-80 ${friendlinessChipClass(merchantStats.friendliness.score)}`}
+                  title="Agent-Friendliness Index — click for breakdown"
+                >
+                  <Gauge className="h-3.5 w-3.5" />
+                  {merchantStats.friendliness.score}
+                  <span className="opacity-70">/100</span>
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1">
                 <Mail className="h-4 w-4" />
@@ -406,6 +469,796 @@ export default function AccountDetailPage() {
       {activeTab === 'screening' && (
         <ScreeningTab />
       )}
+      {activeTab === 'commerce' && isMerchant && (
+        <CommerceTab stats={merchantStats} />
+      )}
+      {activeTab === 'catalog' && isMerchant && (
+        <CatalogTab stats={merchantStats} accountId={accountId} />
+      )}
+      {activeTab === 'endpoints' && isMerchant && (
+        <EndpointsTab stats={merchantStats} />
+      )}
+      {activeTab === 'ratings' && isMerchant && (
+        <RatingsTab ratings={merchantRatings} />
+      )}
+      {activeTab === 'payouts' && isMerchant && (
+        <PayoutsTab accountId={accountId} />
+      )}
+      {activeTab === 'friendliness' && isMerchant && (
+        <FriendlinessTab stats={merchantStats} />
+      )}
+    </div>
+  );
+}
+
+// ─── Merchant tab components ──────────────────────────────────────────────
+
+function CommerceTab({ stats }: { stats: any }) {
+  if (!stats) return <div className="p-8 text-center text-gray-500">Loading commerce data…</div>;
+  const { volume, counts, topBuyers, recentSales, discovery } = stats;
+  return (
+    <div className="space-y-6">
+      {/* Volume breakdown */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatCard label="Total Volume (30d)" value={`$${Number(volume.total).toFixed(2)}`} sub={`${counts.total} purchases`} />
+        <StatCard label="ACP" icon="🍔" value={`$${Number(volume.acp).toFixed(2)}`} sub={`${counts.acp} checkouts`} />
+        <StatCard label="UCP" icon="🏨" value={`$${Number(volume.ucp).toFixed(2)}`} sub={`${counts.ucp} orders`} />
+        <StatCard label="x402" icon="⚡" value={`$${Number(volume.x402).toFixed(2)}`} sub={`${counts.x402} API calls`} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top buyers */}
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Top Buyers</h3>
+          {topBuyers?.length ? (
+            <div className="space-y-2">
+              {topBuyers.map((b: any) => (
+                <div key={b.agentId} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-900 last:border-0">
+                  <span className="font-medium text-gray-900 dark:text-white">{b.name}</span>
+                  <span className="flex items-center gap-3 text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">{b.sales} sales</span>
+                    <span className="font-semibold text-purple-600 dark:text-purple-400">${Number(b.spend).toFixed(2)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-gray-500 dark:text-gray-400 text-sm">No purchases yet in this window.</div>
+          )}
+        </div>
+
+        {/* Discovery + abandonment */}
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Discovery & Abandonment</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Agents who browsed the catalog — who bought, who walked away.</p>
+          {discovery ? (
+            <>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{discovery.views}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">catalog views</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{discovery.uniqueViewers}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">unique agents</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                    {discovery.views > 0 ? `${(discovery.conversionRate * 100).toFixed(0)}%` : '—'}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">conversion</div>
+                </div>
+              </div>
+              {/* Funnel */}
+              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 font-mono border-t border-gray-100 dark:border-gray-900 pt-3">
+                <span>{discovery.funnel.views} views</span>
+                <span>→</span>
+                <span>{discovery.funnel.checkouts} carts</span>
+                <span>→</span>
+                <span className="text-emerald-600 dark:text-emerald-400">{discovery.funnel.completed} paid</span>
+                <span>·</span>
+                <span className="text-amber-600 dark:text-amber-400">{discovery.funnel.abandoned} abandoned</span>
+              </div>
+              {/* Abandoned carts feed */}
+              {discovery.abandonedCarts.count > 0 && (
+                <div className="mt-4 border-t border-gray-100 dark:border-gray-900 pt-3">
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">Recent Abandoned Carts</span>
+                    <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">${Number(discovery.abandonedCarts.value).toFixed(2)} left on the table</span>
+                  </div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {discovery.abandonedCarts.recent.map((ac: any) => (
+                      <div key={ac.checkoutId} className="flex items-start justify-between text-xs py-1 border-b border-gray-100 dark:border-gray-900 last:border-0">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-gray-900 dark:text-white">{ac.buyerName || '(unknown agent)'}</div>
+                          <div className="text-gray-400 truncate">{ac.items}</div>
+                        </div>
+                        <div className="text-right ml-2">
+                          <div className="font-medium text-amber-600 dark:text-amber-400">${Number(ac.amount).toFixed(2)}</div>
+                          <div className="text-[10px] text-gray-400">{new Date(ac.createdAt).toLocaleDateString()}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-gray-500 text-sm">No discovery data yet.</div>
+          )}
+        </div>
+
+        {/* Recent sales */}
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Sales</h3>
+          {recentSales?.length ? (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {recentSales.map((s: any, i: number) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-900 last:border-0 text-sm">
+                  <span className="flex items-center gap-2">
+                    <span>{s.protocol === 'acp' ? '🍔' : s.protocol === 'ucp' ? '🏨' : '⚡'}</span>
+                    <span className="text-gray-900 dark:text-white">{s.buyerName || '—'}</span>
+                    <span className="text-gray-500 dark:text-gray-400 truncate max-w-[180px]">{s.item}</span>
+                  </span>
+                  <span className="font-medium text-purple-600 dark:text-purple-400">${Number(s.amount).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-gray-500 dark:text-gray-400 text-sm">No sales yet.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatalogTab({ stats, accountId }: { stats: any; accountId: string }) {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState<{ mode: 'add' } | { mode: 'edit'; product: any } | null>(null);
+  const [deleting, setDeleting] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!stats) return <div className="p-8 text-center text-gray-500">Loading catalog…</div>;
+  const products = stats?.merchant?.catalog?.products || [];
+
+  async function saveProduct(form: { name: string; category: string; price: string; sku: string; description: string }) {
+    setSaving(true);
+    setError(null);
+    try {
+      const unit_price_cents = Math.round(parseFloat(form.price) * 100);
+      if (!Number.isFinite(unit_price_cents) || unit_price_cents < 0) {
+        setError('Price must be a number ≥ 0');
+        setSaving(false);
+        return;
+      }
+      const payload = {
+        name: form.name.trim(),
+        category: form.category.trim(),
+        unit_price_cents,
+        sku: form.sku.trim() || undefined,
+        description: form.description.trim() || undefined,
+      };
+      if (editing && editing.mode === 'add') {
+        await api!.accounts.addProduct(accountId, payload);
+      } else if (editing && editing.mode === 'edit') {
+        await api!.accounts.updateProduct(accountId, editing.product.id, payload);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['account', accountId, 'merchant-stats'] });
+      setEditing(null);
+    } catch (e: any) {
+      setError(e?.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteProduct() {
+    if (!deleting) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api!.accounts.deleteProduct(accountId, deleting.id);
+      await queryClient.invalidateQueries({ queryKey: ['account', accountId, 'merchant-stats'] });
+      setDeleting(null);
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div className="p-6 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Catalog ({products.length})</h3>
+          <button
+            onClick={() => setEditing({ mode: 'add' })}
+            className="px-3 py-1.5 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+          >
+            + Add Product
+          </button>
+        </div>
+        {products.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No products in the catalog yet.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
+              <tr>
+                <th className="px-6 py-3 text-left">Name</th>
+                <th className="px-6 py-3 text-left">Category</th>
+                <th className="px-6 py-3 text-left">SKU</th>
+                <th className="px-6 py-3 text-right">Price</th>
+                <th className="px-6 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map((p: any) => (
+                <tr key={p.id} className="border-t border-gray-100 dark:border-gray-900">
+                  <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">{p.name}</td>
+                  <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{p.category}</td>
+                  <td className="px-6 py-3 text-xs font-mono text-gray-400">{p.sku || '—'}</td>
+                  <td className="px-6 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                    ${((p.unit_price_cents ?? 0) / 100).toFixed(2)}
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <button
+                      onClick={() => setEditing({ mode: 'edit', product: p })}
+                      className="text-xs font-medium text-blue-600 hover:underline mr-3"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setDeleting(p)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {editing && (
+        <ProductModal
+          initial={editing.mode === 'edit' ? editing.product : null}
+          onSave={saveProduct}
+          onClose={() => { setEditing(null); setError(null); }}
+          saving={saving}
+          error={error}
+        />
+      )}
+      {deleting && (
+        <ConfirmModal
+          title={`Delete "${deleting.name}"?`}
+          message="This product will be removed from the merchant's catalog. Existing checkouts referencing it are not affected."
+          confirmLabel="Delete"
+          confirmClass="bg-red-600 hover:bg-red-700"
+          saving={saving}
+          error={error}
+          onConfirm={deleteProduct}
+          onCancel={() => { setDeleting(null); setError(null); }}
+        />
+      )}
+    </>
+  );
+}
+
+function ProductModal({
+  initial,
+  onSave,
+  onClose,
+  saving,
+  error,
+}: {
+  initial: any | null;
+  onSave: (form: { name: string; category: string; price: string; sku: string; description: string }) => void;
+  onClose: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [category, setCategory] = useState(initial?.category ?? '');
+  const [price, setPrice] = useState(initial ? String((initial.unit_price_cents ?? 0) / 100) : '');
+  const [sku, setSku] = useState(initial?.sku ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl max-w-md w-full p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          {initial ? 'Edit Product' : 'Add Product'}
+        </h3>
+        <div className="space-y-3">
+          <Field label="Name *"><input className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Field label="Category *"><input className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={category} onChange={(e) => setCategory(e.target.value)} /></Field>
+          <Field label="Price (USDC) *"><input type="number" min="0" step="0.01" className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+          <Field label="SKU"><input className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm" value={sku} onChange={(e) => setSku(e.target.value)} /></Field>
+          <Field label="Description"><textarea rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50">Cancel</button>
+          <button
+            onClick={() => onSave({ name, category, price, sku, description })}
+            disabled={saving || !name.trim() || !category.trim() || !price}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : initial ? 'Save Changes' : 'Add Product'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmModal({
+  title,
+  message,
+  confirmLabel,
+  confirmClass,
+  saving,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmClass: string;
+  saving: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl max-w-sm w-full p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{title}</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">{message}</p>
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onCancel} disabled={saving} className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50">Cancel</button>
+          <button onClick={onConfirm} disabled={saving} className={`px-4 py-2 text-sm font-medium rounded-lg text-white ${confirmClass} disabled:opacity-50`}>
+            {saving ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function EndpointsTab({ stats }: { stats: any }) {
+  const endpoints = stats?.endpoints || [];
+  if (endpoints.length === 0) return <div className="p-8 text-center text-gray-500">This merchant has no x402 endpoints.</div>;
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div className="p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">x402 Endpoints ({endpoints.length})</h3>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
+          <tr>
+            <th className="px-6 py-3 text-left">Name</th>
+            <th className="px-6 py-3 text-left">Method / Path</th>
+            <th className="px-6 py-3 text-right">Price</th>
+            <th className="px-6 py-3 text-right">Calls</th>
+            <th className="px-6 py-3 text-right">Revenue</th>
+            <th className="px-6 py-3 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {endpoints.map((e: any) => (
+            <tr key={e.id} className="border-t border-gray-100 dark:border-gray-900">
+              <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">
+                <Link href={`/dashboard/agentic-payments/x402/endpoints/${e.id}`} className="text-amber-600 dark:text-amber-400 hover:underline">
+                  ⚡ {e.name}
+                </Link>
+              </td>
+              <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{e.method} {e.path}</td>
+              <td className="px-6 py-3 text-right">${Number(e.base_price).toFixed(4)}</td>
+              <td className="px-6 py-3 text-right">{e.total_calls ?? 0}</td>
+              <td className="px-6 py-3 text-right font-semibold">${Number(e.total_revenue).toFixed(2)}</td>
+              <td className="px-6 py-3">
+                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                  e.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800'
+                }`}>{e.status}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function friendlinessChipClass(score: number): string {
+  if (score >= 80) return 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300';
+  if (score >= 60) return 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300';
+  if (score >= 40) return 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300';
+  return 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300';
+}
+
+function friendlinessBarClass(score: number): string {
+  if (score >= 80) return 'bg-emerald-500';
+  if (score >= 60) return 'bg-sky-500';
+  if (score >= 40) return 'bg-amber-500';
+  return 'bg-rose-500';
+}
+
+function FriendlinessTab({ stats }: { stats: any }) {
+  if (!stats) return <div className="p-8 text-center text-gray-500">Loading friendliness data…</div>;
+  const f = stats.friendliness;
+  if (!f) return <div className="p-8 text-center text-gray-500">Friendliness index not available.</div>;
+
+  const signals: Array<{ key: string; label: string; help: string }> = [
+    { key: 'catalog', label: 'Catalog Structure', help: 'SKU, price, currency, category on every product' },
+    { key: 'reliability', label: 'Reliability', help: 'Completed ÷ attempted checkouts' },
+    { key: 'price_accuracy', label: 'Price Accuracy', help: 'Rating-derived: catalog price matches checkout' },
+    { key: 'latency', label: 'Latency', help: 'p95 ACP create→complete (log-linear, <1s = 100, >30s = 0)' },
+    { key: 'manifest', label: 'Manifest Compliance', help: 'Valid JSON at the merchant manifest URL' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Headline score */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Gauge className="h-5 w-5 text-purple-500" />
+              Agent-Friendliness Index
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
+              Measures the <em>design</em> signals this merchant controls — catalog quality, reliability, latency,
+              price accuracy, manifest. Independent of whether agents happen to be buying today (commercial
+              performance lives on the Commerce tab).
+            </p>
+          </div>
+          <div className="text-right">
+            {f.score != null ? (
+              <>
+                <div className={`text-5xl font-bold ${f.score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : f.score >= 60 ? 'text-sky-600 dark:text-sky-400' : f.score >= 40 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  {f.score}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">/ 100</div>
+              </>
+            ) : (
+              <div className="text-sm text-gray-500">No measurable signals</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Per-signal breakdown */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 space-y-4">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Signal Breakdown</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">Effective weights after N/A redistribution</span>
+        </div>
+        {signals.map((s) => {
+          const sig = f.breakdown[s.key];
+          const weight = f.weights?.[s.key] ?? 0;
+          const isNA = sig?.score == null;
+          return (
+            <div key={s.key} className="space-y-1">
+              <div className="flex items-baseline justify-between text-sm">
+                <div>
+                  <span className="font-medium text-gray-900 dark:text-white">{s.label}</span>
+                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{s.help}</span>
+                </div>
+                <div className="flex items-center gap-3 font-mono">
+                  {isNA ? (
+                    <span className="text-gray-400 dark:text-gray-500 text-xs uppercase tracking-wider">N/A</span>
+                  ) : (
+                    <span className={`font-semibold ${sig.score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : sig.score >= 60 ? 'text-sky-600 dark:text-sky-400' : sig.score >= 40 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>{sig.score}</span>
+                  )}
+                  <span className="text-xs text-gray-400 dark:text-gray-500 w-12 text-right">
+                    {weight > 0 ? `${(weight * 100).toFixed(0)}%` : '—'}
+                  </span>
+                </div>
+              </div>
+              <div className="h-2 bg-gray-100 dark:bg-gray-900 rounded-full overflow-hidden">
+                {!isNA && (
+                  <div
+                    className={`h-full ${friendlinessBarClass(sig.score)} transition-all`}
+                    style={{ width: `${sig.score}%` }}
+                  />
+                )}
+              </div>
+              {sig?.issues && sig.issues.length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+                  {sig.issues.map((iss: string, idx: number) => (
+                    <li key={idx}>• {iss}</li>
+                  ))}
+                </ul>
+              )}
+              {isNA && sig?.detail?.note && (
+                <p className="text-xs text-gray-400 dark:text-gray-500">{sig.detail.note}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Raw detail */}
+      <details className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">Raw detail</summary>
+        <pre className="mt-3 text-xs text-gray-600 dark:text-gray-400 overflow-auto max-h-96">
+          {JSON.stringify(f.breakdown, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function RatingsTab({ ratings }: { ratings: any }) {
+  if (!ratings) return <div className="p-8 text-center text-gray-500">Loading ratings…</div>;
+  const dims = [
+    { key: 'navigation', label: 'Catalog Navigation', help: 'Machine-readable catalog, clear SKUs/prices' },
+    { key: 'price_accuracy', label: 'Price Accuracy', help: 'Catalog price matches checkout price' },
+    { key: 'response_speed', label: 'Response Speed', help: 'Checkout completes quickly' },
+    { key: 'fulfillment', label: 'Fulfillment', help: 'Orders settle successfully' },
+    { key: 'error_clarity', label: 'Error Clarity', help: 'Failures include actionable detail' },
+  ];
+  return (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-baseline gap-4 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Agent Ratings</h3>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{ratings.totalRatings || 0} total</span>
+          {ratings.overallAverage != null && (
+            <span className="ml-auto text-2xl font-bold text-amber-500">★ {Number(ratings.overallAverage).toFixed(2)}<span className="text-sm text-gray-400">/5</span></span>
+          )}
+        </div>
+        <div className="space-y-3">
+          {dims.map(d => {
+            const avg = ratings.averages?.[d.key];
+            const pct = typeof avg === 'number' ? (avg / 5) * 100 : 0;
+            return (
+              <div key={d.key}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span title={d.help} className="text-gray-700 dark:text-gray-300">{d.label}</span>
+                  <span className="font-mono text-gray-600 dark:text-gray-400">
+                    {typeof avg === 'number' ? `${avg.toFixed(2)}/5` : '—'}
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-100 dark:bg-gray-900 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {ratings.recent?.length > 0 && (
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Ratings</h3>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {ratings.recent.map((r: any) => (
+              <div key={r.id} className="pb-3 border-b border-gray-100 dark:border-gray-900 last:border-0">
+                <div className="flex items-center justify-between mb-1 text-sm">
+                  <span className="font-medium text-gray-900 dark:text-white">{r.rater_name}</span>
+                  <span className="text-xs text-gray-400">{new Date(r.created_at).toLocaleString()}</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  {dims.map(d => r[d.key] != null && (
+                    <span key={d.key} title={d.label}>{d.label.split(' ')[0]}: <span className="font-semibold text-gray-700 dark:text-gray-300">{r[d.key]}/5</span></span>
+                  ))}
+                  {r.checkout_protocol && (
+                    <span className="ml-auto uppercase text-xs bg-gray-100 dark:bg-gray-900 px-2 py-0.5 rounded">{r.checkout_protocol}</span>
+                  )}
+                </div>
+                {r.comment && <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 italic">{r.comment}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PayoutsTab({ accountId }: { accountId: string }) {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  const [withdrawing, setWithdrawing] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Merchant's wallets
+  const { data: walletsResp } = useQuery({
+    queryKey: ['account', accountId, 'payouts-wallets'],
+    queryFn: () => api!.wallets.list({ owner_account_id: accountId, limit: 20 } as any),
+    enabled: !!api,
+  });
+  const wallets = (walletsResp as any)?.data?.data || (walletsResp as any)?.data || [];
+
+  // Recent transfers targeting this merchant's account (includes withdrawals out).
+  const { data: transfersResp } = useQuery({
+    queryKey: ['account', accountId, 'payouts-transfers'],
+    queryFn: () => api!.accounts.getTransfers(accountId, { limit: 30 }),
+    enabled: !!api,
+  });
+  const transfers = ((transfersResp as any)?.data?.data || (transfersResp as any)?.data || []) as any[];
+  // Withdrawals = transfers FROM the merchant's account (outbound).
+  const withdrawals = transfers.filter((t: any) => t.fromAccountId === accountId || t.from_account_id === accountId);
+
+  async function submitWithdraw(form: { amount: string; destinationAccountId: string; reference: string }) {
+    setSaving(true);
+    setError(null);
+    try {
+      const amount = parseFloat(form.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setError('Amount must be a positive number');
+        setSaving(false);
+        return;
+      }
+      if (!form.destinationAccountId.trim()) {
+        setError('Destination account ID is required');
+        setSaving(false);
+        return;
+      }
+      await api!.wallets.withdraw(withdrawing.id, {
+        amount,
+        destinationAccountId: form.destinationAccountId.trim(),
+        reference: form.reference.trim() || 'Merchant payout',
+      });
+      await queryClient.invalidateQueries({ queryKey: ['account', accountId, 'payouts-wallets'] });
+      await queryClient.invalidateQueries({ queryKey: ['account', accountId, 'payouts-transfers'] });
+      await queryClient.invalidateQueries({ queryKey: ['account', accountId, 'merchant-stats'] });
+      setWithdrawing(null);
+    } catch (e: any) {
+      setError(e?.message || 'Withdrawal failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Merchant Wallets</h3>
+          {wallets.length === 0 ? (
+            <div className="text-gray-500">No wallets provisioned for this merchant.</div>
+          ) : (
+            <div className="space-y-3">
+              {wallets.map((w: any) => (
+                <div key={w.id} className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-900 last:border-0">
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">{w.walletType || w.wallet_type || 'Wallet'} · {w.currency}</div>
+                    <div className="text-xs font-mono text-gray-400">{w.id.slice(0, 8)}…</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl font-bold text-purple-600 dark:text-purple-400">
+                      ${Number(w.balance ?? 0).toFixed(2)}
+                    </span>
+                    <button
+                      onClick={() => { setWithdrawing(w); setError(null); }}
+                      disabled={Number(w.balance ?? 0) <= 0}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Withdraw
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Withdrawals ({withdrawals.length})</h3>
+          {withdrawals.length === 0 ? (
+            <div className="text-gray-500 text-sm">No withdrawals yet.</div>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {withdrawals.slice(0, 15).map((t: any) => (
+                <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-900 last:border-0 text-sm">
+                  <span className="flex items-center gap-2">
+                    <Banknote className="h-4 w-4 text-emerald-500" />
+                    <span className="text-gray-900 dark:text-white">{t.description || 'Withdrawal'}</span>
+                  </span>
+                  <span className="flex items-center gap-3">
+                    <span className="font-medium">${Number(t.amount || 0).toFixed(2)} {t.currency || 'USDC'}</span>
+                    <span className="text-xs text-gray-400">{new Date(t.createdAt || t.created_at).toLocaleDateString()}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {withdrawing && (
+        <WithdrawModal
+          wallet={withdrawing}
+          onSubmit={submitWithdraw}
+          onClose={() => { setWithdrawing(null); setError(null); }}
+          saving={saving}
+          error={error}
+        />
+      )}
+    </>
+  );
+}
+
+function WithdrawModal({
+  wallet,
+  onSubmit,
+  onClose,
+  saving,
+  error,
+}: {
+  wallet: any;
+  onSubmit: (form: { amount: string; destinationAccountId: string; reference: string }) => void;
+  onClose: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const [amount, setAmount] = useState('');
+  const [destinationAccountId, setDestinationAccountId] = useState('');
+  const [reference, setReference] = useState('');
+  const balance = Number(wallet.balance ?? 0);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl max-w-md w-full p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Withdraw from Wallet</h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-mono">
+          {wallet.id.slice(0, 8)}… · Balance ${balance.toFixed(2)} {wallet.currency}
+        </p>
+        <div className="space-y-3">
+          <Field label={`Amount (${wallet.currency}) *`}>
+            <input type="number" min="0" step="0.01" max={balance} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </Field>
+          <Field label="Destination Account ID *">
+            <input placeholder="account-uuid" className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm" value={destinationAccountId} onChange={(e) => setDestinationAccountId(e.target.value)} />
+          </Field>
+          <Field label="Reference">
+            <input placeholder="Monthly payout" className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" value={reference} onChange={(e) => setReference(e.target.value)} />
+          </Field>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50">Cancel</button>
+          <button
+            onClick={() => onSubmit({ amount, destinationAccountId, reference })}
+            disabled={saving || !amount || !destinationAccountId}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {saving ? 'Processing…' : 'Withdraw'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, icon }: { label: string; value: string; sub?: string; icon?: string }) {
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-2">
+        {icon && <span className="text-base">{icon}</span>}
+        {label}
+      </div>
+      <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+      {sub && <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{sub}</div>}
     </div>
   );
 }

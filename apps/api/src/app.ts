@@ -26,7 +26,8 @@ import connectedAccountsRouter from './routes/organization/connected-accounts.js
 import organizationOnboardingRouter from './routes/organization/onboarding.js';
 import apiKeysRouter from './routes/api-keys.js';
 import accountsRouter from './routes/accounts.js';
-import agentsRouter from './routes/agents.js';
+import { merchantStatsOnAccountsRouter, merchantsAliasRouter } from './routes/merchants.js';
+import agentsRouter, { agentCardRouter } from './routes/agents.js';
 import transfersRouter from './routes/transfers.js';
 import internalTransfersRouter from './routes/internal-transfers.js';
 import streamsRouter from './routes/streams.js';
@@ -65,6 +66,8 @@ import x402BridgeRouter from './routes/x402-bridge.js';
 import wellKnownUcpRouter from './routes/well-known-ucp.js';
 import wellKnownA2aRouter from './routes/well-known-a2a.js';
 import { a2aPublicRouter, a2aRouter } from './routes/a2a.js';
+import { backendRouter } from './routes/agent-backend.js';
+import { roundViewerRouter } from './routes/round-viewer.js';
 import ucpSchemasRouter from './routes/ucp-schemas.js';
 import ucpRouter from './routes/ucp.js';
 import ucpCheckoutRouter from './routes/ucp-checkout.js';
@@ -86,6 +89,18 @@ import searchRouter from './routes/search.js';
 import paymentHandlersListRouter from './routes/payment-handlers-list.js';
 import portalTokensRouter from './routes/portal-tokens.js';
 import usageRouter from './routes/usage.js';
+import agentWalletsRouter from './routes/agent-wallets.js';
+import betaAdminRouter from './routes/beta-admin.js';
+import reputationRouter from './routes/reputation.js';
+import tierLimitsRouter from './routes/tier-limits.js';
+import mppRouter from './routes/mpp.js';
+import compositionRouter from './routes/composition.js';
+import mcpRouter from './routes/mcp.js';
+import supportRouter from './routes/support.js';
+import { agentConnectPublicRouter, agentConnectAuthRouter } from './routes/agent-connect.js';
+import authScopesRouter from './routes/auth-scopes.js';
+import organizationScopesRouter from './routes/organization/scopes.js';
+import { requireTenantScope } from './middleware/require-tenant-scope.js';
 
 const app = new Hono();
 
@@ -98,6 +113,25 @@ app.use('*', requestId);
 
 // Timing tracking (must be early to track full request time)
 app.use('*', timingMiddleware);
+
+// CORS preflight for admin round viewer — must be BEFORE response wrapper
+app.use('/admin/round/*', async (c, next) => {
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': c.req.header('Origin') || '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
+  }
+  // For non-OPTIONS, add CORS header to actual response
+  c.header('Access-Control-Allow-Origin', c.req.header('Origin') || '*');
+  c.header('Access-Control-Allow-Credentials', 'true');
+  await next();
+});
 
 // Response wrapper (wraps all responses in structured format)
 app.use('*', responseWrapperMiddleware);
@@ -127,11 +161,13 @@ app.use(
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:3001',
+      'http://localhost:8889', // Live round viewer (demo)
       'https://payos-web.vercel.app', // Production dashboard (legacy)
       'https://sly-ai.vercel.app',    // Production dashboard
+      'https://app.getsly.ai',        // Production dashboard (primary)
     ],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Request-ID'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Request-ID', 'X-Environment'],
     exposeHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset', 'X-Request-ID'],
     credentials: true,
     maxAge: 86400, // 24 hours
@@ -221,6 +257,11 @@ app.route('/v1/auth', authRouter);
 // Story 40.5: Circle Webhook Handler Implementation
 app.route('/webhooks/circle', circleWebhooksRouter);
 
+// Persona webhook receiver (public - verifies Persona signatures internally)
+// Stories 73.10/73.11: Persona KYC/KYB Verification
+import personaWebhooksRouter from './routes/persona-webhooks.js';
+app.route('/webhooks/persona', personaWebhooksRouter);
+
 // Stripe webhook receiver (public - verifies Stripe signatures internally)
 // Story 40.12: Stripe Test Mode Setup
 app.route('/webhooks/stripe', stripeWebhooksRouter);
@@ -233,9 +274,17 @@ app.route('/.well-known/ucp', wellKnownUcpRouter);
 // Epic 57: Google A2A Protocol Integration
 app.route('/.well-known/agent.json', wellKnownA2aRouter);
 
+// Agent webhook backend (public — verifies HMAC signature internally)
+// Mounted outside /v1 to avoid auth middleware
+app.route('/agent-backend', backendRouter);
+
 // A2A public routes (agent card discovery + JSON-RPC endpoint)
 // Epic 57: Google A2A Protocol Integration
 app.route('/a2a', a2aPublicRouter);
+
+// Remote MCP endpoint (Streamable HTTP transport, bearer token auth inside route)
+// Enables external MCP clients (e.g., Intercom Fin) to connect
+app.route('/mcp', mcpRouter);
 
 // UCP Schemas (public - for capability discovery)
 // Story 43.2: UCP Capability Definitions
@@ -245,9 +294,35 @@ app.route('/ucp', ucpSchemasRouter);
 // Story 43.11: UCP Webhook Handler
 app.route('/webhooks/ucp', ucpWebhooksRouter);
 
+// Agent card (public - ERC-8004 on-chain identity metadata)
+// Epic 63: On-chain agent registration — mounted outside /v1 to bypass auth
+app.route('/agents', agentCardRouter);
+
+// Agent challenge-response auth (public - rate-limited, no bearer auth)
+// Epic 72: Ed25519 challenge-response handshake
+app.route('/v1/agents', agentConnectPublicRouter);
+
 // Protocol Discovery API (public - for discovering available protocols)
 // Epic 49: Protocol Discovery & Management
 app.route('/v1/protocols', protocolsRouter);
+
+// OpenAPI spec + Skills.md (public - for agent discovery and API documentation)
+import { openapiRouter } from './routes/openapi.js';
+app.route('/v1', openapiRouter);
+
+// One-click agent onboarding (public - no auth required)
+import { onboardingAgentRouter } from './routes/onboarding-agent.js';
+app.route('/v1/onboarding/agent', onboardingAgentRouter);
+
+// Swagger UI redirect
+app.get('/docs', (c) => {
+  const specUrl = encodeURIComponent(`${process.env.API_BASE_URL || 'https://api.getsly.ai'}/v1/openapi.json`);
+  return c.redirect(`https://petstore.swagger.io/?url=${specUrl}`);
+});
+
+// Beta admin routes (platform admin auth, NOT tenant auth)
+app.route('/admin/beta', betaAdminRouter);
+app.route('/admin/round', roundViewerRouter); // Live round viewer (platform admin only)
 
 // NOTE: UCP Identity routes moved to v1 router for auth middleware
 
@@ -272,9 +347,78 @@ v1.use('*', requestCounterMiddleware);
 // Idempotency (after auth to have tenant context)
 v1.use('*', idempotencyMiddleware);
 
+// ============================================
+// Epic 82 — TENANT-WIDE SCOPE GATING
+// Mounted AFTER authMiddleware so ctx.elevatedScope is populated, and
+// BEFORE the route mounts so the gate runs first. Each group declares
+// its own override table for treasury / agent-baseline endpoints; pure
+// method-mapping (GET → tenant_read, POST/PATCH/PUT/DELETE → tenant_write)
+// applies elsewhere. List endpoints with `selfScopeShortcut` allow an
+// agent caller to fetch its own data via `?agent_id=<self>` without a
+// grant — the existing handler filter does the narrowing.
+// ============================================
+v1.use('/accounts/*', requireTenantScope());
+v1.use('/merchants/*', requireTenantScope());
+v1.use('/wallets/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/wallets/:id/fund', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/transfer', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/withdraw', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/deposit', scope: 'treasury' },
+    { method: 'POST', path: '/v1/wallets/:id/test-fund', scope: 'treasury' },
+  ],
+}));
+v1.use('/x402/*', requireTenantScope({
+  overrides: [
+    // POST /pay moves USDC; treasury required.
+    { method: 'POST', path: '/v1/x402/pay', scope: 'treasury' },
+    // POST /verify is read-shaped (cryptographic signature check); ease
+    // it back to tenant_read so agents with a read grant can use it.
+    { method: 'POST', path: '/v1/x402/verify', scope: 'tenant_read' },
+  ],
+}));
+v1.use('/ap2/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/ap2/mandates/:id/execute', scope: 'treasury' },
+  ],
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/acp/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/acp/checkouts/:id/complete', scope: 'treasury' },
+    { method: 'POST', path: '/v1/acp/checkouts/batch', scope: 'treasury' },
+  ],
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/ucp/checkouts/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/ucp/checkouts/:id/complete', scope: 'treasury' },
+    { method: 'POST', path: '/v1/ucp/checkouts/batch', scope: 'treasury' },
+    { method: 'POST', path: '/v1/ucp/checkouts/batch-complete', scope: 'treasury' },
+  ],
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/ucp/orders/*', requireTenantScope({
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+v1.use('/mpp/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/mpp/pay', scope: 'treasury' },
+    // Receipt verification is a stateless cryptographic check.
+    { method: 'POST', path: '/v1/mpp/receipts/verify', scope: 'tenant_read' },
+  ],
+}));
+v1.use('/a2a/tasks*', requireTenantScope({
+  selfScopeShortcut: { paramName: 'agent_id' },
+}));
+
 // Mount route handlers
 v1.route('/context', contextRouter);
+v1.route('/auth/scopes', authScopesRouter); // Epic 82 — agent-side scope request/inspect
+v1.route('/organization/scopes', organizationScopesRouter); // Epic 82 — tenant-owner issue/decide/revoke
 v1.route('/accounts', accountsRouter);
+v1.route('/accounts', merchantStatsOnAccountsRouter); // GET /v1/accounts/:id/merchant-stats
+v1.route('/merchants', merchantsAliasRouter);         // Cleaner namespace alias for /v1/ucp/merchants
 v1.route('/agents', agentsRouter);
 // NOTE: Batch transfers must be mounted BEFORE /transfers to avoid route conflicts
 v1.route('/transfers/batch', batchTransfersRouter);
@@ -328,6 +472,13 @@ v1.route('/search', searchRouter); // Unified global search
 v1.route('/payment-handlers', paymentHandlersListRouter); // DB-driven handler registry
 v1.route('/portal-tokens', portalTokensRouter); // Portal token CRUD (Epic 65)
 v1.route('/usage', usageRouter); // Usage API (Epic 65)
+v1.route('/agents', agentWalletsRouter); // Agent wallet policy & exposure (Epic 18)
+v1.route('/reputation', reputationRouter); // Reputation bridge (Epic 63)
+v1.route('/tier-limits', tierLimitsRouter); // KYA + verification tier configuration
+v1.route('/mpp', mppRouter); // Machine Payments Protocol (Epic 71)
+v1.route('/composition', compositionRouter); // Multi-protocol composition (Epic 71)
+v1.route('/support', supportRouter); // Support tools for Intercom Fin
+v1.route('/agents', agentConnectAuthRouter); // Agent key-pair auth + liveness (Epic 72)
 // NOTE: Removed catch-all payment-methods mount to prevent route conflicts
 // Payment methods are already accessible at /v1/payment-methods
 // Account-specific payment methods handled via accounts router

@@ -18,6 +18,7 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getEnv } from '../utils/helpers.js';
 
 const app = new Hono();
 
@@ -63,7 +64,7 @@ const replayWebhookSchema = z.object({
 app.get('/stats', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Get date range (default: last 24 hours)
     const hoursBack = parseInt(c.req.query('hours') || '24');
@@ -74,6 +75,7 @@ app.get('/stats', async (c) => {
       .from('webhook_deliveries')
       .select('status')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .gte('created_at', startDate);
 
     if (statusError) {
@@ -117,6 +119,7 @@ app.get('/stats', async (c) => {
       .from('webhook_deliveries')
       .select('id, endpoint_url, event_type, last_response_code, last_response_body, last_attempt_at, attempts, status')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .in('status', ['failed', 'dlq'])
       .order('last_attempt_at', { ascending: false })
       .limit(10);
@@ -217,13 +220,14 @@ app.post('/replay', async (c) => {
     const body = await c.req.json();
     const validated = replayWebhookSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Build query for deliveries to replay
     let query = supabase
       .from('webhook_deliveries')
       .select('id, endpoint_id, endpoint_url, event_type, event_id, payload')
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
     
     // Filter by specific delivery IDs
     if (validated.deliveryIds && validated.deliveryIds.length > 0) {
@@ -272,6 +276,7 @@ app.post('/replay', async (c) => {
     for (const delivery of deliveries) {
       const newDelivery = {
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         endpoint_id: delivery.endpoint_id,
         endpoint_url: delivery.endpoint_url,
         event_type: delivery.event_type,
@@ -326,12 +331,13 @@ app.get('/deliveries/dlq', async (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
     const offset = (page - 1) * limit;
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     const { data, error, count } = await supabase
       .from('webhook_deliveries')
       .select('*', { count: 'exact' })
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('status', 'dlq')
       .order('dlq_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -363,7 +369,7 @@ app.get('/deliveries/dlq', async (c) => {
 app.delete('/deliveries/dlq', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Only purge old DLQ items (>7 days)
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -372,6 +378,7 @@ app.delete('/deliveries/dlq', async (c) => {
       .from('webhook_deliveries')
       .delete()
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('status', 'dlq')
       .lt('dlq_at', cutoff)
       .select('id');
@@ -405,7 +412,7 @@ app.post('/', async (c) => {
     const body = await c.req.json();
     const validated = createWebhookSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Generate webhook secret
     const secret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
@@ -456,7 +463,7 @@ app.post('/', async (c) => {
 app.get('/', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('webhook_endpoints')
@@ -487,7 +494,7 @@ app.get('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('webhook_endpoints')
@@ -521,7 +528,7 @@ app.patch('/:id', async (c) => {
     const body = await c.req.json();
     const validated = updateWebhookSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('webhook_endpoints')
@@ -558,7 +565,7 @@ app.delete('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { error } = await supabase
       .from('webhook_endpoints')
@@ -585,7 +592,7 @@ app.post('/:id/test', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Verify endpoint exists
     const { data: endpoint, error } = await supabase
@@ -615,6 +622,7 @@ app.post('/:id/test', async (c) => {
       .from('webhook_deliveries')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         endpoint_id: endpoint.id,
         endpoint_url: endpoint.url,
         event_type: 'webhook.test',
@@ -650,7 +658,7 @@ app.get('/:id/deliveries', async (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
     const offset = (page - 1) * limit;
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Verify endpoint exists
     const { data: endpoint } = await supabase
@@ -670,6 +678,7 @@ app.get('/:id/deliveries', async (c) => {
       .select('*', { count: 'exact' })
       .eq('endpoint_id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -701,7 +710,7 @@ app.post('/deliveries/:id/retry', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Update delivery to pending status
     const { data, error } = await supabase
@@ -712,6 +721,7 @@ app.post('/deliveries/:id/retry', async (c) => {
       })
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .in('status', ['failed', 'dlq'])
       .select()
       .single();
@@ -742,7 +752,7 @@ app.get('/:id/health', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Get endpoint details
     const { data: endpoint, error: endpointError } = await supabase
@@ -764,6 +774,7 @@ app.get('/:id/health', async (c) => {
       .select('status, last_response_code, last_response_time_ms, created_at')
       .eq('endpoint_id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .gte('created_at', startDate);
     
     if (deliveryError) {
@@ -844,7 +855,7 @@ app.post('/:id/rotate-secret', async (c) => {
   try {
     const ctx = c.get('ctx');
     const { id } = c.req.param();
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Verify endpoint exists
     const { data: endpoint, error } = await supabase

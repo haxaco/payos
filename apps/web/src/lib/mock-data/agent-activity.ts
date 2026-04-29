@@ -24,6 +24,11 @@ export interface AgentAction {
     currency?: string;
     recipient?: string;
     reference?: string;
+    // External x402 context — set when the agent paid an on-chain address
+    // outside any Sly account (e.g. an agentic.market service).
+    externalAddress?: string;
+    settlementNetwork?: string;
+    txHash?: string;
   };
   reasoning?: string; // AI explanation
 }

@@ -2,13 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { User, Bell, Shield, Palette, Moon, Sun, Monitor, Check, Globe, Users, Bot, LayoutDashboard } from 'lucide-react';
 import { useLocale, type Locale } from '@/lib/locale';
+import { useApiConfig, useApiFetch } from '@/lib/api-client';
+import { useSidebarData } from '@/components/layout/use-sidebar-data';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, formatCurrency, formatDate } = useLocale();
+  const { apiUrl, authToken, isConfigured, apiEnvironment } = useApiConfig();
+  const apiFetch = useApiFetch();
+  const { showFullSidebar, setShowFullSidebar } = useSidebarData();
   const [mounted, setMounted] = useState(false);
+  const [supabaseEmail, setSupabaseEmail] = useState('');
+  const [supabaseName, setSupabaseName] = useState('');
+  const [resourceUsage, setResourceUsage] = useState<{
+    teamMembers: { current: number; limit: number | null };
+    agents: { current: number; limit: number | null };
+  } | null>(null);
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -16,9 +28,71 @@ export default function SettingsPage() {
     transfers: true,
   });
 
+  // Fetch user profile
+  const { data: meData, isLoading: isMeLoading } = useQuery({
+    queryKey: ['auth-me', apiEnvironment],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/auth/me`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!authToken && isConfigured,
+    staleTime: 5 * 60_000,
+  });
+
+  const me = meData?.data || meData;
+  const userName = me?.name || supabaseName || '';
+  const userEmail = me?.email || supabaseEmail || '';
+  const isProfileLoading = isMeLoading && !me;
+
   // Prevent hydration mismatch by only showing theme-dependent content after mount
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // Fetch Supabase session user as fallback for profile fields
+  useEffect(() => {
+    async function fetchSupabaseUser() {
+      try {
+        const { createSupabaseBrowserClient } = await import('@/lib/supabase/client');
+        const supabase = createSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setSupabaseEmail(session.user.email || '');
+          setSupabaseName(session.user.user_metadata?.name || '');
+        }
+      } catch {
+        // Non-critical fallback
+      }
+    }
+    fetchSupabaseUser();
+  }, []);
+
+  // Fetch resource usage
+  useEffect(() => {
+    async function fetchUsage() {
+      try {
+        const { createSupabaseBrowserClient } = await import('@/lib/supabase/client');
+        const supabase = createSupabaseBrowserClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+
+        const res = await fetch(`${apiUrl}/v1/organization`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.maxTeamMembers || data.maxAgents) {
+          setResourceUsage({
+            teamMembers: { current: data.teamMemberCount || 0, limit: data.maxTeamMembers || null },
+            agents: { current: data.agentCount || 0, limit: data.maxAgents || null },
+          });
+        }
+      } catch {
+        // Non-critical — just don't show usage
+      }
+    }
+    fetchUsage();
   }, []);
 
   const localeOptions: Array<{ value: Locale; label: string; description: string; example: string }> = [
@@ -49,12 +123,6 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Settings</h1>
-        <p className="text-gray-600 dark:text-gray-400">Manage your account and preferences</p>
-      </div>
-
       <div className="space-y-6">
         {/* Profile Section */}
         <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
@@ -73,26 +141,106 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Display Name
               </label>
-              <input
-                type="text"
-                defaultValue="Admin User"
-                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              {isProfileLoading ? (
+                <div className="w-full h-[42px] bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
+              ) : (
+                <input
+                  type="text"
+                  value={userName}
+                  readOnly
+                  className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-gray-900 dark:text-white"
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Email
               </label>
-              <input
-                type="email"
-                defaultValue="admin@payos.io"
-                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled
-              />
+              {isProfileLoading ? (
+                <div className="w-full h-[42px] bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
+              ) : (
+                <input
+                  type="email"
+                  value={userEmail}
+                  readOnly
+                  className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-gray-900 dark:text-white"
+                />
+              )}
               <p className="mt-1 text-xs text-gray-500">Email cannot be changed</p>
             </div>
           </div>
         </section>
+
+        {/* Resource Usage Section (shown when limits are set) */}
+        {resourceUsage && (resourceUsage.teamMembers.limit || resourceUsage.agents.limit) && (
+          <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-950 rounded-xl flex items-center justify-center">
+                <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Resource Usage</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Your current plan limits</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {resourceUsage.teamMembers.limit && (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" /> Team Members
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {resourceUsage.teamMembers.current} / {resourceUsage.teamMembers.limit}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        resourceUsage.teamMembers.current >= resourceUsage.teamMembers.limit
+                          ? 'bg-red-500'
+                          : resourceUsage.teamMembers.current >= resourceUsage.teamMembers.limit * 0.8
+                          ? 'bg-yellow-500'
+                          : 'bg-indigo-500'
+                      }`}
+                      style={{ width: `${Math.min(100, (resourceUsage.teamMembers.current / resourceUsage.teamMembers.limit) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {resourceUsage.agents.limit && (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                      <Bot className="h-3.5 w-3.5" /> Agents
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {resourceUsage.agents.current} / {resourceUsage.agents.limit}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        resourceUsage.agents.current >= resourceUsage.agents.limit
+                          ? 'bg-red-500'
+                          : resourceUsage.agents.current >= resourceUsage.agents.limit * 0.8
+                          ? 'bg-yellow-500'
+                          : 'bg-indigo-500'
+                      }`}
+                      style={{ width: `${Math.min(100, (resourceUsage.agents.current / resourceUsage.agents.limit) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Need higher limits? Contact us at support@getsly.ai
+              </p>
+            </div>
+          </section>
+        )}
 
         {/* Localization Section */}
         <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
@@ -136,6 +284,44 @@ export default function SettingsPage() {
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Dashboard Section */}
+        <section className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-orange-100 dark:bg-orange-950 rounded-xl flex items-center justify-center">
+              <LayoutDashboard className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Dashboard</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Customize your sidebar and navigation</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm font-medium text-gray-900 dark:text-white">Show all sidebar sections</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Display the Operations section in the sidebar</div>
+              </div>
+              <button
+                onClick={() => setShowFullSidebar(!showFullSidebar)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  showFullSidebar
+                    ? 'bg-blue-600'
+                    : 'bg-gray-200 dark:bg-gray-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                    showFullSidebar
+                      ? 'translate-x-5'
+                      : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
         </section>
@@ -263,6 +449,5 @@ export default function SettingsPage() {
         </section>
 
       </div>
-    </div>
   );
 }

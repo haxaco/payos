@@ -1,0 +1,48 @@
+---
+title: "SDKs & tools"
+description: "Official Sly libraries for Node.js, CLI, and MCP."
+---
+
+Four official packages published under the `@sly_ai` scope on npm:
+
+<CardGroup cols={2}>
+  <Card title="Node SDK" icon="node-js" href="/sdks/node-sdk">
+    `@sly_ai/sdk` — typed client for Node.js / TypeScript / Deno. Covers every endpoint.
+  </Card>
+  <Card title="CLI" icon="terminal" href="/sdks/cli">
+    `@sly_ai/cli` — terminal tool for ops, scripting, and CI.
+  </Card>
+  <Card title="MCP server" icon="plug" href="/sdks/mcp-server">
+    `@sly_ai/mcp-server` — Sly capabilities as MCP tools for Claude Desktop.
+  </Card>
+  <Card title="Webhook verification" icon="lock" href="/sdks/webhook-verification">
+    Drop-in helpers for verifying webhook signatures in any language.
+  </Card>
+</CardGroup>
+
+## Which to use
+
+| Scenario | Pick |
+|---|---|
+| Building a Node.js / TypeScript backend | [Node SDK](/sdks/node-sdk) |
+| Shell scripts, CI pipelines, local exploration | [CLI](/sdks/cli) |
+| Claude Desktop, Cursor, agent runtimes | [MCP server](/sdks/mcp-server) |
+| Python / Go / Rust / other backend | Raw REST with the [API reference](/api-reference) |
+
+A Python SDK is on the roadmap. Until it ships, Python integrations use the REST API directly — all endpoints are straightforward JSON over HTTPS.
+
+## Versioning
+
+All packages follow semver. We treat a major version bump as a contract change — breaking changes happen only on majors. Minor versions add capability; patches fix bugs.
+
+Current versions as of this writing:
+
+- `@sly_ai/sdk` — 0.1.x (pre-1.0, API may still evolve)
+- `@sly_ai/cli` — 0.1.x
+- `@sly_ai/mcp-server` — 0.1.x
+
+When we hit 1.0 we'll lock the APIs; until then, pin to a minor version in production (`^0.1.0`).
+
+## Source + contributions
+
+All four packages are open source and live in the Sly monorepo. Issues and PRs welcome — see the [GitHub repo](https://github.com/Sly-devs/sly).

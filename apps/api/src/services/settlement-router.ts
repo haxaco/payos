@@ -934,7 +934,7 @@ export class SettlementRouter {
 
       // Create agentic token with DTVC for the settlement
       const tokenReference = `mc_token_${request.transferId.slice(0, 8)}_${Date.now()}`;
-      const dtvc = await client.generateDTVC({
+      const dtvc: any = await (client as any).generateDTVC({
         tokenReference,
         agentId: mcAgentId,
         amount: request.amount,

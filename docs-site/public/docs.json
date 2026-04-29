@@ -1,0 +1,232 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Sly",
+  "description": "The Agentic Economy Platform — stablecoin payments, agent wallets, and multi-protocol commerce for AI agents.",
+  "colors": {
+    "primary": "#2563EB",
+    "light": "#60A5FA",
+    "dark": "#1E40AF"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.jpeg",
+    "href": "https://getsly.ai"
+  },
+  "navbar": {
+    "links": [
+      { "label": "Dashboard", "href": "https://app.getsly.ai" },
+      { "label": "Status", "href": "/resources/status" }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get API Keys",
+      "href": "https://app.getsly.ai/auth/signup"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/slyagentic",
+      "github": "https://github.com/sly-ai",
+      "linkedin": "https://www.linkedin.com/company/sly-ai"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "get-started/overview",
+              "get-started/environments",
+              "get-started/sign-up",
+              "get-started/quickstart"
+            ]
+          },
+          {
+            "group": "Onboarding",
+            "pages": [
+              "onboarding/overview",
+              "onboarding/api-monetization",
+              "onboarding/e-commerce",
+              "onboarding/agent-commerce",
+              "onboarding/recurring-payments"
+            ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/overview",
+              "migration/from-stripe",
+              "migration/from-circle",
+              "migration/from-card-networks"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "authentication/overview",
+              "authentication/api-keys",
+              "authentication/agent-tokens",
+              "authentication/ed25519-sessions",
+              "authentication/portal-tokens",
+              "authentication/jwt-sessions"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core-concepts/tenants",
+              "core-concepts/accounts",
+              "core-concepts/agents",
+              "core-concepts/wallets",
+              "core-concepts/transfers",
+              "core-concepts/streams",
+              "core-concepts/quotes",
+              "core-concepts/environments"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/onboard-account",
+              "guides/register-agent",
+              "guides/cross-border-transfer",
+              "guides/start-money-stream",
+              "guides/receive-webhooks",
+              "guides/issue-refund",
+              "guides/handle-dispute",
+              "guides/fund-live-wallet",
+              "guides/sandbox-testing"
+            ]
+          },
+          {
+            "group": "Recipes",
+            "pages": [
+              "recipes/overview",
+              "recipes/transfers-and-refunds",
+              "recipes/agents-and-auth",
+              "recipes/protocols",
+              "recipes/webhooks"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/event-driven",
+              "architecture/queue-model",
+              "architecture/state-machine"
+            ]
+          },
+          {
+            "group": "Settlement & Treasury",
+            "pages": [
+              "settlement/overview",
+              "settlement/rules",
+              "settlement/windows",
+              "settlement/reconciliation",
+              "settlement/treasury",
+              "settlement/scheduled-transfers"
+            ]
+          },
+          {
+            "group": "Protocols",
+            "pages": [
+              "protocols/overview",
+              "protocols/decision-tree",
+              "protocols/ucp",
+              "protocols/acp",
+              "protocols/ap2",
+              "protocols/x402",
+              "protocols/mpp",
+              "protocols/a2a",
+              "protocols/mcp",
+              "protocols/cards"
+            ]
+          },
+          {
+            "group": "Agent Platform",
+            "pages": [
+              "agents/overview",
+              "agents/quickstart",
+              "agents/kya-tiers",
+              "agents/wallet-policies",
+              "agents/ed25519-keypair-auth",
+              "agents/persistent-sse",
+              "agents/a2a-agent-card",
+              "agents/mcp-tool-catalog",
+              "agents/scope-grants",
+              "agents/kill-switch",
+              "agents/approval-workflows"
+            ]
+          },
+          {
+            "group": "SDKs & Tools",
+            "pages": [
+              "sdks/overview",
+              "sdks/node-sdk",
+              "sdks/cli",
+              "sdks/mcp-server",
+              "sdks/webhook-verification"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "webhooks/overview",
+              "webhooks/events",
+              "webhooks/signature-verification",
+              "webhooks/replay",
+              "webhooks/local-testing"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/rate-limits",
+              "resources/error-codes",
+              "resources/analytics-and-usage",
+              "resources/changelog",
+              "resources/status",
+              "resources/support",
+              "resources/coming-soon"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "api-reference/openapi.json"
+      },
+      {
+        "tab": "Scanner",
+        "groups": [
+          {
+            "group": "Scanner",
+            "pages": [
+              "scanner/overview",
+              "scanner/quickstart",
+              "scanner/authentication",
+              "scanner/credits-and-billing",
+              "scanner/data-model",
+              "scanner/rate-limits"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "scanner/endpoints/scan",
+              "scanner/endpoints/batch",
+              "scanner/endpoints/prospects",
+              "scanner/endpoints/tests"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

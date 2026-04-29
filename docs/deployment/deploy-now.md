@@ -33,7 +33,7 @@ Have these ready:
 2. Click **"New Project"**
 3. Select **"Deploy from GitHub repo"**
 4. **Authorize Railway** if asked
-5. Select **`haxaco/payos`**
+5. Select **`Sly-devs/sly`**
 6. **IMPORTANT:** Leave root directory as `/` (repository root)
    - Don't change it to `apps/api`!
    - The monorepo needs to build from root
@@ -81,7 +81,7 @@ Should return: `{"status":"ok"}`
 1. Go to: https://vercel.com
 2. Click **"Add New Project"**
 3. Click **"Import Git Repository"**
-4. Select **`haxaco/payos`**
+4. Select **`Sly-devs/sly`**
 5. Configure:
    - **Framework:** Vite (auto-detected)
    - **Root Directory:** Browse → Select `payos-ui`
@@ -127,7 +127,7 @@ Select: ✅ Production, ✅ Preview, ✅ Development
 ### 3.1 Create Second Project
 
 1. **Still in Vercel**, click **"Add New Project"**
-2. Select **`haxaco/payos`** again (same repo!)
+2. Select **`Sly-devs/sly`** again (same repo!)
 3. Configure:
    - **Framework:** Next.js (auto-detected)
    - **Root Directory:** Browse → Select `apps/web`

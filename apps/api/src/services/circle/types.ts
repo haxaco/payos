@@ -25,7 +25,7 @@ export type CircleBlockchain =
   | 'BASE-SEPOLIA'; // Base Sepolia (NEW)
 
 // Simplified blockchain for our internal use
-export type PayOSBlockchain = 'base' | 'eth' | 'polygon' | 'avax' | 'sol' | 'arb';
+export type PayOSBlockchain = 'base' | 'eth' | 'polygon' | 'avax' | 'sol' | 'arb' | 'tempo';
 
 // Map PayOS blockchain to Circle blockchain
 export function toCircleBlockchain(blockchain: PayOSBlockchain, testnet: boolean = true): CircleBlockchain {
@@ -36,6 +36,8 @@ export function toCircleBlockchain(blockchain: PayOSBlockchain, testnet: boolean
     avax: { mainnet: 'AVAX', testnet: 'AVAX-FUJI' },
     sol: { mainnet: 'SOL', testnet: 'SOL-DEVNET' },
     arb: { mainnet: 'ARB', testnet: 'ARB-SEPOLIA' },
+    // Tempo uses internal wallets (no Circle chain support yet)
+    tempo: { mainnet: 'BASE' as CircleBlockchain, testnet: 'BASE-SEPOLIA' as CircleBlockchain },
   };
   return testnet ? map[blockchain].testnet : map[blockchain].mainnet;
 }

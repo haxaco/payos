@@ -1,0 +1,144 @@
+---
+title: "Send a cross-border transfer"
+description: "Quote FX, execute a USD → EUR transfer, wait for settlement."
+---
+
+Cross-border transfers move money between currencies — USD to EUR, USDC to EURC, USD to BRL via Pix, etc. They always need a [quote](/core-concepts/quotes) first to lock in the FX rate.
+
+## 1. Request a quote
+
+```ts
+const quote = await sly.quotes.create({
+  from_currency: 'USD',
+  to_currency: 'EUR',
+  amount: '1000.00',
+  amount_side: 'send',   // "I send $1000" — or "receive" for "they get €X"
+});
+
+console.log(quote);
+// {
+//   id: 'qt_...',
+//   rate: '0.9284',
+//   send_amount: '1000.00',
+//   receive_amount: '928.40',
+//   fee: '2.50',
+//   expires_at: '...'
+// }
+```
+
+Quotes live for ~30 seconds. If the user takes longer to confirm, re-quote.
+
+## 2. Show the quote to the user (if applicable)
+
+If there's a human in the loop, show them:
+
+- "You send $1000.00 USD"
+- "They receive €928.40 EUR"
+- "Fee: $2.50 USD"
+- "This rate expires in 30 seconds"
+
+Even agent-driven flows should log the quote — auditability matters.
+
+## 3. Execute the transfer
+
+```ts
+const transfer = await sly.transfers.create({
+  type: 'cross_border',
+  from_wallet_id: 'wal_usd_source',
+  to_wallet_id: 'wal_eur_dest',    // or to_account_id
+  quote_id: quote.id,
+  memo: 'Q1 consulting invoice',
+  idempotency_key: `inv-2026-Q1-${invoiceId}`,
+});
+
+console.log(transfer.status);  // 'pending'
+```
+
+The transfer inherits amounts + rate + fee from the quote.
+
+<Warning>
+**Always use an `idempotency_key`.** If your process crashes after POSTing but before receiving the response, you don't want a duplicate transfer on retry. Keys are cached 24 hours.
+</Warning>
+
+## 4. Watch it settle
+
+Three options:
+
+**Webhook (recommended):**
+```ts
+// Your webhook handler
+if (event.type === 'transfer.completed') {
+  await markInvoicePaid(event.data.transfer);
+}
+```
+
+**SSE** (if the originator is an agent):
+```ts
+await agent.connect({
+  onTransfer: (t) => {
+    if (t.id === transfer.id && t.status === 'completed') markInvoicePaid(t);
+  },
+});
+```
+
+**Poll:**
+```ts
+const final = await sly.transfers.waitForSettlement(transfer.id, { timeout: 60_000 });
+// final.status === 'completed' | 'failed'
+```
+
+Typical live settlement times:
+- USDC → USDC: ~10 seconds
+- USDC → fiat (ACH): 1-2 business days
+- USD → USDC (on-ramp): 30 seconds to a few minutes
+- USD → EUR bank wire: 1 business day
+
+## 5. Handle failure
+
+```ts
+if (final.status === 'failed') {
+  console.error(final.failure_reason);   // code + details
+  // Common: RAIL_DECLINED, INSUFFICIENT_BALANCE, SANCTIONS_HIT
+}
+```
+
+For `INSUFFICIENT_BALANCE`, funds never left your wallet — retry after topping up.
+
+For `RAIL_DECLINED`, the receiving bank rejected — usually a bad account number or compliance flag. Surface to the user, don't auto-retry.
+
+For `SANCTIONS_HIT`, the destination hit a sanctions list. Do not retry; escalate to compliance.
+
+## Quote expiry
+
+If you wait too long between quote and execute, the transfer returns `QUOTE_EXPIRED`. Re-quote and try again:
+
+```ts
+try {
+  await sly.transfers.create({ ..., quote_id: quote.id });
+} catch (e) {
+  if (e.code === 'QUOTE_EXPIRED') {
+    quote = await sly.quotes.create(...);
+    await sly.transfers.create({ ..., quote_id: quote.id });
+  } else throw e;
+}
+```
+
+Or just re-quote right before each transfer — quotes are cheap.
+
+## Compliance holds
+
+Large cross-border transfers may pause in `processing` pending compliance review. You'll see a `compliance.review_required` webhook. The transfer either:
+
+- Completes after review (most common)
+- Fails with `HIGH_RISK_TRANSACTION` (rare — flags for manual resolution)
+
+Don't build UIs that assume sub-minute settlement for amounts over $10k.
+
+## Rails available
+
+Supported per-currency pairs and rails are discoverable:
+
+```ts
+const pairs = await sly.quotes.getPairs();
+// [{ from: 'USD', to: 'EUR', rails: ['wire', 'card'], typical_settlement: 'T+1' }, ...]
+```

@@ -72,6 +72,9 @@ export interface FeatureFlags {
   // Operations
   batchSettlements: boolean;        // Enable batch settlements (100+)
   multiCurrency: boolean;           // Enable multi-currency (BRL↔MXN)
+
+  // Beta Access
+  closedBeta: boolean;              // When true, signup requires an invite code
 }
 
 /**
@@ -155,6 +158,7 @@ const DEFAULT_FEATURE_FLAGS: Record<PayOSEnvironment, FeatureFlags> = {
     entityScreening: false,
     batchSettlements: true,
     multiCurrency: true,
+    closedBeta: false,
   },
   sandbox: {
     circlePayouts: true,
@@ -170,6 +174,7 @@ const DEFAULT_FEATURE_FLAGS: Record<PayOSEnvironment, FeatureFlags> = {
     entityScreening: false,  // Enable when ComplyAdvantage ready
     batchSettlements: true,
     multiCurrency: true,
+    closedBeta: true,
   },
   production: {
     circlePayouts: false,  // Requires approval
@@ -185,6 +190,7 @@ const DEFAULT_FEATURE_FLAGS: Record<PayOSEnvironment, FeatureFlags> = {
     entityScreening: false,
     batchSettlements: false,
     multiCurrency: false,
+    closedBeta: true,
   },
 };
 
@@ -257,6 +263,7 @@ class EnvironmentManager {
       entityScreening: this.parseFeatureFlag('ENTITY_SCREENING', baseFlags.entityScreening),
       batchSettlements: this.parseFeatureFlag('BATCH_SETTLEMENTS', baseFlags.batchSettlements),
       multiCurrency: this.parseFeatureFlag('MULTI_CURRENCY', baseFlags.multiCurrency),
+      closedBeta: this.parseFeatureFlag('CLOSED_BETA', baseFlags.closedBeta),
     };
 
     // Log level

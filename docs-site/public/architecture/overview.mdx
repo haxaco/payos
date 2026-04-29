@@ -1,0 +1,80 @@
+---
+title: "Architecture patterns"
+description: "How to structure your backend around Sly — event-driven, queues, state machines."
+---
+
+If you're designing a payments backend from scratch around Sly, three architectural patterns cover 80% of what you'll build. Pick the one(s) that fit; compose where needed.
+
+<CardGroup cols={2}>
+  <Card title="Event-driven" icon="bolt" href="/architecture/event-driven">
+    Webhooks as the primary signal. Most integrations start here — it's the simplest model that scales.
+  </Card>
+  <Card title="Queue-backed workers" icon="list-check" href="/architecture/queue-model">
+    Decouple webhook ack from processing. Essential once you're past prototype or have heavy per-event work.
+  </Card>
+  <Card title="State-machine modeled" icon="diagram-project" href="/architecture/state-machine">
+    Model orders, checkouts, or agents as explicit FSMs. Best for regulated flows and complex multi-step commerce.
+  </Card>
+  <Card title="Agent-embedded" icon="robot" href="/agents/overview">
+    Agent runs inside your product with Ed25519 credentials + policy enforcement. See the Agent Platform section.
+  </Card>
+</CardGroup>
+
+## Decision tree
+
+<AccordionGroup>
+  <Accordion title="I'm just shipping a prototype">
+    **→ Event-driven.** Single server, webhook handler, straight to database. Start here.
+  </Accordion>
+
+  <Accordion title="Webhook handler timeouts getting tight">
+    **→ Add queue-backed workers.** Ack the webhook in \<200ms; process async. See [queue-backed workers](/architecture/queue-model).
+  </Accordion>
+
+  <Accordion title="Multi-step commerce (cart → checkout → fulfillment → shipping)">
+    **→ State-machine.** Explicit transitions catch invalid operations and simplify reasoning about concurrency. See [state-machine](/architecture/state-machine).
+  </Accordion>
+
+  <Accordion title="Compliance / audit team wants every state change tracked">
+    **→ State-machine with audit log.** Every transition is a durable event; your audit trail writes itself.
+  </Accordion>
+
+  <Accordion title="Ingesting millions of x402 micropayments">
+    **→ Queue-backed + batched database writes.** Individual webhook-to-DB-insert doesn't scale past ~500 events/sec. Queue, batch-write.
+  </Accordion>
+
+  <Accordion title="AI agent is part of the product flow">
+    **→ Agent-embedded.** Ed25519 credentials, policy evaluation, approval workflows. See [Agent Platform](/agents/overview).
+  </Accordion>
+
+  <Accordion title="Multiple use cases in one backend">
+    **→ Compose patterns.** Event-driven handler → queue for heavy events → state machines per business object. Each pattern operates on the layer above it.
+  </Accordion>
+</AccordionGroup>
+
+## Common themes across patterns
+
+Regardless of which pattern you pick:
+
+- **Every webhook handler is idempotent.** Dedupe by `X-Sly-Event-Id`. At-least-once delivery means retries.
+- **Every external write uses idempotency keys.** `POST /v1/transfers` with a stable `idempotency_key` never double-executes.
+- **Every multi-step operation has a failure path.** If step 2 succeeds and step 3 fails, you need to either complete step 3 or roll back step 2 cleanly.
+- **Every Sly response includes `request_id`.** Log it. It's how you and Sly support trace any issue end-to-end.
+
+## Anti-patterns to avoid
+
+- **Synchronous chains** — webhook → database → external API → another external API → response. Too fragile. Break with queues.
+- **State in handlers** — webhook handlers should be stateless; all state in the database or queue.
+- **Logging the webhook secret** — happens shockingly often. Scan your logs.
+- **Skipping signature verification "in staging"** — staging webhook endpoints get discovered and abused.
+- **Global idempotency keys** — use per-operation keys, not `"1"` incrementing. UUIDs are free.
+
+## Reference architectures
+
+The next three pages show reference shapes:
+
+- [Event-driven](/architecture/event-driven) — the starter shape most partners use
+- [Queue-backed workers](/architecture/queue-model) — the shape once event volume grows
+- [State-machine modeled](/architecture/state-machine) — the shape for complex commerce flows
+
+Each includes: recommended tech, webhook handler shape, error handling, and scaling notes.

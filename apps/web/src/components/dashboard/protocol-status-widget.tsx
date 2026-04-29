@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import {
   Zap,
   Shield,
   ShoppingCart,
   Globe,
+  DollarSign,
   Check,
   X,
   AlertCircle,
@@ -16,8 +17,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@sly/ui';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 // Protocol configuration with icons and colors
 const PROTOCOL_CONFIG = {
@@ -53,6 +52,14 @@ const PROTOCOL_CONFIG = {
     borderColor: 'border-green-200 dark:border-green-800',
     description: 'Google+Shopify standard',
   },
+  mpp: {
+    name: 'Machine Payments',
+    icon: DollarSign,
+    color: 'text-orange-600 dark:text-orange-400',
+    bgColor: 'bg-orange-100 dark:bg-orange-950',
+    borderColor: 'border-orange-200 dark:border-orange-800',
+    description: 'HTTP 402 machine-to-machine payments',
+  },
 } as const;
 
 type ProtocolId = keyof typeof PROTOCOL_CONFIG;
@@ -68,13 +75,8 @@ interface ProtocolStatusResponse {
   protocols: Record<ProtocolId, ProtocolEnablementStatus>;
 }
 
-async function fetchProtocolStatus(authToken: string): Promise<ProtocolStatusResponse> {
-  const response = await fetch(`${API_URL}/v1/organization/protocol-status`, {
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+async function fetchProtocolStatus(apiFetch: ApiFetchFn, apiUrl: string): Promise<ProtocolStatusResponse> {
+  const response = await apiFetch(`${apiUrl}/v1/organization/protocol-status`);
   if (!response.ok) {
     throw new Error('Failed to fetch protocol status');
   }
@@ -82,19 +84,16 @@ async function fetchProtocolStatus(authToken: string): Promise<ProtocolStatusRes
 }
 
 async function toggleProtocol(
-  authToken: string,
+  apiFetch: ApiFetchFn,
+  apiUrl: string,
   protocolId: ProtocolId,
   enable: boolean
 ): Promise<void> {
   const action = enable ? 'enable' : 'disable';
-  const response = await fetch(
-    `${API_URL}/v1/organization/protocols/${protocolId}/${action}`,
+  const response = await apiFetch(
+    `${apiUrl}/v1/organization/protocols/${protocolId}/${action}`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
     }
   );
   if (!response.ok) {
@@ -115,20 +114,21 @@ function getPrerequisiteLabel(prereq: string): string {
 }
 
 export function ProtocolStatusWidget() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
+  const apiFetch = useApiFetch();
   const queryClient = useQueryClient();
   const [togglingProtocol, setTogglingProtocol] = useState<ProtocolId | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['protocol-status'],
-    queryFn: () => fetchProtocolStatus(authToken!),
+    queryKey: ['protocol-status', apiEnvironment],
+    queryFn: () => fetchProtocolStatus(apiFetch, apiUrl),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ protocolId, enable }: { protocolId: ProtocolId; enable: boolean }) =>
-      toggleProtocol(authToken!, protocolId, enable),
+      toggleProtocol(apiFetch, apiUrl, protocolId, enable),
     onMutate: ({ protocolId }) => {
       setTogglingProtocol(protocolId);
     },
@@ -195,7 +195,7 @@ export function ProtocolStatusWidget() {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Protocol Status</h3>
         <span className="text-sm text-gray-500 dark:text-gray-400">
-          {enabledCount}/4 enabled
+          {enabledCount}/{Object.keys(PROTOCOL_CONFIG).length} enabled
         </span>
       </div>
 

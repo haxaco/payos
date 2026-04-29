@@ -8,18 +8,16 @@
  * - Direct settlement API
  * - Pix/SPEI local rails
  *
- * @example Sandbox mode (no blockchain)
+ * @example Auto-routing (environment inferred from key prefix)
  * ```ts
- * const sly = new Sly({
- *   apiKey: 'sly_...',
- *   environment: 'sandbox',
- * });
+ * const sly = new Sly({ apiKey: 'pk_test_...' });  // → sandbox.getsly.ai
+ * const sly = new Sly({ apiKey: 'pk_live_...' });   // → api.getsly.ai
  * ```
  *
- * @example Production mode
+ * @example Explicit environment
  * ```ts
  * const sly = new Sly({
- *   apiKey: 'sly_...',
+ *   apiKey: 'pk_live_...',
  *   environment: 'production',
  *   evmPrivateKey: '0x...',
  * });
@@ -28,6 +26,7 @@
 
 import type { SlyConfig } from './types';
 import { SlyClient } from './client';
+import { inferEnvironmentFromKey } from './config';
 import { SlyX402Client } from './protocols/x402/client';
 import { SlyX402Provider } from './protocols/x402/provider';
 import { AP2Client } from './protocols/ap2/client';
@@ -36,6 +35,10 @@ import { UCPClient } from './protocols/ucp/client';
 import { CapabilitiesClient } from './capabilities';
 import { LangChainTools } from './langchain/tools';
 import { CardsClient } from './cards';
+import { A2AClient } from './protocols/a2a/client';
+import { AgentWalletsClient } from './protocols/agent-wallets/client';
+import { MPPClient } from './protocols/mpp/client';
+import { AgentsClient } from './agents/client';
 
 /**
  * Main Sly SDK class
@@ -100,26 +103,56 @@ export class Sly extends SlyClient {
    */
   public readonly cards: CardsClient;
 
+  /**
+   * A2A (Agent-to-Agent Protocol) client
+   * Google's task-based protocol for inter-agent communication
+   */
+  public readonly a2a: A2AClient;
+
+  /**
+   * Agent Wallets client
+   * Contract policy evaluation, exposure tracking, wallet management
+   */
+  public readonly agentWallets: AgentWalletsClient;
+
+  /**
+   * MPP (Machine Payments Protocol) client
+   * Governed machine-to-machine payments and streaming sessions
+   */
+  public readonly mpp: MPPClient;
+
+  /**
+   * Agents client - KYA tier management
+   * Status checks, trust profiles, upgrades, DSD declarations, kill switch
+   */
+  public readonly agents: AgentsClient;
+
   constructor(config: SlyConfig) {
     // Validate API key
     if (!config.apiKey || config.apiKey.trim() === '') {
       throw new Error('API key is required');
     }
 
-    super(config);
+    // Resolve environment: explicit > inferred from key > default to sandbox
+    const resolvedEnvironment = config.environment
+      ?? inferEnvironmentFromKey(config.apiKey)
+      ?? 'sandbox';
+    const resolvedConfig = { ...config, environment: resolvedEnvironment };
+
+    super(resolvedConfig);
 
     // Initialize x402 protocol helpers
     this.x402 = {
       createClient: (overrides?: Partial<SlyConfig>) => {
         return new SlyX402Client({
-          ...config,
+          ...resolvedConfig,
           ...overrides,
         });
       },
       createProvider: (routes) => {
         return new SlyX402Provider({
           apiKey: config.apiKey,
-          environment: config.environment,
+          environment: resolvedEnvironment,
           routes,
           facilitatorUrl: config.facilitatorUrl,
         });
@@ -139,6 +172,18 @@ export class Sly extends SlyClient {
 
     // Initialize Cards client
     this.cards = new CardsClient(this);
+
+    // Initialize A2A client
+    this.a2a = new A2AClient(this);
+
+    // Initialize Agent Wallets client (Epic 18)
+    this.agentWallets = new AgentWalletsClient(this);
+
+    // Initialize MPP client (Epic 71)
+    this.mpp = new MPPClient(this);
+
+    // Initialize Agents client (Epic 73 — KYA tier management)
+    this.agents = new AgentsClient(this);
   }
 }
 

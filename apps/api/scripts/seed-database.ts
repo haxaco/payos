@@ -61,6 +61,7 @@ async function createTenant(data: {
   const testKey = generateApiKey('test');
   const liveKey = generateApiKey('live');
   
+  const now = new Date().toISOString();
   const { data: tenant, error } = await supabase
     .from('tenants')
     .insert({
@@ -69,6 +70,15 @@ async function createTenant(data: {
       api_key: testKey, // Legacy field
       api_key_hash: hashApiKey(testKey), // Legacy field
       api_key_prefix: getKeyPrefix(testKey), // Legacy field (may not exist)
+      settings: {
+        enabled_protocols: {
+          x402: { enabled_at: now },
+          ap2: { enabled_at: now },
+          acp: { enabled_at: now },
+          ucp: { enabled_at: now },
+          mpp: { enabled_at: now },
+        },
+      },
     })
     .select()
     .single();

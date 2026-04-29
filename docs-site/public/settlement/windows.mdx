@@ -1,0 +1,133 @@
+---
+title: "Settlement windows"
+description: "Batch cadence configuration per rail and tenant."
+---
+
+A **settlement window** is the cadence at which Sly batches and flushes pending settlements to a specific rail. Windows cap how often real rail transactions happen — batching reduces per-transaction fees for you.
+
+## Why windows exist
+
+Rails charge per-transaction. ACH, wire, and some stablecoin networks all have per-transfer costs. If you process 10,000 small payments per hour and push each one individually, fees eat margins. Batching into windows — "settle everything from the last 4 hours in one ACH batch" — amortizes those costs.
+
+For x402 / MPP micropayments this is critical — the unit economics depend on batching.
+
+## Window configuration
+
+```json
+{
+  "id": "win_...",
+  "name": "US ACH 4x daily",
+  "rail": "ach",
+  "frequency": "4_per_day",
+  "schedule_utc": ["02:00", "08:00", "14:00", "20:00"],
+  "currency": "USD",
+  "min_batch_amount_cents": 10000,
+  "max_batch_size": 500,
+  "enabled": true
+}
+```
+
+## List current windows
+
+```bash
+curl "https://api.getsly.ai/v1/settlement-windows" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Typical response includes the default windows per rail your tenant uses:
+- ACH — 4x daily (default)
+- Wire — 1x daily (default)
+- USDC — every 15 minutes (default, low cost per batch)
+- Pix — hourly (default, Brazilian rail)
+- SPEI — hourly (default, Mexican rail)
+
+## Frequency options
+
+| `frequency` | Meaning |
+|---|---|
+| `realtime` | Immediate settlement, no batching |
+| `hourly` | Every hour on the hour |
+| `4_per_day` | 4 times per day at declared UTC times |
+| `daily` | Once per day at a declared UTC time |
+| `weekly` | Once per week on a declared day + time |
+| `custom` | Cron expression |
+
+## Modify or create a window
+
+```bash
+curl -X POST https://api.getsly.ai/v1/settlement-windows \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "name": "Wire — end of business day US",
+    "rail": "wire",
+    "frequency": "daily",
+    "schedule_utc": ["22:00"],
+    "currency": "USD",
+    "min_batch_amount_cents": 100000
+  }'
+```
+
+`min_batch_amount_cents` prevents tiny batches — if the accumulated amount doesn't exceed the minimum when the window fires, it rolls forward to the next window.
+
+## Holiday calendars
+
+Rails skip on banking holidays. Sly maintains per-rail holiday calendars automatically (US Fed Reserve, SEPA, Banco de México, etc.). A window that would fire on a holiday rolls to the next business day.
+
+To view a rail's upcoming holidays:
+
+```bash
+curl "https://api.getsly.ai/v1/settlement-windows/holidays?rail=ach&year=2026" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Override possible for special events (e.g. internal company holiday) but rarely needed.
+
+## Emergency settlement
+
+Skip all windows and force-flush a specific rail immediately:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/settlement-windows/emergency \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "rail": "ach",
+    "reason": "End-of-month reconciliation"
+  }'
+```
+
+This acquires a lock across any concurrent window runs and processes everything pending. Use sparingly — it bypasses batching economics.
+
+## Monitoring window health
+
+```bash
+curl "https://api.getsly.ai/v1/settlement-windows/wnd_.../runs?since=2026-04-01" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Shows each window firing: batch size, total amount, success / failure counts, rail provider response.
+
+Watch for:
+- **Rolling forward** — batches that don't meet minimums, suggesting your minimum is too high for your volume
+- **Partial failures** — some transfers in the batch failed; need manual reconciliation
+- **Late runs** — rail provider was slow to accept the batch
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/settlement-windows` | List windows |
+| `GET /v1/settlement-windows/:id` | Detail |
+| `POST /v1/settlement-windows` | Create |
+| `PATCH /v1/settlement-windows/:id` | Update |
+| `DELETE /v1/settlement-windows/:id` | Remove |
+| `GET /v1/settlement-windows/:id/runs` | Execution history |
+| `POST /v1/settlement-windows/emergency` | Force-flush a rail |
+| `GET /v1/settlement-windows/holidays` | Rail holiday calendar |
+
+## Coordination with rules
+
+- **Windows set ceiling cadence** — "at most every 4 hours on ACH"
+- **[Rules](/settlement/rules) can trigger sooner** — "also settle if balance exceeds $10k"
+- **Neither batches past the other** — whichever fires first wins
+
+Tuning: start with default windows, add rules for exceptional cases, and adjust window frequency based on your rail fees vs. cash-flow needs.

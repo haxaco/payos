@@ -1,0 +1,85 @@
+---
+title: "Background workers"
+description: "Scheduled transfers, webhook delivery, stream monitoring."
+---
+
+Long-running background jobs live in `apps/api/src/workers/` and are started from `apps/api/src/worker.ts`.
+
+## Workers
+
+### Scheduled transfers
+
+**File:** `apps/api/src/workers/scheduled-transfers.ts`
+
+Polls `scheduled_transfers` for rows with `scheduled_at <= NOW()` and `status = 'pending'`. Executes them atomically.
+
+- Dev / sandbox: 30-second poll
+- Production: 60-second poll
+- `MOCK_SCHEDULED_TRANSFERS=true` — skip external PSP calls (dev/test)
+- Graceful shutdown on SIGTERM/SIGINT
+
+### Webhook delivery
+
+**File:** `apps/api/src/workers/webhook-delivery.ts`
+
+Processes the webhook delivery queue (pending + failed retries).
+
+Retry schedule: 0s → 30s → 5m → 30m → 2h → 12h → 24h → 48h (final).
+
+### Stream monitor
+
+**File:** `apps/api/src/workers/stream-monitor.ts`
+
+Watches active streams for runway thresholds. Emits `stream.alert` events when runway crosses warning (\<24h), critical (\<1h), or exhausted.
+
+## Running workers
+
+```bash
+# Dev — run API + workers in one process
+pnpm --filter @sly/api dev
+
+# Production — separate workers process
+SCHEDULED_TRANSFERS_ENABLED=true \
+WEBHOOK_WORKER_ENABLED=true \
+STREAM_MONITOR_ENABLED=true \
+  node dist/worker.js
+```
+
+Envs gate which workers start — this lets us split workload across processes without code changes.
+
+## Adding a new worker
+
+1. Create `apps/api/src/workers/my-worker.ts`
+2. Export a `startMyWorker()` that returns a `stop()` function for cleanup
+3. Wire up in `apps/api/src/worker.ts` under an env gate (`MY_WORKER_ENABLED`)
+4. Handle SIGTERM/SIGINT gracefully
+5. Add logging with structured fields: `{ worker: 'my-worker', event: 'iteration', metrics: {...} }`
+
+## Idempotency
+
+Every worker iteration should be idempotent. If a run is interrupted mid-flight:
+
+- On restart, the worker re-picks up the same row
+- The operation (transfer execution, webhook delivery) must tolerate double invocation
+- Use `SELECT ... FOR UPDATE SKIP LOCKED` or a claim/commit pattern in Postgres
+
+## Observability
+
+Each worker emits OpenTelemetry spans (when `OTEL_EXPORTER_*` configured):
+
+- `worker.iteration.start` / `worker.iteration.complete`
+- `worker.item.processed` per row
+- `worker.item.failed` with error category
+
+Alerts fire on:
+- Iteration duration > expected
+- Queue depth growing
+- Error rate > 1%
+
+Runbooks are in [runbooks/](/runbooks/overview).
+
+## Common issues
+
+- **Worker not picking up work** — check env gate is set, check the worker is even running in the expected process
+- **Double execution** — idempotency broken; fix the worker, then clean up duplicates
+- **Queue depth climbing** — worker is slower than incoming. Scale horizontally (another process) or fix the bottleneck.

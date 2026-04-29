@@ -1,0 +1,76 @@
+---
+title: "Agent Platform overview"
+description: "Everything that makes AI agents first-class actors in Sly."
+---
+
+The Agent Platform is the set of primitives that let autonomous AI agents transact on Sly under formal identity, policy, and governance controls. It's the thing that distinguishes Sly from "a payments API that happens to work for agents."
+
+## The building blocks
+
+<CardGroup cols={2}>
+  <Card title="KYA verification tiers" icon="shield-check" href="/agents/kya-tiers">
+    Formal agent identity tiers (0–3) with graduated spending limits. Direct parallel to KYC/KYB for humans.
+  </Card>
+  <Card title="Wallet policies" icon="file-shield" href="/agents/wallet-policies">
+    Per-agent spending rules — merchant allowlists, daily caps, transaction-level limits. Enforced at execution.
+  </Card>
+  <Card title="Ed25519 keypair auth" icon="key" href="/agents/ed25519-keypair-auth">
+    Production-grade session credentials. Private key never leaves the agent process.
+  </Card>
+  <Card title="Persistent SSE" icon="satellite-dish" href="/agents/persistent-sse">
+    Push channel for real-time events: tasks assigned, transfers completed, approvals needed.
+  </Card>
+  <Card title="A2A agent card" icon="id-card" href="/agents/a2a-agent-card">
+    Public identity + skills catalog. Where peer agents discover what yours can do.
+  </Card>
+  <Card title="MCP tool catalog" icon="toolbox" href="/agents/mcp-tool-catalog">
+    Every Sly capability as an MCP tool for Claude Desktop and compatible runtimes.
+  </Card>
+  <Card title="Kill-switch" icon="octagon-xmark" href="/agents/kill-switch">
+    Instant revocation of auth keys + all active sessions. Policy-level override.
+  </Card>
+  <Card title="Approval workflows" icon="user-check" href="/agents/approval-workflows">
+    Route spends above policy thresholds to human approvers before execution.
+  </Card>
+</CardGroup>
+
+## How the pieces fit
+
+Every agent transaction passes through three enforcement layers:
+
+```
+Agent request
+      │
+      ▼
+┌─────────────────────────┐
+│ 1. Authentication       │  Is this really this agent? (Ed25519 sig)
+└─────────────────────────┘
+      │
+      ▼
+┌─────────────────────────┐
+│ 2. Wallet policy        │  Does this spend match per-merchant / per-day rules?
+└─────────────────────────┘
+      │
+      ▼
+┌─────────────────────────┐
+│ 3. KYA tier limits      │  Does this amount fall within the agent's tier cap?
+└─────────────────────────┘
+      │
+      ▼
+┌─────────────────────────┐
+│ 4. Approval (if needed) │  Over threshold? Route to human first.
+└─────────────────────────┘
+      │
+      ▼
+  Execute transaction
+```
+
+Any layer can block. All four pass → execution proceeds and the result is recorded with full context (which agent, which session, which policy, which mandate, which KYA tier) so the audit trail never has gaps.
+
+## Who's this for
+
+- **You're shipping an agent into production** — you'll touch all of this
+- **You're building a multi-agent system** — A2A + MCP are essential
+- **You're offering agents as a service** to your customers — KYA tiers + approval workflows give them the governance controls their compliance teams ask for
+
+If you're just sending transfers from a server, the Agent Platform is optional — you can stick with API keys. The moment an autonomous agent joins the flow, you want all of this active.

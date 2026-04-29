@@ -151,7 +151,8 @@ function validateClabe(clabe: string): { valid: boolean; error?: string; details
 export async function onboardEntity(
   tenantId: string,
   input: OnboardingInput,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  environment: 'test' | 'live' = 'test'
 ): Promise<OnboardingResult> {
   const accountId = randomUUID();
   const now = new Date();
@@ -192,6 +193,7 @@ export async function onboardEntity(
     .insert({
       id: accountId,
       tenant_id: tenantId,
+      environment,
       type: input.type,
       name,
       email: input.email || null,
@@ -300,7 +302,8 @@ export async function onboardEntity(
         },
       })
       .eq('id', accountId)
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .eq('environment', environment);
   }
 
   // If documents were provided, create verification request (mock)
@@ -316,7 +319,7 @@ export async function onboardEntity(
 
   // Determine ready_for_payments status
   const hasVerifiedPaymentMethod = paymentMethods.some(pm => pm.status === 'verified');
-  const readyForPayments = (skipVerification || verificationStatus === 'verified') && hasVerifiedPaymentMethod;
+  const readyForPayments = (skipVerification || (verificationStatus as string) === 'verified') && hasVerifiedPaymentMethod;
 
   let readyForPaymentsAfter: string | undefined;
   if (!readyForPayments) {

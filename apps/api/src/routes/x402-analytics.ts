@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getEnv } from '../utils/helpers.js';
 
 const app = new Hono();
 
@@ -96,7 +97,7 @@ function getGroupByTrunc(groupBy: string): string {
 app.get('/summary', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
     const query = c.req.query();
     
     // Parse optional period filter
@@ -108,6 +109,7 @@ app.get('/summary', async (c) => {
       .from('transfers')
       .select('amount, fee_amount, currency')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('type', 'x402')
       .eq('status', 'completed')
       .gte('created_at', start.toISOString())
@@ -129,6 +131,7 @@ app.get('/summary', async (c) => {
       .from('transfers')
       .select('from_account_id')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('type', 'x402')
       .eq('status', 'completed')
       .gte('created_at', start.toISOString())
@@ -141,6 +144,7 @@ app.get('/summary', async (c) => {
       .from('x402_endpoints')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('status', 'active');
 
     return c.json({
@@ -189,7 +193,7 @@ app.get('/revenue', async (c) => {
     const { start, end } = getPeriodDates(validated.period, validated.startDate, validated.endDate);
     const truncBy = getGroupByTrunc(validated.groupBy);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Build query with time bucketing
     // Note: Using raw SQL for date_trunc functionality
@@ -262,13 +266,14 @@ app.get('/top-endpoints', async (c) => {
     });
 
     const { start, end } = getPeriodDates(validated.period);
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch all endpoints with their stats
     const { data: endpoints, error: endpointsError } = await supabase
       .from('x402_endpoints')
       .select('id, name, path, base_price, currency, status')
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
 
     if (endpointsError) {
       console.error('Error fetching endpoints:', endpointsError);
@@ -282,6 +287,7 @@ app.get('/top-endpoints', async (c) => {
           .from('transfers')
           .select('amount, fee_amount, from_account_id')
           .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
           .eq('type', 'x402')
           .eq('status', 'completed')
           .contains('protocol_metadata', { endpoint_id: endpoint.id })
@@ -366,7 +372,7 @@ app.get('/endpoint/:endpointId', async (c) => {
     const period = query.period || '30d';
     
     const { start, end } = getPeriodDates(period);
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Verify endpoint belongs to tenant
     const { data: endpoint, error: endpointError } = await supabase
@@ -374,6 +380,7 @@ app.get('/endpoint/:endpointId', async (c) => {
       .select('*')
       .eq('id', endpointId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (endpointError || !endpoint) {
@@ -385,6 +392,7 @@ app.get('/endpoint/:endpointId', async (c) => {
       .from('transfers')
       .select('amount, fee_amount, from_account_id, created_at, status, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('type', 'x402')
       .contains('protocol_metadata', { endpoint_id: endpointId })
       .gte('created_at', start.toISOString())

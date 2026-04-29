@@ -27,7 +27,7 @@ events.get('/streams', async (c) => {
   }
 
   const streamIds = streamIdsParam.split(',').map(id => id.trim());
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   return streamSSE(c, async (stream) => {
     // Initial data fetch
@@ -72,12 +72,22 @@ events.get('/streams', async (c) => {
       const now = new Date();
 
       for (const stream of currentStreams) {
-        const streamedTotal = stream.status === 'active' 
-          ? calculateStreamedAmount(stream, now)
+        const streamedTotal = stream.status === 'active'
+          ? calculateStreamedAmount({
+              status: stream.status,
+              startedAt: stream.started_at,
+              totalStreamed: parseFloat(stream.streamed_total) || 0,
+              totalPausedSeconds: stream.total_paused_seconds || 0,
+              flowRatePerSecond: parseFloat(stream.flow_rate_per_second) || 0,
+              fundedAmount: parseFloat(stream.funding_wrapped) || 0,
+              pausedAt: stream.paused_at,
+            })
           : parseFloat(stream.streamed_total) || 0;
 
-        const runway = calculateRunway(stream, now);
-        const health = calculateHealth(runway);
+        const fundedAmount = parseFloat(stream.funding_wrapped) || 0;
+        const flowRate = parseFloat(stream.flow_rate_per_second) || 0;
+        const runway = calculateRunway(fundedAmount, streamedTotal, flowRate);
+        const health = calculateHealth(runway.seconds);
 
         const update = {
           id: stream.id,
@@ -92,8 +102,8 @@ events.get('/streams', async (c) => {
             wrapped: parseFloat(stream.funding_wrapped) || 0,
             buffer: parseFloat(stream.funding_buffer) || 0,
             runway: {
-              seconds: runway,
-              display: formatRunway(runway),
+              seconds: runway.seconds,
+              display: runway.display,
             },
           },
           flowRate: {
@@ -160,7 +170,7 @@ events.get('/accounts', async (c) => {
   }
 
   const accountIds = accountIdsParam.split(',').map(id => id.trim());
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   return streamSSE(c, async (stream) => {
     // Initial data fetch

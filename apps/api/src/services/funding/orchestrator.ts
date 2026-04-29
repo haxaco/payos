@@ -362,6 +362,20 @@ export class FundingOrchestrator {
     // Calculate fees
     const fees = await this.calculateFees(tenantId, source, params.amount_cents, params.currency);
 
+    // Validate wallet_id if provided
+    if (params.wallet_id) {
+      const { data: wallet, error: walletError } = await this.supabase
+        .from('wallets')
+        .select('id, tenant_id, owner_account_id')
+        .eq('id', params.wallet_id)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (walletError || !wallet) {
+        throw new Error('Target wallet not found');
+      }
+    }
+
     // Create transaction record
     const { data: transaction, error } = await this.supabase
       .from('funding_transactions')
@@ -369,6 +383,7 @@ export class FundingOrchestrator {
         tenant_id: tenantId,
         funding_source_id: source.id,
         account_id: source.account_id,
+        wallet_id: params.wallet_id || null,
         amount_cents: params.amount_cents,
         currency: params.currency,
         status: result.status,
@@ -504,7 +519,7 @@ export class FundingOrchestrator {
 
     if (error) throw new Error(`Failed to update transaction: ${error.message}`);
 
-    // If completed, update funding source stats
+    // If completed, update funding source stats and credit wallet
     if (status === 'completed' && data) {
       await this.supabase
         .from('funding_sources')
@@ -514,9 +529,86 @@ export class FundingOrchestrator {
         })
         .eq('id', data.funding_source_id)
         .eq('tenant_id', tenantId);
+
+      // Credit target wallet if specified
+      if (data.wallet_id) {
+        await this.creditWallet(tenantId, data);
+      }
     }
 
     return data;
+  }
+
+  // ============================================
+  // Wallet Crediting
+  // ============================================
+
+  /**
+   * Credit a wallet when a funding transaction completes
+   */
+  private async creditWallet(
+    tenantId: string,
+    transaction: FundingTransaction
+  ): Promise<void> {
+    if (!transaction.wallet_id) return;
+
+    try {
+      // Convert cents to dollars for the wallet balance
+      const amountDollars = transaction.amount_cents / 100;
+      const netAmountDollars = (transaction.amount_cents - transaction.total_fee_cents) / 100;
+
+      // Credit the wallet balance
+      const { error: walletError } = await this.supabase.rpc('update_wallet_balance', {
+        p_wallet_id: transaction.wallet_id,
+        p_amount: netAmountDollars,
+      });
+
+      // Fallback: direct update if RPC not available
+      if (walletError) {
+        const { data: wallet } = await this.supabase
+          .from('wallets')
+          .select('balance')
+          .eq('id', transaction.wallet_id)
+          .eq('tenant_id', tenantId)
+          .single();
+
+        if (wallet) {
+          await this.supabase
+            .from('wallets')
+            .update({ balance: (parseFloat(wallet.balance) || 0) + netAmountDollars })
+            .eq('id', transaction.wallet_id)
+            .eq('tenant_id', tenantId);
+        }
+      }
+
+      // Create a transfer record for audit trail
+      await this.supabase
+        .from('transfers')
+        .insert({
+          tenant_id: tenantId,
+          sender_account_id: transaction.account_id,
+          receiver_account_id: transaction.account_id,
+          amount: netAmountDollars,
+          currency: 'USDC',
+          type: 'deposit',
+          status: 'completed',
+          description: `Wallet funding via ${transaction.provider}`,
+          metadata: {
+            funding_transaction_id: transaction.id,
+            wallet_id: transaction.wallet_id,
+            gross_amount_cents: transaction.amount_cents,
+            fees_cents: transaction.total_fee_cents,
+            net_amount_cents: transaction.amount_cents - transaction.total_fee_cents,
+            source: 'external_funding',
+          },
+        });
+
+      console.log(`[Funding] Credited wallet ${transaction.wallet_id} with $${netAmountDollars.toFixed(2)} from transaction ${transaction.id}`);
+    } catch (error) {
+      console.error(`[Funding] Failed to credit wallet ${transaction.wallet_id}:`, error);
+      // Don't throw — the transaction is still completed even if wallet credit fails
+      // This allows manual reconciliation
+    }
   }
 
   // ============================================

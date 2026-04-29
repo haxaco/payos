@@ -49,7 +49,7 @@ router.get('/summary', async (c) => {
 
   const ctx = c.get('ctx');
   const { start, end } = getDateRange(c);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Aggregated totals from operation_events
   const { data: ops, error: opsError } = await (supabase
@@ -118,7 +118,7 @@ router.get('/operations', async (c) => {
   const correlationId = c.req.query('correlation_id');
   const subject = c.req.query('subject');
   const success = c.req.query('success');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let query = (supabase.from('operation_events') as any)
     .select('*', { count: 'exact' })
@@ -153,6 +153,59 @@ router.get('/operations', async (c) => {
 });
 
 // ============================================
+// GET /audit-log — Tenant-scoped audit log entries.
+//   Used by the dashboard Logs page to render "who did what, when"
+//   alongside Operation Events. Filters by tenant. Returns newest-first.
+// ============================================
+router.get('/audit-log', async (c) => {
+  const ctx = c.get('ctx');
+  const { start, end } = getDateRange(c);
+  const { page, limit } = getPaginationParams(c);
+  const entityType = c.req.query('entity_type');
+  const action = c.req.query('action');
+  const supabase: any = createClient();
+
+  let query = (supabase.from('audit_log') as any)
+    .select('*', { count: 'exact' })
+    .eq('tenant_id', ctx.tenantId)
+    .gte('created_at', start)
+    .lte('created_at', end)
+    .order('created_at', { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+
+  if (entityType) query = query.eq('entity_type', entityType);
+  if (action) query = query.eq('action', action);
+
+  const { data, error, count } = await query;
+  if (error) {
+    console.error('Audit log query failed:', error);
+    return c.json({ error: 'Failed to fetch audit log' }, 500);
+  }
+
+  // Map snake_case to camelCase and project actor into a nested shape that
+  // the UI already expects (actor.name / actor.id).
+  const mapped = (data || []).map((row: any) => ({
+    id: row.id,
+    createdAt: row.created_at,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    action: row.action,
+    actor: {
+      id: row.actor_id,
+      type: row.actor_type,
+      name: row.actor_name,
+    },
+    changes: row.changes || null,
+    metadata: row.metadata || null,
+  }));
+
+  return c.json({
+    data: mapped,
+    pagination: paginationResponse(page, limit, count || 0),
+  });
+});
+
+// ============================================
 // GET /requests — API request count aggregations
 // ============================================
 router.get('/requests', async (c) => {
@@ -163,7 +216,7 @@ router.get('/requests', async (c) => {
   const ctx = c.get('ctx');
   const { start, end } = getDateRange(c);
   const groupBy = c.req.query('group_by') || 'path_template'; // path_template, method, actor_type, status_code
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await (supabase.from('api_request_counts') as any)
     .select('method, path_template, status_code, actor_type, count, total_duration_ms, minute_bucket')
@@ -216,7 +269,7 @@ router.get('/costs', async (c) => {
 
   const ctx = c.get('ctx');
   const { start, end } = getDateRange(c);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data, error } = await (supabase.from('operation_events') as any)
     .select('category, operation, external_cost_usd, data')

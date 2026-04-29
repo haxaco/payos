@@ -14,9 +14,9 @@ export interface ExportOptions {
 }
 
 export interface ExportRow {
-  date: string;
-  description: string;
-  amount: number;
+  date?: string;
+  description?: string;
+  amount?: number;
   [key: string]: any;
 }
 

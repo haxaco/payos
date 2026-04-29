@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Rocket, CheckCircle, ChevronRight, X, Sparkles, PartyPopper } from 'lucide-react';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
+import { useEnvironment } from '@/lib/environment-context';
 import { cn } from '@sly/ui';
 import Link from 'next/link';
 
@@ -20,15 +21,9 @@ interface TenantOnboardingState {
   sandbox_mode: boolean;
 }
 
-async function fetchOnboardingState(authToken: string): Promise<TenantOnboardingState> {
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/onboarding`,
-    {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
+async function fetchOnboardingState(apiFetch: ApiFetchFn, apiUrl: string): Promise<TenantOnboardingState> {
+  const response = await apiFetch(
+    `${apiUrl}/v1/onboarding`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch onboarding state');
@@ -48,7 +43,9 @@ interface OnboardingStep {
 }
 
 export function OnboardingBanner() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
+  const { environment } = useEnvironment();
+  const apiFetch = useApiFetch();
   const [dismissed, setDismissed] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationComplete, setCelebrationComplete] = useState(false);
@@ -65,8 +62,8 @@ export function OnboardingBanner() {
   }, []);
 
   const { data: onboardingState, isLoading } = useQuery({
-    queryKey: ['onboarding-state-banner'],
-    queryFn: () => fetchOnboardingState(authToken!),
+    queryKey: ['onboarding-state-banner', apiEnvironment],
+    queryFn: () => fetchOnboardingState(apiFetch, apiUrl),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
   });
@@ -199,9 +196,9 @@ export function OnboardingBanner() {
             <div className="flex items-center gap-2 text-sm text-blue-100">
               <Sparkles className="w-4 h-4" />
               <span>
-                {onboardingState.sandbox_mode
+                {environment === 'sandbox'
                   ? 'Sandbox mode active - test without real payments'
-                  : 'Production mode'}
+                  : 'Production mode - transactions use real funds'}
               </span>
             </div>
             <Link

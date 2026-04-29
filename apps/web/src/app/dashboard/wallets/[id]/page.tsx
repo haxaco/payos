@@ -30,19 +30,26 @@ import { useState } from 'react';
 import { formatCurrency } from '@sly/ui';
 import { formatDistanceToNow } from 'date-fns';
 import { SpendingPolicyEditor } from '@/components/wallets/spending-policy-editor';
+import { DepositModal } from '@/components/wallets/deposit-modal';
+import { WithdrawModal } from '@/components/wallets/withdraw-modal';
 
-const useWalletBalance = (walletId: string | undefined, authToken: string | null) => {
+const useWalletBalance = (
+    walletId: string | undefined,
+    authToken: string | null,
+    apiUrl?: string,
+    apiEnvironment?: string,
+) => {
     return useQuery({
-        queryKey: ['wallet-balance', walletId],
+        queryKey: ['wallet-balance', walletId, apiEnvironment],
         queryFn: async () => {
             if (!authToken) return null;
+            const headers: Record<string, string> = {
+                Authorization: `Bearer ${authToken}`,
+            };
+            if (apiEnvironment) headers['X-Environment'] = apiEnvironment;
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/${walletId}/balance`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                    },
-                }
+                `${apiUrl || ''}/v1/wallets/${walletId}/balance`,
+                { headers },
             );
             if (!response.ok) return null;
             return response.json();
@@ -72,15 +79,18 @@ export default function WalletDetailPage() {
     const { id } = useParams<{ id: string }>();
     const router = useRouter();
     const api = useApiClient();
-    const { authToken } = useApiConfig();
+    const { authToken, apiUrl, apiEnvironment } = useApiConfig();
     const queryClient = useQueryClient();
     const [timeRange, setTimeRange] = useState('30d');
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState('');
+    const [showDepositModal, setShowDepositModal] = useState(false);
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
-    // Fetch wallet details
+    // Fetch wallet details. Include env in the queryKey so flipping
+    // test↔live refetches — the API filters wallets by env.
     const { data: walletResponse, isLoading, error } = useQuery({
-        queryKey: ['wallet', id],
+        queryKey: ['wallet', id, apiEnvironment],
         queryFn: async () => {
             if (!api) throw new Error('API client not initialized');
             return api.wallets.get(id);
@@ -91,9 +101,13 @@ export default function WalletDetailPage() {
     const wallet = (walletResponse as any)?.data || walletResponse;
 
     // Fetch on-chain balance
-    const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance(id, authToken);
+    const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useWalletBalance(id, authToken, apiUrl, apiEnvironment);
     const onChain = balanceData?.data?.onChain;
     const syncStatus = balanceData?.data?.syncStatus || 'stale';
+    // Circle custodial drift diagnostic — surfaced when Circle's API
+    // number disagrees with the actual chain state by >1¢.
+    const mismatch = balanceData?.data?.mismatch;
+    const circleReported: number | null | undefined = balanceData?.data?.circleReported;
 
     // Rename mutation
     const renameMutation = useMutation({
@@ -124,7 +138,7 @@ export default function WalletDetailPage() {
         setSyncing(true);
         try {
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL || ''}/v1/wallets/${id}/sync`,
+                `${apiUrl}/v1/wallets/${id}/sync`,
                 {
                     method: 'POST',
                     headers: {
@@ -150,17 +164,24 @@ export default function WalletDetailPage() {
         }
     };
 
-    // Fetch transactions for this wallet
+    // Fetch transactions for this wallet.
+    // Prefer the recentTransactions array the wallet GET handler ships
+    // — it already contains the right set per wallet type (EOA: agent-
+    // initiated x402 + inbound deposits; Circle: policy-wallet activity).
+    // Fall back to the generic transfers list if the shape isn't there.
+    const recentFromWallet = (wallet as any)?.recentTransactions;
     const { data: transactionsResponse, isLoading: txLoading } = useQuery({
-        queryKey: ['wallet-transactions', id],
+        queryKey: ['wallet-transactions', id, apiEnvironment],
         queryFn: async () => {
             if (!api) throw new Error('API client not initialized');
             return api.transfers.list({ walletId: id, limit: 20 });
         },
-        enabled: !!api && !!id,
+        enabled: !!api && !!id && !Array.isArray(recentFromWallet),
     });
 
-    const transactions = (transactionsResponse as any)?.data || [];
+    const transactions = Array.isArray(recentFromWallet)
+        ? recentFromWallet
+        : ((transactionsResponse as any)?.data || []);
 
     const handleCopyAddress = () => {
         if (wallet?.walletAddress) {
@@ -210,14 +231,33 @@ export default function WalletDetailPage() {
                         <Shield className="w-4 h-4 mr-2" />
                         Freeze
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => toast.info('Deposit feature coming soon')}>
+                    <Button variant="outline" size="sm" onClick={() => setShowDepositModal(true)}>
                         <ArrowDownLeft className="w-4 h-4 mr-2" />
                         Deposit
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => toast.info('Withdraw feature coming soon')}>
-                        <ArrowUpRight className="w-4 h-4 mr-2" />
-                        Withdraw
-                    </Button>
+                    {(() => {
+                        // Withdraw routes through Circle rails, which don't apply to
+                        // Sly-managed agent EOAs (the key signs on-chain payments
+                        // directly). Disable with an explanation so users understand
+                        // this is intentional, not a placeholder.
+                        const walletType = wallet.walletType || wallet.wallet_type;
+                        const isAgentEoa = walletType === 'agent_eoa';
+                        return (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => isAgentEoa
+                                    ? toast.info('EOAs spend via x402 signing, not Circle withdraw. Use x402_sign or x402_fetch to move USDC out.')
+                                    : setShowWithdrawModal(true)
+                                }
+                                disabled={isAgentEoa}
+                                title={isAgentEoa ? 'EOAs spend via x402 signing — no Circle withdraw rail' : undefined}
+                            >
+                                <ArrowUpRight className="w-4 h-4 mr-2" />
+                                Withdraw
+                            </Button>
+                        );
+                    })()}
                 </div>
             </div>
 
@@ -300,19 +340,80 @@ export default function WalletDetailPage() {
                                 <div>
                                     <p className="text-blue-100 text-sm font-medium mb-1">Total Balance</p>
                                     <h3 className="text-4xl font-bold">
-                                        {formatCurrency(wallet.balance || 0, wallet.currency || 'USDC')}
+                                        {(() => {
+                                            // For agent_eoa, on-chain IS the ledger — prefer the
+                                            // fresh chain number from /balance over the DB column
+                                            // (which lags by one request cycle in the worst case).
+                                            const walletType = wallet.walletType || wallet.wallet_type;
+                                            const onChainUsd = onChain?.usdc != null ? parseFloat(onChain.usdc) : null;
+                                            const display = walletType === 'agent_eoa' && onChainUsd != null
+                                                ? onChainUsd
+                                                : (wallet.balance || 0);
+                                            return formatCurrency(display, wallet.currency || 'USDC');
+                                        })()}
                                     </h3>
                                 </div>
                                 <Activity className="w-6 h-6 text-blue-200" />
                             </div>
                             <div className="flex items-center gap-2 text-sm text-blue-100">
                                 <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                                Available for use
+                                {(wallet.walletType || wallet.wallet_type) === 'agent_eoa' ? 'Live on-chain' : 'Available for use'}
                             </div>
                         </Card>
 
-                        <SpendingPolicyEditor wallet={wallet} />
+                        {/* Spending policy is universal — every wallet
+                            type now shows daily/monthly caps + live
+                            usage from the transfers ledger. For
+                            agent_eoa we ALSO stack the auto-refill card
+                            below it (chain-native funding policy). */}
+                        <div className="space-y-6">
+                            <SpendingPolicyEditor wallet={wallet} />
+                            {(wallet.walletType || wallet.wallet_type) === 'agent_eoa' && (
+                                <EoaAutoRefillCard wallet={wallet} />
+                            )}
+                        </div>
                     </div>
+
+                    {/* Circle ↔ chain mismatch banner. For circle_custodial
+                        wallets we query both and show a loud warning when
+                        Circle's reported balance disagrees with on-chain
+                        reality. Helps tenants catch drift / sweeps that
+                        would otherwise show as "synced" in the UI. */}
+                    {mismatch && (
+                        <Card className="p-4 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
+                            <div className="flex items-start gap-3">
+                                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-1">
+                                        Balance mismatch: Circle ledger vs. chain
+                                    </div>
+                                    <div className="text-sm text-amber-800 dark:text-amber-300">
+                                        {mismatch.note}
+                                    </div>
+                                    <div className="mt-2 grid grid-cols-3 gap-3 text-xs">
+                                        <div>
+                                            <div className="uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70">Circle says</div>
+                                            <div className="font-mono font-semibold text-amber-900 dark:text-amber-100">
+                                                {circleReported != null ? formatCurrency(circleReported, wallet.currency || 'USDC') : '—'}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70">On chain</div>
+                                            <div className="font-mono font-semibold text-amber-900 dark:text-amber-100">
+                                                {onChain?.usdc ? formatCurrency(parseFloat(onChain.usdc), wallet.currency || 'USDC') : '—'}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70">Δ</div>
+                                            <div className="font-mono font-semibold text-amber-900 dark:text-amber-100">
+                                                {mismatch.delta > 0 ? '+' : ''}{mismatch.delta.toFixed(4)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
 
                     {/* Transactions List */}
                     <Card className="overflow-hidden">
@@ -464,22 +565,58 @@ export default function WalletDetailPage() {
                                     <span className="text-sm text-gray-500">Network</span>
                                     <span className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
                                         <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                        Base Sepolia
+                                        {wallet.network || 'Unknown'}
                                     </span>
                                 </div>
+
+                                {wallet.blockchain && (
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">Blockchain</span>
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+                                            {wallet.blockchain}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {wallet.provider && wallet.provider !== 'payos' && (
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">Provider</span>
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+                                            {wallet.provider}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {wallet.tokenContract && (
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">Token Contract</span>
+                                        <span className="text-sm font-mono text-gray-900 dark:text-white">
+                                            {wallet.tokenContract.slice(0, 6)}...{wallet.tokenContract.slice(-4)}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {wallet.currency && (
+                                    <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm text-gray-500">Currency</span>
+                                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                            {wallet.currency}
+                                        </span>
+                                    </div>
+                                )}
 
                                 {onChain ? (
                                     <>
                                         <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
                                             <span className="text-sm text-gray-500">Native Balance</span>
                                             <span className="text-sm font-mono text-gray-900 dark:text-white">
-                                                {parseFloat(onChain.native).toFixed(4)} ETH
+                                                {parseFloat(onChain.native).toFixed(4)} {wallet.blockchain === 'tempo' ? 'TEMPO' : 'ETH'}
                                             </span>
                                         </div>
                                         <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                                            <span className="text-sm text-gray-500">USDC Balance</span>
+                                            <span className="text-sm text-gray-500">{wallet.currency || 'USDC'} Balance</span>
                                             <span className="text-sm font-mono text-gray-900 dark:text-white">
-                                                ${parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                {parseFloat(onChain.usdc).toLocaleString('en-US', { minimumFractionDigits: 2 })} {wallet.currency || 'USDC'}
                                             </span>
                                         </div>
                                     </>
@@ -491,16 +628,23 @@ export default function WalletDetailPage() {
 
                                 <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
                                     <span className="text-sm text-gray-500">Block Explorer</span>
-                                    {wallet.walletAddress && (
-                                        <a
-                                            href={`https://sepolia.basescan.org/address/${wallet.walletAddress}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-sm text-blue-600 hover:underline flex items-center gap-1"
-                                        >
-                                            View <ExternalLink className="w-3 h-3" />
-                                        </a>
-                                    )}
+                                    {wallet.walletAddress && (() => {
+                                        const explorerUrl = wallet.blockchain === 'tempo'
+                                            ? (wallet.network === 'tempo-testnet'
+                                                ? `https://moderato.tempo.xyz/address/${wallet.walletAddress}`
+                                                : `https://explorer.tempo.xyz/address/${wallet.walletAddress}`)
+                                            : `https://sepolia.basescan.org/address/${wallet.walletAddress}`;
+                                        return (
+                                            <a
+                                                href={explorerUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                                            >
+                                                View <ExternalLink className="w-3 h-3" />
+                                            </a>
+                                        );
+                                    })()}
                                 </div>
 
                                 {/* Placeholder for on-chain transactions */}
@@ -530,6 +674,141 @@ export default function WalletDetailPage() {
                 </div>
 
             </div>
+
+            {/* Deposit Modal */}
+            {showDepositModal && id && (
+                <DepositModal
+                    walletId={id}
+                    walletName={wallet?.name || wallet?.wallet_address}
+                    walletAddress={wallet?.walletAddress || wallet?.wallet_address}
+                    blockchain={wallet?.blockchain}
+                    walletType={wallet?.walletType || wallet?.wallet_type}
+                    onClose={() => setShowDepositModal(false)}
+                />
+            )}
+
+            {showWithdrawModal && id && (
+                <WithdrawModal
+                    walletId={id}
+                    walletName={wallet?.name || wallet?.wallet_address}
+                    walletAddress={wallet?.walletAddress || wallet?.wallet_address}
+                    blockchain={wallet?.blockchain}
+                    balance={parseFloat(wallet?.balance || '0')}
+                    onClose={() => setShowWithdrawModal(false)}
+                />
+            )}
         </div>
+    );
+}
+
+// ─── Auto-refill summary for agent_eoa wallets ────────────
+// Replaces the SpendingPolicy editor for EOAs. EOAs don't have the
+// `spendingPolicy` JSON that Circle/internal wallets carry — their
+// budget governance is KYA limits + per-agent auto-refill policy.
+// This card reads the policy from /v1/agents/:id/auto-refill and deep-
+// links to the agent page where tenants can edit it inline.
+
+function EoaAutoRefillCard({ wallet }: { wallet: any }) {
+    const { authToken, apiUrl, apiEnvironment } = useApiConfig();
+    const agentId = wallet.managedByAgentId || wallet.managed_by_agent_id;
+
+    const { data: policy, isLoading } = useQuery({
+        queryKey: ['wallet-auto-refill', agentId, apiEnvironment],
+        queryFn: async () => {
+            if (!authToken || !agentId) return null;
+            const headers: Record<string, string> = {
+                Authorization: `Bearer ${authToken}`,
+            };
+            if (apiEnvironment) headers['X-Environment'] = apiEnvironment;
+            const res = await fetch(`${apiUrl}/v1/agents/${agentId}/auto-refill`, { headers });
+            if (!res.ok) return null;
+            const body = await res.json();
+            return body.data || body;
+        },
+        enabled: !!authToken && !!agentId,
+        staleTime: 30_000,
+    });
+
+    const enabled = !!policy?.enabled;
+    const lastStatus: string | null = policy?.lastStatus || null;
+    const statusClass =
+        lastStatus === 'ok'
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+            : lastStatus === 'master_underfunded' || lastStatus === 'capped'
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
+                : lastStatus
+                    ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300';
+
+    return (
+        <Card className="p-6">
+            <div className="flex items-center justify-between mb-4">
+                <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Auto-refill</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Chain-native spending governance for this EOA.
+                    </p>
+                </div>
+                <UIBadge variant={enabled ? 'default' : 'outline'}>
+                    {enabled ? 'ON' : 'OFF'}
+                </UIBadge>
+            </div>
+
+            {isLoading ? (
+                <div className="h-24 bg-gray-100 dark:bg-gray-900 rounded animate-pulse" />
+            ) : enabled ? (
+                <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Threshold</div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                                {formatCurrency(policy?.threshold ?? 0, 'USDC')}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Target</div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                                {formatCurrency(policy?.target ?? 0, 'USDC')}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                Daily cap
+                            </div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                                {formatCurrency(policy?.dailyCap ?? 0, 'USDC')}
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                                {formatCurrency(policy?.dailySpent ?? 0, 'USDC')} used today
+                            </div>
+                        </div>
+                    </div>
+                    {lastStatus && (
+                        <div className={`text-xs px-3 py-1.5 rounded-md ${statusClass}`}>
+                            Last run: {lastStatus}
+                            {policy?.lastError && <div className="opacity-80 mt-0.5">{policy.lastError}</div>}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400 space-y-3">
+                    <p>
+                        Auto-refill is disabled. Enable it to have Sly keep this EOA topped up
+                        from the tenant Circle master whenever it runs low.
+                    </p>
+                </div>
+            )}
+
+            {agentId && (
+                <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-800">
+                    <Link
+                        href={`/dashboard/agents/${agentId}?tab=wallet`}
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                        Configure on agent page →
+                    </Link>
+                </div>
+            )}
+        </Card>
     );
 }

@@ -247,7 +247,7 @@ export async function disableProtocol(
 
   // Remove from enabled protocols
   const currentSettings = tenant?.settings || {};
-  const enabledProtocols = { ...currentSettings.enabled_protocols } || {};
+  const enabledProtocols = { ...(currentSettings.enabled_protocols || {}) };
   delete enabledProtocols[protocolId];
 
   const newSettings = {

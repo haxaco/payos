@@ -1,0 +1,187 @@
+---
+title: "Reconciliation"
+description: "Match Sly's internal ledger against rail settlement files; resolve discrepancies."
+---
+
+Reconciliation answers the question: **did the money Sly's ledger says moved actually move, according to the rails?** When they disagree — which happens in ~0.1% of transactions due to rail quirks, fees, returns, or edge cases — reconciliation surfaces the discrepancies so you can investigate and resolve.
+
+Most partners only look at reconciliation reports during month-end close or when support tickets reference missing funds.
+
+## How reconciliation works
+
+```
+Sly internal ledger                   Rail settlement file
+  (what we think happened)             (what actually happened)
+           │                                    │
+           └─────────── MATCH ──────────────────┘
+                         │
+              ┌──────────┴───────────┐
+              │                      │
+            matched              unmatched
+          (healthy)           (discrepancies)
+                                     │
+                                     ▼
+                              Resolve:
+                              - adjust ledger
+                              - chase rail provider
+                              - write off
+```
+
+Sly ingests rail settlement files daily (ACH NACHA returns, Stripe payout files, stablecoin chain-settlement receipts). For each ledger entry on our side, we look for a matching rail entry. Mismatches are flagged.
+
+## List reconciliation reports
+
+```bash
+curl "https://api.getsly.ai/v1/reconciliation/reports?rail=ach&status=completed&since=2026-04-01" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Response:
+
+```json
+{
+  "data": [
+    {
+      "id": "recon_...",
+      "rail": "ach",
+      "status": "completed",
+      "period": { "from": "2026-04-22", "to": "2026-04-22" },
+      "totals": {
+        "ledger_entries": 1247,
+        "rail_entries": 1245,
+        "matched": 1244,
+        "unmatched_ledger": 3,
+        "unmatched_rail": 1,
+        "discrepancies": 4
+      },
+      "created_at": "2026-04-23T03:15:00Z"
+    }
+  ]
+}
+```
+
+## Report detail
+
+```bash
+curl https://api.getsly.ai/v1/reconciliation/reports/recon_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Shows each discrepancy individually:
+
+```json
+{
+  "discrepancies": [
+    {
+      "id": "disc_001",
+      "type": "ledger_only",
+      "ledger_entry_id": "lgr_abc",
+      "amount_cents": 4999,
+      "currency": "USD",
+      "note": "Sly ledger shows ACH transfer, no corresponding rail entry"
+    },
+    {
+      "id": "disc_002",
+      "type": "amount_mismatch",
+      "ledger_entry_id": "lgr_def",
+      "rail_entry_id": "rail_xyz",
+      "ledger_amount_cents": 10000,
+      "rail_amount_cents": 9950,
+      "delta_cents": -50,
+      "note": "Rail deducted fee we hadn't booked"
+    }
+  ]
+}
+```
+
+## Discrepancy types
+
+| Type | Cause | Typical resolution |
+|---|---|---|
+| `ledger_only` | Sly thinks it settled, rail has no record | Chase rail provider; may be lag or actual miss |
+| `rail_only` | Rail has entry, Sly ledger doesn't | Usually a rail credit we didn't originate (e.g. return); create adjustment |
+| `amount_mismatch` | Same txn, different amounts | Often unexpected rail fees; book delta |
+| `timing_mismatch` | Settlement date disagrees | Usually benign — rail processed next day |
+| `duplicate` | Multiple rail entries for one ledger | Request refund from rail; exceedingly rare |
+
+## Resolve a discrepancy
+
+```bash
+curl -X POST https://api.getsly.ai/v1/reconciliation/discrepancies/disc_001/resolve \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "resolution": "adjusted",
+    "note": "Contacted ACH provider — confirmed lag, entry appeared next-day recon",
+    "adjustment_entry_id": "lgr_adj_..."
+  }'
+```
+
+Resolution types:
+- `adjusted` — you booked a correcting ledger entry
+- `written_off` — too small to chase, absorbed
+- `chasing` — external action in progress; returns to open pool
+- `no_action` — benign (timing) — close without adjustment
+
+## Trigger a reconciliation run
+
+Reconciliation runs automatically nightly, but you can force a run:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/reconciliation/run \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "rail": "ach",
+    "date_from": "2026-04-22",
+    "date_to": "2026-04-22"
+  }'
+```
+
+Useful during incidents — "did yesterday's ACH actually go through?"
+
+## Supported rails
+
+| Rail | Settlement file source | Cadence |
+|---|---|---|
+| `ach` | NACHA + Fed | Daily |
+| `wire` | Fed + OFAC | Daily |
+| `usdc-base` | Base block explorer | Every 15 min |
+| `usdc-solana` | Solana RPC | Every 15 min |
+| `pix` | Central Bank of Brazil | Hourly |
+| `spei` | Banxico | Hourly |
+| `card-stripe` | Stripe payout files | Daily |
+| `card-adyen` | Adyen settlement files | Daily |
+
+## Monitoring signals worth alerting on
+
+- **Discrepancy rate** > 0.5% on any given day
+- **Specific rail gone quiet** — no settlement file received for expected window
+- **`ledger_only` older than 3 days** — actual missing money, not lag
+- **Repeated `amount_mismatch` on same merchant** — pattern of unexpected fees
+
+Subscribe to `reconciliation.discrepancy.opened` webhook for real-time.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/reconciliation/reports` | List reports |
+| `GET /v1/reconciliation/reports/:id` | Report detail |
+| `POST /v1/reconciliation/run` | Trigger a recon run |
+| `POST /v1/reconciliation/discrepancies/:id/resolve` | Resolve discrepancy |
+
+## Monthly close workflow
+
+A typical month-end:
+
+1. Trigger a full-month recon per rail
+2. Review the discrepancy summary
+3. Book adjusting entries for unresolved amount mismatches
+4. Chase open `ledger_only` items with rail providers
+5. Export final report to your GL
+
+```bash
+curl -X POST https://api.getsly.ai/v1/reconciliation/run \
+  -d '{ "rail": "ach", "date_from": "2026-04-01", "date_to": "2026-04-30" }'
+```
+
+For most tenants, the daily automated runs catch 99%+ — the manual monthly pass is a sanity check.

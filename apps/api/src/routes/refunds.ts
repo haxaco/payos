@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { 
+import {
   logAudit,
   isValidUUID,
   getPaginationParams,
   paginationResponse,
+  getEnv,
 } from '../utils/helpers.js';
 import { createBalanceService } from '../services/balances.js';
 import { 
@@ -33,7 +34,7 @@ const createRefundSchema = z.object({
 // ============================================
 refunds.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const query = c.req.query();
   const { page, limit } = getPaginationParams(query);
@@ -46,6 +47,7 @@ refunds.get('/', async (c) => {
     .from('refunds')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
   
@@ -77,7 +79,7 @@ refunds.get('/', async (c) => {
 // ============================================
 refunds.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Check for idempotency key
   const idempotencyKey = c.req.header('X-Idempotency-Key');
@@ -87,6 +89,7 @@ refunds.post('/', async (c) => {
       .from('refunds')
       .select('*')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('idempotency_key', idempotencyKey)
       .single();
     
@@ -115,6 +118,7 @@ refunds.post('/', async (c) => {
     .select('*')
     .eq('id', originalTransferId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('status', 'completed')
     .single();
   
@@ -156,6 +160,8 @@ refunds.post('/', async (c) => {
     .from('refunds')
     .select('amount')
     .eq('original_transfer_id', originalTransferId)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('status', 'completed');
   
   const totalRefunded = existingRefunds?.reduce((sum, r) => sum + parseFloat(r.amount), 0) || 0;
@@ -182,12 +188,7 @@ refunds.post('/', async (c) => {
   const sourceBalance = await balanceService.getBalance(transfer.to_account_id);
   
   if (sourceBalance.available < refundAmount) {
-    throw new InsufficientBalanceError(
-      transfer.to_account_id,
-      sourceBalance.available.toString(),
-      refundAmount.toString(),
-      transfer.currency
-    );
+    throw new InsufficientBalanceError(sourceBalance.available, refundAmount);
   }
   
   // Create refund record
@@ -195,6 +196,7 @@ refunds.post('/', async (c) => {
     .from('refunds')
     .insert({
       tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
       original_transfer_id: originalTransferId,
       amount: refundAmount,
       currency: transfer.currency,
@@ -294,7 +296,7 @@ refunds.post('/', async (c) => {
 // ============================================
 refunds.get('/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const refundId = c.req.param('id');
   
   if (!isValidUUID(refundId)) {
@@ -306,6 +308,7 @@ refunds.get('/:id', async (c) => {
     .select('*')
     .eq('id', refundId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
   
   if (error || !refund) {

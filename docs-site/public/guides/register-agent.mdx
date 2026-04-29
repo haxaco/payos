@@ -1,0 +1,154 @@
+---
+title: "Register an agent"
+description: "Create an agent under an account, provision credentials, and configure its policy."
+---
+
+An [agent](/core-concepts/agents) is an AI actor that transacts under a parent account. This guide walks through creating one, provisioning Ed25519 credentials, and setting a wallet policy.
+
+## 1. Create the agent
+
+```ts
+const { data: agent, credentials, authKey } = await sly.agents.create({
+  parentAccountId: 'acc_...',
+  name: 'Payables Bot',
+  description: 'Pays supplier invoices nightly',
+  kyaTier: 1,
+  generateKeypair: true,   // provision Ed25519 at creation
+  skills: ['invoice.pay', 'statement.reconcile'],
+});
+
+// Save these immediately — shown once
+process.env.AGENT_TOKEN = credentials.token;           // agent_*
+process.env.AGENT_PRIVATE_KEY = authKey.privateKey;    // base64 Ed25519 private key
+```
+
+KYA tier 1 requires a [DSD declaration](/agents/kya-tiers#tier-1-declared). If you started at tier 0 and want to upgrade later, skip this param and declare later.
+
+## 2. File the DSD (tier 1+)
+
+```ts
+await sly.agents.declare(agent.id, {
+  purpose: 'Automated supplier invoice payments',
+  expected_categories: ['saas', 'business_services'],
+  monthly_estimate: '1500.00',
+  accountable_individual: 'jsmith@acme.example',
+});
+```
+
+## 3. Set the wallet policy
+
+Before the agent moves any real money, define spending rules:
+
+```ts
+await sly.agentWallets.setPolicy(agent.walletId, {
+  global_limits: {
+    per_tx: '100.00',
+    daily: '500.00',
+    monthly: '2000.00',
+    currency: 'USDC',
+  },
+  merchant_rules: [
+    { merchant_category: 'gambling', action: 'block' },
+    { merchant_category: 'saas', action: 'allow' },
+  ],
+  velocity_rules: [
+    { window: '1h', max_count: 5 },
+  ],
+  approval_threshold: {
+    amount: '75.00',
+    approver_role: 'admin',
+  },
+  kill_switch: {
+    operators: ['ops@acme.example'],
+    notification_channels: ['slack'],
+  },
+});
+```
+
+## 4. Fund the agent wallet
+
+```ts
+// Sandbox — faucet
+await sly.agentWallets.testFund(agent.walletId, { amount: '500.00' });
+
+// Production — from parent account wallet
+await sly.agentWallets.fund(agent.walletId, {
+  from_wallet_id: 'wal_parent_...',
+  amount: '500.00',
+});
+```
+
+## 5. Authenticate the agent (Ed25519)
+
+From the agent process:
+
+```ts
+import * as ed25519 from '@noble/ed25519';
+
+async function authenticate() {
+  const chRes = await fetch(`${API}/v1/agents/${AGENT_ID}/challenge`, { method: 'POST' });
+  const { challenge } = await chRes.json();
+
+  const sig = await ed25519.signAsync(
+    new TextEncoder().encode(challenge),
+    Buffer.from(process.env.AGENT_PRIVATE_KEY!, 'base64'),
+  );
+
+  const authRes = await fetch(`${API}/v1/agents/${AGENT_ID}/authenticate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ challenge, signature: Buffer.from(sig).toString('base64') }),
+  });
+  const { sessionToken } = await authRes.json();
+  return sessionToken;
+}
+```
+
+Or use the SDK's agent client with `autoReauth: true` (see [Node SDK](/sdks/node-sdk)).
+
+## 6. Open a push channel
+
+```ts
+const agent = new Sly({ agentId, privateKey, autoReauth: true });
+
+await agent.connect({
+  onTask: async (t) => handleTask(t),
+  onTransfer: async (t) => log('transfer settled', t),
+  onApproval: async (a) => notify(a),
+  onAlert: async (a) => page(a),
+});
+```
+
+The agent now receives real-time events — no polling loops needed.
+
+## 7. Register skills (optional, for A2A marketplace)
+
+```ts
+await sly.agents.registerSkill(agent.id, {
+  id: 'invoice.pay',
+  name: 'Pay invoice',
+  description: 'Settle a received invoice against the approved vendor',
+  input_schema: { /* JSON Schema */ },
+  output_schema: { /* JSON Schema */ },
+  pricing: { amount: '0.50', currency: 'USDC' },
+});
+```
+
+Once skills are registered, the agent appears in the [A2A marketplace](/protocols/a2a) and peer agents can discover and hire it.
+
+## Recap checklist
+
+- [ ] Agent record created under a parent account
+- [ ] Ed25519 keypair generated and saved
+- [ ] DSD filed (for tier 1+)
+- [ ] Wallet policy configured with limits + kill-switch
+- [ ] Wallet funded
+- [ ] Ed25519 authentication tested end-to-end
+- [ ] SSE connection opened
+- [ ] Skills registered if participating in A2A
+
+## Next
+
+- [Cross-border transfer](/guides/cross-border-transfer) — first production-like transaction
+- [Wallet policies](/agents/wallet-policies) — policy grammar reference
+- [Kill-switch](/agents/kill-switch) — test kill-switch drill before shipping

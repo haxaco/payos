@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { PayOSClient, createPayOSClient, PayOSError } from '@sly/api-client';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { useEnvironment } from '@/lib/environment-context';
 
 interface ApiClientContextType {
   client: PayOSClient | null;
@@ -31,6 +32,7 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const queryClient = useQueryClient();
+  const { apiEnvironment } = useEnvironment();
 
   // Load API key from localStorage AND get JWT from Supabase session
   useEffect(() => {
@@ -84,9 +86,15 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
     const token = authToken || apiKey;
     if (!token) return null;
     
+    // Route to the correct API server based on environment
+    const sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_API_URL;
+    const productionUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    const baseUrl = apiEnvironment === 'live' ? productionUrl : (sandboxUrl || productionUrl);
+
     return createPayOSClient({
-      baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
-      apiKey: token, // API client uses this as the auth token
+      baseUrl,
+      apiKey: token,
+      defaultHeaders: { 'X-Environment': apiEnvironment },
       onError: (error) => {
         console.error('API Error:', error);
         
@@ -124,7 +132,7 @@ export function ApiClientProvider({ children }: { children: ReactNode }) {
         }
       },
     });
-  }, [authToken, apiKey]);
+  }, [authToken, apiKey, apiEnvironment]);
 
   const value = {
     client,
@@ -149,12 +157,40 @@ export function useApiClient() {
 
 export function useApiConfig() {
   const context = useContext(ApiClientContext);
+  const { apiEnvironment } = useEnvironment();
+  const sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_API_URL;
+  const productionUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const apiUrl = apiEnvironment === 'live' ? productionUrl : (sandboxUrl || productionUrl);
   return {
     apiKey: context.apiKey,
     setApiKey: context.setApiKey,
     isConfigured: context.isConfigured,
     isLoading: context.isLoading,
     authToken: context.authToken,
+    apiEnvironment,
+    apiUrl,
   };
+}
+
+/** Fetch-compatible function signature returned by useApiFetch. */
+export type ApiFetchFn = (url: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * Returns a fetch wrapper that includes Authorization and X-Environment headers.
+ * Use this instead of raw fetch() for API calls in dashboard components.
+ */
+export function useApiFetch(): ApiFetchFn {
+  const { authToken } = useApiConfig();
+  const { apiEnvironment } = useEnvironment();
+
+  return useMemo(() => {
+    return (url: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+      headers.set('X-Environment', apiEnvironment);
+      if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+      return fetch(url, { ...init, headers });
+    };
+  }, [authToken, apiEnvironment]);
 }
 

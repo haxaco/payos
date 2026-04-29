@@ -33,7 +33,7 @@ const createExportSchema = z.object({
 // ============================================
 exports.get('/transactions', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const query = c.req.query();
   
@@ -146,7 +146,7 @@ exports.get('/transactions', async (c) => {
 // ============================================
 exports.get('/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const exportId = c.req.param('id');
   
   if (!isValidUUID(exportId)) {
@@ -181,7 +181,7 @@ exports.get('/:id', async (c) => {
 // ============================================
 exports.get('/:id/download', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const exportId = c.req.param('id');
   
   if (!isValidUUID(exportId)) {

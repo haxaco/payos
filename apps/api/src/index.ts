@@ -3,18 +3,28 @@ import { serve } from '@hono/node-server';
 import app from './app.js';
 import { getScheduledTransferWorker } from './workers/scheduled-transfers.js';
 import { startIdempotencyCleanupWorker } from './workers/idempotency-cleanup.js';
+import { startX402ExpiredCleanupWorker } from './workers/x402-expired-cleanup.js';
+import { startScopeExpirationSweeper } from './workers/scope-expiration-sweeper.js';
+import { startScopeHeartbeatWorker } from './workers/scope-heartbeat.js';
+import { startAutoRefillWorker } from './workers/agent-auto-refill.js';
+import { startAgentEoaSyncWorker, stopAgentEoaSyncWorker } from './workers/agent-eoa-sync.js';
 import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
 import { SettlementWindowProcessor } from './workers/settlement-window-processor.js';
 import { TreasuryWorker } from './workers/treasury-worker.js';
 import { getA2ATaskWorker } from './workers/a2a-task-worker.js';
 import { getAsyncSettlementWorker } from './workers/async-settlement-worker.js';
 import { getBatchSettlementWorker } from './workers/batch-settlement-worker.js';
+import { getReviewTimeoutWorker } from './workers/review-timeout-worker.js';
 import { environmentManager } from './config/environment.js';
 import { loadHandlersFromDB } from './services/ucp/payment-handlers/index.js';
 import { createClient } from './db/client.js';
 import { startOpTracker, stopOpTracker } from './services/ops/track-op.js';
 import { startRequestCounter, stopRequestCounter } from './services/ops/request-counter.js';
 import { startPartitionManager, stopPartitionManager } from './workers/partition-manager.js';
+import { taskEventBus } from './services/a2a/task-event-bus.js';
+import { startSmartWalletSyncWorker, stopSmartWalletSyncWorker } from './workers/smart-wallet-sync.js';
+import { startConnectionCleanupWorker, stopConnectionCleanupWorker } from './workers/agent-connection-cleanup.js';
+import { startTaskBridge, stopTaskBridge } from './services/agent-auth/task-bridge.js';
 
 // Railway uses PORT, fallback to API_PORT for local dev
 const port = parseInt(process.env.PORT || process.env.API_PORT || '4000');
@@ -29,6 +39,8 @@ const enableTreasuryWorker = process.env.ENABLE_TREASURY_WORKER !== 'false'; // 
 const enableA2AWorker = process.env.ENABLE_A2A_WORKER !== 'false'; // Enabled by default
 const enableAsyncSettlement = process.env.ENABLE_ASYNC_SETTLEMENT !== 'false'; // Enabled by default
 const enableBatchSettlement = process.env.ENABLE_BATCH_SETTLEMENT !== 'false'; // Enabled by default
+const enableReviewTimeout = process.env.ENABLE_REVIEW_TIMEOUT !== 'false'; // Enabled by default
+const enableAutoRefill = process.env.ENABLE_AGENT_AUTO_REFILL !== 'false'; // Enabled by default
 
 console.log(`
 ╔══════════════════════════════════════════════════╗
@@ -46,6 +58,8 @@ console.log(`
 ║  🤖 A2A Task Worker: ${(enableA2AWorker ? 'ON' : 'OFF').padEnd(25)}║
 ║  ⚡ Async Settlement: ${(enableAsyncSettlement ? 'ON' : 'OFF').padEnd(24)}║
 ║  📦 Batch Settlement: ${(enableBatchSettlement ? 'ON' : 'OFF').padEnd(23)}║
+║  ✅ Review Timeout: ${(enableReviewTimeout ? 'ON' : 'OFF').padEnd(26)}║
+║  💧 Agent Auto-Refill: ${(enableAutoRefill ? 'ON' : 'OFF').padEnd(23)}║
 ║  📊 Ops Tracker: ON                             ║
 ╚══════════════════════════════════════════════════╝
 `);
@@ -57,6 +71,9 @@ environmentManager.logStartupInfo();
 startOpTracker();
 startRequestCounter();
 startPartitionManager();
+
+// Initialize A2A audit persistence (Story 58.17)
+taskEventBus.initAuditPersistence(createClient());
 
 // Load DB-driven payment handlers
 loadHandlersFromDB(createClient()).catch((err) => {
@@ -76,6 +93,30 @@ if (enableScheduledTransfers) {
 
 // Start idempotency cleanup worker (runs every hour)
 const stopIdempotencyCleanup = startIdempotencyCleanupWorker(60 * 60 * 1000);
+
+// Start x402 expired-auth cleanup (runs every 2 min — cancels pending
+// external x402 rows whose valid_before window has passed so they don't
+// pile up as "pending forever" in the dashboard).
+const stopX402ExpiredCleanup = startX402ExpiredCleanupWorker(2 * 60 * 1000);
+
+// Epic 82 — sweep expired scope grants every 5 min. The middleware
+// already filters by expires_at > now() so unswept rows never
+// authorize requests; this sweep is for accuracy of stored state and
+// audit completeness (each expiration writes a scope_expired row).
+const stopScopeExpirationSweeper = startScopeExpirationSweeper(5 * 60 * 1000);
+
+// Epic 82 Story 82.8 — emit a daily heartbeat per active standing
+// grant so long-lived elevations stay visible in the audit feed.
+// Hourly tick: fresh grants get their first heartbeat within ~1h,
+// subsequent ones every ~24h.
+const stopScopeHeartbeatWorker = startScopeHeartbeatWorker(60 * 60 * 1000);
+
+// Start smart wallet balance sync worker (syncs on-chain balances every 5 min)
+startSmartWalletSyncWorker();
+
+// Start agent EOA balance sync worker — keeps dashboard USDC balances
+// fresh for on-chain signing addresses without requiring a page load.
+startAgentEoaSyncWorker();
 
 // Start webhook cleanup worker (runs daily) - Story 27.5
 if (enableWebhookCleanup) {
@@ -124,6 +165,27 @@ if (enableBatchSettlement) {
   batchSettlementWorker.start(batchInterval);
 }
 
+// Start agent connection cleanup worker - Epic 72
+startConnectionCleanupWorker(createClient());
+
+// Start TaskEventBus → AgentConnectionBus bridge - Epic 72
+startTaskBridge();
+
+// Start review timeout worker - Epic 69, Story 69.3
+let reviewTimeoutWorker: ReturnType<typeof getReviewTimeoutWorker> | null = null;
+if (enableReviewTimeout) {
+  const reviewInterval = parseInt(process.env.REVIEW_TIMEOUT_POLL_MS || '60000');
+  reviewTimeoutWorker = getReviewTimeoutWorker();
+  reviewTimeoutWorker.start(reviewInterval);
+}
+
+// Start agent auto-refill worker — tops up opted-in agent EOAs from Circle master
+let stopAutoRefill: (() => void) | null = null;
+if (enableAutoRefill) {
+  const refillInterval = parseInt(process.env.AGENT_AUTO_REFILL_INTERVAL_MS || String(5 * 60 * 1000));
+  stopAutoRefill = startAutoRefillWorker(refillInterval);
+}
+
 // Graceful shutdown
 const shutdown = async (signal: string) => {
   console.log(`${signal} received, shutting down gracefully...`);
@@ -131,6 +193,9 @@ const shutdown = async (signal: string) => {
     worker.stop();
   }
   stopIdempotencyCleanup();
+  stopX402ExpiredCleanup();
+  stopScopeExpirationSweeper();
+  stopScopeHeartbeatWorker();
   if (enableWebhookCleanup) {
     webhookCleanupWorker.stop();
   }
@@ -149,10 +214,20 @@ const shutdown = async (signal: string) => {
   if (batchSettlementWorker) {
     batchSettlementWorker.stop();
   }
+  if (reviewTimeoutWorker) {
+    reviewTimeoutWorker.stop();
+  }
+  if (stopAutoRefill) {
+    stopAutoRefill();
+  }
   // Drain ops buffers before exit (Epic 65)
   await stopOpTracker();
   await stopRequestCounter();
   stopPartitionManager();
+  stopSmartWalletSyncWorker();
+  stopAgentEoaSyncWorker();
+  stopConnectionCleanupWorker();
+  stopTaskBridge();
   process.exit(0);
 };
 
@@ -167,7 +242,7 @@ try {
   });
   
   console.log(`✅ Server is listening on ${host}:${port}`);
-  console.log(`📍 Railway URL: https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'your-app.railway.app'}`);
+  console.log(`📍 Railway URL: https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'payos-production.up.railway.app'}`);
 } catch (error) {
   console.error('❌ Failed to start server:', error);
   process.exit(1);

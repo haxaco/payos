@@ -14,13 +14,13 @@ import { PaginationControls } from '@/components/ui/pagination-controls';
 
 export default function AccountsPage() {
   const api = useApiClient();
-  const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, apiEnvironment } = useApiConfig();
   const [search, setSearch] = useState('');
   const { formatCurrency } = useLocale();
 
   // Use React Query for data fetching with caching
   const { data: accountsData, isLoading: loading } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: ['accounts', apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.accounts.list({ limit: 1 }); // Just to get total count
@@ -39,7 +39,7 @@ export default function AccountsPage() {
   // Fetch accounts for current page
   // Note: We fetch even if totalItems is 0 to handle cases where initial count query didn't return data correctly
   const { data: accountsPageData, isLoading: pageLoading } = useQuery({
-    queryKey: ['accounts', 'page', pagination.page, pagination.pageSize, search],
+    queryKey: ['accounts', 'page', pagination.page, pagination.pageSize, search, apiEnvironment],
     queryFn: async () => {
       if (!api) throw new Error('API client not initialized');
       return api.accounts.list({
@@ -176,12 +176,19 @@ export default function AccountsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${account.type === 'business'
-                        ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400'
-                        : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
-                      }`}>
-                      {account.type}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${account.type === 'business'
+                          ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400'
+                          : 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400'
+                        }`}>
+                        {account.type}
+                      </span>
+                      {(account as any).subtype === 'merchant' && (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded bg-purple-600 text-white">
+                          Merchant
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${account.verificationStatus === 'verified'

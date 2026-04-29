@@ -1,0 +1,172 @@
+---
+title: "Treasury"
+description: "Cash position, exposure, rebalancing, and liquidity alerts."
+---
+
+The treasury surface gives finance teams a real-time view of cash across all Sly-managed accounts: how much is where, in what currency, committed to what, and where it's running low.
+
+This is where your CFO or finance ops lives — distinct from the developer-facing transfer/stream endpoints.
+
+## Dashboard snapshot
+
+```bash
+curl https://api.getsly.ai/v1/treasury/dashboard \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Response:
+
+```json
+{
+  "as_of": "2026-04-23T15:30:00Z",
+  "balances_by_currency": {
+    "USD": { "total_cents": 4250000, "available_cents": 4100000, "pending_cents": 150000 },
+    "USDC": { "total_cents": 128500000, "available_cents": 128500000, "pending_cents": 0 },
+    "EUR": { "total_cents": 890000, "available_cents": 890000, "pending_cents": 0 }
+  },
+  "exposure_by_currency": {
+    "USD": {
+      "active_mandates_cents": 500000,
+      "scheduled_transfers_cents": 125000,
+      "open_streams_runway_cents": 300000
+    }
+  },
+  "alerts": [
+    { "severity": "warning", "currency": "EUR", "message": "EUR balance below target ($10k min)" }
+  ],
+  "account_count": 12
+}
+```
+
+## Currency exposure breakdown
+
+Understand where money is committed:
+
+```bash
+curl "https://api.getsly.ai/v1/treasury/exposure?currency=USD" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Shows:
+- **Active mandates** — AP2 pre-authorized spending not yet executed
+- **Scheduled transfers** — future-dated moves committed
+- **Open streams** — money flowing out per second; runway at current rate
+- **Pending disputes** — money in escrow during dispute
+- **Reserve holds** — chargeback / compliance reserves
+
+Partner treasury teams use exposure numbers for cash-flow forecasting and liquidity planning.
+
+## Treasury accounts
+
+Internal accounts your treasury team operates against (distinct from customer accounts):
+
+```bash
+curl -X POST https://api.getsly.ai/v1/treasury/accounts \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "name": "USD Operating",
+    "rail": "ach",
+    "currency": "USD",
+    "min_balance_cents": 500000,
+    "target_balance_cents": 2000000,
+    "max_balance_cents": 10000000,
+    "destination_bank_account_id": "bank_..."
+  }'
+```
+
+Treasury accounts have **balance limits** that trigger alerts:
+- `min_balance` — alert if balance drops below
+- `target_balance` — rebalancing target
+- `max_balance` — alert if balance rises above (idle cash)
+
+## Record a treasury transaction
+
+For entries that aren't customer-originated (e.g. your CFO wiring funds in from the corporate bank):
+
+```bash
+curl -X POST https://api.getsly.ai/v1/treasury/transactions \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "account_id": "treas_usd_ops",
+    "type": "inbound",
+    "amount_cents": 1000000,
+    "currency": "USD",
+    "source": "Corporate Chase account",
+    "reference": "WIRE-2026-04-23-A"
+  }'
+```
+
+Types:
+- `inbound` — external money in (partner funding, bank deposit)
+- `outbound` — external money out (payout, bank withdrawal)
+- `rebalance` — internal move between treasury accounts
+- `fee` — operating fees (rail charges, provider costs)
+- `adjustment` — manual correction
+
+## Auto-rebalancing
+
+When one treasury account is above `max_balance` and another is below `target_balance`, auto-rebalance moves funds:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/treasury/rebalancing \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "from_account_id": "treas_usd_ops",
+    "to_account_id": "treas_usd_reserve",
+    "amount_cents": 500000,
+    "reason": "Excess operating cash → reserve"
+  }'
+```
+
+Can be automated by linking rebalancing to a [settlement rule](/settlement/rules).
+
+## Alerts
+
+```bash
+curl "https://api.getsly.ai/v1/treasury/alerts?severity=warning" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Active alerts cover:
+- Balance below `min_balance`
+- Balance above `max_balance` (idle cash)
+- Currency exposure approaching limit (regulatory or internal)
+- Rail connectivity down (can't settle)
+- Reconciliation gap above threshold
+
+Subscribe to `treasury.alert.opened` webhook for real-time paging.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/treasury/dashboard` | Full snapshot |
+| `GET /v1/treasury/exposure` | Currency exposure breakdown |
+| `POST /v1/treasury/accounts` | Create treasury account |
+| `GET /v1/treasury/accounts` | List accounts |
+| `PATCH /v1/treasury/accounts/:id` | Update limits |
+| `POST /v1/treasury/transactions` | Record a treasury txn |
+| `GET /v1/treasury/transactions` | List txns |
+| `POST /v1/treasury/rebalancing` | Move between treasury accounts |
+| `GET /v1/treasury/alerts` | Active alerts |
+
+## Typical treasury workflows
+
+**Daily**:
+- Check dashboard for any alerts
+- Review overnight rebalancing moves
+- Confirm reconciliation reports clean
+
+**Weekly**:
+- Review currency exposure forecast vs. actual
+- Adjust rebalancing thresholds if inventory is drifting
+- Review alert history for recurring issues
+
+**Monthly**:
+- Close-out treasury account reconciliation against GL
+- Review idle-cash metrics and `max_balance` tuning
+- Update rail counterparty limits if volume grew
+
+## Permissions
+
+Treasury endpoints require the `treasury:*` scope on API keys. By default only `owner` and `admin` users can access them via the dashboard. Don't grant treasury scope to integration-layer API keys.

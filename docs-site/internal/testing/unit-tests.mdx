@@ -1,0 +1,85 @@
+---
+title: "Unit tests"
+description: "Fast, isolated tests with mocked dependencies."
+---
+
+Unit tests live in `apps/api/tests/unit/` and mirror the `src/` layout. Run via `pnpm test:unit` — \<10s for the full suite.
+
+## What to mock
+
+- **Supabase** — use `tests/__mocks__/supabase.ts` for reusable mock builders
+- **External APIs** (Stripe, Circle, Persona) — `tests/__mocks__/<provider>.ts`
+- **Time** — `vi.useFakeTimers()` for anything date/time-sensitive
+- **Crypto** — rarely needed; leave real (except for expensive operations where `vi.mock('@noble/ed25519')` helps)
+
+## What NOT to mock
+
+- **Zod schemas** — use real schemas with real inputs
+- **Your own pure functions** — they're the thing being tested
+- **`helpers.ts`** — those are pure; test them directly
+
+## Template
+
+```ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mockSupabase, resetSupabaseMock } from '../__mocks__/supabase.js';
+import { createTransfer } from '../../src/services/transfers.js';
+
+describe('createTransfer', () => {
+  beforeEach(() => {
+    resetSupabaseMock();
+  });
+
+  it('creates a transfer with valid input', async () => {
+    mockSupabase.from('accounts').select.mockResolvedValue({
+      data: { id: 'acc_1', tenant_id: 'ten_1', environment: 'test' },
+      error: null,
+    });
+    mockSupabase.from('transfers').insert.mockResolvedValue({
+      data: { id: 'tx_1' },
+      error: null,
+    });
+
+    const result = await createTransfer({
+      tenantId: 'ten_1',
+      fromAccountId: 'acc_1',
+      amount: '100.00',
+      currency: 'USDC',
+    });
+
+    expect(result.id).toBe('tx_1');
+  });
+
+  it('rejects amount below minimum', async () => {
+    await expect(
+      createTransfer({ tenantId: 'ten_1', amount: '0.0001', currency: 'USDC' })
+    ).rejects.toThrow('AMOUNT_TOO_SMALL');
+  });
+});
+```
+
+## Test the error paths
+
+Most bugs come from the sad path. Every test file should include:
+
+- Valid input → success
+- Missing required field → `VALIDATION_ERROR`
+- Wrong type → `VALIDATION_ERROR`
+- Business rule violation → specific error code
+- Supabase error → surfaces as 500 (or specific 4xx if applicable)
+- Boundary values (0, max, negative, very long strings)
+
+## Running subsets
+
+```bash
+pnpm --filter @sly/api test tests/unit/routes/transfers.test.ts
+pnpm --filter @sly/api test -t 'rejects amount below minimum'
+```
+
+## Watch mode
+
+```bash
+pnpm --filter @sly/api test:watch
+```
+
+Auto-reruns on file change.

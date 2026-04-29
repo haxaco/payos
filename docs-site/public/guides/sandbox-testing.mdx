@@ -1,0 +1,125 @@
+---
+title: "Sandbox testing checklist"
+description: "Exercise everything in sandbox before going live."
+---
+
+Going live with a payments integration should never be a surprise. Run through this checklist in sandbox before touching `pk_live_*`.
+
+## Environment setup
+
+- [ ] Sandbox API key (`pk_test_*`) exported as `SLY_API_KEY`
+- [ ] SDK installed and `sly env ping` returns 200 OK
+- [ ] Webhook endpoint running (local tunnel fine — see [local testing](/webhooks/local-testing))
+- [ ] Webhook subscription created with your intended event list
+- [ ] Webhook secret stored in `SLY_WEBHOOK_SECRET`
+
+## Core objects
+
+- [ ] Create a business account; verify it transitions to `verified` (instant in sandbox)
+- [ ] Create a person account
+- [ ] Create an agent under each; `generate_keypair: true`; save credentials
+- [ ] Set wallet policies on each agent
+- [ ] Fund agent wallets via faucet (`POST /v1/wallets/:id/fund`)
+
+## Transfers
+
+- [ ] Simple `internal` transfer between two wallets — completes in \<10s
+- [ ] `cross_border` transfer with a quote
+- [ ] Transfer that exceeds balance → `INSUFFICIENT_BALANCE`
+- [ ] Transfer with expired quote → `QUOTE_EXPIRED`
+- [ ] Transfer with duplicate `idempotency_key` → returns original, no double-execution
+- [ ] Batch transfer (at least 5 transfers)
+- [ ] Scheduled transfer (dated 2 minutes in the future) — executes on time
+
+## Streams
+
+- [ ] Open a stream; confirm runway and flow rate
+- [ ] Recipient withdraws accrued balance
+- [ ] Update flow rate mid-stream
+- [ ] Pause + resume
+- [ ] Trigger `stream.alert` by setting a very small `initial_deposit` (forces runway to drop fast)
+- [ ] Cancel stream; unused funds return to sender
+
+## Auth
+
+- [ ] Create an API key with a scope subset; confirm out-of-scope endpoints return 403
+- [ ] Revoke an API key; confirm subsequent calls return 401
+- [ ] Ed25519 handshake: request challenge → sign → authenticate → receive `sess_*`
+- [ ] Use `sess_*` to call at least one endpoint per protocol
+- [ ] Rotate Ed25519 key; confirm prior sessions invalidate
+- [ ] Revoke Ed25519 key; confirm no new sessions issue
+
+## Webhooks
+
+- [ ] Receive and verify a `transfer.completed` event
+- [ ] Intentionally break signature verification (wrong secret) — your handler rejects
+- [ ] Replay a failed delivery; confirm your handler dedupes via `event_id`
+- [ ] Kill your endpoint for 5 minutes; confirm Sly retries on schedule; bring endpoint back; recovery delivers all
+- [ ] Test signature rotation with overlap
+
+## Wallet policies
+
+- [ ] Attempt a transaction above `per_tx` limit → `POLICY_VIOLATION`
+- [ ] Attempt a transaction at a blocked merchant → `POLICY_VIOLATION`
+- [ ] Attempt a transaction above `approval_threshold` → `requires_approval` response
+- [ ] Approve the pending approval; transaction executes
+- [ ] Reject an approval; transaction is recorded as rejected
+- [ ] Freeze the wallet; subsequent spends return `WALLET_FROZEN`
+- [ ] Unfreeze; spending resumes
+
+## KYA tiers
+
+- [ ] Agent starts at tier 0; attempt spend above tier-0 cap → `KYA_LIMIT_EXCEEDED`
+- [ ] Submit DSD; confirm upgrade to tier 1
+- [ ] Exceed tier-1 daily cap; confirm block
+- [ ] Request enterprise override to tier 2; confirm expanded cap
+
+## Protocols (smoke test each you use)
+
+- [ ] UCP: merchant creates token → buyer settles → webhook confirms settlement
+- [ ] ACP: create checkout → complete payment → receive fulfillment event
+- [ ] AP2: create mandate → execute within scope → execute outside scope (fails)
+- [ ] x402: call gated endpoint → receive 402 → pay → retry with proof → receive 200
+- [ ] A2A: send task to a peer agent → accept → complete → rate
+- [ ] MCP: list tools over `/mcp` → invoke one
+
+## Failure injection
+
+- [ ] Simulate rail outage: use `POST /v1/simulate/rail-failure` (sandbox only)
+- [ ] Simulate compliance hit: use `POST /v1/simulate/sanctions-hit`
+- [ ] Simulate slow webhook endpoint: make your handler sleep 30s, confirm Sly retries
+
+## Observability
+
+- [ ] Every error you handle surfaces `code` + `request_id`
+- [ ] Your logs include `request_id` on all Sly-touched requests
+- [ ] Dashboard shows your test traffic
+- [ ] `/v1/events` returns the full audit trail for a test agent
+
+## Dry-run migration
+
+Before flipping `pk_test_*` → `pk_live_*`:
+
+- [ ] Identify every place in your code that hardcodes URLs, keys, or prefixes
+- [ ] Confirm environment detection works (e.g. `pk_live` → live URL automatically)
+- [ ] Double-check production-only KYC requirements (sandbox is permissive)
+- [ ] Review rate limits (production has stricter caps than sandbox)
+- [ ] Test that your webhooks' live URL differs from sandbox URL (no cross-env pollution)
+
+## Going live
+
+When every box above is checked:
+
+1. Generate production `pk_live_*` key
+2. Run compliance KYB on your organization (if not already done)
+3. Update webhooks with production URLs
+4. Update monitoring + alerts to page on production errors
+5. Deploy with feature flag → enable for 1% of traffic → monitor → ramp
+
+Congratulations. You're live.
+
+## Tips
+
+- Keep a dedicated sandbox tenant for integration tests — don't mix with dev experimentation
+- Automate the checklist as integration tests — they're the best regression net you'll ever have
+- Re-run this checklist every time you add a feature; sandbox exercise > surprises in prod

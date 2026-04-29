@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
+import { getEnv } from '../utils/helpers.js';
 import { ValidationError } from '../middleware/error.js';
 import { getExchangeRate, MOCK_FX_RATES } from '@sly/utils';
 import { getCircleFXService } from '../services/circle/fx.js';
@@ -80,7 +81,7 @@ function calculateFees(
 // ============================================
 quotes.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Parse and validate body
   let body;
@@ -125,6 +126,7 @@ quotes.post('/', async (c) => {
     .from('quotes')
     .insert({
       tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
       from_currency: fromCurrency,
       to_currency: toCurrency,
       from_amount: amount,
@@ -233,7 +235,7 @@ quotes.get('/fx', async (c) => {
 // ============================================
 quotes.post('/fx', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   let body;
   try {
@@ -267,16 +269,17 @@ quotes.post('/fx', async (c) => {
       .from('quotes')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         from_currency: quote.source_currency,
         to_currency: quote.destination_currency,
         from_amount: quote.source_amount || 0,
         to_amount: quote.destination_amount || 0,
         fx_rate: quote.rate,
         fee_amount: quote.total_fee,
-        fee_breakdown: [{ 
-          type: 'fx_fee', 
-          amount: quote.total_fee, 
-          description: `FX fee (${quote.fee_percentage}%)` 
+        fee_breakdown: [{
+          type: 'fx_fee',
+          amount: quote.total_fee,
+          description: `FX fee (${quote.fee_percentage}%)`
         }],
         corridor_id: quote.corridor,
         expires_at: quote.expires_at,
@@ -407,7 +410,7 @@ quotes.get('/multi', async (c) => {
  */
 quotes.post('/multi', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   let body;
   try {
@@ -447,6 +450,7 @@ quotes.post('/multi', async (c) => {
       .from('quotes')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         from_currency: quote.source_currency,
         to_currency: quote.destination_currency,
         from_amount: quote.source_amount,
@@ -601,13 +605,14 @@ quotes.post('/multi/compare', async (c) => {
 quotes.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const { data: quote, error } = await supabase
     .from('quotes')
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
   
   if (error || !quote) {

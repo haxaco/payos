@@ -1,0 +1,80 @@
+---
+title: "Authentication overview"
+description: "Five auth methods, when to use each, and how they share one context."
+---
+
+Sly supports five authentication methods. They all produce the same `RequestContext` server-side, so once you're authenticated, every endpoint behaves the same regardless of how you got there.
+
+| Method | Token prefix | Use when | Revocable | Scoped |
+|---|---|---|---|---|
+| [API key](/authentication/api-keys) | `pk_test_*` / `pk_live_*` | Server-to-server integration from your backend | Yes, manually | Resource scopes |
+| [Agent token](/authentication/agent-tokens) | `agent_*` | Simple agent auth, getting started | Yes, rotate | Per-agent |
+| [Ed25519 session](/authentication/ed25519-sessions) | `sess_*` | **Production agents** | Yes, per-session | Per-agent |
+| [Portal token](/authentication/portal-tokens) | `portal_*` | Customer-facing usage / billing API access | Yes, revoke | Operation-scoped |
+| [JWT session](/authentication/jwt-sessions) | `eyJ…` | The Sly dashboard UI | Auto-expires 15 min | User-scoped |
+
+## How to choose
+
+<CardGroup cols={2}>
+  <Card title="Backend server integration">
+    Use **[API keys](/authentication/api-keys)**. One key per environment (test/live), rotate on staff changes, store in a secrets manager.
+  </Card>
+  <Card title="Agent running on your infra">
+    Start with **[agent tokens](/authentication/agent-tokens)** for simplicity; move to **[Ed25519 sessions](/authentication/ed25519-sessions)** before going live. Production agents should never send a long-lived secret over the wire.
+  </Card>
+  <Card title="Customer-facing dashboard that needs usage data">
+    Use **[portal tokens](/authentication/portal-tokens)**. They're scoped to read-only operations (e.g. `usage:read`), safe to embed in a customer-facing iframe or browser app.
+  </Card>
+  <Card title="Your own app UI (humans logging in)">
+    **[JWT sessions](/authentication/jwt-sessions)** via Supabase Auth. Used by the Sly dashboard itself; rarely what you want for server integrations.
+  </Card>
+</CardGroup>
+
+## How requests are authenticated
+
+Every authenticated request carries a bearer token:
+
+```http
+GET /v1/accounts HTTP/1.1
+Host: api.getsly.ai
+Authorization: Bearer <token>
+```
+
+The middleware reads the token, determines the method by prefix, and populates a `RequestContext` that includes:
+
+- **`tenantId`** — your organization (always set)
+- **`environment`** — `test` or `live`
+- **`actorType`** — `api_key` | `user` | `agent` | `portal`
+- Method-specific fields — `apiKeyId`, `actorId` + `kyaTier`, `portalScopes`, etc.
+
+All routes are filtered by `tenantId` automatically. You cannot see another tenant's data regardless of which method you use.
+
+## What's public (no auth)
+
+A small set of endpoints accept anonymous requests. You never need to authenticate to call these:
+
+- `/health`, `/ready` — liveness / readiness checks
+- `/.well-known/ucp`, `/.well-known/agent.json` — protocol discovery
+- `/v1/agents/:id/challenge`, `/v1/agents/:id/authenticate` — the Ed25519 handshake
+- `/v1/openapi.json`, `/v1/protocols` — spec + capability discovery
+- `/webhooks/*` — inbound webhooks (signature-verified internally)
+- `/a2a`, `/agents` — A2A JSON-RPC + ERC-8004 agent cards
+
+Everything else requires authentication.
+
+## Common pitfalls
+
+<AccordionGroup>
+  <Accordion title="Missing `Bearer` prefix">
+    The header must be `Authorization: Bearer <token>`. Raw token without `Bearer` returns 401.
+  </Accordion>
+  <Accordion title="Test key against production URL (or vice versa)">
+    `pk_test_*` keys only work on `sandbox.getsly.ai`. `pk_live_*` keys only work on `api.getsly.ai`. Mismatched environment → 401.
+  </Accordion>
+  <Accordion title="Stale cached tokens in staging">
+    The server caches verified tokens for 60 seconds for performance. A freshly-revoked token may work for up to 60 seconds after revocation. Don't treat revocation as instantaneous blocking.
+  </Accordion>
+  <Accordion title="Ed25519 session token expired mid-flow">
+    `sess_*` tokens expire after 1 hour. Catch `401` with `{ "error": "SESSION_EXPIRED" }` and re-run the challenge-response handshake.
+  </Accordion>
+</AccordionGroup>

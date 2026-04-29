@@ -40,7 +40,7 @@ PayOS is deployed as a modern cloud-native application with the following compon
 | **Dashboard** | https://payos-web.vercel.app | ✅ Live |
 | **API** | https://payos-production.up.railway.app | ✅ Live |
 | **Database** | https://YOUR_PROJECT.supabase.co | ✅ Live |
-| **Repository** | https://github.com/haxaco/payos | ✅ Active |
+| **Repository** | https://github.com/Sly-devs/sly | ✅ Active |
 
 ---
 

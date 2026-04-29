@@ -1,0 +1,52 @@
+---
+title: "MPP internals"
+description: "Machine Payments Protocol — session-based machine-to-machine payment flows."
+---
+
+## File
+
+- `apps/api/src/routes/mpp.ts` — 40 endpoints
+
+## Core concept
+
+MPP is session-oriented. Instead of discrete per-request payments (x402), MPP opens a long-lived session between two machines and settles periodically.
+
+Useful when:
+- Many small payments between the same two parties over a short window
+- Ongoing service relationship (e.g. agent subscribes to a feed)
+- Pre-negotiated rates that shouldn't be re-discovered on every call
+
+## Endpoints (partial)
+
+- `POST /v1/mpp/sessions` — open session
+- `GET /v1/mpp/sessions/:id` — get state
+- `POST /v1/mpp/sessions/:id/pay` — settle within session
+- `POST /v1/mpp/sessions/:id/close` — close, final settlement
+- `GET /v1/mpp/sessions/:id/transfers` — list transfers in session
+- `POST /v1/mpp/receipts/verify` — verify receipt issued by session
+
+## Settlement model
+
+Two modes:
+- **Per-payment** — each `pay` call settles immediately
+- **Accumulate** — payments accrue; settle on close or at threshold
+
+Configured at session open.
+
+## Gotchas
+
+- **Session expires without close** — auto-close job runs hourly; unsettled amounts refund to sender
+- **Receipt verification** — signed with session key; verify against session's publicKey, not tenant's
+- **Cross-tenant sessions** — supported; both tenants must grant permission via pre-session handshake
+
+## External dependency
+
+Uses the `mppx` npm package internally for the protocol-level machinery. Version pinned.
+
+## Migration
+
+Low priority for OpenAPIHono migration — not currently a public-marketed protocol.
+
+## Related
+
+- PRD: [`docs/prd/epics/epic-71-mpp-integration.md`](https://github.com/sly-ai/platform/blob/main/docs/prd/epics/epic-71-mpp-integration.md)

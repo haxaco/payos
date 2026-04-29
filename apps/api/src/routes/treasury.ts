@@ -17,7 +17,7 @@ const app = new Hono();
 app.use('*', authMiddleware);
 
 const treasuryService = new TreasuryService();
-const supabase = createClient();
+const supabase: any = createClient();
 
 // ============================================
 // Schemas
@@ -169,7 +169,7 @@ app.post('/sync', async (c) => {
       entityId: null,
       description: `Synced ${result.synced} treasury accounts`,
       metadata: result,
-    });
+    } as any);
 
     return c.json({ data: result });
   } catch (error) {
@@ -197,7 +197,7 @@ app.post('/snapshot', async (c) => {
       entityId: null,
       description: `Created ${snapshotCount} balance snapshots`,
       metadata: { snapshotCount },
-    });
+    } as any);
 
     return c.json({ data: { snapshotCount }, message: `Created ${snapshotCount} snapshots` });
   } catch (error) {
@@ -258,7 +258,7 @@ app.post('/accounts', async (c) => {
       entityId: account.id,
       description: `Created treasury account for ${parsed.rail}/${parsed.currency}`,
       metadata: { rail: parsed.rail, currency: parsed.currency },
-    });
+    } as any);
 
     return c.json({ data: account }, 201);
   } catch (error) {
@@ -293,7 +293,7 @@ app.patch('/accounts/:id', async (c) => {
       entityId: accountId,
       description: `Updated treasury account settings`,
       metadata: parsed,
-    });
+    } as any);
 
     return c.json({ data: account });
   } catch (error) {
@@ -369,7 +369,7 @@ app.post('/alerts/:id/acknowledge', async (c) => {
       entityId: alertId,
       description: `Acknowledged alert: ${alert.title}`,
       metadata: { alertType: alert.alertType, severity: alert.severity },
-    });
+    } as any);
 
     return c.json({ data: alert });
   } catch (error) {
@@ -400,7 +400,7 @@ app.post('/alerts/:id/resolve', async (c) => {
       entityId: alertId,
       description: `Resolved alert: ${alert.title}`,
       metadata: { alertType: alert.alertType, severity: alert.severity },
-    });
+    } as any);
 
     return c.json({ data: alert });
   } catch (error) {
@@ -450,7 +450,7 @@ app.post('/recommendations/generate', async (c) => {
       entityId: null,
       description: `Generated ${recommendations.length} rebalancing recommendations`,
       metadata: { count: recommendations.length },
-    });
+    } as any);
 
     return c.json({
       data: recommendations,
@@ -483,7 +483,7 @@ app.post('/recommendations/:id/approve', async (c) => {
       entityId: recommendationId,
       description: `Approved rebalancing: ${recommendation.recommendedAmount} ${recommendation.sourceCurrency} from ${recommendation.sourceRail} to ${recommendation.targetRail}`,
       metadata: { recommendation },
-    });
+    } as any);
 
     return c.json({ data: recommendation });
   } catch (error) {
@@ -513,7 +513,7 @@ app.post('/recommendations/:id/reject', async (c) => {
       entityId: recommendationId,
       description: `Rejected rebalancing recommendation`,
       metadata: { recommendationId },
-    });
+    } as any);
 
     return c.json({ data: recommendation });
   } catch (error) {
@@ -575,7 +575,7 @@ app.post('/transactions', async (c) => {
       entityId: transaction.id,
       description: `Recorded ${parsed.type} transaction: ${parsed.amount} ${parsed.currency}`,
       metadata: parsed,
-    });
+    } as any);
 
     return c.json({ data: transaction }, 201);
   } catch (error) {

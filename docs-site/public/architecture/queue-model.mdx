@@ -1,0 +1,206 @@
+---
+title: "Queue-backed workers"
+description: "Decouple webhook ack from processing. The shape once event volume grows."
+---
+
+The limit of the [event-driven](/architecture/event-driven) pattern is that your webhook handler *is* your processor. Past moderate volume — or as soon as per-event work gets expensive — you want to decouple: **ack fast, process async**.
+
+Queue-backed workers fix this. The webhook handler does the minimum (verify, dedupe, enqueue) and returns 202 in under 50ms. Background workers drain the queue at whatever pace they can handle.
+
+## The shape
+
+```
+┌─────────┐    POST /webhooks/sly    ┌────────────┐   enqueue   ┌─────────┐
+│  Sly    ├─────────────────────────▶│  Handler   ├────────────▶│  Queue  │
+│         │◀────────── 202 ──────────┤ (verify+   │             │         │
+└─────────┘                          │  dedupe)   │             └────┬────┘
+                                     └────────────┘                  │
+                                                                     │ dequeue
+                                                                     ▼
+                                                              ┌──────────────┐
+                                                              │   Worker(s)  │
+                                                              │              │
+                                                              │  - Process   │
+                                                              │  - Retry     │
+                                                              │  - DLQ       │
+                                                              └──────────────┘
+```
+
+The handler's only job is to put the event on the queue and ack. Workers run independently, at their own pace, with their own retry / DLQ semantics.
+
+## When to adopt this pattern
+
+- **Any per-event external call** — API, email, PDF generation
+- **Volume above ~1k events/minute**
+- **You need fan-out** — one event dispatches to 3 systems
+- **Handler p95 approaching 1 second**
+- **You want independent retry behavior** from Sly's own retries
+
+## Queue options
+
+| Choice | Best for | Tradeoffs |
+|---|---|---|
+| **Postgres table (pgmq, or hand-rolled)** | Small-medium (up to ~5k/min) | Same DB as app; simple; scaled limit ~10k/min |
+| **Redis Streams / Sidekiq / BullMQ** | Medium (5k-50k/min) | Extra infra; persistent; millions/min ceiling |
+| **SQS / Google Pub/Sub / RabbitMQ** | Large | Managed; multi-region; requires operational knowledge |
+| **Kafka** | Massive + multi-consumer | Overkill for most payment backends |
+
+Start with Postgres. Migrate when it hurts.
+
+## Reference: Node + BullMQ
+
+```ts
+// handler.ts
+import express from 'express';
+import { verifyWebhook } from '@sly_ai/sdk';
+import { Queue } from 'bullmq';
+
+const app = express();
+const queue = new Queue('sly-events', { connection: { url: process.env.REDIS_URL } });
+
+app.post('/webhooks/sly', express.raw({ type: '*/*' }), async (req, res) => {
+  // 1. Verify
+  let event;
+  try {
+    event = verifyWebhook(req.body, req.headers['x-sly-signature'] as string, process.env.SLY_WEBHOOK_SECRET!);
+  } catch {
+    return res.status(400).end();
+  }
+
+  // 2. Enqueue with event_id as jobId → automatic dedupe
+  await queue.add(event.type, event, {
+    jobId: event.id,
+    removeOnComplete: true,
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 5_000 },
+  });
+
+  // 3. Ack fast
+  res.status(202).end();
+});
+```
+
+```ts
+// worker.ts
+import { Worker } from 'bullmq';
+
+const worker = new Worker('sly-events', async (job) => {
+  const event = job.data;
+  switch (event.type) {
+    case 'transfer.completed':
+      await heavyProcessing(event);
+      break;
+    // ...
+  }
+}, { connection: { url: process.env.REDIS_URL }, concurrency: 10 });
+
+worker.on('failed', (job, err) => {
+  console.error('job failed', { id: job.id, type: job.name, err });
+});
+```
+
+The Worker process is separate — different container, different scaling. You can have many Worker replicas per Handler replica.
+
+## Dedupe via jobId
+
+Using `event.id` as the job ID gives you idempotency for free — BullMQ refuses to add a duplicate. Same for SQS (via MessageDeduplicationId), Redis Streams (XADD with ID), most other queue backends.
+
+## Retry semantics
+
+Two levels of retry:
+
+1. **Sly → your handler** — 5 attempts, 1m / 5m / 15m / 1h / 24h
+2. **Your worker** — configurable; typical 5 attempts with exponential backoff
+
+Usually you want fewer Sly-level retries and more worker-level retries — Sly's retry is a blunt instrument (resends the whole event), your worker knows the specifics.
+
+Set `attempts: 1` on the queue handler if you want Sly to stop retrying after the first ack (acks are "we got it", not "we succeeded"). Your worker handles actual processing.
+
+## Per-event-type routing
+
+Different event types often want different concurrency and priority:
+
+```ts
+// Payment events: high priority, low concurrency (ordered processing)
+const paymentsQueue = new Queue('sly-payments', { ... });
+
+// Analytics events: low priority, high concurrency (fire and forget)
+const analyticsQueue = new Queue('sly-analytics', { ... });
+
+app.post('/webhooks/sly', ..., async (req, res) => {
+  const event = verify(...);
+  const queue = isCritical(event.type) ? paymentsQueue : analyticsQueue;
+  await queue.add(event.type, event, { jobId: event.id });
+  res.status(202).end();
+});
+```
+
+Benefits: a flood of analytics events can't block payment processing; you can scale payment workers separately.
+
+## DLQ handling
+
+Events that fail all worker retries should land in a dead-letter queue you monitor. Whatever your queue, configure a DLQ and alert on it.
+
+```ts
+worker.on('failed', async (job, err) => {
+  if (job.attemptsMade >= job.opts.attempts) {
+    await pager.notify({
+      service: 'sly-webhooks',
+      event_id: job.data.id,
+      event_type: job.data.type,
+      error: err.message,
+    });
+  }
+});
+```
+
+Never silently discard DLQ items. They're always a real failure — product bug, malformed event, or system limit. Treat them as incidents.
+
+## Back-pressure
+
+If workers can't keep up, the queue grows. At some point this becomes a problem:
+- Latency of event processing climbs
+- Memory / storage on the queue fills
+- Sly-side retry window exhausts before you've drained the backlog
+
+Monitor **queue depth**. Alert if it exceeds a threshold (e.g. 1 minute's worth of events). Scale workers horizontally — most queue libraries make this a single env-var change.
+
+## Parallelism
+
+Single-worker-per-event-type is simplest but throughput-limited. Scale:
+
+- **Horizontal** — more worker processes; queue library distributes
+- **Concurrency within worker** — process N jobs in parallel per process
+
+Both compose. A 10-replica worker cluster with concurrency 20 gives you 200 parallel event processors. That's overkill for most Sly integrations.
+
+## Shared infrastructure notes
+
+If this worker infra is also handling non-webhook work (cron jobs, user-initiated async, etc.), consider:
+- **Separate queues** per workload — prevents starvation
+- **Separate worker pools** — can scale independently
+- **Shared dedupe** — if an event triggers work also doable manually, dedupe across both paths
+
+## Observability
+
+Beyond webhook-level metrics (see [event-driven](/architecture/event-driven#observability)):
+
+- **Queue depth over time** — trending up = backpressure
+- **Job duration by type** — surfaces heavy processors
+- **Retry rate by type** — locates flaky handlers
+- **DLQ arrival rate** — bug / outage indicator
+
+## When this isn't enough
+
+If you're at multiple million events/min or need cross-region durability, consider:
+- Partitioned queues (Kafka-style)
+- [State-machine modeled](/architecture/state-machine) approach with durable state transitions
+- Multi-region worker clusters
+
+Most Sly partners never cross this threshold.
+
+## See also
+
+- [Event-driven](/architecture/event-driven) — the simpler starting point
+- [State-machine modeled](/architecture/state-machine) — for complex multi-step flows
+- [Webhook recipes](/recipes/webhooks) — verification + dedupe patterns

@@ -1,127 +1,246 @@
 'use client';
 
-import { ScrollText, Search, Filter, Download, ChevronRight } from 'lucide-react';
+import { Download, ChevronRight, ShieldCheck, Activity, Webhook, FlaskConical } from 'lucide-react';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useApiFetch, useApiConfig } from '@/lib/api-client';
 
-const mockLogs = [
-  { id: 1, timestamp: '2025-12-12T14:32:15Z', level: 'info', service: 'api', message: 'POST /v1/transfers - 201 Created', duration: '45ms' },
-  { id: 2, timestamp: '2025-12-12T14:32:10Z', level: 'info', service: 'api', message: 'GET /v1/accounts - 200 OK', duration: '12ms' },
-  { id: 3, timestamp: '2025-12-12T14:31:58Z', level: 'warning', service: 'auth', message: 'Rate limit approaching for tenant_123', duration: '-' },
-  { id: 4, timestamp: '2025-12-12T14:31:45Z', level: 'error', service: 'webhook', message: 'Failed to deliver webhook to https://example.com/hook', duration: '5000ms' },
-  { id: 5, timestamp: '2025-12-12T14:31:30Z', level: 'info', service: 'api', message: 'POST /v1/streams - 201 Created', duration: '89ms' },
-  { id: 6, timestamp: '2025-12-12T14:31:15Z', level: 'info', service: 'api', message: 'GET /v1/agents - 200 OK', duration: '23ms' },
-  { id: 7, timestamp: '2025-12-12T14:31:00Z', level: 'warning', service: 'stream', message: 'Stream str_123 health degraded to warning', duration: '-' },
-  { id: 8, timestamp: '2025-12-12T14:30:45Z', level: 'info', service: 'api', message: 'PUT /v1/accounts/acc_123 - 200 OK', duration: '34ms' },
-];
+// Locale-stable timestamp formatter. toLocaleString without a fixed
+// locale produces different output on server vs. client (react #418
+// hydration mismatch). Force en-US so SSR and CSR render identical text.
+function fmtTime(iso: string | undefined | null): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('en-US', {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export default function LogsPage() {
-  const [levelFilter, setLevelFilter] = useState<string>('all');
-  const [serviceFilter, setServiceFilter] = useState<string>('all');
-  const [search, setSearch] = useState('');
-
-  const filteredLogs = mockLogs.filter(log => {
-    if (levelFilter !== 'all' && log.level !== levelFilter) return false;
-    if (serviceFilter !== 'all' && log.service !== serviceFilter) return false;
-    if (search && !log.message.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
-
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case 'error': return 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400';
-      case 'warning': return 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400';
-      case 'info': return 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400';
-      default: return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400';
-    }
-  };
-
   return (
     <div className="p-8 max-w-[1600px] mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Logs</h1>
-          <p className="text-gray-600 dark:text-gray-400">View system and API logs</p>
+          <p className="text-gray-600 dark:text-gray-400">Audit trail, operation events, and request history across your tenant.</p>
         </div>
         <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
           <Download className="h-4 w-4" />
-          Export Logs
+          Export
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search logs..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <select
-          value={levelFilter}
-          onChange={(e) => setLevelFilter(e.target.value)}
-          className="px-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="all">All Levels</option>
-          <option value="info">Info</option>
-          <option value="warning">Warning</option>
-          <option value="error">Error</option>
-        </select>
-        <select
-          value={serviceFilter}
-          onChange={(e) => setServiceFilter(e.target.value)}
-          className="px-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="all">All Services</option>
-          <option value="api">API</option>
-          <option value="auth">Auth</option>
-          <option value="webhook">Webhook</option>
-          <option value="stream">Stream</option>
-        </select>
-      </div>
-
-      {/* Logs Table */}
-      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 dark:bg-gray-900">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Timestamp</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Level</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Service</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Message</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Duration</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-800 font-mono text-sm">
-            {filteredLogs.map((log) => (
-              <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors">
-                <td className="px-6 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                  {new Date(log.timestamp).toLocaleTimeString()}
-                </td>
-                <td className="px-6 py-3">
-                  <span className={`px-2 py-0.5 text-xs font-medium rounded ${getLevelColor(log.level)}`}>
-                    {log.level}
-                  </span>
-                </td>
-                <td className="px-6 py-3 text-gray-600 dark:text-gray-400">
-                  {log.service}
-                </td>
-                <td className="px-6 py-3 text-gray-900 dark:text-white">
-                  {log.message}
-                </td>
-                <td className="px-6 py-3 text-gray-600 dark:text-gray-400">
-                  {log.duration}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Real streams only — every section pulls live data from a
+          tenant-scoped endpoint. No hardcoded mock rows. */}
+      <div className="space-y-3">
+        <OperationEventsSection defaultOpen />
+        <AuditTrailSection defaultOpen />
+        <WebhookDeliveriesSection />
+        <ScenarioRunsSection />
       </div>
     </div>
   );
 }
 
+// ─── Collapsible section wrapper ──────────────────────────────────────────
+// Native <details> + <summary> for keyboard + a11y. defaultOpen sets the
+// initial state; React state controls lazy-fetch enablement.
+
+function CollapsibleSection({
+  icon: Icon,
+  title,
+  subtitle,
+  children,
+  defaultOpen = false,
+  onToggle,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  onToggle?: (open: boolean) => void;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className="group bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden"
+      onToggle={(e) => onToggle?.((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="flex items-center gap-3 px-6 py-4 cursor-pointer list-none hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
+        <ChevronRight className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-90" />
+        <Icon className="h-4 w-4 text-gray-500" />
+        <div className="flex-1">
+          <div className="text-sm font-medium text-gray-900 dark:text-white">{title}</div>
+          {subtitle && <div className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</div>}
+        </div>
+      </summary>
+      <div className="border-t border-gray-100 dark:border-gray-900">{children}</div>
+    </details>
+  );
+}
+
+// ─── Audit Trail — real data via api.reports.getAuditLogs ────────────────
+
+export function AuditTrailSection({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const apiFetch = useApiFetch();
+  const { authToken, apiUrl, apiEnvironment } = useApiConfig();
+  const [open, setOpen] = useState(defaultOpen);
+  const { data, isLoading } = useQuery({
+    queryKey: ['logs', 'audit-trail', apiEnvironment],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/usage/audit-log?limit=50`);
+      if (!res.ok) return { data: [] };
+      return res.json();
+    },
+    // Gate on authToken so the query doesn't fire before JWT is loaded
+    // (fired-without-auth produces a 401 spam in the console).
+    enabled: !!authToken && !!apiUrl && open,
+    refetchInterval: 60_000,
+  });
+  const entries = ((data as any)?.data as any[]) || [];
+
+  return (
+    <CollapsibleSection
+      icon={ShieldCheck}
+      title="Audit Trail"
+      subtitle="Tenant-scoped audit log entries — who did what, when"
+      defaultOpen={defaultOpen}
+      onToggle={setOpen}
+    >
+      {isLoading ? (
+        <div className="p-6 text-sm text-gray-500">Loading audit entries…</div>
+      ) : entries.length === 0 ? (
+        <div className="p-6 text-sm text-gray-500">No audit entries in the current window.</div>
+      ) : (
+        <table className="w-full text-sm font-mono">
+          <thead className="bg-gray-50 dark:bg-gray-900">
+            <tr>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actor</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entity</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-900">
+            {entries.map((e: any) => (
+              <tr key={e.id} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                <td className="px-6 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">{fmtTime(e.createdAt)}</td>
+                <td className="px-6 py-2 text-gray-600 dark:text-gray-400">{e.actor?.name || e.actor?.id?.slice(0, 8) || '—'}</td>
+                <td className="px-6 py-2 text-gray-900 dark:text-white">{e.entityType} <span className="text-gray-400">{String(e.entityId).slice(0, 8)}</span></td>
+                <td className="px-6 py-2 text-gray-900 dark:text-white">{e.action}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </CollapsibleSection>
+  );
+}
+
+// ─── Operation Events — real data via /v1/usage/operations ───────────────
+
+export function OperationEventsSection({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const apiFetch = useApiFetch();
+  const { authToken, apiUrl, apiEnvironment } = useApiConfig();
+  const [open, setOpen] = useState(defaultOpen);
+  const { data, isLoading } = useQuery({
+    queryKey: ['logs', 'operations', apiEnvironment],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/usage/operations?limit=50`);
+      if (!res.ok) return { data: [] };
+      return res.json();
+    },
+    // Gate on authToken so the fetch doesn't fire before JWT is loaded.
+    enabled: !!authToken && !!apiUrl && open,
+    refetchInterval: 30_000,
+  });
+  const events = ((data as any)?.data as any[]) || [];
+
+  return (
+    <CollapsibleSection
+      icon={Activity}
+      title="Operation Events"
+      subtitle="Per-request events from the operations ledger (protocol, category, subject)"
+      defaultOpen={defaultOpen}
+      onToggle={setOpen}
+    >
+      {isLoading ? (
+        <div className="p-6 text-sm text-gray-500">Loading operations…</div>
+      ) : events.length === 0 ? (
+        <div className="p-6 text-sm text-gray-500">No operation events in the current window.</div>
+      ) : (
+        <table className="w-full text-sm font-mono">
+          <thead className="bg-gray-50 dark:bg-gray-900">
+            <tr>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protocol</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Operation</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+              <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-900">
+            {events.map((e: any) => (
+              <tr key={e.id} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                <td className="px-6 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">{fmtTime(e.time || e.occurredAt)}</td>
+                <td className="px-6 py-2 text-gray-600 dark:text-gray-400">{e.protocol || '—'}</td>
+                <td className="px-6 py-2 text-gray-600 dark:text-gray-400">{e.category || '—'}</td>
+                <td className="px-6 py-2 text-gray-900 dark:text-white">{e.operation || '—'}</td>
+                <td className="px-6 py-2 text-gray-600 dark:text-gray-400 max-w-[280px] truncate">{e.subject || '—'}</td>
+                <td className="px-6 py-2">
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded ${e.success ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400' : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'}`}>
+                    {e.success ? 'ok' : 'fail'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </CollapsibleSection>
+  );
+}
+
+// ─── Webhook Deliveries — placeholder pending a dedicated endpoint ───────
+
+function WebhookDeliveriesSection() {
+  return (
+    <CollapsibleSection
+      icon={Webhook}
+      title="Webhook Deliveries"
+      subtitle="Outbound webhook dispatch history with retry state"
+    >
+      <div className="p-6 text-sm text-gray-500">
+        Webhook delivery history is available per-endpoint on the{' '}
+        <a href="/dashboard/webhooks" className="text-blue-600 hover:underline">Webhooks page</a>. A unified stream
+        lands here when the dedicated endpoint ships.
+      </div>
+    </CollapsibleSection>
+  );
+}
+
+// ─── Scenario Runs — placeholder for marketplace-sim history ─────────────
+
+function ScenarioRunsSection() {
+  return (
+    <CollapsibleSection
+      icon={FlaskConical}
+      title="Scenario Runs"
+      subtitle="Marketplace-sim scenario execution history"
+    >
+      <div className="p-6 text-sm text-gray-500">
+        Sim runs are produced by the marketplace-sim sidecar at{' '}
+        <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">127.0.0.1:4500/runs</code>{' '}
+        (dev only). A tenant-visible run history lands here once the sidecar moves behind platform-admin auth.
+      </div>
+    </CollapsibleSection>
+  );
+}

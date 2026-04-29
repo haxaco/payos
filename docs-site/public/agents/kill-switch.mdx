@@ -1,0 +1,133 @@
+---
+title: "Kill-switch"
+description: "Stop an agent instantly. Three levels: freeze spending, revoke auth, terminate agent."
+---
+
+When something goes wrong with an agent in production, you need to stop it immediately — often before you fully understand what happened. Sly offers three graduated kill-switch levels, each faster and more drastic than the last.
+
+## The three levels
+
+| Level | Command | Effect | When to use |
+|---|---|---|---|
+| **1. Freeze wallet** | `POST /v1/agent-wallets/:id/freeze` | Agent can't spend; auth, reads, SSE still work | First response to suspected misbehavior |
+| **2. Revoke auth key** | `DELETE /v1/agents/:id/auth-keys` | Agent can't authenticate at all | Confirmed credential compromise |
+| **3. Terminate agent** | `DELETE /v1/agents/:id` | Agent permanently removed | Post-incident cleanup; unrecoverable |
+
+All three are instant on the live path (though cached tokens may take up to 60 seconds to fully expire — see [auth caveats](/authentication/overview#common-pitfalls)).
+
+## Level 1: Freeze
+
+Safe, reversible, preserves forensic capability. The agent stays logged in, can read data, can emit events — it just can't move money.
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/freeze \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "reason": "Unusual spending pattern detected at 14:22 UTC" }'
+```
+
+Effects:
+- All spending attempts return `403 WALLET_FROZEN`
+- Streams pause (no accrual)
+- Scheduled transfers fail at their scheduled time
+- Agent can still authenticate, read balances, receive SSE events
+- Audit log preserved
+
+Unfreeze:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/unfreeze \
+  -d '{ "acknowledgment": "Reviewed logs — false alarm, resuming" }'
+```
+
+**Use freeze first.** In most incidents this is enough — you stop the bleeding, investigate, and either unfreeze or escalate.
+
+## Level 2: Revoke auth key
+
+Confirmed compromise. The agent (or an attacker with the agent's credentials) can no longer authenticate.
+
+```bash
+curl -X DELETE https://api.getsly.ai/v1/agents/$AGENT_ID/auth-keys \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Effects:
+- All active `sess_*` tokens invalidated
+- Ed25519 public key removed — challenge-response fails
+- Agent token (`agent_*`) remains valid (it's a separate credential) — rotate it too if compromise is suspected at that level:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/agents/$AGENT_ID/rotate-token \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+The agent record stays — you can provision fresh credentials and put the agent back online once the incident is resolved.
+
+## Level 3: Terminate
+
+Last resort. Permanent.
+
+```bash
+curl -X DELETE https://api.getsly.ai/v1/agents/$AGENT_ID \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Effects:
+- Agent record marked `revoked` (tombstoned for audit)
+- All credentials revoked
+- Wallets disassociated (funds remain — terminating an agent does not forfeit funds)
+- Policy, mandates, streams cancelled
+
+Terminated agents cannot be un-terminated. Create a new agent with fresh credentials if you want to continue.
+
+## Kill-switch operator
+
+For Tier 3 (Trusted) agents, Sly requires a named **kill-switch operator** — a human who can execute these actions. The operator's contact is recorded in the agent's policy:
+
+```json
+{
+  "kill_switch": {
+    "operators": ["ops@acme.example"],
+    "contacts": ["+1-555-..."],
+    "notification_channels": ["slack", "sms"]
+  }
+}
+```
+
+When freeze / revoke / terminate events fire, Sly notifies the listed operators immediately through their configured channels. This is true even if the action was triggered by Sly-side automation (e.g. fraud detection auto-freezing).
+
+## Automated freezes
+
+Sly can auto-freeze an agent on certain signals:
+
+- **Velocity violations** — too many transactions in too short a window
+- **Policy-drift alerts** — sudden behavior change compared to baseline
+- **External signals** — integrated threat feeds (sanctions list hits, known-bad addresses)
+- **Customer-initiated** — one-click freeze from the Sly dashboard
+
+Auto-freezes always send notifications and log the triggering signal. Human review is required to unfreeze.
+
+## Incident runbook
+
+When something looks wrong:
+
+<Steps>
+  <Step title="Freeze the wallet">
+    `POST /v1/agent-wallets/:id/freeze` — stops further spending.
+  </Step>
+  <Step title="Query the evaluation log">
+    `GET /v1/agent-wallets/:id/evaluations` — see what the agent was attempting and what was allowed vs. blocked.
+  </Step>
+  <Step title="Read recent transfers">
+    `GET /v1/agents/:id/transactions` — audit what actually executed.
+  </Step>
+  <Step title="Decide">
+    If the behavior was intended (new deployment, new merchant): unfreeze. If not, revoke auth and investigate.
+  </Step>
+  <Step title="Restore or terminate">
+    Either provision a new keypair and resume, or terminate the agent.
+  </Step>
+</Steps>
+
+## Testing the kill-switch
+
+Before going live, actually exercise all three levels in sandbox. Include a kill-switch drill in your deployment checklist. An incident is the worst time to discover your freeze script has a typo.

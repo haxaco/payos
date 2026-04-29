@@ -29,10 +29,20 @@ export interface PaginationParams {
 export type AccountType = 'person' | 'business' | 'agent';
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'suspended';
 
+/**
+ * Secondary classification for a business account. Present only when
+ * type='business' — 'merchant' means the account has a product catalog and
+ * can be transacted with via ACP/UCP/x402. null for people, agents, or
+ * unlabeled businesses.
+ */
+export type AccountSubtype = 'merchant' | 'standard';
+
 export interface Account {
   id: string;
   tenantId: string;
   type: AccountType;
+  /** Secondary classification (only set for type='business'). */
+  subtype?: AccountSubtype | null;
   name: string;
   email?: string;
   country?: string;
@@ -44,6 +54,8 @@ export interface Account {
   balanceAvailable: number;
   balanceInStreams: number;
   balanceBuffer: number;
+  /** Arbitrary tenant-owned JSON. Merchants use this for pos_provider, catalog, rating, etc. */
+  metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }
@@ -280,7 +292,7 @@ export interface StreamStats {
 // Transfer Types
 // ============================================
 
-export type TransferType = 'cross_border' | 'internal' | 'stream_start' | 'stream_withdraw' | 'deposit' | 'withdrawal' | 'x402' | 'payout' | 'refund' | 'wallet_transfer';
+export type TransferType = 'cross_border' | 'internal' | 'stream_start' | 'stream_withdraw' | 'deposit' | 'withdrawal' | 'x402' | 'payout' | 'refund' | 'wallet_transfer' | 'mpp';
 export type TransferStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface Transfer {
@@ -812,6 +824,10 @@ export interface WalletDepositInput {
 
 export interface WalletWithdrawInput {
   amount: number;
+  /** Receiving account UUID — required by the API. */
+  destinationAccountId: string;
+  /** Optional memo / reference string stored on the transfer row. */
+  reference?: string;
 }
 
 export interface X402Quote {
@@ -874,6 +890,53 @@ export interface FundingSourceSummary {
   lastFour?: string;
   brand?: string;
   status: string;
+}
+
+// Crypto Onramp Types (Coinbase Onramp)
+export interface OnrampSessionInput {
+  walletId: string;
+}
+
+export interface OnrampSessionResponse {
+  session_token: string;
+  wallet_address: string;
+  blockchain: string;
+  network: string;
+}
+
+export interface StripeOnrampSessionResponse {
+  client_secret: string;
+  session_id: string;
+  wallet_address: string;
+  blockchain: string;
+  network: string;
+}
+
+export interface WithdrawExternalInput {
+  walletId: string;
+  destinationAddress: string;
+  amount: number;
+  currency?: string;
+}
+
+export interface WithdrawExternalResponse {
+  transfer_id: string;
+  tx_hash?: string;
+  status: string;
+  amount: number;
+}
+
+export interface CrossmintOrderInput {
+  walletId: string;
+  amount?: string;
+  receiptEmail?: string;
+}
+
+export interface CrossmintOrderResponse {
+  order_id: string;
+  client_secret: string;
+  wallet_address: string;
+  blockchain: string;
 }
 
 export interface Mandate {
@@ -1530,4 +1593,47 @@ export interface A2AStreamEvent {
   taskId: string;
   data: Record<string, unknown>;
   timestamp: string;
+}
+
+// ============================================
+// MPP Types (Machine Payments Protocol)
+// ============================================
+
+export interface MppPayInput {
+  serviceUrl: string;
+  amount: number;
+  currency?: string;
+  intent?: string;
+  agentId: string;
+  walletId?: string;
+}
+
+export interface MppOpenSessionInput {
+  serviceUrl: string;
+  depositAmount: number;
+  maxBudget?: number;
+  agentId: string;
+  walletId: string;
+  currency?: string;
+}
+
+export interface MppSessionsListParams {
+  agentId?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MppTransfersListParams {
+  serviceUrl?: string;
+  sessionId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MppProvisionWalletInput {
+  agentId: string;
+  ownerAccountId: string;
+  testnet?: boolean;
+  initialBalance?: number;
 }

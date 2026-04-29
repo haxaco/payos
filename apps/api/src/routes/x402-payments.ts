@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { createHmac } from 'crypto';
 import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getEnv } from '../utils/helpers.js';
 import { createSettlementService } from '../services/settlement.js';
 import { 
   createSpendingPolicyService, 
@@ -440,7 +441,7 @@ setInterval(() => {
  * - Batch settlement via database function
  */
 app.post('/pay', async (c) => {
-  const timings: Record<string, number> = {};
+  const timings: Record<string, number | string> = {};
   const startTotal = Date.now();
   
   try {
@@ -450,7 +451,7 @@ app.post('/pay', async (c) => {
     // Validate request
     const auth = paymentAuthorizationSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // ============================================
     // 1. IDEMPOTENCY CHECK (OPTIMIZED with bloom filter)
@@ -459,7 +460,7 @@ app.post('/pay', async (c) => {
     
     // OPTIMIZATION: Check in-memory first (O(1), ~1ms)
     // If not in set, definitely not processed - skip DB query
-    let existingTransfer = null;
+    let existingTransfer: any = null;
     
     if (hasProcessedRequest(auth.requestId)) {
       // Maybe processed - need to confirm with DB
@@ -468,6 +469,7 @@ app.post('/pay', async (c) => {
         .select('id, status, amount, currency')
         .eq('protocol_metadata->>request_id', auth.requestId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
       existingTransfer = data;
       timings['1_idempotency_check'] = Date.now() - t1;
@@ -504,10 +506,10 @@ app.post('/pay', async (c) => {
     const t2 = Date.now();
 
     // OPTIMIZATION: Check endpoint cache first
-    let endpoint = getCachedEndpoint(auth.endpointId);
-    let endpointError = null;
-    let consumerWallet = null;
-    let consumerWalletError = null;
+    let endpoint: any = getCachedEndpoint(auth.endpointId);
+    let endpointError: any = null;
+    let consumerWallet: any = null;
+    let consumerWalletError: any = null;
     
     if (endpoint) {
       // Endpoint in cache - only fetch wallet
@@ -517,6 +519,7 @@ app.post('/pay', async (c) => {
         .select('*')
         .eq('id', auth.walletId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
       consumerWallet = data;
       consumerWalletError = error;
@@ -528,13 +531,14 @@ app.post('/pay', async (c) => {
           .from('x402_endpoints')
           .select('*')
           .eq('id', auth.endpointId)
-          .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
           .single(),
         supabase
           .from('wallets')
           .select('*')
           .eq('id', auth.walletId)
-          .eq('tenant_id', ctx.tenantId)
+          .eq('tenant_id', ctx.tenantId)  // Source wallet must be caller's tenant
+          .eq('environment', getEnv(ctx))
           .single()
       ]);
       endpoint = endpointResult.data;
@@ -803,12 +807,15 @@ app.post('/pay', async (c) => {
     let providerWallet: { id: string; wallet_type?: string | null; wallet_address?: string | null } | null = null;
     let providerWalletError: any = null;
 
+    // Provider wallet is in the endpoint's tenant (may differ from consumer's tenant)
+    const providerTenantId = endpoint.tenant_id;
     if (endpoint.payment_address) {
       const { data, error } = await supabase
         .from('wallets')
         .select('id, wallet_type, wallet_address, blockchain')
         .eq('wallet_address', endpoint.payment_address)
-        .eq('tenant_id', ctx.tenantId)
+        .eq('tenant_id', providerTenantId)
+        .eq('environment', getEnv(ctx))
         .eq('status', 'active')
         .limit(1)
         .maybeSingle();
@@ -823,7 +830,8 @@ app.post('/pay', async (c) => {
         .from('wallets')
         .select('id, wallet_type, wallet_address, blockchain')
         .eq('owner_account_id', endpoint.account_id)
-        .eq('tenant_id', ctx.tenantId)
+        .eq('tenant_id', providerTenantId)
+        .eq('environment', getEnv(ctx))
         .eq('currency', auth.currency)
         .eq('status', 'active')
         .neq('id', wallet.id)
@@ -850,6 +858,25 @@ app.post('/pay', async (c) => {
       }, 500);
     }
 
+    // If provider wallet is internal, resolve the Circle custodial wallet for on-chain settlement
+    // The internal wallet is a ledger wrapper; the Circle wallet is the real on-chain address
+    let providerWalletFull = providerWallet as any;
+    if (providerWallet.wallet_type === 'internal' || providerWallet.wallet_address?.startsWith('internal://')) {
+      const { data: circleWallet } = await supabase
+        .from('wallets')
+        .select('id, wallet_type, wallet_address, blockchain, provider_wallet_id')
+        .eq('owner_account_id', endpoint.account_id)
+        .eq('tenant_id', providerTenantId)
+        .eq('wallet_type', 'circle_custodial')
+        .eq('status', 'active')
+        .eq('currency', auth.currency)
+        .limit(1)
+        .maybeSingle();
+      if (circleWallet) {
+        providerWalletFull = { ...providerWallet, ...circleWallet, ledgerWalletId: providerWallet.id };
+      }
+    }
+
     // ============================================
     // 9.5. DEFERRED MICRO-PAYMENT CHECK (Epic 38, Story 38.12)
     // For payments below threshold, use PaymentIntent instead of full transfer.
@@ -866,12 +893,13 @@ app.post('/pay', async (c) => {
           supabase,
           tenantId: ctx.tenantId,
           sourceWalletId: wallet.id,
-          destinationWalletId: providerWallet.id,
+          destinationWalletId: providerWalletFull?.id || providerWallet.id,
           sourceAccountId: wallet.owner_account_id,
           destinationAccountId: endpoint.account_id,
           amount: auth.amount,
           nonce: auth.requestId,
           protocol: 'x402',
+          environment: getEnv(ctx) as 'test' | 'live',
           protocolMetadata: {
             endpoint_id: endpoint.id,
             endpoint_path: endpoint.path,
@@ -899,7 +927,8 @@ app.post('/pay', async (c) => {
             updated_at: new Date().toISOString(),
           })
           .eq('id', endpoint.id)
-          .eq('tenant_id', ctx.tenantId);
+          .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx));
 
         // Record telemetry
         {
@@ -974,6 +1003,8 @@ app.post('/pay', async (c) => {
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
+        destination_tenant_id: providerTenantId,
+        environment: getEnv(ctx),
         from_account_id: wallet.owner_account_id,
         to_account_id: endpoint.account_id,
         amount: auth.amount,
@@ -1046,7 +1077,8 @@ app.post('/pay', async (c) => {
           p_gross_amount: auth.amount,
           p_net_amount: netAmount,
           p_transfer_id: transfer.id,
-          p_tenant_id: ctx.tenantId
+          p_tenant_id: ctx.tenantId,
+          p_provider_tenant_id: providerTenantId !== ctx.tenantId ? providerTenantId : null,
         });
 
       timings['11_settlement'] = Date.now() - t11;
@@ -1069,12 +1101,8 @@ app.post('/pay', async (c) => {
       let settlementStatus: 'completed' | 'authorized' = 'completed';
 
       if (isRealWallet && isSandboxEnv) {
-        // Check if provider wallet supports on-chain
-        const { data: providerWalletFull } = await supabase
-          .from('wallets')
-          .select('wallet_address')
-          .eq('id', providerWallet.id)
-          .single();
+        // Check if provider has an on-chain capable wallet (Circle custodial)
+        // providerWalletFull may have been resolved from internal → circle_custodial earlier
         const providerOnChainAddress = providerWalletFull?.wallet_address;
         const providerIsOnChain = !!providerOnChainAddress && !providerOnChainAddress.startsWith('internal://');
 
@@ -1134,7 +1162,8 @@ app.post('/pay', async (c) => {
         updated_at: new Date().toISOString()
       })
       .eq('id', endpoint.id)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
 
     // ============================================
     // 13. TRIGGER WEBHOOK (if configured)
@@ -1187,6 +1216,24 @@ app.post('/pay', async (c) => {
         protocol_metadata: { endpoint_id: endpoint.id, path: endpoint.path },
       });
     }
+
+    // Update agent_skills counters if this endpoint is linked to a skill
+    try {
+      const { data: linkedSkill } = await supabase
+        .from('agent_skills')
+        .select('id, total_invocations, total_fees_collected')
+        .eq('x402_endpoint_id', endpoint.id)
+        .maybeSingle();
+      if (linkedSkill) {
+        await supabase
+          .from('agent_skills')
+          .update({
+            total_invocations: (linkedSkill.total_invocations || 0) + 1,
+            total_fees_collected: parseFloat(String(linkedSkill.total_fees_collected || 0)) + auth.amount,
+          })
+          .eq('id', linkedSkill.id);
+      }
+    } catch { /* non-fatal — skill tracking failure shouldn't block payment */ }
 
     // Mark request as processed in bloom filter for future idempotency checks
     markRequestProcessed(auth.requestId);
@@ -1333,7 +1380,7 @@ app.post('/verify', async (c) => {
     // Fall back to database verification (legacy mode)
     const { requestId, transferId } = verifyPaymentSchema.parse(body);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch transfer
     const queryStart = Date.now();
@@ -1343,6 +1390,7 @@ app.post('/verify', async (c) => {
       .eq('id', transferId)
       .eq('protocol_metadata->>request_id', requestId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('type', 'x402')
       .single();
     const queryTime = Date.now() - queryStart;
@@ -1413,7 +1461,7 @@ app.get('/quote/:endpointId', async (c) => {
   try {
     const ctx = c.get('ctx');
     const endpointId = c.req.param('endpointId');
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Fetch endpoint
     const { data: endpoint, error } = await supabase
@@ -1421,6 +1469,7 @@ app.get('/quote/:endpointId', async (c) => {
       .select('id, name, path, method, base_price, currency, volume_discounts, status, total_calls')
       .eq('id', endpointId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (error || !endpoint) {

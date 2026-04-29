@@ -1,0 +1,215 @@
+---
+title: "Agent quickstart"
+description: "From zero to your first paid call as an AI agent — 10 minutes, sandbox, no real money."
+---
+
+This page is for **agent authors** — you're building an AI agent (Claude, Cursor, a custom runtime, an autonomous trader) and want it to transact on Sly. If you're a fintech operator wanting to register an agent for your product, see the [main quickstart](/get-started/quickstart) instead.
+
+By the end of this page your agent will:
+
+1. Be authenticated as itself (single-agent-scoped)
+2. Know its own identity, wallet, and limits via `whoami`
+3. Make a real x402 paid call against the sandbox
+
+## Prerequisites
+
+You need an agent on a Sly tenant. Two paths:
+
+<Tabs>
+  <Tab title="You own the tenant">
+    1. [Sign up](/get-started/sign-up) for a Sly tenant (free)
+    2. Open the dashboard at `app.getsly.ai`
+    3. Register an agent under a business account: **Agents → New agent**
+    4. Copy the `agent_test_...` token shown ONCE on creation
+  </Tab>
+  <Tab title="A tenant is provisioning your agent">
+    Your tenant operator (the platform you're integrating with) registers your agent and hands you an `agent_test_...` token via secure channel. You don't need their API key — your agent token is sufficient.
+  </Tab>
+</Tabs>
+
+```bash
+export AGENT_TOKEN=agent_test_...   # your single-agent token
+export SLY_API=https://sandbox.getsly.ai
+```
+
+<Tip>
+**Agent tokens are single-agent-scoped by default.** This is the right baseline — no global admin keys floating around. If your agent ever needs to read a sibling agent or move funds across agents, see [Scope grants](/agents/scope-grants).
+</Tip>
+
+## 1. Verify your identity
+
+Always call `whoami` first when starting a task. Cheap, idempotent, returns everything you need to plan paid actions.
+
+<CodeGroup>
+```bash HTTP
+curl $SLY_API/v1/context/whoami \
+  -H "Authorization: Bearer $AGENT_TOKEN"
+```
+
+```ts MCP (Claude Desktop / mcporter)
+// 1. Add @sly_ai/mcp-server to your MCP client config
+// 2. Set SLY_BASE_URL + SLY_AUTH_TOKEN env vars
+// 3. Then from inside the model context:
+await tools.whoami();
+```
+</CodeGroup>
+
+Response includes:
+
+```json
+{
+  "actorType": "agent",
+  "actorId": "uuid",
+  "actorName": "TinaProvider",
+  "kyaTier": 1,
+  "environment": "test",
+  "default_agent_id": "uuid",
+  "wallet": {
+    "address": "0x...",
+    "balance": { "USDC": "5.00" }
+  },
+  "tenant_id": "...",
+  "parent_account_id": "..."
+}
+```
+
+Why call this first:
+- `default_agent_id` is auto-passed by every paid MCP tool — so you never need to type your own id
+- `wallet.balance` tells you whether you can afford the call you're about to make
+- `kyaTier` tells you your per-call / daily / monthly limits (see [KYA tiers](/agents/kya-tiers))
+
+## 2. Discover an x402 endpoint
+
+Pick any [x402](/protocols/x402)-protected URL. The sandbox includes test endpoints; or use [`x402_probe`](/agents/mcp-tool-catalog) to inspect a real endpoint without paying.
+
+<CodeGroup>
+```ts MCP
+const probe = await tools.x402_probe({
+  url: "https://api.example.com/data"
+});
+// → { price, network, vendor, classification, reputation, fallback? }
+```
+
+```bash HTTP
+# Probe any x402 endpoint without paying
+curl https://api.example.com/data
+# → 402 Payment Required, body has the challenge
+```
+</CodeGroup>
+
+**Always check `reputation.recommendation` before paying:**
+
+| Recommendation | Action |
+|---|---|
+| `trusted` | Safe to pay |
+| `caution` | Pay only if you can tolerate failures; check `reasoning` |
+| `avoid` | Skip — historical success rate too low |
+| `unknown` | First-time vendor; consider a small test call first |
+
+If `fallback.url` is set, the vendor offers a free path — try that for low-volume reads before paying.
+
+## 3. Make your first paid call
+
+<CodeGroup>
+```ts MCP
+const result = await tools.x402_fetch({
+  url: "https://api.example.com/data",
+  method: "GET",
+  maxPrice: 0.01      // hard cap: refuse if price exceeds $0.01 USDC
+});
+// → { status: 200, body: ..., transferId: "uuid", costUsdc: 0.005 }
+```
+
+```bash HTTP (raw)
+# 1. Sign authorization
+curl -X POST $SLY_API/v1/agents/$AGENT_ID/x402-sign \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -d '{ "url": "https://api.example.com/data", "maxPriceUsdc": 0.01 }'
+# → { authorization, transferId }
+
+# 2. Submit with X-PAYMENT header
+curl https://api.example.com/data \
+  -H "X-PAYMENT: $(echo $authorization | base64)"
+
+# 3. Record the settlement back to Sly
+curl -X POST $SLY_API/v1/transfers/$TRANSFER_ID/record-settlement \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -d '{ "status": "completed", "response": { "status": 200, "body": "..." } }'
+```
+</CodeGroup>
+
+The MCP path collapses all three steps into one call.
+
+## 4. Rate the call quality (optional but recommended)
+
+Sly's vendor reliability score is built on per-call ratings from agents like yours. After a paid call, tell the system whether the vendor delivered:
+
+```ts MCP
+await tools.x402_rate_call({
+  transferId: result.transferId,
+  deliveredWhatAsked: true,
+  satisfaction: "excellent",   // or acceptable | partial | unacceptable
+  score: 95,                    // 0-100
+  flags: [],                    // or ["stale_data", "hallucinated", ...]
+  note: "Got 50 tokens with the volume data I needed"
+});
+```
+
+This feeds the [vendor leaderboard](/agents/mcp-tool-catalog) — vendors with high HTTP success but low correctness drop in ranking, so future agents skip them.
+
+## 5. Handling common 403s
+
+<AccordionGroup>
+  <Accordion title="`SCOPE_REQUIRED` — you're trying to act on a sibling agent">
+    The default agent token only acts on its own resources. To read another agent in the tenant or move funds across agents:
+
+    ```ts
+    await tools.request_scope({
+      scope: "tenant_read",   // or tenant_write, treasury
+      lifecycle: "one_shot",
+      purpose: "Read sibling agent X to plan handoff"
+    });
+    // → { request_id }
+    ```
+
+    Then poll until the tenant owner approves:
+
+    ```ts
+    await tools.scope_status({ requestId });
+    // → { status: "approved" | "denied" | "pending" }
+    ```
+
+    Full lifecycle in [Scope grants](/agents/scope-grants).
+  </Accordion>
+
+  <Accordion title="`LIMIT_EXCEEDED` / `DAILY_LIMIT_EXCEEDED` — your KYA tier blocks this amount">
+    Your KYA tier caps per-call / daily / monthly spending. Either:
+    - Reduce the call amount
+    - Wait until the daily window resets
+    - Have your tenant owner upgrade your KYA tier (see [KYA tiers](/agents/kya-tiers))
+
+    Don't retry blindly — retrying won't help until one of those changes.
+  </Accordion>
+
+  <Accordion title="`WALLET_FROZEN` — operator paused your wallet">
+    Your wallet is in defensive freeze ([kill-switch level 1](/agents/kill-switch)). Reads and auth still work; spending is blocked. This is intentional — surface the freeze to your operator (don't auto-retry) and ask whether to resume.
+  </Accordion>
+
+  <Accordion title="`X402_PAYMENT_REQUIRED` — vendor 402'd, retry with payment">
+    Expected on first hit to any x402 endpoint. The 402 body carries the price + challenge. Use `x402_fetch` (or sign-then-pay manually per step 3) to settle.
+  </Accordion>
+</AccordionGroup>
+
+## 6. Upgrade to Ed25519 (production)
+
+For real-money production deployments, swap the long-lived `agent_*` token for short-lived `sess_*` session tokens via Ed25519 challenge-response. The private key never leaves your agent process; sessions are individually revocable; you get [persistent SSE](/agents/persistent-sse) push events.
+
+See [Ed25519 sessions](/authentication/ed25519-sessions) for the full handshake. Migration requires zero route changes — both methods produce identical request context.
+
+## What's next
+
+- **[KYA tiers](/agents/kya-tiers)** — what your tier lets you spend, how to upgrade
+- **[Wallet policies](/agents/wallet-policies)** — same-agent spending caps your operator can configure
+- **[Scope grants](/agents/scope-grants)** — when you need to act across agents
+- **[MCP tool catalog](/agents/mcp-tool-catalog)** — every tool the MCP server exposes
+- **[Agent kill-switch](/agents/kill-switch)** — what happens when your operator pulls the plug

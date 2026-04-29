@@ -1,0 +1,204 @@
+---
+title: "Recipes: Transfers & refunds"
+description: "Common transfer patterns — batching, retries, idempotency, export."
+---
+
+## Send a transfer with idempotent retries
+
+Handle transient failures without accidentally double-sending.
+
+<CodeGroup>
+```ts Node SDK
+import { Sly } from '@sly_ai/sdk';
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+
+async function sendWithRetries(opts, maxAttempts = 3) {
+  const idempotencyKey = opts.idempotencyKey ?? `tx-${opts.orderId}`;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await sly.transfers.create({ ...opts, idempotencyKey });
+    } catch (e) {
+      if (attempt === maxAttempts) throw e;
+      if (!['UPSTREAM_TIMEOUT', 'RATE_LIMIT_EXCEEDED', 'INTERNAL_ERROR'].includes(e.code)) throw e;
+      await new Promise(r => setTimeout(r, 500 * 2 ** attempt));
+    }
+  }
+}
+
+const result = await sendWithRetries({
+  type: 'internal',
+  from_wallet_id: 'wal_src',
+  to_wallet_id: 'wal_dst',
+  amount: '100.00',
+  currency: 'USDC',
+  orderId: 'ord_abc',
+});
+```
+
+```bash cURL
+# Same idempotency key on every retry — server returns cached result
+KEY="tx-ord_abc-$(date +%Y%m%d)"
+
+for attempt in 1 2 3; do
+  RESP=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+    -X POST https://api.getsly.ai/v1/transfers \
+    -H "Authorization: Bearer $SLY_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "{\"type\":\"internal\",\"from_wallet_id\":\"wal_src\",\"to_wallet_id\":\"wal_dst\",\"amount\":\"100.00\",\"currency\":\"USDC\",\"idempotency_key\":\"$KEY\"}")
+  [ "$RESP" = "200" ] || [ "$RESP" = "201" ] && break
+  sleep $((attempt * 2))
+done
+cat /tmp/resp.json
+```
+</CodeGroup>
+
+## Wait for a transfer to settle
+
+<CodeGroup>
+```ts SDK (polling)
+const final = await sly.transfers.waitForSettlement(transfer.id, { timeout: 60_000 });
+if (final.status === 'completed') {
+  // done
+} else {
+  console.error('Settlement failed:', final.failure_reason);
+}
+```
+
+```ts Webhook (preferred)
+// server.ts
+app.post('/webhooks/sly', express.raw({ type: '*/*' }), (req, res) => {
+  const event = verifyWebhook(req.body, req.headers['x-sly-signature'], process.env.WEBHOOK_SECRET);
+  if (event.type === 'transfer.completed') {
+    markOrderPaid(event.data.transfer_id);
+  }
+  res.status(200).end();
+});
+```
+</CodeGroup>
+
+Polling is simpler; webhooks scale. Use webhooks past the prototype stage.
+
+## Batch payroll (100+ transfers)
+
+```ts
+const payroll = await sly.transfers.createBatch({
+  transfers: contractors.map(c => ({
+    to_account_id: c.sly_account_id,
+    amount: c.pay_usdc,
+    currency: 'USDC',
+    memo: `Payroll ${period}`,
+    idempotency_key: `payroll-${period}-${c.id}`,
+  })),
+  idempotency_key: `payroll-batch-${period}`,
+});
+
+// Subscribe to batch.completed for final totals
+```
+
+The batch returns a `batch_id`; individual items each settle independently. Partial failures don't sink the whole batch.
+
+## Full refund with audit trail
+
+```ts
+const refund = await sly.refunds.create({
+  originalTransferId: 'tx_...',
+  reason: 'customer_request',
+  reasonDetails: 'Customer emailed 2026-04-23 requesting full refund',
+  // omit amount = full refund
+}, { idempotencyKey: `refund-${originalId}` });
+
+console.log(refund.status);   // 'pending' → 'completed'
+```
+
+Always include `reasonDetails` — it becomes your dispute defense if the buyer chargebacks later.
+
+## Partial refund with running total
+
+Multiple partial refunds per transfer are allowed as long as the cumulative total stays ≤ the original amount:
+
+```ts
+// First partial: $30 of $100
+await sly.refunds.create({
+  originalTransferId: 'tx_abc',
+  amount: '30.00',
+  reason: 'service_not_rendered',
+  reasonDetails: 'Partial delivery — 3 of 10 items',
+});
+
+// Later: additional $20
+await sly.refunds.create({
+  originalTransferId: 'tx_abc',
+  amount: '20.00',
+  reason: 'customer_request',
+});
+
+// Would fail: $100 + $30 + $20 = exceeds original
+// await sly.refunds.create({ originalTransferId: 'tx_abc', amount: '55.00', ... });
+```
+
+## Export transfers to CSV
+
+Dashboard has a one-click export; the programmatic path:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/exports \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "resource": "transfers",
+    "format": "csv",
+    "filters": {
+      "status": "completed",
+      "since": "2026-04-01",
+      "until": "2026-04-30"
+    }
+  }'
+# Response: { "export_id": "exp_...", "status": "pending" }
+
+# Poll
+curl https://api.getsly.ai/v1/exports/exp_... \
+  -H "Authorization: Bearer pk_live_..."
+# When status = 'ready', fetch `download_url`
+```
+
+For ad-hoc exports < 10k rows, the dashboard's CSV download is faster. API exports win past that scale.
+
+## Schedule a recurring transfer
+
+Monthly payroll on the 1st at 9am ET:
+
+```ts
+const schedule = await sly.scheduledTransfers.create({
+  fromAccountId: 'acc_treasury',
+  toAccountId: 'acc_payroll_dest',
+  amount: '2500.00',
+  currency: 'USDC',
+  frequency: 'monthly',
+  dayOfMonth: 1,
+  timezone: 'America/New_York',
+  startDate: '2026-05-01T09:00:00-04:00',
+  retryEnabled: true,
+});
+```
+
+See [scheduled transfers](/settlement/scheduled-transfers) for full frequency options.
+
+## Watch for stuck transfers
+
+```ts
+const stuck = await sly.transfers.list({
+  status: 'processing',
+  updated_before: new Date(Date.now() - 10 * 60_000).toISOString(), // > 10 min
+});
+
+if (stuck.data.length > 0) {
+  await pageOps(stuck.data);
+}
+```
+
+Run this in a cron or cron-equivalent (Vercel Cron, GitHub Actions) every 5-10 min. Stuck transfers past their typical settlement window usually indicate rail issues.
+
+## See also
+
+- Full [cross-border transfer walkthrough](/guides/cross-border-transfer)
+- [Refund guide](/guides/issue-refund)
+- [Core concepts: Transfers](/core-concepts/transfers)

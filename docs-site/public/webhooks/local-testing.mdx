@@ -1,0 +1,93 @@
+---
+title: "Local testing"
+description: "Tunnel webhooks to your dev machine."
+---
+
+Webhooks require a public HTTPS endpoint. For local development, tunnel traffic through ngrok or a similar tool.
+
+## Option 1: ngrok
+
+```bash
+# Start your local server
+npm run dev  # listens on 127.0.0.1:3000
+
+# In another terminal, tunnel
+ngrok http 3000
+```
+
+ngrok prints a public URL like `https://abc123.ngrok-free.app`. Use that as the webhook URL:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/webhooks \
+  -d '{
+    "url": "https://abc123.ngrok-free.app/webhooks/sly",
+    "events": ["transfer.completed"]
+  }'
+```
+
+ngrok URLs change on restart unless you have a paid plan with reserved subdomains. Easy pattern: update the webhook URL on startup via a pre-test script.
+
+## Option 2: Cloudflare Tunnel
+
+Free, no URL rotation:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+Creates a stable `https://foo-bar-baz.trycloudflare.com` URL.
+
+## Option 3: VS Code / JetBrains port forwarding
+
+Recent versions of both IDEs have built-in public tunneling. VS Code: `Ports` panel → `Forward a Port` → `Port Visibility: Public`.
+
+## Testing without tunnels
+
+If you just want to confirm your handler logic without a live Sly webhook, call your endpoint directly:
+
+```bash
+# Generate a valid signature
+node -e "
+  const crypto = require('crypto');
+  const body = JSON.stringify({ type: 'transfer.completed', data: {...} });
+  const t = Math.floor(Date.now()/1000);
+  const sig = crypto.createHmac('sha256', 'whsec_...').update(\`\${t}.\${body}\`).digest('hex');
+  console.log(\`t=\${t},v1=\${sig}\`);
+  console.log(body);
+"
+```
+
+Then:
+
+```bash
+curl -X POST http://localhost:3000/webhooks/sly \
+  -H "X-Sly-Signature: t=...,v1=..." \
+  -H "Content-Type: application/json" \
+  -d '{"type":"transfer.completed","data":{...}}'
+```
+
+## Fire test deliveries
+
+The simplest way to exercise your handler with a real Sly-signed payload:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/webhooks/wh_.../test \
+  -H "Authorization: Bearer pk_test_..."
+```
+
+Sends a `webhook.test` event (or a canned event of the type you specify) through the real delivery pipeline.
+
+## Local inspection
+
+The dashboard's webhook detail page shows the last 100 deliveries per endpoint, including request/response bodies and timing. Much easier than grepping server logs.
+
+Programmatic access:
+
+```bash
+curl https://sandbox.getsly.ai/v1/webhooks/wh_.../deliveries \
+  -H "Authorization: Bearer pk_test_..."
+```
+
+## Tunnel-less alternative: SSE
+
+If tunneling is a pain, ship with [persistent SSE](/agents/persistent-sse) instead — your code makes an outbound connection and receives events. No inbound port needed. Ideal for dev environments, local agents, and anything behind corporate firewalls.

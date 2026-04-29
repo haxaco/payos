@@ -1,0 +1,109 @@
+---
+title: "Portal tokens"
+description: "portal_* scoped tokens for customer-facing dashboards and embedded experiences."
+---
+
+Portal tokens are short-lived, operation-scoped credentials meant to be embedded in customer-facing surfaces — typically a dashboard you host where your own customers check their Sly usage, invoices, or transfer history.
+
+Unlike API keys (which grant broad tenant access) and agent tokens (which act as an agent), portal tokens are **read-oriented** and **scoped to specific operations**. They're safe to ship to a browser.
+
+## Token format
+
+```
+portal_live_Vx9qP2kL7mNj4BfR6tYcW1DgA8...
+```
+
+## Common scopes
+
+| Scope | Grants |
+|---|---|
+| `usage:read` | Read usage counters for a specific customer |
+| `invoices:read` | Read invoices for a specific customer |
+| `transfers:read` | List transfers the customer is party to |
+| `agents:read` | List agents owned by the customer |
+
+Scopes are combined with a resource filter — e.g. "read usage for `customer_id = cust_abc`" — so one portal token cannot see another customer's data.
+
+## Create a portal token
+
+Your backend mints the token on demand, typically when a customer loads their dashboard:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/portal-tokens \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_reference": "cust_abc",
+    "scopes": ["usage:read", "invoices:read"],
+    "expires_in": 3600
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "ptk_...",
+  "token": "portal_live_Vx9qP2kL7mNj4BfR...",
+  "customer_reference": "cust_abc",
+  "scopes": ["usage:read", "invoices:read"],
+  "expires_at": "2026-04-22T15:30:00Z"
+}
+```
+
+Ship the token to the browser; your customer's session uses it directly against the Sly API.
+
+## Use a portal token
+
+From the browser (or anywhere):
+
+```js
+const res = await fetch('https://api.getsly.ai/v1/usage', {
+  headers: { Authorization: `Bearer ${portalToken}` },
+});
+const usage = await res.json();
+```
+
+Calls outside the granted scopes return `403 Forbidden`. Calls after `expires_at` return `401`.
+
+## Revoke a token
+
+```bash
+curl -X DELETE https://api.getsly.ai/v1/portal-tokens/ptk_... \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+Revocation is instant (tokens aren't cached like API keys).
+
+## Typical integration pattern
+
+```
+Customer's browser          Your backend          Sly API
+      │                          │                   │
+      │ GET /dashboard           │                   │
+      ├─────────────────────────▶│                   │
+      │                          │ POST              │
+      │                          │ /v1/portal-tokens │
+      │                          ├──────────────────▶│
+      │                          │                   │
+      │                          │ { token }         │
+      │                          │◀──────────────────┤
+      │  HTML + portal_token     │                   │
+      │◀─────────────────────────┤                   │
+      │                          │                   │
+      │  GET /v1/usage           │                   │
+      │  Authorization: Bearer portal_...            │
+      ├──────────────────────────┼──────────────────▶│
+      │                          │                   │
+      │  usage data              │                   │
+      │◀─────────────────────────┼───────────────────┤
+```
+
+Your backend never exposes `pk_live_*` to the browser. The portal token is scoped, expiring, and customer-bound.
+
+## Security practices
+
+- **Short TTLs.** Default to 1 hour. Re-mint on page load if needed.
+- **One customer_reference per token.** Never mint a token that spans customers.
+- **Read-only scopes by default.** Write operations should flow through your backend.
+- **Log every portal_token mint** for audit. Include the requesting customer's identity.

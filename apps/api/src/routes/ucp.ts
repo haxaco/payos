@@ -137,7 +137,7 @@ router.post('/tokens', async (c) => {
     trackOp({
       tenantId: ctx.tenantId,
       operation: OpType.UCP_TOKEN_ACQUIRED,
-      subject: `ucp/token/${token.token || token.id || 'unknown'}`,
+      subject: `ucp/token/${token.token || (token as any).id || 'unknown'}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
       correlationId: c.get('requestId'),
@@ -158,7 +158,7 @@ router.post('/tokens', async (c) => {
  */
 router.post('/settle', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const body = await c.req.json();
 
   // Validate request
@@ -269,7 +269,7 @@ router.post('/settle', async (c) => {
     trackOp({
       tenantId: ctx.tenantId,
       operation: OpType.UCP_SETTLEMENT_EXECUTED,
-      subject: `ucp/settlement/${settlement.id || settlement.settlement_id || 'unknown'}`,
+      subject: `ucp/settlement/${settlement.id || (settlement as any).settlement_id || 'unknown'}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
       correlationId: c.get('requestId'),
@@ -319,7 +319,7 @@ router.post('/settle', async (c) => {
  */
 router.post('/settle/mandate', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const body = await c.req.json();
 
   // Validate request
@@ -425,7 +425,7 @@ router.post('/settle/mandate', async (c) => {
     trackOp({
       tenantId: ctx.tenantId,
       operation: OpType.UCP_SETTLEMENT_EXECUTED,
-      subject: `ucp/settlement/${settlement.id || settlement.settlement_id || 'unknown'}`,
+      subject: `ucp/settlement/${settlement.id || (settlement as any).settlement_id || 'unknown'}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
       correlationId: c.get('requestId'),
@@ -491,7 +491,7 @@ router.post('/settle/mandate', async (c) => {
 router.get('/settlements/:id', async (c) => {
   const ctx = c.get('ctx');
   const settlementId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const settlement = await getSettlement(settlementId, ctx.tenantId, supabase);
   if (!settlement) {
@@ -509,7 +509,7 @@ router.get('/settlements/:id', async (c) => {
 router.get('/settlements', async (c) => {
   const ctx = c.get('ctx');
   const query = c.req.query();
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const status = query.status as string | undefined;
   const corridor = query.corridor as string | undefined;
@@ -550,7 +550,7 @@ router.post('/quote', async (c) => {
   const quote = getSettlementQuote(
     parsed.data.amount,
     parsed.data.currency,
-    parsed.data.corridor
+    parsed.data.corridor ?? 'auto'
   );
 
   // Add expiration (quotes valid for 30 seconds)
@@ -598,7 +598,7 @@ router.get('/info', (c) => {
 
   return c.json({
     handler: {
-      id: 'payos_latam',
+      id: 'sly_latam',
       name: 'com.payos.latam_settlement',
       version: '2026-01-11',
     },
@@ -623,7 +623,7 @@ router.get('/analytics', async (c) => {
   const ctx = c.get('ctx');
   const query = c.req.query();
   const period = query.period || '30d';
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Calculate date range based on period
   const now = new Date();

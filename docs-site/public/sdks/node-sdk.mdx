@@ -1,0 +1,224 @@
+---
+title: "Node SDK"
+description: "@sly_ai/sdk — typed client for Node.js, TypeScript, and Deno."
+---
+
+The Node SDK is the primary client library for server integrations. It's typed, auto-retrying, auth-aware, and covers every endpoint.
+
+## Install
+
+```bash
+npm install @sly_ai/sdk
+# or
+pnpm add @sly_ai/sdk
+```
+
+## Initialize
+
+```ts
+import { Sly } from '@sly_ai/sdk';
+
+// API key auth
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+
+// Agent auth (Ed25519)
+const agent = new Sly({
+  agentId: 'agt_...',
+  privateKey: process.env.AGENT_PRIVATE_KEY!,
+  autoReauth: true,   // re-runs handshake on 401
+});
+```
+
+The SDK picks the correct base URL from your key prefix — `pk_test_*` → sandbox, `pk_live_*` → production.
+
+## Resource clients
+
+Every resource has its own client:
+
+```ts
+// Accounts
+sly.accounts.create({ type: 'business', name: 'Acme' });
+sly.accounts.list({ type: 'business' });
+sly.accounts.get(id);
+sly.accounts.update(id, { name: 'Acme Inc.' });
+
+// Agents
+sly.agents.create({ parentAccountId, name, kyaTier: 1, generateKeypair: true });
+sly.agents.getLimits(id);
+sly.agents.requestLimitIncrease(id, { to_tier: 2 });
+
+// Wallets
+sly.wallets.list();
+sly.wallets.getBalance(walletId);
+sly.wallets.freeze(walletId, { reason: '...' });
+
+// Transfers
+sly.transfers.create({ from_wallet_id, to_wallet_id, amount, currency });
+sly.transfers.createBatch({ transfers: [...] });
+
+// Streams
+sly.streams.create({ from_wallet_id, to_wallet_id, flow_rate, initial_deposit });
+sly.streams.withdraw(streamId, { amount });
+```
+
+## Protocol clients
+
+```ts
+sly.ucp.createToken({...});
+sly.ucp.settle({...});
+
+sly.acp.createCheckout({...});
+sly.acp.completeCheckout(id, {...});
+
+sly.ap2.createMandate({...});
+sly.ap2.executeMandate(id, {...});
+
+sly.x402.pay({...});
+sly.x402.verify({...});
+sly.x402.fetch(url, { walletId });  // auto 402-handling
+
+sly.a2a.sendTask({...});
+sly.a2a.listTasks();
+sly.a2a.marketplaceSearch({ skill });
+
+sly.mcp.listTools();
+sly.mcp.invokeTool(name, args);
+```
+
+## Auto-retries
+
+By default, network errors and 5xx responses retry with exponential backoff (3 attempts, 100ms → 400ms → 1600ms). Idempotent operations (GET, DELETE, plus POSTs with `idempotency_key`) are safe to retry. Non-idempotent POSTs retry only on network errors, never on 5xx.
+
+Tune:
+
+```ts
+const sly = new Sly({
+  apiKey,
+  retries: 5,
+  retryBackoff: 'linear',
+  timeout: 30_000,
+});
+```
+
+## Idempotency
+
+Always set an idempotency key on writes you care about:
+
+```ts
+await sly.transfers.create({
+  ...,
+  idempotencyKey: `tx-${orderId}`,  // stable per attempt
+});
+```
+
+Keys are cached 24 hours. Repeated POSTs with the same key return the original result.
+
+## Error handling
+
+The SDK throws typed errors:
+
+```ts
+import { SlyError, SlyInsufficientBalance, SlyPolicyViolation } from '@sly_ai/sdk';
+
+try {
+  await sly.transfers.create({...});
+} catch (e) {
+  if (e instanceof SlyInsufficientBalance) {
+    // handle
+  } else if (e instanceof SlyPolicyViolation) {
+    // handle
+  } else if (e instanceof SlyError) {
+    console.error(e.code, e.message, e.details);
+  }
+}
+```
+
+Every thrown error has:
+- `code` — machine-readable [error code](/resources/error-codes)
+- `message` — human-readable
+- `status` — HTTP status
+- `details` — contextual info (amount, limits, offending field)
+- `requestId` — for support tickets
+
+## Pagination
+
+List endpoints return a page + continuation:
+
+```ts
+const { data, pagination } = await sly.transfers.list({ limit: 100 });
+if (pagination.totalPages > 1) {
+  const page2 = await sly.transfers.list({ limit: 100, page: 2 });
+}
+```
+
+Or iterate via async iterator:
+
+```ts
+for await (const transfer of sly.transfers.iterate({})) {
+  console.log(transfer.id);
+}
+```
+
+## Persistent SSE
+
+Open a push channel (requires agent auth):
+
+```ts
+const agent = new Sly({ agentId, privateKey, autoReauth: true });
+
+await agent.connect({
+  onTask: async (task) => {...},
+  onTransfer: async (tr) => {...},
+  onApproval: async (ap) => {...},
+});
+```
+
+Handles reconnection, `Last-Event-ID` replay, and session refresh.
+
+## LangChain integration
+
+The SDK exports LangChain-compatible tools:
+
+```ts
+import { LangChainTools } from '@sly_ai/sdk';
+import { AgentExecutor } from 'langchain/agents';
+
+const tools = new LangChainTools(sly).all();
+const executor = await AgentExecutor.fromAgentAndTools({ agent, tools });
+```
+
+Gives any LangChain agent full Sly access with automatic permission filtering.
+
+## Webhook verification
+
+```ts
+import { verifyWebhook } from '@sly_ai/sdk';
+
+app.post('/webhooks/sly', (req, res) => {
+  try {
+    const event = verifyWebhook(req.body, req.headers['x-sly-signature'], process.env.WEBHOOK_SECRET);
+    // event is typed
+  } catch (e) {
+    return res.status(400).end();
+  }
+});
+```
+
+See [webhook verification](/sdks/webhook-verification).
+
+## Typescript types
+
+All request + response shapes are exported:
+
+```ts
+import type {
+  Account, Agent, Wallet, Transfer, Stream,
+  CreateTransferInput, TransferStatus,
+} from '@sly_ai/sdk';
+```
+
+## Further reading
+
+- Full method index: [API reference](/api-reference)
+- CLI (built on the same SDK): [`@sly_ai/cli`](/sdks/cli)
+- MCP server (also built on the SDK): [`@sly_ai/mcp-server`](/sdks/mcp-server)

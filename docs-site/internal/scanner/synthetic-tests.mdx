@@ -1,0 +1,81 @@
+---
+title: "Synthetic agent shopping tests"
+description: "Run a simulated agent against a merchant to see what fails."
+---
+
+Synthetic tests actually attempt a purchase on a merchant as an agent would. They produce a much richer signal than static scanning — they reveal runtime friction that the probes can't see.
+
+## File
+
+`apps/scanner/src/demand/synthetic-tests.ts`
+
+## Flow
+
+```
+1. Given merchant URL + test scenario (e.g. "buy $10 product")
+2. Scanner simulates agent:
+   a. Discover product (crawl, extract)
+   b. Add to cart (submit form, intercept cookies)
+   c. Fill shipping
+   d. Proceed to payment
+   e. Attempt payment (mock card / x402 / whatever the merchant offers)
+3. Record at each step: succeeded, failed, reason
+4. Persist full trace to scanner_agent_tests
+```
+
+## What we *don't* do
+
+- Actually pay real money. In production runs, we stop just before confirming the payment (mock cards that fail at the last step). In fully-live testing (rare, with permission): we pay and immediately refund.
+- Run malicious payloads. Not a pen-test.
+- Skip CAPTCHAs. If the site has a CAPTCHA, we record "friction: CAPTCHA" and stop.
+
+## Scenarios
+
+- **Guest checkout** — basic flow
+- **Registered user** — create account, check out
+- **x402 endpoint** — for APIs
+- **Agent-declared** — sending `User-Agent: ClaudeAgent/1.0` to see if we're differentially treated
+- **Mandate-backed** — present an AP2 mandate, see if the merchant honors it
+
+## Output
+
+```json
+{
+  "test_id": "test_...",
+  "merchant": "example.com",
+  "scenario": "guest_checkout_card",
+  "status": "completed" | "blocked" | "errored",
+  "time_to_first_block": 42.1,
+  "block_reason": "CAPTCHA at shipping form",
+  "steps": [
+    { "step": "discover_product", "ok": true, "duration_ms": 1200 },
+    { "step": "add_to_cart", "ok": true, ... },
+    { "step": "fill_shipping", "ok": true, ... },
+    { "step": "payment_form", "ok": false, "reason": "captcha" }
+  ]
+}
+```
+
+## Running tests
+
+From internal dashboard, MCP tool (`run_agent_shopping_test`), or API:
+
+```bash
+curl -X POST https://scanner.internal/v1/scanner/tests \
+  -H "Authorization: Bearer ..." \
+  -d '{
+    "merchant_url": "https://example.com",
+    "scenario": "guest_checkout_card"
+  }'
+```
+
+## Responsible use
+
+- Respect `robots.txt` for the scan origin
+- Stop early on abuse signals (captcha, 429, explicit refusal)
+- Don't re-run same scenario > 1x/week per merchant
+- Merchants can opt out via `meta name="sly-scanner" content="noscan"` — checked at scan start
+
+## Scaling
+
+Synthetic tests are expensive (30s-5min each). Batch cadence capped at 10 concurrent. Prioritize merchants of strategic interest to avoid bulk-hammering long-tail merchants.

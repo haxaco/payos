@@ -1,22 +1,30 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { 
+import {
   mapTransferFromDb,
   logAudit,
   isValidUUID,
   getPaginationParams,
   paginationResponse,
+  getEnv,
 } from '../utils/helpers.js';
 import { createBalanceService } from '../services/balances.js';
 import {
   ValidationError,
   NotFoundError,
-  InsufficientBalanceError
+  InsufficientBalanceError,
+  QuoteExpiredError
 } from '../middleware/error.js';
 import { storeIdempotencyResponse } from '../middleware/idempotency.js';
 import { ErrorCode } from '@sly/types';
+import { trackFirstEvent } from '../services/beta-access.js';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
+import {
+  sendTransferCompletedEmail,
+  sendTransferFailedEmail,
+  getNotificationRecipients,
+} from '../services/email.js';
 
 const transfers = new Hono();
 
@@ -38,7 +46,7 @@ const createTransferSchema = z.object({
 // ============================================
 transfers.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Parse query params
   const query = c.req.query();
@@ -67,10 +75,30 @@ transfers.get('/', async (c) => {
   let dbQuery = supabase
     .from('transfers')
     .select('*', { count: 'exact' })
-    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
-  
+
+  // Agent tokens: scope to transfers the agent initiated OR where
+  // the agent's parent account is a party (from/to), including cross-tenant.
+  if (ctx.actorType === 'agent' && ctx.actorId) {
+    const parentAccountId = ctx.parentAccountId;
+    if (parentAccountId) {
+      // Agent can see transfers it initiated OR where its parent account is sender/receiver
+      dbQuery = dbQuery.or(
+        `initiated_by_id.eq.${ctx.actorId},from_account_id.eq.${parentAccountId},to_account_id.eq.${parentAccountId}`
+      );
+    } else {
+      // No parent account — only transfers this agent initiated, scoped to tenant
+      dbQuery = dbQuery
+        .eq('tenant_id', ctx.tenantId)
+        .eq('initiated_by_id', ctx.actorId);
+    }
+  } else {
+    // Non-agent actors: strict tenant scoping
+    dbQuery = dbQuery.eq('tenant_id', ctx.tenantId);
+  }
+
   if (status) {
     dbQuery = dbQuery.eq('status', status);
   }
@@ -119,6 +147,7 @@ transfers.get('/', async (c) => {
       .select('id')
       .eq('id', walletId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (!wallet) {
@@ -138,8 +167,37 @@ transfers.get('/', async (c) => {
     throw new Error('Failed to fetch transfers from database');
   }
   
-  const transfers = (data || []).map(row => mapTransferFromDb(row));
-  
+  // Batch-fetch agent on-chain IDs and wallet addresses for agent-initiated transfers
+  const agentInitiatedIds = [...new Set(
+    (data || []).filter(r => r.initiated_by_type === 'agent' && r.initiated_by_id).map(r => r.initiated_by_id)
+  )];
+  const agentOnChainMap = new Map<string, string>();
+  const agentWalletMap = new Map<string, string>();
+  if (agentInitiatedIds.length > 0) {
+    const [{ data: agents }, { data: wallets }] = await Promise.all([
+      supabase.from('agents').select('id, erc8004_agent_id').in('id', agentInitiatedIds).eq('environment', getEnv(ctx)),
+      supabase.from('wallets').select('managed_by_agent_id, wallet_address').in('managed_by_agent_id', agentInitiatedIds).eq('environment', getEnv(ctx)).like('wallet_address', '0x%'),
+    ]);
+    for (const a of agents || []) {
+      if (a.erc8004_agent_id) agentOnChainMap.set(a.id, a.erc8004_agent_id);
+    }
+    for (const w of wallets || []) {
+      if (w.managed_by_agent_id && w.wallet_address) agentWalletMap.set(w.managed_by_agent_id, w.wallet_address);
+    }
+  }
+
+  const transfers = (data || []).map(row => {
+    if (row.initiated_by_type === 'agent') {
+      if (agentOnChainMap.has(row.initiated_by_id)) {
+        row.initiator_erc8004_agent_id = agentOnChainMap.get(row.initiated_by_id);
+      }
+      if (agentWalletMap.has(row.initiated_by_id)) {
+        row.initiator_wallet_address = agentWalletMap.get(row.initiated_by_id);
+      }
+    }
+    return mapTransferFromDb(row);
+  });
+
   return c.json(paginationResponse(transfers, count || 0, { page, limit }));
 });
 
@@ -148,7 +206,7 @@ transfers.get('/', async (c) => {
 // ============================================
 transfers.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Get idempotency key from middleware context or header (fallback)
   const idempotencyKey = c.get('idempotencyKey') || c.req.header('X-Idempotency-Key');
@@ -160,6 +218,7 @@ transfers.post('/', async (c) => {
       .from('transfers')
       .select('*')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('idempotency_key', idempotencyKey)
       .single();
     
@@ -190,32 +249,33 @@ transfers.post('/', async (c) => {
     .select('id, name, balance_available, verification_status')
     .eq('id', fromAccountId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (fromError || !fromAccount) {
     throw new NotFoundError('Source account', fromAccountId);
   }
-  
+
   const { data: toAccount, error: toError } = await supabase
     .from('accounts')
-    .select('id, name, verification_status')
+    .select('id, name, verification_status, tenant_id')
     .eq('id', toAccountId)
-    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
   
   if (toError || !toAccount) {
     throw new NotFoundError('Destination account', toAccountId);
   }
-  
+
+  // Cross-tenant transfers are allowed. Each marketplace agent has its own tenant,
+  // so cross-tenant is the normal operating mode. The real governance controls are
+  // spending limits (per-tx/daily/monthly), balance checks, wallet freeze, and audit
+  // trail — all of which apply regardless of destination tenant.
+
   // Check sender has sufficient balance
   const availableBalance = parseFloat(fromAccount.balance_available) || 0;
   if (availableBalance < amount) {
-    throw new InsufficientBalanceError(
-      fromAccountId,
-      availableBalance.toString(),
-      amount.toString(),
-      'USD'
-    );
+    throw new InsufficientBalanceError(availableBalance, amount);
   }
   
   // Determine transfer type
@@ -262,13 +322,42 @@ transfers.post('/', async (c) => {
     destinationAmount = (amount - feeAmount) * fxRate;
   }
   
+  // Resolve on-chain wallets for both accounts so the settlement worker
+  // can call Circle.transferTokens() or route through smart wallets.
+  // Without these IDs, the worker falls back to ledger-only settlement.
+  const { data: srcWallet } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('owner_account_id', fromAccountId)
+    .in('wallet_type', ['circle_custodial', 'smart_wallet'])
+    .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: dstWallet } = await supabase
+    .from('wallets')
+    .select('id')
+    .eq('owner_account_id', toAccountId)
+    .in('wallet_type', ['circle_custodial', 'smart_wallet'])
+    .eq('status', 'active')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
   // Create transfer
   const { data: transfer, error: createError } = await supabase
     .from('transfers')
     .insert({
       tenant_id: ctx.tenantId,
+      destination_tenant_id: toAccount.tenant_id || ctx.tenantId,
+      environment: getEnv(ctx),
       type: transferType,
-      status: isInternal ? 'completed' : 'processing', // Internal transfers complete instantly
+      // All transfers go through the settlement pipeline — no shortcuts.
+      // The settlement worker calls Circle.transferTokens() or routes through
+      // the smart wallet based on the agent's wallet type. 'authorized' means
+      // the ledger debit is done, on-chain settlement is pending.
+      status: 'authorized',
       from_account_id: fromAccountId,
       from_account_name: fromAccount.name,
       to_account_id: toAccountId,
@@ -284,8 +373,13 @@ transfers.post('/', async (c) => {
       fee_amount: feeAmount,
       description,
       idempotency_key: idempotencyKey,
-      processing_at: isInternal ? null : new Date().toISOString(),
-      completed_at: isInternal ? new Date().toISOString() : null,
+      processing_at: new Date().toISOString(),
+      completed_at: null,
+      protocol_metadata: {
+        protocol: transferType,
+        source_wallet_id: srcWallet?.id || null,
+        destination_wallet_id: dstWallet?.id || null,
+      },
     })
     .select()
     .single();
@@ -317,10 +411,38 @@ transfers.post('/', async (c) => {
           failed_at: new Date().toISOString(),
           failure_reason: error.message,
         })
-        .eq('id', transfer.id);
-      
+        .eq('id', transfer.id)
+        .eq('environment', getEnv(ctx));
+
+      // Notify tenant admins of failure (fire-and-forget)
+      getNotificationRecipients(ctx.tenantId).then(emails => {
+        for (const email of emails) {
+          sendTransferFailedEmail({
+            to: email,
+            amount: amount.toString(),
+            currency: 'USDC',
+            recipientName: toAccount.name,
+            transferId: transfer.id,
+            reason: error.message,
+          }).catch(err => console.error('[email] Transfer failed email error:', err));
+        }
+      }).catch(() => {});
+
       throw error;
     }
+
+    // Notify tenant admins of successful transfer (fire-and-forget)
+    getNotificationRecipients(ctx.tenantId).then(emails => {
+      for (const email of emails) {
+        sendTransferCompletedEmail({
+          to: email,
+          amount: amount.toString(),
+          currency: 'USDC',
+          recipientName: toAccount.name,
+          transferId: transfer.id,
+        }).catch(err => console.error('[email] Transfer completed email error:', err));
+      }
+    }).catch(() => {});
   }
   
   // Mark quote as used
@@ -351,6 +473,9 @@ transfers.post('/', async (c) => {
     },
   });
   
+  // Track first transaction for beta funnel (fire-and-forget)
+  trackFirstEvent(ctx.tenantId, 'first_transaction').catch(() => {});
+
   // Fire workflow auto-triggers (fire-and-forget)
   triggerWorkflows(supabase, ctx.tenantId, 'transfer', 'insert', {
     id: transfer.id,
@@ -410,30 +535,85 @@ transfers.post('/', async (c) => {
 transfers.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid transfer ID format');
   }
   
-  const { data, error } = await supabase
+  let singleQuery = supabase
     .from('transfers')
     .select('*')
     .eq('id', id)
-    .eq('tenant_id', ctx.tenantId)
-    .single();
-  
+    .eq('environment', getEnv(ctx));
+
+  // For agents, allow cross-tenant access (verified below); others get strict tenant scoping
+  if (ctx.actorType !== 'agent') {
+    singleQuery = singleQuery.eq('tenant_id', ctx.tenantId);
+  }
+
+  const { data, error } = await singleQuery.single();
+
   if (error || !data) {
     throw new NotFoundError('Transfer', id);
   }
-  
+
+  // For agent actors, verify they are a party to this transfer
+  if (ctx.actorType === 'agent') {
+    const parentAccountId = ctx.parentAccountId;
+    const isParty =
+      data.initiated_by_id === ctx.actorId ||
+      (parentAccountId && (
+        data.from_account_id === parentAccountId ||
+        data.to_account_id === parentAccountId
+      ));
+    if (!isParty) {
+      throw new NotFoundError('Transfer', id);
+    }
+  }
+
+  // Enrich missing account names
+  if (!data.from_account_name && data.from_account_id) {
+    const { data: fromAcct } = await supabase.from('accounts').select('name').eq('id', data.from_account_id).eq('environment', getEnv(ctx)).single();
+    if (fromAcct?.name) data.from_account_name = fromAcct.name;
+  }
+  if (!data.to_account_name && data.to_account_id) {
+    const { data: toAcct } = await supabase.from('accounts').select('name').eq('id', data.to_account_id).eq('environment', getEnv(ctx)).single();
+    if (toAcct?.name) data.to_account_name = toAcct.name;
+  }
+
+  // Enrich with agent's on-chain identity and wallet if initiated by an agent
+  if (data.initiated_by_type === 'agent' && data.initiated_by_id) {
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('erc8004_agent_id')
+      .eq('id', data.initiated_by_id)
+      .eq('environment', getEnv(ctx))
+      .single();
+    if (agent?.erc8004_agent_id) {
+      data.initiator_erc8004_agent_id = agent.erc8004_agent_id;
+    }
+    const { data: wallet } = await supabase
+      .from('wallets')
+      .select('wallet_address')
+      .eq('managed_by_agent_id', data.initiated_by_id)
+      .eq('environment', getEnv(ctx))
+      .like('wallet_address', '0x%')
+      .limit(1)
+      .single();
+    if (wallet?.wallet_address) {
+      data.initiator_wallet_address = wallet.wallet_address;
+    }
+  }
+
   const transfer = mapTransferFromDb(data);
-  const responseBody: any = { 
+  const responseBody: any = {
     data: transfer,
     links: {
       self: `/v1/transfers/${id}`,
       from_account: `/v1/accounts/${data.from_account_id}`,
       to_account: `/v1/accounts/${data.to_account_id}`,
+      ...(data.tx_hash ? { explorer: `https://sepolia.basescan.org/tx/${data.tx_hash}` } : {}),
     },
   };
   
@@ -471,7 +651,7 @@ transfers.get('/:id', async (c) => {
 transfers.post('/:id/cancel', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid transfer ID format');
@@ -482,12 +662,13 @@ transfers.post('/:id/cancel', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (fetchError || !transfer) {
     throw new NotFoundError('Transfer', id);
   }
-  
+
   // Can only cancel pending transfers
   if (transfer.status !== 'pending') {
     const error: any = new ValidationError(`Cannot cancel transfer with status: ${transfer.status}`);
@@ -508,6 +689,7 @@ transfers.post('/:id/cancel', async (c) => {
       failure_reason: 'Cancelled by user',
     })
     .eq('id', id)
+    .eq('environment', getEnv(ctx))
     .select()
     .single();
   
@@ -527,7 +709,7 @@ transfers.post('/:id/cancel', async (c) => {
     actorName: ctx.actorName,
   });
   
-  return c.json({ 
+  return c.json({
     data: mapTransferFromDb(data),
     links: {
       self: `/v1/transfers/${id}`,
@@ -535,6 +717,369 @@ transfers.post('/:id/cancel', async (c) => {
       to_account: `/v1/accounts/${data.to_account_id}`,
     },
   });
+});
+
+// ============================================
+// POST /v1/transfers/:id/record-settlement
+// Called by x402_fetch after it submits X-PAYMENT. Records the outcome
+// regardless of success: on paid, flips the row to 'completed' with the
+// facilitator's tx hash; on failure, marks it cancelled with the reason;
+// always captures response metadata (status, size, body preview, duration,
+// content-type) so the dashboard can distinguish "paid but the upstream
+// returned garbage" from "paid and got real data."
+//
+// Body preview is capped at ~2KB to keep rows small and avoid storing
+// long LLM outputs / transcriptions in the ledger.
+// ============================================
+const responseMetadataSchema = z.object({
+  status: z.number().int().optional(),
+  statusText: z.string().optional(),
+  contentType: z.string().optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  bodyPreview: z.string().max(2048).optional(),
+  bodyIsJson: z.boolean().optional(),
+  headers: z.record(z.string()).optional(),   // only a curated subset (facilitator-relevant)
+}).optional();
+
+const classificationSchema = z.object({
+  code: z.string().max(64),
+  explanation: z.string().max(500),
+  recommendation: z.string().max(500).nullable().optional(),
+}).optional();
+
+// Per-call result quality — Epic 81 quality layer. Callers (agent or
+// user) rate whether this specific call actually delivered what was
+// asked. Used by the vendor leaderboard to catch vendors that return
+// valid-looking-but-useless JSON (100% HTTP success, 30% correctness).
+const resultQualitySchema = z.object({
+  deliveredWhatAsked: z.boolean(),
+  satisfaction: z.enum(['excellent', 'acceptable', 'partial', 'unacceptable']),
+  score: z.number().int().min(0).max(100),
+  flags: z.array(z.string().max(64)).max(16).optional(),
+  note: z.string().max(2000).optional(),
+  evidence: z.any().optional(),
+}).optional();
+
+const recordSettlementSchema = z.object({
+  // Success path: on-chain tx hash from the facilitator receipt.
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'tx_hash must be 0x + 64 hex chars').optional(),
+  network: z.string().optional(),
+  payer: z.string().optional(),
+  settledAt: z.string().datetime().optional(),
+  // Failure path: no tx hash, just a reason.
+  failureReason: z.string().max(500).optional(),
+  // Always captured when the client has it — doesn't require either path.
+  responseMetadata: responseMetadataSchema,
+  // Failure classification — tells the dashboard WHY the call failed
+  // (agentkit required / facilitator rejected / vendor backend / etc).
+  classification: classificationSchema,
+  // Optional quality rating from the caller — one network trip instead
+  // of a follow-up POST /rate-result. Safe to omit.
+  resultQuality: resultQualitySchema,
+}).refine(
+  (d) => !!(d.txHash || d.failureReason || d.responseMetadata || d.resultQuality),
+  { message: 'Provide at least one of txHash, failureReason, responseMetadata, or resultQuality' },
+);
+
+// Shapes an x402_call_quality row from a parsed resultQuality payload
+// and the auth context. Used by both the inline path (record-settlement)
+// and the standalone path (/:id/rate-result) so the two stay in sync.
+function buildCallQualityRow(
+  ctx: any,
+  transferId: string,
+  host: string,
+  q: z.infer<typeof resultQualitySchema> extends infer T ? (T extends undefined ? never : NonNullable<T>) : never,
+): any {
+  // Map the auth context to a stable (rated_by_type, rated_by_id) pair.
+  // agents (including sess_* Ed25519 sessions) → 'agent' + agent id
+  // user JWT → 'user' + user id
+  // api key → 'api_key' + api key id
+  let ratedByType: 'agent' | 'user' | 'api_key' | 'auto' = 'api_key';
+  let ratedById: string | null = null;
+  let ratedByName: string | null = null;
+  if (ctx.actorType === 'agent') {
+    ratedByType = 'agent';
+    ratedById = ctx.actorId ?? null;
+    ratedByName = ctx.actorName ?? null;
+  } else if (ctx.actorType === 'user') {
+    ratedByType = 'user';
+    ratedById = ctx.userId ?? null;
+    ratedByName = ctx.userName ?? null;
+  } else {
+    ratedByType = 'api_key';
+    ratedById = ctx.apiKeyId ?? null;
+    ratedByName = null;
+  }
+  return {
+    tenant_id: ctx.tenantId,
+    transfer_id: transferId,
+    host,
+    agent_id: ctx.actorType === 'agent' ? (ctx.actorId ?? null) : null,
+    delivered_what_asked: q.deliveredWhatAsked,
+    satisfaction: q.satisfaction,
+    score: q.score,
+    flags: q.flags ?? null,
+    note: q.note ?? null,
+    evidence: q.evidence ?? null,
+    rated_by_type: ratedByType,
+    rated_by_id: ratedById,
+    rated_by_name: ratedByName,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+transfers.post('/:id/record-settlement', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  if (!isValidUUID(id)) throw new ValidationError('Invalid transfer ID format');
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { throw new ValidationError('Invalid JSON body'); }
+  const parsed = recordSettlementSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError('Invalid body', parsed.error.issues);
+  }
+  const { txHash, network, payer, settledAt, failureReason, responseMetadata, classification, resultQuality } = parsed.data;
+
+  const supabase: any = createClient();
+
+  const { data: row, error: fetchErr } = await supabase
+    .from('transfers')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
+    .single();
+
+  if (fetchErr || !row) throw new NotFoundError('Transfer', id);
+
+  if (row.type !== 'x402' || (row as any).protocol_metadata?.direction !== 'external') {
+    throw new ValidationError('record-settlement only applies to external x402 transfers');
+  }
+
+  const pm: any = (row as any).protocol_metadata || {};
+
+  // Idempotency on success: if this row already carries the same tx_hash,
+  // return unchanged. Different hashes signal a replay/facilitator bug.
+  if (txHash && (row as any).tx_hash) {
+    if ((row as any).tx_hash.toLowerCase() === txHash.toLowerCase()) {
+      return c.json({ data: mapTransferFromDb(row), already_recorded: true });
+    }
+    const err: any = new ValidationError('Transfer already has a different settlement tx hash recorded');
+    err.details = { existing: (row as any).tx_hash, submitted: txHash };
+    throw err;
+  }
+
+  // Only pending rows can transition. Already-terminal rows just get their
+  // response metadata merged in (non-destructive).
+  const isTerminal = row.status !== 'pending';
+  if (isTerminal && (txHash || failureReason)) {
+    throw new ValidationError(`Cannot transition transfer in status '${row.status}'`);
+  }
+
+  // Sanity: if the facilitator reports the payer, it should match our stored
+  // from_address. Soft warn; don't fail the write.
+  if (payer && pm.from_address && payer.toLowerCase() !== String(pm.from_address).toLowerCase()) {
+    console.warn(`[record-settlement] payer mismatch on ${id}: facilitator=${payer} ledger=${pm.from_address}`);
+  }
+
+  const nowIso = new Date().toISOString();
+  const nextProtocolMetadata: any = { ...pm };
+  if (responseMetadata) nextProtocolMetadata.response = responseMetadata;
+  if (classification) nextProtocolMetadata.classification = classification;
+
+  let updatePayload: any = { protocol_metadata: nextProtocolMetadata };
+  let auditAction = 'response_recorded';
+
+  if (txHash) {
+    const settledAtIso = settledAt || nowIso;
+    updatePayload = {
+      ...updatePayload,
+      status: 'completed',
+      tx_hash: txHash,
+      completed_at: settledAtIso,
+      settled_at: settledAtIso,
+      settlement_network: network || (row as any).settlement_network,
+      protocol_metadata: {
+        ...nextProtocolMetadata,
+        settlement: {
+          facilitator_payer: payer || null,
+          facilitator_network: network || null,
+          recorded_at: nowIso,
+          recorded_by_actor_type: ctx.actorType,
+          recorded_by_actor_id: ctx.actorId,
+        },
+      },
+    };
+    auditAction = 'settlement_recorded';
+  } else if (failureReason) {
+    updatePayload = {
+      ...updatePayload,
+      status: 'cancelled',
+      failed_at: nowIso,
+      failure_reason: failureReason.slice(0, 500),
+    };
+    auditAction = 'failure_recorded';
+  }
+
+  const { data: updated, error: updateErr } = await (supabase.from('transfers') as any)
+    .update(updatePayload)
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .select()
+    .single();
+
+  if (updateErr || !updated) {
+    console.error('[record-settlement] update failed', updateErr);
+    throw new Error('Failed to record settlement');
+  }
+
+  // Inline quality rating — if the caller sent one, upsert an
+  // x402_call_quality row keyed to (transfer, rater). Non-fatal if it
+  // fails; the settlement write is the source of truth.
+  if (resultQuality) {
+    const host = String(pm?.resource?.host || '').trim().toLowerCase();
+    const qualityRow = buildCallQualityRow(ctx, id, host, resultQuality);
+    const { error: qErr } = await (supabase.from('x402_call_quality') as any)
+      .upsert(qualityRow, { onConflict: 'transfer_id,rated_by_type,rated_by_id' });
+    if (qErr) {
+      console.warn('[record-settlement] quality rating upsert failed', qErr);
+    }
+  }
+
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'transfer',
+    entityId: id,
+    action: auditAction,
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: {
+      tx_hash: txHash || null,
+      network: network || null,
+      failure_reason: failureReason || null,
+      response_status: responseMetadata?.status ?? null,
+      classification_code: classification?.code ?? null,
+    },
+  });
+
+  return c.json({
+    data: mapTransferFromDb(updated),
+    already_recorded: false,
+    links: {
+      self: `/v1/transfers/${id}`,
+    },
+  });
+});
+
+// ============================================
+// POST /v1/transfers/:id/rate-result
+// Post-hoc quality rating for an x402 transfer — used when the agent
+// realizes the data was bad an hour later, or when a user rates from
+// the dashboard. Inline rating on record-settlement is one trip; this
+// is the two-trip path.
+// ============================================
+const rateResultSchema = z.object({
+  deliveredWhatAsked: z.boolean(),
+  satisfaction: z.enum(['excellent', 'acceptable', 'partial', 'unacceptable']),
+  score: z.number().int().min(0).max(100),
+  flags: z.array(z.string().max(64)).max(16).optional(),
+  note: z.string().max(2000).optional(),
+  evidence: z.any().optional(),
+});
+
+transfers.post('/:id/rate-result', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  if (!isValidUUID(id)) throw new ValidationError('Invalid transfer ID format');
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { throw new ValidationError('Invalid JSON body'); }
+  const parsed = rateResultSchema.safeParse(body);
+  if (!parsed.success) throw new ValidationError('Invalid body', parsed.error.issues);
+
+  const supabase: any = createClient();
+
+  const { data: row, error: fetchErr } = await supabase
+    .from('transfers')
+    .select('id, type, tenant_id, protocol_metadata, environment')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
+    .single();
+  if (fetchErr || !row) throw new NotFoundError('Transfer', id);
+  if ((row as any).type !== 'x402') {
+    throw new ValidationError('rate-result only applies to x402 transfers');
+  }
+
+  const pm: any = (row as any).protocol_metadata || {};
+  const host = String(pm?.resource?.host || '').trim().toLowerCase();
+  if (!host) {
+    throw new ValidationError('Transfer has no resource.host — cannot attribute rating to a vendor');
+  }
+
+  const qualityRow = buildCallQualityRow(ctx, id, host, parsed.data);
+  const { data: upserted, error: upErr } = await (supabase.from('x402_call_quality') as any)
+    .upsert(qualityRow, { onConflict: 'transfer_id,rated_by_type,rated_by_id' })
+    .select()
+    .single();
+  if (upErr) {
+    console.error('[rate-result] upsert failed', upErr);
+    throw new Error('Failed to record rating');
+  }
+
+  await logAudit(supabase, {
+    tenantId: ctx.tenantId,
+    entityType: 'transfer',
+    entityId: id,
+    action: 'quality_rated',
+    actorType: ctx.actorType,
+    actorId: ctx.actorId,
+    actorName: ctx.actorName,
+    metadata: {
+      host,
+      delivered_what_asked: parsed.data.deliveredWhatAsked,
+      satisfaction: parsed.data.satisfaction,
+      score: parsed.data.score,
+    },
+  });
+
+  return c.json({ data: upserted, links: { transfer: `/v1/transfers/${id}`, ratings: `/v1/transfers/${id}/ratings` } });
+});
+
+// ============================================
+// GET /v1/transfers/:id/ratings
+// All quality ratings for a call — may include an agent rating, a user
+// rating, etc. The UI surfaces both so agent/user disagreement is
+// visible instead of getting averaged out.
+// ============================================
+transfers.get('/:id/ratings', async (c) => {
+  const ctx = c.get('ctx');
+  const id = c.req.param('id');
+  if (!isValidUUID(id)) throw new ValidationError('Invalid transfer ID format');
+
+  const supabase: any = createClient();
+
+  const { data: row, error: fetchErr } = await supabase
+    .from('transfers')
+    .select('id')
+    .eq('id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
+    .single();
+  if (fetchErr || !row) throw new NotFoundError('Transfer', id);
+
+  const { data, error } = await supabase
+    .from('x402_call_quality')
+    .select('*')
+    .eq('transfer_id', id)
+    .eq('tenant_id', ctx.tenantId)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`Failed to fetch ratings: ${error.message}`);
+
+  return c.json({ data: data || [] });
 });
 
 export default transfers;

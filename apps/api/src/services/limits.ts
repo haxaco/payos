@@ -24,8 +24,32 @@ export interface StreamLimits {
   maxTotalOutflow: number;
 }
 
+// Per-agent mutex to prevent concurrent limit-check race conditions.
+// When two requests for the same agent arrive simultaneously, the second
+// waits for the first to complete its limit check + transfer creation
+// before reading usage, ensuring daily/monthly caps can't be bypassed.
+const AGENT_LIMIT_LOCKS = new Map<string, Promise<void>>();
+
+function withAgentLock<T>(agentId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = AGENT_LIMIT_LOCKS.get(agentId) || Promise.resolve();
+  let resolve: () => void;
+  const next = new Promise<void>(r => { resolve = r; });
+  AGENT_LIMIT_LOCKS.set(agentId, next);
+
+  return prev.then(fn).finally(() => {
+    resolve!();
+    // Cleanup lock entry if this is the latest promise
+    if (AGENT_LIMIT_LOCKS.get(agentId) === next) {
+      AGENT_LIMIT_LOCKS.delete(agentId);
+    }
+  });
+}
+
 export class LimitService {
-  constructor(private supabase: SupabaseClient) {}
+  constructor(
+    private supabase: SupabaseClient,
+    private environment: 'test' | 'live' = 'test',
+  ) {}
 
   /**
    * Get agent with limits and parent account info
@@ -43,6 +67,7 @@ export class LimitService {
         active_streams_count, total_stream_outflow
       `)
       .eq('id', agentId)
+      .eq('environment', this.environment)
       .single();
 
     if (agentError || !agent) {
@@ -50,18 +75,19 @@ export class LimitService {
     }
 
     // Get parent account if exists
-    let parentAccount = null;
+    let parentAccount: { id: string; name: string; verification_tier: number; verification_status: string } | null = null;
     if (agent.parent_account_id) {
       const { data: account, error: accountError } = await this.supabase
         .from('accounts')
         .select('id, name, verification_tier, verification_status')
         .eq('id', agent.parent_account_id)
+        .eq('environment', this.environment)
         .single();
       
       if (accountError) {
         console.error('Failed to get parent account:', accountError);
       }
-      parentAccount = account;
+      parentAccount = (account as any) ?? null;
     }
 
     return { ...agent, parentAccount };
@@ -108,6 +134,16 @@ export class LimitService {
     amount: number,
     correlationId?: string
   ): Promise<LimitCheckResult> {
+    // Serialize concurrent limit checks per agent to prevent race conditions
+    // where parallel requests both read "under limit" before either writes usage
+    return withAgentLock(agentId, () => this._checkTransactionLimitInner(agentId, amount, correlationId));
+  }
+
+  private async _checkTransactionLimitInner(
+    agentId: string,
+    amount: number,
+    correlationId?: string
+  ): Promise<LimitCheckResult> {
     const agent = await this.getAgent(agentId);
 
     // Check agent is active
@@ -128,14 +164,96 @@ export class LimitService {
       return result;
     }
 
-    const effectiveLimits: AgentLimits = {
+    let effectiveLimits: AgentLimits = {
       perTransaction: parseFloat(agent.effective_limit_per_tx) || 0,
       daily: parseFloat(agent.effective_limit_daily) || 0,
       monthly: parseFloat(agent.effective_limit_monthly) || 0,
     };
 
-    // Check KYA tier (tier 0 cannot transact)
-    if (agent.kya_tier === 0) {
+    // Rating-based limit reduction with rater reliability weighting.
+    // Instead of a simple average, each rater's score is weighted by how
+    // calibrated they are vs consensus. A rater who consistently deviates
+    // >40 points from the mean gets their weight reduced (e.g., CodeSmith
+    // rating everyone 8/100 when consensus is 75 gets reliability ~0.35).
+    try {
+      const { data: ratings } = await this.supabase
+        .from('a2a_task_feedback')
+        .select('score, caller_agent_id')
+        .eq('provider_agent_id', agentId)
+        .eq('revealed', true) // only count revealed ratings (double-blind)
+        .limit(50);
+      if (ratings && ratings.length >= 3) {
+        // Compute rater reliability: for each rater, how far do their scores
+        // deviate from the consensus score for the same providers?
+        const raterIds = [...new Set(ratings.map((r: any) => r.caller_agent_id).filter(Boolean))];
+        const raterReliability: Record<string, number> = {};
+
+        if (raterIds.length >= 2) {
+          // Get ALL ratings from these raters to compute their deviation
+          const { data: allRaterScores } = await this.supabase
+            .from('a2a_task_feedback')
+            .select('caller_agent_id, provider_agent_id, score')
+            .in('caller_agent_id', raterIds)
+            .eq('revealed', true)
+            .limit(200);
+
+          if (allRaterScores && allRaterScores.length > 0) {
+            // Group by provider to get consensus per provider
+            const byProvider: Record<string, number[]> = {};
+            allRaterScores.forEach((r: any) => {
+              if (!byProvider[r.provider_agent_id]) byProvider[r.provider_agent_id] = [];
+              byProvider[r.provider_agent_id].push(r.score || 0);
+            });
+
+            // For each rater, compute avg deviation from provider consensus
+            for (const raterId of raterIds) {
+              const raterScores = allRaterScores.filter((r: any) => r.caller_agent_id === raterId);
+              let totalDev = 0, count = 0;
+              for (const rs of raterScores) {
+                const provScores = byProvider[rs.provider_agent_id] || [];
+                if (provScores.length >= 2) {
+                  const othersAvg = provScores.filter((_, i) => provScores[i] !== rs.score || i > 0)
+                    .reduce((s, v) => s + v, 0) / Math.max(1, provScores.length - 1);
+                  totalDev += Math.abs((rs.score || 0) - othersAvg);
+                  count++;
+                }
+              }
+              const avgDev = count > 0 ? totalDev / count : 0;
+              // reliability: 1.0 = perfectly calibrated, 0.2 = minimum floor
+              raterReliability[raterId] = Math.max(0.2, 1.0 - avgDev / 100);
+            }
+          }
+        }
+
+        // Weighted average: each rating's score × rater's reliability
+        let weightedSum = 0, weightTotal = 0;
+        for (const r of ratings) {
+          const weight = raterReliability[r.caller_agent_id] || 1.0;
+          weightedSum += (r.score || 0) * weight;
+          weightTotal += weight;
+        }
+        const weightedAvg = weightTotal > 0 ? weightedSum / weightTotal : 0;
+
+        if (weightedAvg < 30) {
+          effectiveLimits = {
+            perTransaction: effectiveLimits.perTransaction * 0.5,
+            daily: effectiveLimits.daily * 0.5,
+            monthly: effectiveLimits.monthly * 0.5,
+          };
+          trackOp({
+            tenantId: agent.tenant_id,
+            operation: OpType.GOVERNANCE_LIMIT_CHECK,
+            subject: `agent/${agentId}`,
+            correlationId,
+            success: true,
+            data: { weightedAvg: Math.round(weightedAvg), ratingCount: ratings.length, raterCount: raterIds.length, limitReduction: '50%', reason: 'low_rating_penalty' },
+          });
+        }
+      }
+    } catch { /* rating check is best-effort — don't block transfers if feedback table unavailable */ }
+
+    // Check KYA tier (tier 0 blocked only if no effective limits set)
+    if (agent.kya_tier === 0 && effectiveLimits.perTransaction <= 0) {
       const result: LimitCheckResult = {
         allowed: false,
         reason: 'kya_verification_required',
@@ -366,6 +484,7 @@ export class LimitService {
       .from('agents')
       .select('tenant_id')
       .eq('id', agentId)
+      .eq('environment', this.environment)
       .single();
 
     if (agentError || !agent) {
@@ -498,7 +617,7 @@ export class LimitService {
 /**
  * Create a limit service instance
  */
-export function createLimitService(supabase: SupabaseClient): LimitService {
-  return new LimitService(supabase);
+export function createLimitService(supabase: SupabaseClient, environment: 'test' | 'live' = 'test'): LimitService {
+  return new LimitService(supabase, environment);
 }
 

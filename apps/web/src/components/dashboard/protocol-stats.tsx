@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { PieChart, Zap, Shield, ShoppingCart, Globe, TrendingUp, Hash, Loader2 } from 'lucide-react';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import { cn } from '@sly/ui';
 
 type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
@@ -52,18 +52,13 @@ const PROTOCOL_COLORS: Record<ProtocolId, string> = {
 };
 
 async function fetchProtocolDistribution(
-  authToken: string,
+  apiFetch: ApiFetchFn,
+  apiUrl: string,
   timeRange: TimeRange,
   metric: Metric
 ): Promise<{ data: ProtocolDistribution[] }> {
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/analytics/protocol-distribution?timeRange=${timeRange}&metric=${metric}`,
-    {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
+  const response = await apiFetch(
+    `${apiUrl}/v1/analytics/protocol-distribution?timeRange=${timeRange}&metric=${metric}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch protocol distribution');
@@ -80,7 +75,7 @@ function formatCurrency(value: number): string {
   if (value >= 1000) {
     return `$${(value / 1000).toFixed(1)}K`;
   }
-  return `$${value.toFixed(0)}`;
+  return `$${value.toFixed(2)}`;
 }
 
 function formatCount(value: number): string {
@@ -94,13 +89,14 @@ function formatCount(value: number): string {
 }
 
 export function ProtocolStats() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
+  const apiFetch = useApiFetch();
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [metric, setMetric] = useState<Metric>('volume');
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['protocol-distribution', timeRange, metric],
-    queryFn: () => fetchProtocolDistribution(authToken!, timeRange, metric),
+    queryKey: ['protocol-distribution', timeRange, metric, apiEnvironment],
+    queryFn: () => fetchProtocolDistribution(apiFetch, apiUrl, timeRange, metric),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
   });
@@ -220,6 +216,7 @@ export function ProtocolStats() {
       <div className="space-y-3">
         {distribution.map((protocol) => {
           const ui = PROTOCOL_UI[protocol.protocol];
+          if (!ui) return null;
           const Icon = ui.icon;
           const value = metric === 'volume' ? protocol.volume_usd : protocol.transaction_count;
           const displayValue = metric === 'volume' ? formatCurrency(value) : formatCount(value);

@@ -385,6 +385,32 @@ export class CircleClient {
   }
 
   /**
+   * Transfer native tokens (ETH) from a developer-controlled wallet.
+   * Discovers the native token ID from wallet balances, then uses the
+   * standard transfer endpoint.
+   */
+  async transferNative(
+    walletId: string,
+    destinationAddress: string,
+    amount: string, // in ETH (e.g., "0.02")
+    feeLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'
+  ): Promise<CircleTransaction> {
+    // Discover native token ID from wallet balances
+    const balances = await this.getWalletBalances(walletId);
+    const nativeToken = balances.find(b => b.token.isNative);
+
+    if (!nativeToken) {
+      throw new Error(
+        'No native token found in wallet balances. ' +
+        'The wallet may not have any native token balance.'
+      );
+    }
+
+    console.log(`[Circle] Native token ID: ${nativeToken.token.id} (${nativeToken.token.symbol})`);
+    return this.transferTokens(walletId, nativeToken.token.id, destinationAddress, amount, feeLevel);
+  }
+
+  /**
    * Get a transaction by ID
    */
   async getTransaction(transactionId: string): Promise<CircleTransaction> {
@@ -574,6 +600,67 @@ export function getCircleClient(): CircleClient {
   }
 
   return defaultClient;
+}
+
+/**
+ * Get the Circle TEST client for sandbox/testnet operations.
+ * Uses CIRCLE_API_KEY_TEST env var. Falls back to default if it's already a test key.
+ */
+let testClient: CircleClient | null = null;
+export function getCircleTestClient(): CircleClient {
+  if (!testClient) {
+    const apiKey = process.env.CIRCLE_API_KEY_TEST;
+
+    if (!apiKey) {
+      // Fall back to default CIRCLE_API_KEY if it's already a test key
+      const fallbackKey = process.env.CIRCLE_API_KEY;
+      if (fallbackKey?.startsWith('TEST_API_KEY:')) {
+        return getCircleClient();
+      }
+      throw new Error(
+        'CIRCLE_API_KEY_TEST environment variable is required for sandbox wallet operations when CIRCLE_API_KEY is a live key.'
+      );
+    }
+
+    testClient = new CircleClient({
+      apiKey,
+      entitySecret: process.env.CIRCLE_TEST_ENTITY_SECRET || process.env.CIRCLE_ENTITY_SECRET,
+      baseUrl: CIRCLE_W3S_URL,
+    });
+  }
+
+  return testClient;
+}
+
+/**
+ * Get the Circle LIVE client for production/mainnet operations.
+ * Uses CIRCLE_LIVE_API_KEY and CIRCLE_LIVE_ENTITY_SECRET env vars.
+ */
+let liveClient: CircleClient | null = null;
+export function getCircleLiveClient(): CircleClient {
+  if (!liveClient) {
+    const apiKey = process.env.CIRCLE_LIVE_API_KEY;
+
+    if (!apiKey) {
+      // Fall back to default CIRCLE_API_KEY — in production (Railway),
+      // CIRCLE_API_KEY is already the live key
+      const fallbackKey = process.env.CIRCLE_API_KEY;
+      if (fallbackKey?.startsWith('LIVE_API_KEY:')) {
+        return getCircleClient();
+      }
+      throw new Error(
+        'CIRCLE_LIVE_API_KEY environment variable is required for production wallet operations.'
+      );
+    }
+
+    liveClient = new CircleClient({
+      apiKey,
+      entitySecret: process.env.CIRCLE_LIVE_ENTITY_SECRET || process.env.CIRCLE_ENTITY_SECRET,
+      baseUrl: CIRCLE_W3S_URL,
+    });
+  }
+
+  return liveClient;
 }
 
 /**

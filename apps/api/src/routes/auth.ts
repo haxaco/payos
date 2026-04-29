@@ -14,8 +14,11 @@ import {
   addRandomDelay,
 } from '../utils/auth.js';
 import { provisionTenant, TenantProvisioningError } from '../services/tenant-provisioning.js';
-import { generateAgentToken } from '../utils/crypto.js';
+import { generateAgentToken, verifyApiKey } from '../utils/crypto.js';
 import { logAudit } from '../utils/helpers.js';
+import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail, sendBetaApplicationReceivedEmail, sendBetaNewApplicationNotification } from '../services/email.js';
+import { isFeatureEnabled } from '../config/environment.js';
+import { validateBetaCode, redeemBetaCode, submitApplication, trackFunnelEvent } from '../services/beta-access.js';
 
 const auth = new Hono();
 
@@ -85,7 +88,23 @@ auth.post('/signup', async (c) => {
       );
     }
 
-    const supabase = createClient();
+    // Beta access gate
+    if (isFeatureEnabled('closedBeta')) {
+      const inviteCode = body.inviteCode;
+      if (!inviteCode) {
+        return c.json(
+          { error: 'An invite code is required during the closed beta. Apply at /auth/signup to request access.' },
+          403
+        );
+      }
+
+      const validation = await validateBetaCode(inviteCode, 'human');
+      if (!validation.valid) {
+        return c.json({ error: validation.error }, 403);
+      }
+    }
+
+    const supabase: any = createClient();
 
     // Get Supabase URL and service role key for admin operations
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -189,6 +208,21 @@ auth.post('/signup', async (c) => {
       );
     }
 
+    // Redeem beta code if closed beta is enabled
+    if (isFeatureEnabled('closedBeta') && body.inviteCode) {
+      try {
+        const redeemResult = await redeemBetaCode(body.inviteCode, result.tenant.id);
+        trackFunnelEvent('signup_completed', {
+          accessCodeId: redeemResult.code.id,
+          tenantId: result.tenant.id,
+          actorType: 'human',
+          metadata: { email: validated.email },
+        }).catch(() => {});
+      } catch (err) {
+        console.error('[signup] Beta code redemption failed (non-fatal):', err);
+      }
+    }
+
     // Generate session tokens
     const sessionResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: 'POST',
@@ -215,6 +249,13 @@ auth.post('/signup', async (c) => {
       ip,
       userAgent,
     });
+
+    // Send welcome email (fire-and-forget)
+    sendWelcomeEmail({
+      to: validated.email,
+      userName: validated.userName || validated.email.split('@')[0],
+      organizationName: validated.organizationName,
+    }).catch(err => console.error('[email] Welcome email error:', err));
 
     // Return response (keys shown only once)
     return c.json(
@@ -296,7 +337,7 @@ auth.post('/login', async (c) => {
       );
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -405,6 +446,21 @@ auth.post('/login', async (c) => {
             userAgent,
             userId,
           });
+
+          // Send account locked email (fire-and-forget)
+          getUserEmail(userId).then(email => {
+            if (email) {
+              const { data: profile } = (supabase.from('user_profiles') as any)
+                .select('name')
+                .eq('id', userId)
+                .single();
+              // Use email as fallback name
+              sendAccountLockedEmail({
+                to: email,
+                userName: email.split('@')[0],
+              }).catch(err => console.error('[email] Account locked email error:', err));
+            }
+          }).catch(() => {});
         }
       }
 
@@ -522,81 +578,35 @@ auth.get('/me', async (c) => {
     
     if (isApiKey) {
       // API KEY PATH - for SDKs
-      // Apply auth middleware logic inline
-      const supabase = createAdminClient();
-      
-      // Hash the provided key
-      const keyHash = hashApiKey(token);
-      
-      // Look up API key
-      const { data: apiKeyRecord } = await supabase
-        .from('api_keys')
-        .select('*')
-        .eq('key_hash', keyHash)
-        .eq('status', 'active')
-        .single();
-      
-      if (!apiKeyRecord) {
-        return c.json({ error: 'Invalid or expired API key' }, 401);
-      }
-      
-      console.log('[/v1/auth/me] API key found:', { 
-        tenant_id: apiKeyRecord.tenant_id, 
-        created_by_user_id: apiKeyRecord.created_by_user_id 
-      });
-      
-      // Check if it's a user key or agent key
-      if (apiKeyRecord.created_by_user_id) {
-        // USER API KEY (pk_)
-        const { data: profile, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('id, tenant_id, name, role')
-          .eq('id', apiKeyRecord.created_by_user_id)
+      const supabase: any = createAdminClient();
+
+      // Agent tokens (agent_*) are stored in the agents table, not api_keys
+      if (token.startsWith('agent_')) {
+        const keyPrefix = token.slice(0, 12);
+
+        const { data: agent } = await supabase
+          .from('agents')
+          .select('id, name, type, status, parent_account_id, tenant_id, x402_enabled, auth_token_hash')
+          .eq('auth_token_prefix', keyPrefix)
           .single();
-        
-        if (!profile) {
-          return c.json({ error: 'User not found', details: profileError?.message }, 404);
+
+        if (!agent) {
+          return c.json({ error: 'Invalid agent token' }, 401);
         }
-        
-        // Get user's primary account
-        const { data: accounts } = await supabase
-          .from('accounts')
-          .select('id, type')
-          .eq('tenant_id', apiKeyRecord.tenant_id)
-          .order('created_at', { ascending: true })
-          .limit(1);
-        
-        return c.json({
-          data: {
-            type: 'user',
-            userId: profile.id,
-            accountId: accounts?.[0]?.id || null,
-            organizationId: apiKeyRecord.tenant_id,
-            name: profile.name,
-            role: profile.role
-          }
-        });
-      }
-      
-      // If no user ID, check if it's an agent API key
-      // Look for agent with matching auth_token_prefix
-      const keyPrefix = token.split('_')[0] + '_' + token.split('_')[1]; // e.g., "agent_BPdeBu"
-      
-      const { data: agent } = await supabase
-        .from('agents')
-        .select('id, name, type, status, parent_account_id, tenant_id, x402_enabled')
-        .eq('auth_token_prefix', keyPrefix)
-        .single();
-      
-      if (agent) {
-        // AGENT API KEY (ak_ or agent_)
+
+        // Verify hash matches
+        const tokenHash = hashApiKey(token);
+        if (agent.auth_token_hash && !verifyApiKey(token, agent.auth_token_hash)) {
+          return c.json({ error: 'Invalid agent token' }, 401);
+        }
+
         const { data: wallet } = await supabase
           .from('wallets')
           .select('id, balance, currency')
           .eq('managed_by_agent_id', agent.id)
           .eq('status', 'active')
           .single();
-        
+
         return c.json({
           data: {
             type: 'agent',
@@ -612,12 +622,56 @@ auth.get('/me', async (c) => {
           }
         });
       }
-      
+
+      // API key path (pk_* or ak_*)
+      const keyHash = hashApiKey(token);
+
+      const { data: apiKeyRecord } = await supabase
+        .from('api_keys')
+        .select('*')
+        .eq('key_hash', keyHash)
+        .eq('status', 'active')
+        .single();
+
+      if (!apiKeyRecord) {
+        return c.json({ error: 'Invalid or expired API key' }, 401);
+      }
+
+      if (apiKeyRecord.created_by_user_id) {
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('id, tenant_id, name, role')
+          .eq('id', apiKeyRecord.created_by_user_id)
+          .single();
+
+        if (!profile) {
+          return c.json({ error: 'User not found', details: profileError?.message }, 404);
+        }
+
+        const { data: accounts } = await supabase
+          .from('accounts')
+          .select('id, type')
+          .eq('tenant_id', apiKeyRecord.tenant_id)
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        return c.json({
+          data: {
+            type: 'user',
+            userId: profile.id,
+            accountId: accounts?.[0]?.id || null,
+            organizationId: apiKeyRecord.tenant_id,
+            name: profile.name,
+            role: profile.role
+          }
+        });
+      }
+
       return c.json({ error: 'API key not associated with user or agent' }, 404);
       
     } else {
       // SESSION TOKEN PATH - for dashboard
-      const supabase = createClient();
+      const supabase: any = createClient();
       
       const { data: userData, error } = await (supabase as any).auth.getUser(token);
       
@@ -672,6 +726,7 @@ auth.get('/me', async (c) => {
 const provisionSchema = z.object({
   organizationName: z.string().min(1).max(255).optional(),
   userName: z.string().min(1).max(255).optional(),
+  inviteCode: z.string().max(100).optional(),
 });
 
 auth.post('/provision', async (c) => {
@@ -695,7 +750,7 @@ auth.post('/provision', async (c) => {
     }
 
     const token = authHeader.slice(7);
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data: userData, error: authError } = await (supabase as any).auth.getUser(token);
     if (authError || !userData?.user) {
@@ -707,7 +762,7 @@ auth.post('/provision', async (c) => {
     const userMetadata = userData.user.user_metadata || {};
 
     // Parse optional body
-    let body: { organizationName?: string; userName?: string } = {};
+    let body: { organizationName?: string; userName?: string; inviteCode?: string } = {};
     try {
       body = provisionSchema.parse(await c.req.json());
     } catch {
@@ -727,12 +782,42 @@ auth.post('/provision', async (c) => {
       userMetadata.full_name ||
       userEmail?.split('@')[0];
 
+    // Beta access gate for OAuth provision flow
+    if (isFeatureEnabled('closedBeta')) {
+      const inviteCode = body.inviteCode;
+      if (!inviteCode) {
+        return c.json(
+          { error: 'An invite code is required during the closed beta.' },
+          403
+        );
+      }
+
+      const validation = await validateBetaCode(inviteCode, 'human');
+      if (!validation.valid) {
+        return c.json({ error: validation.error }, 403);
+      }
+    }
+
     const result = await provisionTenant(supabase, {
       userId,
       email: userEmail || '',
       organizationName,
       userName,
     });
+
+    // Redeem beta code and track funnel event
+    if (isFeatureEnabled('closedBeta') && (body as any).inviteCode && !result.alreadyProvisioned) {
+      try {
+        const redeemResult = await redeemBetaCode((body as any).inviteCode, result.tenant.id);
+        trackFunnelEvent('tenant_provisioned', {
+          accessCodeId: redeemResult.code.id,
+          tenantId: result.tenant.id,
+          actorType: 'human',
+        }).catch(() => {});
+      } catch (err) {
+        console.error('[provision] Beta code redemption failed (non-fatal):', err);
+      }
+    }
 
     await logSecurityEvent(
       result.alreadyProvisioned ? 'provision_idempotent' : 'provision_success',
@@ -799,7 +884,7 @@ auth.post('/accept-invite', async (c) => {
       );
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Look up invite by token
     const { data: invite, error: inviteError } = await (supabase
@@ -831,7 +916,7 @@ auth.post('/accept-invite', async (c) => {
     }
 
     // Use admin client to check if user exists
-    const adminClient = createAdminClient();
+    const adminClient: any = createAdminClient();
     const { data: existingUsers, error: listError } = await adminClient.auth.admin.listUsers();
     
     let userId: string | null = null;
@@ -960,6 +1045,17 @@ auth.post('/accept-invite', async (c) => {
       userAgent,
     });
 
+    // Send welcome email (fire-and-forget)
+    const userName = validated.name || invite.name || invite.email.split('@')[0];
+    const dashboardUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard`;
+    sendInviteAcceptedEmail({
+      to: invite.email,
+      userName,
+      organizationName: tenant?.name || 'your organization',
+      role: invite.role,
+      dashboardUrl,
+    }).catch(() => {});
+
     return c.json(
       {
         user: {
@@ -1070,7 +1166,7 @@ auth.post('/refresh', async (c) => {
 auth.get('/sessions', async (c) => {
   try {
     const { getUserSessions } = await import('../services/sessions.js');
-    const userId = c.get('userId');
+    const userId = c.get('userId' as never) as string | undefined;
 
     if (!userId) {
       return c.json(
@@ -1111,7 +1207,7 @@ auth.get('/sessions', async (c) => {
 auth.delete('/sessions/:id', async (c) => {
   try {
     const { revokeSession } = await import('../services/sessions.js');
-    const userId = c.get('userId');
+    const userId = c.get('userId' as never) as string | undefined;
     const sessionId = c.req.param('id');
 
     if (!userId) {
@@ -1152,7 +1248,7 @@ auth.delete('/sessions/:id', async (c) => {
 auth.post('/sessions/revoke-all', async (c) => {
   try {
     const { revokeAllUserSessions } = await import('../services/sessions.js');
-    const userId = c.get('userId');
+    const userId = c.get('userId' as never) as string | undefined;
 
     if (!userId) {
       return c.json(
@@ -1194,6 +1290,7 @@ const agentSignupSchema = z.object({
   capabilities: z.array(z.string().max(100)).max(20).optional(),
   model: z.string().max(255).optional(),
   callbackUrl: z.string().url().max(1024).optional(),
+  inviteCode: z.string().optional(),
 });
 
 auth.post('/agent-signup', async (c) => {
@@ -1223,7 +1320,24 @@ auth.post('/agent-signup', async (c) => {
     }
 
     const { name, purpose, capabilities, model, callbackUrl } = parsed.data;
-    const supabase = createClient();
+
+    // Beta access gate for agent signup
+    if (isFeatureEnabled('closedBeta')) {
+      const inviteCode = parsed.data.inviteCode || body.inviteCode;
+      if (!inviteCode) {
+        return c.json(
+          { error: 'An invite code is required for agent registration during the closed beta.' },
+          403
+        );
+      }
+
+      const validation = await validateBetaCode(inviteCode, 'agent');
+      if (!validation.valid) {
+        return c.json({ error: validation.error }, 403);
+      }
+    }
+
+    const supabase: any = createClient();
 
     // 1. Create agent tenant
     const legacyApiKey = generateApiKey('test');
@@ -1379,6 +1493,21 @@ auth.post('/agent-signup', async (c) => {
       name,
     });
 
+    // Redeem beta code if closed beta is enabled
+    if (isFeatureEnabled('closedBeta') && (parsed.data.inviteCode || body.inviteCode)) {
+      try {
+        const redeemResult = await redeemBetaCode(parsed.data.inviteCode || body.inviteCode, tenant.id);
+        trackFunnelEvent('signup_completed', {
+          accessCodeId: redeemResult.code.id,
+          tenantId: tenant.id,
+          agentId: agent.id,
+          actorType: 'agent',
+        }).catch(() => {});
+      } catch (err) {
+        console.error('[agent-signup] Beta code redemption failed (non-fatal):', err);
+      }
+    }
+
     return c.json({
       agent: {
         id: agent.id,
@@ -1434,7 +1563,7 @@ auth.post('/agent-claim/:agentId', async (c) => {
       return c.json({ error: 'API key authentication required for claiming agents' }, 401);
     }
 
-    const supabase = createClient();
+    const supabase: any = createClient();
     const keyHash = hashApiKey(token);
 
     const { data: apiKey } = await (supabase
@@ -1571,6 +1700,123 @@ auth.post('/agent-claim/:agentId', async (c) => {
   } catch (error) {
     console.error('[agent-claim] Unexpected error:', error);
     return c.json({ error: 'Failed to claim agent' }, 500);
+  }
+});
+
+// ============================================
+// POST /v1/auth/beta/apply - Submit beta application
+// ============================================
+auth.post('/beta/apply', async (c) => {
+  try {
+    const { ip } = getClientInfo(c);
+
+    // Rate limiting: 3 applications per hour per IP
+    const rateLimit = await checkRateLimit(`beta_apply:${ip}`, 60 * 60 * 1000, 3);
+    if (!rateLimit.allowed) {
+      return c.json(
+        { error: 'Too many applications. Please try again later.', retryAfter: rateLimit.retryAfter },
+        429
+      );
+    }
+
+    const body = await c.req.json();
+    const schema = z.object({
+      email: z.string().email().max(255),
+      organizationName: z.string().max(255).optional(),
+      useCase: z.string().max(2000).optional(),
+      referralSource: z.string().max(255).optional(),
+      applicantType: z.enum(['human', 'agent']).optional(),
+      agentName: z.string().max(255).optional(),
+      purpose: z.string().max(1000).optional(),
+      model: z.string().max(255).optional(),
+    });
+
+    const validated = schema.parse(body);
+    const isAgent = validated.applicantType === 'agent';
+
+    const application = await submitApplication({
+      email: validated.email,
+      applicantType: validated.applicantType || 'human',
+      ...(isAgent
+        ? {
+            agentName: validated.agentName,
+            useCase: validated.purpose,
+            metadata: validated.model ? { model: validated.model } : undefined,
+          }
+        : {
+            organizationName: validated.organizationName,
+            useCase: validated.useCase,
+          }),
+      referralSource: validated.referralSource,
+      ipAddress: ip,
+    });
+
+    // Send confirmation email (fire-and-forget)
+    sendBetaApplicationReceivedEmail({
+      to: validated.email,
+      organizationName: validated.organizationName,
+    }).catch(err => console.error('[email] Beta application received email error:', err));
+
+    // Notify platform admins (fire-and-forget)
+    const adminEmail = process.env.BETA_ADMIN_EMAIL;
+    if (adminEmail) {
+      sendBetaNewApplicationNotification({
+        to: adminEmail,
+        applicantEmail: validated.email,
+        organizationName: validated.organizationName,
+        applicantType: validated.applicantType || 'human',
+      }).catch(err => console.error('[email] Beta admin notification error:', err));
+    }
+
+    return c.json({
+      message: 'Application submitted successfully. We will review it and get back to you.',
+      applicationId: application.id,
+    }, 201);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation failed', details: error.errors }, 400);
+    }
+    throw error;
+  }
+});
+
+// ============================================
+// POST /v1/auth/beta/validate - Validate an invite code
+// ============================================
+auth.post('/beta/validate', async (c) => {
+  try {
+    const body = await c.req.json();
+    const schema = z.object({
+      code: z.string().min(1).max(100),
+      actorType: z.enum(['human', 'agent']).optional(),
+    });
+
+    const validated = schema.parse(body);
+    const result = await validateBetaCode(validated.code, validated.actorType || 'human');
+
+    // If valid, look up the linked application to pre-fill signup form
+    let applicant: { email?: string; organization_name?: string } | undefined;
+    if (result.valid && result.code?.id) {
+      const supabase: any = createClient();
+      const { data: app } = await (supabase.from('beta_applications') as any)
+        .select('email, organization_name')
+        .eq('access_code_id', result.code.id)
+        .single();
+      if (app) {
+        applicant = { email: app.email, organization_name: app.organization_name };
+      }
+    }
+
+    return c.json({
+      valid: result.valid,
+      error: result.valid ? undefined : result.error,
+      ...(applicant ? { applicant } : {}),
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'Validation failed', details: error.errors }, 400);
+    }
+    throw error;
   }
 });
 

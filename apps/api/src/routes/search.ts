@@ -27,7 +27,7 @@ function sanitizeLikePattern(input: string): string {
 // ============================================
 search.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Validate query params
   const parsed = searchQuerySchema.safeParse({

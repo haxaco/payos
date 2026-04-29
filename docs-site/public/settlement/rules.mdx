@@ -1,0 +1,181 @@
+---
+title: "Settlement rules"
+description: "Programmable triggers for when settlement happens."
+---
+
+Settlement rules define **when** a batch of transfers settles — by balance threshold, time of day, event, or manual request. Rules run per wallet, so you can have different cadences for different merchants, agent wallets, or business lines.
+
+## Why rules matter
+
+Without rules, settlement follows the tenant's default [window cadence](/settlement/windows). With rules, you can:
+
+- **Sweep** balances above a threshold automatically
+- **Pay out merchants** only once a certain volume accumulates (amortize rail fees)
+- **Trigger on events** — close day's books at midnight local time
+- **Emergency settlements** — force immediate settle during incidents
+
+## Rule anatomy
+
+```json
+{
+  "id": "rul_...",
+  "name": "Sweep merchant balance > $10k",
+  "wallet_id": "wal_merchant_...",
+  "trigger_type": "balance_threshold",
+  "trigger_config": {
+    "threshold_cents": 1000000,
+    "currency": "USD"
+  },
+  "action_type": "settle_to_bank",
+  "action_config": {
+    "destination_bank_account_id": "bank_...",
+    "retain_reserve_cents": 50000
+  },
+  "enabled": true,
+  "priority": 100
+}
+```
+
+## Create a rule
+
+```bash
+curl -X POST https://api.getsly.ai/v1/settlement-rules \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "name": "Nightly sweep to operating account",
+    "wallet_id": "wal_...",
+    "trigger_type": "time_based",
+    "trigger_config": {
+      "schedule": "0 2 * * *",
+      "timezone": "America/New_York"
+    },
+    "action_type": "settle_to_account",
+    "action_config": {
+      "destination_account_id": "acc_operating"
+    }
+  }'
+```
+
+## Trigger types
+
+| Trigger | When it fires | Config |
+|---|---|---|
+| `balance_threshold` | Wallet balance crosses a value | `threshold_cents`, `currency`, `direction` (above/below) |
+| `time_based` | Cron-style schedule | `schedule` (cron expr), `timezone` |
+| `event_based` | Specific webhook event | `event_type`, `filter` (optional) |
+| `manual` | Partner explicitly requests | No config |
+| `transaction_count` | Nth transaction accumulates | `count`, `within_window` (optional) |
+
+Rules with the same wallet but different triggers are evaluated in `priority` order (lower first). First matching rule wins.
+
+## Action types
+
+| Action | Effect |
+|---|---|
+| `settle_to_bank` | Move funds to registered bank account |
+| `settle_to_account` | Move between Sly accounts |
+| `settle_to_wallet` | Move between Sly wallets (same or cross-tenant with permission) |
+| `hold` | Lock balance (for reserve / holdback logic) |
+| `notify` | Fire webhook without moving funds |
+
+## List + inspect rules
+
+```bash
+curl "https://api.getsly.ai/v1/settlement-rules?wallet_id=wal_...&enabled_only=true" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Per-rule execution history:
+
+```bash
+curl https://api.getsly.ai/v1/settlement-rules/rul_.../executions \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Shows every time the rule fired, what it did, and any errors.
+
+## Update / disable
+
+```bash
+curl -X PATCH https://api.getsly.ai/v1/settlement-rules/rul_... \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{ "enabled": false }'
+```
+
+Disabling is reversible; deletion isn't — `DELETE` removes the rule and its execution history.
+
+## Manual settlement
+
+Bypass all rules and settle a wallet immediately:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/settlement-rules/request-manual \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "wallet_id": "wal_...",
+    "reason": "End of quarter close"
+  }'
+```
+
+Common during accounting period closes or incident response.
+
+## Common rule patterns
+
+**Daily merchant payout at 2am Eastern:**
+```json
+{
+  "trigger_type": "time_based",
+  "trigger_config": { "schedule": "0 2 * * *", "timezone": "America/New_York" },
+  "action_type": "settle_to_bank"
+}
+```
+
+**Sweep balance above reserve:**
+```json
+{
+  "trigger_type": "balance_threshold",
+  "trigger_config": { "threshold_cents": 500000, "currency": "USD", "direction": "above" },
+  "action_type": "settle_to_account",
+  "action_config": { "retain_reserve_cents": 100000 }
+}
+```
+
+**Settle after every 100 x402 payments:**
+```json
+{
+  "trigger_type": "transaction_count",
+  "trigger_config": { "count": 100, "within_window": "1d" },
+  "action_type": "settle_to_bank"
+}
+```
+
+**Hold 10% for chargeback reserve (90-day release):**
+```json
+{
+  "trigger_type": "event_based",
+  "trigger_config": { "event_type": "ucp.settlement_completed" },
+  "action_type": "hold",
+  "action_config": { "percentage": 0.10, "release_after_days": 90 }
+}
+```
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/settlement-rules` | List rules |
+| `GET /v1/settlement-rules/:id` | Rule detail |
+| `POST /v1/settlement-rules` | Create |
+| `PATCH /v1/settlement-rules/:id` | Update |
+| `DELETE /v1/settlement-rules/:id` | Remove |
+| `GET /v1/settlement-rules/:id/executions` | Execution log |
+| `POST /v1/settlement-rules/request-manual` | Force settlement now |
+
+## Interaction with windows
+
+Rules and [windows](/settlement/windows) compose:
+- Windows define the maximum batching cadence
+- Rules can trigger settlement earlier than the window
+- Rules never delay past a window — windows are the ceiling
+
+Example: window is "every 4 hours", rule is "balance above $10k". Settlement fires whichever triggers first.

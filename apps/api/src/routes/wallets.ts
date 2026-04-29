@@ -20,7 +20,7 @@ import { getCircleService, USDC_CONTRACTS, EURC_CONTRACTS } from '../services/ci
 import { getCircleServiceForTenant } from '../services/circle/index.js';
 import { settleWalletTransfer, isOnChainCapable } from '../services/wallet-settlement.js';
 import { getWalletVerificationService } from '../services/wallet/index.js';
-import { normalizeFields, buildDeprecationHeader } from '../utils/helpers.js';
+import { normalizeFields, buildDeprecationHeader, getEnv } from '../utils/helpers.js';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
@@ -63,7 +63,22 @@ const spendingPolicySchema = z.object({
   autoFundEnabled: z.boolean().default(false),
   autoFundThreshold: z.number().positive().optional(),
   autoFundAmount: z.number().positive().optional(),
-  autoFundSourceAccountId: z.string().uuid().optional()
+  autoFundSourceAccountId: z.string().uuid().optional(),
+  // Epic 18: Contract policy fields
+  contractPolicy: z.object({
+    counterpartyBlocklist: z.array(z.string()).optional(),
+    counterpartyAllowlist: z.array(z.string()).optional(),
+    minCounterpartyKyaTier: z.number().int().min(0).max(3).optional(),
+    minCounterpartyReputation: z.number().min(0).max(1).optional(),
+    allowedContractTypes: z.array(z.string()).optional(),
+    blockedContractTypes: z.array(z.string()).optional(),
+    maxExposure24h: z.number().positive().optional(),
+    maxExposure7d: z.number().positive().optional(),
+    maxExposure30d: z.number().positive().optional(),
+    maxActiveContracts: z.number().int().nonnegative().optional(),
+    maxActiveEscrows: z.number().int().nonnegative().optional(),
+    escalateAbove: z.number().positive().optional(),
+  }).optional(),
 }).optional();
 
 // Schema for creating a NEW wallet (internal or Circle)
@@ -78,7 +93,7 @@ const createWalletSchema = z.object({
 
   // New Phase 2 fields
   walletType: z.enum(['internal', 'circle_custodial', 'circle_mpc']).default('internal'),
-  blockchain: z.enum(['base', 'eth', 'polygon', 'avax', 'sol']).default('base'),
+  blockchain: z.enum(['base', 'eth', 'polygon', 'avax', 'sol', 'tempo']).default('base'),
   accountType: z.enum(['SCA', 'EOA']).optional(), // SCA required for Gas Station on EVM chains
 
   // Optional metadata
@@ -142,11 +157,10 @@ const withdrawSchema = z.object({
 // ============================================
 
 function mapWalletFromDb(row: any) {
-  console.log('DEBUG: mapWalletFromDb row keys:', Object.keys(row));
-  console.log('DEBUG: mapWalletFromDb row:', row);
   return {
     id: row.id,
     tenantId: row.tenant_id,
+    environment: row.environment || 'test',
     ownerAccountId: row.owner_account_id,
     managedByAgentId: row.managed_by_agent_id,
     balance: parseFloat(row.balance),
@@ -194,6 +208,31 @@ function getTokenContract(currency: string, blockchain: string): string | null {
   return contracts[blockchain.toUpperCase()] || null;
 }
 
+// Read on-chain USDC for an EVM address on Base mainnet or Base Sepolia.
+// Picked by the WALLET's own environment column (not process env) so a
+// test-env wallet queried from a production deploy reads Sepolia, and
+// vice versa. Returns null on any RPC error so callers can fall back.
+const USDC_BASE_MAINNET = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const USDC_BASE_SEPOLIA = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+async function readOnchainUsdc(address: string, env: 'live' | 'test'): Promise<number | null> {
+  try {
+    const rpcUrl = env === 'live' ? 'https://mainnet.base.org' : 'https://sepolia.base.org';
+    const usdc = env === 'live' ? USDC_BASE_MAINNET : USDC_BASE_SEPOLIA;
+    const data = '0x70a08231' + '0'.repeat(24) + address.slice(2).toLowerCase();
+    const res = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: usdc, data }, 'latest'] }),
+    });
+    const json: any = await res.json();
+    if (!json?.result) return null;
+    return parseInt(json.result, 16) / 1e6;
+  } catch (e) {
+    console.warn(`[wallets] on-chain read failed for ${address} on ${env}:`, e);
+    return null;
+  }
+}
+
 // ============================================
 // Routes
 // ============================================
@@ -226,7 +265,10 @@ app.post('/', async (c) => {
     }
 
     // Get the account ID (prefer new name, fall back to old)
-    const accountId = validated.accountId || accountId;
+    const accountId = validated.accountId || validated.ownerAccountId;
+    if (!accountId) {
+      return c.json({ error: 'accountId is required' }, 400);
+    }
 
     const supabase = createClient();
 
@@ -236,6 +278,7 @@ app.post('/', async (c) => {
       .select('id')
       .eq('id', accountId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (accountError || !account) {
@@ -251,6 +294,7 @@ app.post('/', async (c) => {
         .select('id')
         .eq('id', validated.managedByAgentId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
 
       if (agentError || !agent) {
@@ -273,15 +317,35 @@ app.post('/', async (c) => {
     const blockchain = validated.blockchain || 'base';
     const tokenContract = getTokenContract(validated.currency, blockchain);
 
-    if (validated.walletType === 'internal') {
-      // Internal PayOS wallet (Phase 1)
+    if (validated.walletType === 'internal' && blockchain === 'tempo') {
+      // Tempo on-chain wallet — generate keypair eagerly so wallet has an address for funding
+      const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts');
+      const privateKey = generatePrivateKey();
+      const account = privateKeyToAccount(privateKey);
+      walletAddress = account.address;
+
+      const isLive = getEnv(ctx) === 'live';
+      const tempoToken = isLive
+        ? { currency: 'USDC', contract: '0x20C000000000000000000000b9537d11c60E8b50' }
+        : { currency: 'pathUSD', contract: '0x20c0000000000000000000000000000000000000' };
+
+      providerMetadata = {
+        encrypted_private_key: privateKey,  // TODO: encrypt with KMS in production
+        key_derivation: 'viem/generatePrivateKey',
+        chain_id: isLive ? 4217 : 42431,
+        rpc_url: isLive ? 'https://rpc.tempo.xyz' : 'https://rpc.moderato.tempo.xyz',
+        token_decimals: 6,
+        token_contract: tempoToken.contract,
+      };
+    } else if (validated.walletType === 'internal') {
+      // Internal PayOS ledger wallet
       walletAddress = validated.managedByAgentId
         ? `internal://payos/${ctx.tenantId}/${accountId}/agent/${validated.managedByAgentId}`
         : `internal://payos/${ctx.tenantId}/${accountId}/${Date.now()}`;
     } else {
       // Circle wallet — uses real Circle API when CIRCLE_API_KEY is configured,
       // otherwise falls back to mock service.
-      const circleService = getCircleServiceForTenant(ctx.tenantId);
+      const circleService = getCircleServiceForTenant(ctx.tenantId, getEnv(ctx) as 'test' | 'live');
 
       try {
         // Auto-select SCA for EVM chains when Gas Station is enabled (gasless txns)
@@ -295,11 +359,13 @@ app.post('/', async (c) => {
           } catch { /* feature check is optional */ }
         }
 
+        const isLive = getEnv(ctx) === 'live';
         const circleWallet = await circleService.createWallet({
           blockchain: blockchain as any,
           name: validated.name || `PayOS Wallet`,
           refId: accountId,
           accountType,
+          testnet: !isLive,
         });
 
         walletAddress = circleWallet.address;
@@ -322,6 +388,7 @@ app.post('/', async (c) => {
       .from('wallets')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         owner_account_id: accountId,
         managed_by_agent_id: validated.managedByAgentId || null,
         balance: validated.initialBalance,
@@ -336,7 +403,7 @@ app.post('/', async (c) => {
         // Phase 2 fields
         wallet_type: validated.walletType,
         custody_type: validated.walletType === 'circle_mpc' ? 'mpc' : 'custodial',
-        provider: validated.walletType === 'internal' ? 'payos' : 'circle',
+        provider: blockchain === 'tempo' ? 'tempo' : (validated.walletType === 'internal' ? 'payos' : 'circle'),
         provider_wallet_id: providerWalletId,
         provider_wallet_set_id: providerWalletSetId,
         provider_entity_id: providerEntityId,
@@ -371,6 +438,7 @@ app.post('/', async (c) => {
         .from('transfers')
         .insert({
           tenant_id: ctx.tenantId,
+          environment: getEnv(ctx),
           from_account_id: accountId,
           to_account_id: accountId,
           amount: validated.initialBalance,
@@ -383,7 +451,7 @@ app.post('/', async (c) => {
             wallet_id: wallet.id,
             operation: 'initial_deposit'
           }
-        });
+        } as any);
     }
 
     // Auto-fund gas for Circle custodial wallets in sandbox
@@ -408,7 +476,7 @@ app.post('/', async (c) => {
       subject: `wallet/${wallet.id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { blockchain, currency: validated.currency },
     });
@@ -451,7 +519,13 @@ app.get('/', async (c) => {
       .from('wallets')
       .select('*', { count: 'exact' })
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .order('created_at', { ascending: false });
+
+    // Agent tokens: scope to agent's own wallets only
+    if (ctx.actorType === 'agent' && ctx.actorId) {
+      query = query.eq('managed_by_agent_id', ctx.actorId);
+    }
 
     // Apply filters
     if (ownerAccountId) {
@@ -526,6 +600,9 @@ app.post('/external', async (c) => {
 
     // Get the account ID (prefer new name, fall back to old)
     const accountId = validated.accountId || validated.ownerAccountId;
+    if (!accountId) {
+      return c.json({ error: 'accountId is required' }, 400);
+    }
 
     const supabase = createClient();
 
@@ -535,6 +612,7 @@ app.post('/external', async (c) => {
       .select('id')
       .eq('id', accountId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (accountError || !account) {
@@ -591,6 +669,7 @@ app.post('/external', async (c) => {
       .from('wallets')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         owner_account_id: accountId,
         managed_by_agent_id: validated.managedByAgentId || null,
         balance: 0, // External wallet balance must be synced
@@ -622,7 +701,7 @@ app.post('/external', async (c) => {
         kyc_status: 'pending',
         aml_cleared: false,
         sanctions_status: 'not_screened'
-      })
+      } as any)
       .select()
       .single();
 
@@ -700,7 +779,7 @@ app.post('/:id/verify', async (c) => {
     // Verify signature (mock for now)
     const circleService = getCircleService(ctx.tenantId);
     const verifyResult = await circleService.verifyWalletOwnership(
-      wallet.wallet_address,
+      wallet.wallet_address ?? '',
       signature,
       message
     );
@@ -759,33 +838,124 @@ app.get('/:id', async (c) => {
       .select('*')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (error || !wallet) {
       return c.json({ error: 'Wallet not found' }, 404);
     }
 
-    // Fetch recent transactions involving this wallet
-    const { data: recentTxs } = await supabase
-      .from('transfers')
-      .select('id, from_account_id, to_account_id, amount, currency, status, type, created_at, protocol_metadata')
-      .eq('tenant_id', ctx.tenantId)
-      .or(`protocol_metadata->>wallet_id.eq.${id}`)
+    // For agent_eoa wallets, chain IS the ledger. Sync on-chain USDC
+    // synchronously and await the DB update before returning so the
+    // caller never sees a stale zero balance. Non-fatal on RPC error —
+    // fall back to whatever balance is currently in the DB.
+    const walletRow = wallet as any;
+    if (walletRow.wallet_type === 'agent_eoa' && walletRow.wallet_address) {
+      const env: 'live' | 'test' = walletRow.environment === 'live' ? 'live' : 'test';
+      const onchain = await readOnchainUsdc(walletRow.wallet_address, env);
+      if (onchain !== null) {
+        const nowIso = new Date().toISOString();
+        await (supabase.from('wallets') as any)
+          .update({
+            balance: onchain,
+            last_synced_at: nowIso,
+            sync_data: {
+              ...(walletRow.sync_data || {}),
+              on_chain_usdc: String(onchain),
+              synced_at: nowIso,
+            },
+          })
+          .eq('id', id)
+          .eq('tenant_id', ctx.tenantId);
+        walletRow.balance = onchain;
+        walletRow.last_synced_at = nowIso;
+      }
+    }
+
+    // Fetch recent transactions involving this wallet. Matching rule
+    // depends on wallet type:
+    //  - agent_eoa: transfers initiated by the agent that manages this
+    //    EOA (external x402 calls use initiated_by_id = agent_id and
+    //    don't set protocol_metadata.wallet_id), OR transfers whose
+    //    external to_address matches this EOA (e.g. auto-refill
+    //    deposits from the Circle master).
+    //  - everything else: legacy wildcard on protocol_metadata.wallet_id.
+    const buildTxQuery = () => {
+      let q = supabase
+        .from('transfers')
+        .select('id, from_account_id, to_account_id, amount, currency, status, type, created_at, protocol_metadata')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx));
+      if (walletRow.wallet_type === 'agent_eoa' && walletRow.managed_by_agent_id) {
+        const addrLower = (walletRow.wallet_address || '').toLowerCase();
+        q = q.or(`initiated_by_id.eq.${walletRow.managed_by_agent_id},protocol_metadata->>to_address.eq.${addrLower}`);
+      } else {
+        q = q.or(`protocol_metadata->>wallet_id.eq.${id}`);
+      }
+      return q;
+    };
+    const { data: recentTxs } = await buildTxQuery()
       .order('created_at', { ascending: false })
       .limit(20);
 
+    // Live spending totals computed from the transfers ledger. These are
+    // authoritative for wallet types that don't persist counters in the
+    // spending_policy JSON (agent_eoa, external, smart_wallet) and give
+    // the dashboard a live "used today / this month" number regardless
+    // of wallet type. Only counts outbound, completed spend — cancelled
+    // attempts where no money moved are excluded.
+    const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
+    const [{ data: dailyRows }, { data: monthlyRows }] = await Promise.all([
+      buildTxQuery()
+        .in('status', ['completed', 'pending', 'processing'])
+        .in('type', ['x402', 'internal', 'mpp', 'ucp_settlement', 'acp_settlement'])
+        .gte('created_at', dayStart.toISOString()),
+      buildTxQuery()
+        .in('status', ['completed', 'pending', 'processing'])
+        .in('type', ['x402', 'internal', 'mpp', 'ucp_settlement', 'acp_settlement'])
+        .gte('created_at', monthStart.toISOString()),
+    ]);
+    const sumSpend = (rows: any[] | null) => (rows || []).reduce(
+      (acc, r) => acc + (Number(r.amount) || 0),
+      0,
+    );
+    const dailyActualSpent = sumSpend(dailyRows);
+    const monthlyActualSpent = sumSpend(monthlyRows);
+    const dailyActualTxCount = (dailyRows || []).length;
+    const monthlyActualTxCount = (monthlyRows || []).length;
+    // Timestamp of the most recent counted row today — used by the UI to
+    // render "last activity X minutes ago" without a separate query.
+    const lastActivityAt = (dailyRows || [])
+      .map((r: any) => r.created_at)
+      .filter(Boolean)
+      .sort()
+      .reverse()[0] || (monthlyRows || [])
+      .map((r: any) => r.created_at)
+      .filter(Boolean)
+      .sort()
+      .reverse()[0] || null;
+
     // Format response
     const response = {
-      ...mapWalletFromDb(wallet),
+      ...mapWalletFromDb(walletRow),
+      // Live spending totals from the transfers ledger (UTC day / UTC month).
+      // The dashboard reads these to render progress bars for any wallet
+      // type, including ones that don't persist counters in spending_policy.
+      dailyActualSpent,
+      monthlyActualSpent,
+      dailyActualTxCount,
+      monthlyActualTxCount,
+      lastActivityAt,
       recentTransactions: recentTxs?.map(tx => ({
         id: tx.id,
         fromAccountId: tx.from_account_id,
         toAccountId: tx.to_account_id,
-        amount: parseFloat(tx.amount),
+        amount: Number(tx.amount ?? 0),
         currency: tx.currency,
         status: tx.status,
         type: tx.type,
-        operation: tx.protocol_metadata?.operation,
+        operation: (tx.protocol_metadata as Record<string, unknown> | null)?.operation,
         createdAt: tx.created_at
       })) || []
     };
@@ -810,7 +980,7 @@ app.get('/:id/balance', async (c) => {
 
     const { data: wallet, error } = await supabase
       .from('wallets')
-      .select('id, balance, currency, wallet_address, last_synced_at, sync_data, sync_enabled')
+      .select('id, balance, currency, wallet_address, last_synced_at, sync_data, sync_enabled, wallet_type, environment, blockchain, provider_wallet_id, token_contract')
       .eq('id', walletId)
       .eq('tenant_id', ctx.tenantId)
       .single();
@@ -842,68 +1012,130 @@ app.get('/:id/balance', async (c) => {
       }
     }
 
-    // Phase 2: Live balance fetch for Circle/external wallets when stale
+    // Live balance fetch. For every address-holding wallet we now query
+    // the blockchain directly via RPC — including circle_custodial —
+    // so `onChain.usdc` is always the real chain state, never what a
+    // provider API *claims* to hold. Circle's reported balance is
+    // exposed separately as `circleReported` so tenants can see any
+    // mismatch (e.g. if Circle's ledger drifts from the actual address).
     let onChainBalance: string | null = null;
-    if (!isInternalWallet && syncStatus !== 'synced') {
-      try {
-        const walletRecord = wallet as any;
-        if (walletRecord.wallet_type === 'circle_custodial' && walletRecord.provider_wallet_id) {
-          // Circle wallet: use Circle API for balance
-          const { getCircleClient } = await import('../services/circle/client.js');
-          const circle = getCircleClient();
+    let circleReported: string | null = null;
+    const walletRecord = wallet as any;
+    const isAgentEoa = walletRecord.wallet_type === 'agent_eoa';
+    const isCircleCustodial = walletRecord.wallet_type === 'circle_custodial';
+    // Always refetch for agent_eoa + circle_custodial (these benefit from
+    // the mismatch check). For others, respect the sync-age gate.
+    const shouldRefetch = !isInternalWallet && (syncStatus !== 'synced' || isAgentEoa || isCircleCustodial);
+
+    if (shouldRefetch) {
+      // Circle-side read (for circle_custodial only — compare against chain).
+      if (isCircleCustodial && walletRecord.provider_wallet_id) {
+        try {
+          const isLiveBalEnv = getEnv(ctx) === 'live';
+          const { getCircleClient, getCircleLiveClient } = await import('../services/circle/client.js');
+          const circle = isLiveBalEnv ? getCircleLiveClient() : getCircleClient();
           const balance = await circle.getUsdcBalance(walletRecord.provider_wallet_id);
-          onChainBalance = balance.formatted.toString();
-        } else if (wallet.wallet_address && !wallet.wallet_address.startsWith('internal://')) {
-          // External wallet: use Solana or EVM balance check based on blockchain
-          const walletBlockchain = (wallet as any).blockchain || 'base';
+          circleReported = balance.formatted.toString();
+        } catch (e) {
+          console.warn(`[Wallets] Circle API read failed for ${walletId}:`, (e as Error)?.message);
+        }
+      }
+
+      // Chain-direct read — authoritative on-chain USDC balance.
+      try {
+        if (wallet.wallet_address && !wallet.wallet_address.startsWith('internal://')) {
+          const walletBlockchain = walletRecord.blockchain || 'base';
           if (walletBlockchain === 'sol') {
             const { getSolanaUsdcBalance } = await import('../config/solana.js');
             const { formatted } = await getSolanaUsdcBalance(wallet.wallet_address);
             onChainBalance = formatted.toString();
           } else {
-            const { getUsdcBalance: getOnChainUsdcBalance } = await import('../config/blockchain.js');
-            onChainBalance = await getOnChainUsdcBalance(wallet.wallet_address);
+            const walletEnv: 'live' | 'test' = walletRecord.environment === 'live' ? 'live' : 'test';
+            const onchain = await readOnchainUsdc(wallet.wallet_address, walletEnv);
+            if (onchain !== null) onChainBalance = String(onchain);
           }
         }
+      } catch (e) {
+        console.warn(`[Wallets] Chain RPC read failed for ${walletId}:`, (e as Error)?.message);
+      }
 
-        // Update sync_data in background
-        if (onChainBalance !== null) {
-          supabase
-            .from('wallets')
-            .update({
-              sync_data: {
-                ...(wallet.sync_data as Record<string, unknown> || {}),
-                on_chain_usdc: onChainBalance,
-                synced_at: new Date().toISOString(),
-              },
-              last_synced_at: new Date().toISOString(),
-            })
-            .eq('id', walletId)
-            .eq('tenant_id', ctx.tenantId)
-            .then(() => {});
+      // Persist whichever value we got. For agent_eoa the chain IS the
+      // ledger so we also mirror into `balance`. For circle_custodial
+      // we store both in sync_data for transparency but DON'T overwrite
+      // `balance` (that's the Circle-accounted number used for
+      // spending-policy enforcement).
+      if (onChainBalance !== null || circleReported !== null) {
+        const updatePatch: any = {
+          sync_data: {
+            ...(wallet.sync_data as Record<string, unknown> || {}),
+            on_chain_usdc: onChainBalance ?? (wallet.sync_data as any)?.on_chain_usdc ?? null,
+            circle_reported_usdc: circleReported ?? (wallet.sync_data as any)?.circle_reported_usdc ?? null,
+            synced_at: new Date().toISOString(),
+          },
+          last_synced_at: new Date().toISOString(),
+        };
+        if (isAgentEoa && onChainBalance !== null) {
+          updatePatch.balance = parseFloat(onChainBalance);
         }
-      } catch (syncErr) {
-        console.warn(`[Wallets] Live balance sync failed for ${walletId}:`, syncErr);
+        // For circle_custodial, the authoritative ledger value is what
+        // Circle's API reports (that's what accounting + spend-caps
+        // key off). Mirror it into `balance` so the stored value doesn't
+        // drift from Circle. On-chain is still shown separately for
+        // transparency when the two disagree.
+        if (isCircleCustodial && circleReported !== null) {
+          updatePatch.balance = parseFloat(circleReported);
+        }
+        supabase
+          .from('wallets')
+          .update(updatePatch)
+          .eq('id', walletId)
+          .eq('tenant_id', ctx.tenantId)
+          .then(() => {});
       }
     }
 
-    // Build on-chain data from sync_data or live fetch
+    // Build on-chain data + mismatch diagnostic.
     const syncData = wallet.sync_data as Record<string, unknown> | null;
+    const resolvedOnChain = onChainBalance
+      ?? (syncData?.on_chain_usdc as string | null | undefined)
+      ?? null;
+    const resolvedCircle = circleReported
+      ?? (syncData?.circle_reported_usdc as string | null | undefined)
+      ?? null;
+    let mismatch: null | { kind: 'circle_over_chain' | 'circle_under_chain'; delta: number; note: string } = null;
+    if (isCircleCustodial && resolvedOnChain !== null && resolvedCircle !== null) {
+      const chain = parseFloat(resolvedOnChain);
+      const circle = parseFloat(resolvedCircle);
+      const delta = circle - chain;
+      if (Math.abs(delta) > 0.01) {
+        mismatch = {
+          kind: delta > 0 ? 'circle_over_chain' : 'circle_under_chain',
+          delta: Number(delta.toFixed(6)),
+          note: delta > 0
+            ? `Circle claims $${circle.toFixed(4)} but only $${chain.toFixed(4)} is on-chain. Circle may have swept funds to a master wallet without updating your ledger view.`
+            : `On-chain balance ($${chain.toFixed(4)}) exceeds Circle's claim ($${circle.toFixed(4)}). Possibly an inbound deposit Circle hasn't indexed yet.`,
+        };
+      }
+    }
+
     const onChain = !isInternalWallet ? {
-      usdc: onChainBalance
-        || (syncData?.raw_balance
-          ? (parseFloat(syncData.raw_balance as string) / Math.pow(10, (syncData.decimals as number) || 6)).toString()
+      usdc: resolvedOnChain
+        ?? (syncData?.raw_balance
+          ? String(parseFloat(syncData.raw_balance as string) / Math.pow(10, (syncData.decimals as number) || 6))
           : wallet.balance.toString()),
       native: (syncData?.native_balance as string) || '0',
-      lastSyncedAt: onChainBalance ? new Date().toISOString() : wallet.last_synced_at,
+      lastSyncedAt: onChainBalance || circleReported ? new Date().toISOString() : wallet.last_synced_at,
+      source: 'chain_rpc',
     } : null;
 
     return c.json({
       data: {
-        balance: parseFloat(wallet.balance),
+        balance: Number(wallet.balance ?? 0),
         currency: wallet.currency,
-        syncStatus: onChainBalance ? 'synced' : syncStatus,
+        syncStatus: (onChainBalance !== null || circleReported !== null) ? 'synced' : syncStatus,
         onChain,
+        circleReported: isCircleCustodial ? (resolvedCircle !== null ? parseFloat(resolvedCircle) : null) : undefined,
+        mismatch,
       },
     });
   } catch (error) {
@@ -933,6 +1165,7 @@ app.patch('/:id', async (c) => {
       .select('id')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (fetchError || !existing) {
@@ -1001,6 +1234,9 @@ app.post('/:id/deposit', async (c) => {
 
     // Get the from account ID (prefer new name, fall back to old)
     const fromAccountId = validated.fromAccountId || validated.sourceAccountId;
+    if (!fromAccountId) {
+      return c.json({ error: 'fromAccountId is required' }, 400);
+    }
 
     const supabase = createClient();
 
@@ -1010,6 +1246,7 @@ app.post('/:id/deposit', async (c) => {
       .select('*')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (walletError || !wallet) {
@@ -1039,7 +1276,7 @@ app.post('/:id/deposit', async (c) => {
     }
 
     // Update wallet balance
-    const newBalance = parseFloat(wallet.balance) + validated.amount;
+    const newBalance = Number(wallet.balance ?? 0) + validated.amount;
 
     const { error: updateError } = await supabase
       .from('wallets')
@@ -1061,6 +1298,7 @@ app.post('/:id/deposit', async (c) => {
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         from_account_id: fromAccountId,
         to_account_id: wallet.owner_account_id,
         amount: validated.amount,
@@ -1073,7 +1311,7 @@ app.post('/:id/deposit', async (c) => {
           wallet_id: wallet.id,
           operation: 'deposit'
         }
-      })
+      } as any)
       .select()
       .single();
 
@@ -1096,7 +1334,7 @@ app.post('/:id/deposit', async (c) => {
       subject: `wallet/${wallet.id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { amount: validated.amount, currency: wallet.currency, newBalance },
     });
@@ -1104,7 +1342,7 @@ app.post('/:id/deposit', async (c) => {
     return c.json({
       data: {
         walletId: wallet.id,
-        previousBalance: parseFloat(wallet.balance),
+        previousBalance: Number(wallet.balance ?? 0),
         depositAmount: validated.amount,
         newBalance,
         transferId: transfer?.id,
@@ -1145,6 +1383,7 @@ app.post('/:id/withdraw', async (c) => {
       .select('*')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (walletError || !wallet) {
@@ -1160,7 +1399,7 @@ app.post('/:id/withdraw', async (c) => {
     }
 
     // Check sufficient balance
-    const currentBalance = parseFloat(wallet.balance);
+    const currentBalance = Number(wallet.balance ?? 0);
     if (currentBalance < validated.amount) {
       return c.json({
         error: 'Insufficient balance',
@@ -1207,6 +1446,7 @@ app.post('/:id/withdraw', async (c) => {
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         from_account_id: wallet.owner_account_id,
         to_account_id: validated.destinationAccountId,
         amount: validated.amount,
@@ -1219,7 +1459,7 @@ app.post('/:id/withdraw', async (c) => {
           wallet_id: wallet.id,
           operation: 'withdrawal'
         }
-      })
+      } as any)
       .select()
       .single();
 
@@ -1242,7 +1482,7 @@ app.post('/:id/withdraw', async (c) => {
       subject: `wallet/${wallet.id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { amount: validated.amount, currency: wallet.currency, newBalance },
     });
@@ -1287,6 +1527,7 @@ app.delete('/:id', async (c) => {
       .select('id, balance')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (walletError || !wallet) {
@@ -1294,14 +1535,14 @@ app.delete('/:id', async (c) => {
     }
 
     // Check balance is 0
-    if (parseFloat(wallet.balance) > 0) {
+    if (Number(wallet.balance ?? 0) > 0) {
       const force = c.req.query('force') === 'true';
 
       if (!force) {
         return c.json({
           error: 'Wallet has non-zero balance',
           message: 'Withdraw all funds before deleting. Add ?force=true to delete anyway.',
-          balance: parseFloat(wallet.balance)
+          balance: Number(wallet.balance ?? 0)
         }, 409);
       }
     }
@@ -1371,6 +1612,7 @@ app.post('/:id/sync', async (c) => {
       .select('*')
       .eq('id', walletId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (fetchError || !wallet) {
@@ -1389,25 +1631,34 @@ app.post('/:id/sync', async (c) => {
     let formattedBalance: number;
     let syncData: Record<string, unknown>;
 
-    // Circle custodial wallets: use Circle API (authoritative source of truth)
+    // Circle custodial wallets: query BOTH Circle API and the chain,
+    // so we can detect when Circle's ledger drifts from the actual
+    // balance at the wallet address. `balance` stays as Circle's number
+    // (it's what accounting + spending-policy checks key off), but
+    // sync_data exposes on_chain_usdc for transparency and the /balance
+    // endpoint surfaces the mismatch diagnostic.
     if (wallet.wallet_type === 'circle_custodial' && wallet.provider_wallet_id) {
-      const { getCircleClient } = await import('../services/circle/client.js');
-      const circle = getCircleClient();
+      const isLiveSyncEnv = getEnv(ctx) === 'live';
+      const { getCircleClient, getCircleLiveClient } = await import('../services/circle/client.js');
+      const circle = isLiveSyncEnv ? getCircleLiveClient() : getCircleClient();
       const balances = await circle.getWalletBalances(wallet.provider_wallet_id);
 
       const tokenSymbol = wallet.currency || 'USDC';
       const tokenBalance = balances.find(b => b.token.symbol === tokenSymbol);
-      // Circle API returns amount already in human-readable format (e.g. "1" = 1 USDC)
       formattedBalance = tokenBalance ? parseFloat(tokenBalance.amount) : 0;
-
-      // Also fetch native balance for gas info
       const nativeBalance = balances.find(b => b.token.isNative);
+
+      // Chain-direct read so the UI can show "circle says X, chain says Y".
+      const walletEnv: 'live' | 'test' = (wallet as any).environment === 'live' ? 'live' : 'test';
+      const onChainUsdc = await readOnchainUsdc(wallet.wallet_address, walletEnv);
 
       syncData = {
         source: 'circle_api',
         token_balances: balances,
         native_balance: nativeBalance ? nativeBalance.amount : '0',
         provider_wallet_id: wallet.provider_wallet_id,
+        circle_reported_usdc: String(formattedBalance),
+        on_chain_usdc: onChainUsdc !== null ? String(onChainUsdc) : null,
       };
     } else if (wallet.blockchain === 'sol') {
       // Solana wallets: use Solana RPC for USDC + SOL balance
@@ -1432,8 +1683,8 @@ app.post('/:id/sync', async (c) => {
       const verificationService = getWalletVerificationService();
 
       const [walletInfo, tokenBalance] = await Promise.all([
-        verificationService.getWalletInfo(wallet.wallet_address),
-        verificationService.syncBalance(wallet.wallet_address, wallet.token_contract),
+        verificationService.getWalletInfo(wallet.wallet_address ?? ''),
+        verificationService.syncBalance(wallet.wallet_address ?? '', wallet.token_contract ?? undefined),
       ]);
 
       formattedBalance = parseFloat(tokenBalance.balance) / Math.pow(10, tokenBalance.decimals);
@@ -1455,7 +1706,7 @@ app.post('/:id/sync', async (c) => {
       .update({
         balance: formattedBalance,
         last_synced_at: new Date().toISOString(),
-        sync_data: syncData,
+        sync_data: syncData as any,
         updated_at: new Date().toISOString(),
       })
       .eq('id', walletId)
@@ -1573,6 +1824,7 @@ app.post('/:id/test-fund', async (c) => {
       .select('*')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (walletError || !wallet) {
@@ -1589,7 +1841,7 @@ app.post('/:id/test-fund', async (c) => {
     }
 
     // Update wallet balance
-    const previousBalance = parseFloat(wallet.balance);
+    const previousBalance = Number(wallet.balance ?? 0);
     const newBalance = previousBalance + validated.amount;
 
     const { error: updateError } = await supabase
@@ -1690,6 +1942,7 @@ app.post('/:id/fund', async (c) => {
       .select('*')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (walletError || !wallet) {
@@ -1731,7 +1984,7 @@ app.post('/:id/fund', async (c) => {
     );
 
     // For Circle custodial wallets, poll on-chain balance and sync DB
-    const previousBalance = parseFloat(wallet.balance);
+    const previousBalance = Number(wallet.balance ?? 0);
     let newBalance = previousBalance;
 
     if (walletType === 'circle_custodial' && providerWalletId) {
@@ -1781,7 +2034,7 @@ app.post('/:id/fund', async (c) => {
       subject: `wallet/${id}`,
       actorType: ctx.actorType,
       actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-      correlationId: c.get('requestId'),
+      correlationId: (c as any).get('requestId'),
       success: true,
       data: { currency: validated.currency, source: 'circle_faucet', walletType },
     });
@@ -1827,10 +2080,11 @@ app.post('/:id/fund', async (c) => {
           note: 'The Circle faucet rate-limits to ~20 USDC per address per 2 hours.',
         }, 429);
       }
+      const sc = error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 502;
       return c.json({
         error: error.message,
         code: 'CIRCLE_API_ERROR',
-      }, error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 502);
+      }, sc as any);
     }
     return c.json({ error: 'Internal server error' }, 500);
   }
@@ -1913,6 +2167,7 @@ app.post('/:id/transfer', async (c) => {
       .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id, status, currency')
       .eq('id', sourceWalletId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (srcErr || !sourceWallet) {
@@ -1932,6 +2187,7 @@ app.post('/:id/transfer', async (c) => {
         .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id, status')
         .eq('id', validated.destinationWalletId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
 
       if (dwErr || !dw) {
@@ -1941,13 +2197,13 @@ app.post('/:id/transfer', async (c) => {
         return c.json({ error: `Destination wallet is ${dw.status}` }, 400);
       }
       destWallet = dw;
-      destAddress = dw.wallet_address;
+      destAddress = dw.wallet_address ?? '';
     } else {
       destAddress = validated.destinationAddress!;
     }
 
     // 3. Check balance
-    const sourceBalance = parseFloat(sourceWallet.balance);
+    const sourceBalance = Number(sourceWallet.balance ?? 0);
     if (sourceBalance < validated.amount) {
       return c.json({
         error: 'Insufficient balance',
@@ -1972,6 +2228,7 @@ app.post('/:id/transfer', async (c) => {
       .from('transfers')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         from_account_id: sourceWallet.owner_account_id,
         to_account_id: destWallet?.owner_account_id || null,
         amount: validated.amount,
@@ -1983,7 +2240,7 @@ app.post('/:id/transfer', async (c) => {
         initiated_by_id: ctx.actorType === 'agent' ? ctx.actorId : ctx.apiKeyId,
         initiated_by_name: ctx.actorType === 'agent' ? ctx.actorName : 'api',
         protocol_metadata: transferMetadata,
-      })
+      } as any)
       .select('id')
       .single();
 
@@ -1996,11 +2253,12 @@ app.post('/:id/transfer', async (c) => {
     const settlement = await settleWalletTransfer({
       supabase,
       tenantId: ctx.tenantId,
-      sourceWallet,
+      sourceWallet: sourceWallet as any,
       destinationWallet: destWallet,
       amount: validated.amount,
       transferId: transfer.id,
       protocolMetadata: transferMetadata,
+      environment: getEnv(ctx) as 'test' | 'live',
     });
 
     if (!settlement.success) {

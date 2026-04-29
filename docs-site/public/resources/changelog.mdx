@@ -1,0 +1,72 @@
+---
+title: "Changelog"
+description: "API, SDK, and platform changes over time."
+---
+
+Notable changes to the Sly API surface and SDKs. This page is for human readers; machine-readable change feeds are available at `/v1/openapi.json` (spec) and via GitHub release notes for each package.
+
+## 2026-04
+
+- **Docs portal live.** This site replaces the former GitHub-hosted markdown. Migration tracked [here](#).
+- **Public sandbox demo key.** Every endpoint in the API reference has a live "Try it" button pre-filled with a shared demo key against `sandbox.getsly.ai`.
+- **MCP catalog page** published, listing every Sly + Scanner MCP tool with input/output schemas.
+
+## 2026-03
+
+- **`@hono/zod-openapi` migration** underway. The OpenAPI spec at `/v1/openapi.json` is now auto-generated for public protocols (UCP, ACP, AP2, x402, A2A, MCP). CRUD endpoints migrate through Q2.
+- **Ed25519 session tokens** generally available. Previously labeled "beta" — now the production-recommended agent auth method.
+- **A2A marketplace** gets ratings, attestations (EAS), and reputation-weighted discovery.
+- **ERC-8004 on-chain identity** available for agents — mints a portable identity NFT.
+
+## 2026-02
+
+- **Portal tokens** (`portal_*`) launched. Scoped, short-lived credentials for customer-facing dashboards.
+- **Scanner service** enters private beta with 13 MCP tools (later expanded to 19).
+
+## 2026-01
+
+- **KYA tiers** formalized. Previously ad-hoc limits per agent are now one of four tiers (0–3) with documented upgrade paths.
+- **Approval workflows** GA. Threshold-based human-in-the-loop for agent spending.
+- **Wallet policies** refined — per-merchant rules, velocity limits, time windows.
+
+## 2025-12
+
+- **`@sly_ai/mcp-server` v0.1** — Claude Desktop integration.
+- **A2A task flow** finalized — JSON-RPC, task lifecycle, rating.
+
+## 2025-11
+
+- **x402 support** added. Register endpoints, accept micropayments, bridge to fiat.
+- **AP2 mandates** GA. Create, execute, revoke.
+
+## 2025-10
+
+- **Stream alerts** — SSE + webhook events when runway drops.
+- **Batch transfers** for payroll / disbursements.
+
+## 2025-Q3
+
+- **ACP protocol** integrated (Stripe + OpenAI ecosystem).
+- **UCP** launched as Sly's native checkout protocol.
+- **Money streaming** released with wrap/unwrap/withdraw primitives.
+
+## Older
+
+Prior releases (pre-2025 Q3) are in internal changelogs only. The platform was in closed alpha.
+
+## Breaking change policy
+
+- **Pre-1.0** (current): breaking changes allowed on minor version bumps. Announced at least 30 days in advance via this page and email.
+- **Post-1.0** (target: late 2026): breaking changes only on major version bumps. Old versions supported for 12 months minimum.
+
+## SDK changelogs
+
+Each package has its own detailed release notes:
+
+- [`@sly_ai/sdk` releases](https://github.com/Sly-devs/sly/releases?q=sdk)
+- [`@sly_ai/cli` releases](https://github.com/Sly-devs/sly/releases?q=cli)
+- [`@sly_ai/mcp-server` releases](https://github.com/Sly-devs/sly/releases?q=mcp-server)
+
+## RSS
+
+A machine-readable RSS feed is [coming soon](/resources/coming-soon) — for now, watch the [docs repo](https://github.com/Sly-devs/sly/commits/main/docs-site/public/resources/changelog.mdx) or subscribe to tenant-admin email notifications for release announcements.

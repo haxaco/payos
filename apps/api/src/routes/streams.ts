@@ -1,12 +1,14 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { 
+import type { RequestContext } from '../middleware/auth.js';
+import {
   mapStreamFromDb,
   logAudit,
   isValidUUID,
   getPaginationParams,
   paginationResponse,
+  getEnv,
 } from '../utils/helpers.js';
 import { createBalanceService } from '../services/balances.js';
 import { createLimitService } from '../services/limits.js';
@@ -19,7 +21,7 @@ import {
 } from '../services/streams.js';
 import { ValidationError, NotFoundError, InsufficientBalanceError } from '../middleware/error.js';
 
-const streams = new Hono();
+const streams = new Hono<{ Variables: { ctx: RequestContext } }>();
 
 // ============================================
 // VALIDATION SCHEMAS
@@ -47,7 +49,7 @@ const withdrawSchema = z.object({
 // ============================================
 streams.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Parse query params
   const query = c.req.query();
@@ -56,12 +58,13 @@ streams.get('/', async (c) => {
   const health = query.health;
   const category = query.category;
   
-  let dbQuery = supabase
+  let dbQuery: any = (supabase as any)
     .from('streams')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false });
-  
+
   if (status) {
     dbQuery = dbQuery.eq('status', status);
   }
@@ -69,7 +72,7 @@ streams.get('/', async (c) => {
   if (category) {
     dbQuery = dbQuery.eq('category', category);
   }
-  
+
   const { data, error } = await dbQuery;
   
   if (error) {
@@ -78,7 +81,7 @@ streams.get('/', async (c) => {
   }
   
   // Calculate real-time state for each stream
-  let streams = (data || []).map(row => {
+  let streams = (data || []).map((row: any) => {
     const stream = mapStreamFromDb(row);
     
     // Update with real-time calculation for active streams
@@ -112,7 +115,7 @@ streams.get('/', async (c) => {
   
   // Apply health filter AFTER real-time calculation (since health changes dynamically)
   if (health) {
-    streams = streams.filter(s => s.health === health);
+    streams = streams.filter((s: any) => s.health === health);
   }
   
   // Apply pagination after filtering
@@ -127,7 +130,7 @@ streams.get('/', async (c) => {
 // ============================================
 streams.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   // Check for idempotency
   const idempotencyKey = c.req.header('X-Idempotency-Key');
@@ -137,6 +140,7 @@ streams.post('/', async (c) => {
       .from('streams')
       .select('*')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('idempotency_key', idempotencyKey)
       .single();
     
@@ -171,11 +175,13 @@ streams.post('/', async (c) => {
       .from('accounts')
       .select('id, name, balance_available, tenant_id')
       .eq('id', senderAccountId)
+      .eq('environment', getEnv(ctx))
       .single(),
     supabase
       .from('accounts')
       .select('id, name, tenant_id')
       .eq('id', receiverAccountId)
+      .eq('environment', getEnv(ctx))
       .single(),
   ]);
   
@@ -219,8 +225,8 @@ streams.post('/', async (c) => {
   
   // If agent is creating, check limits
   if (ctx.actorType === 'agent') {
-    const limitService = createLimitService(supabase);
-    const limitCheck = await limitService.checkStreamLimit(ctx.actorId, flowRatePerMonth);
+    const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
+    const limitCheck = await limitService.checkStreamLimit(ctx.actorId!, flowRatePerMonth);
     
     if (!limitCheck.allowed) {
       throw new ValidationError(`Stream creation blocked: ${limitCheck.reason}`, {
@@ -241,6 +247,7 @@ streams.post('/', async (c) => {
     .from('streams')
     .insert({
       tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
       status: 'active',
       sender_account_id: senderAccountId,
       sender_account_name: sender.name,
@@ -285,21 +292,21 @@ streams.post('/', async (c) => {
     await balanceService.holdForStream(senderAccountId, stream.id, actualFunding, bufferAmount);
   } catch (error: any) {
     // Rollback stream creation
-    await supabase.from('streams').delete().eq('id', stream.id);
+    await supabase.from('streams').delete().eq('id', stream.id).eq('environment', getEnv(ctx));
     throw error;
   }
   
   // Update agent stream stats if applicable
   if (ctx.actorType === 'agent') {
-    const limitService = createLimitService(supabase);
-    await limitService.updateAgentStreamStats(ctx.actorId, 1, flowRatePerMonth);
+    const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
+    await limitService.updateAgentStreamStats(ctx.actorId!, 1, flowRatePerMonth);
   }
-  
+
   // Log stream event
   await logStreamEvent(supabase, stream.id, ctx.tenantId, 'created', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, {
     fundedAmount: actualFunding,
     flowRatePerMonth,
@@ -332,7 +339,7 @@ streams.post('/', async (c) => {
 streams.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -343,14 +350,15 @@ streams.get('/:id', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (error || !data) {
     throw new NotFoundError('Stream', id);
   }
-  
+
   const stream = mapStreamFromDb(data);
-  
+
   // Calculate real-time state
   if (data.status === 'active') {
     const calculation = calculateStreamState({
@@ -386,7 +394,7 @@ streams.get('/:id', async (c) => {
 streams.post('/:id/pause', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -397,12 +405,13 @@ streams.post('/:id/pause', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (fetchError || !stream) {
     throw new NotFoundError('Stream', id);
   }
-  
+
   if (stream.status !== 'active') {
     throw new ValidationError(`Cannot pause stream with status: ${stream.status}`);
   }
@@ -435,9 +444,10 @@ streams.post('/:id/pause', async (c) => {
       total_streamed: calculation.balance.total,
     })
     .eq('id', id)
+    .eq('environment', getEnv(ctx))
     .select()
     .single();
-  
+
   if (error) {
     console.error('Error pausing stream:', error);
     return c.json({ error: 'Failed to pause stream' }, 500);
@@ -446,8 +456,8 @@ streams.post('/:id/pause', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'paused', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, { totalStreamed: calculation.balance.total });
   
   return c.json({ data: mapStreamFromDb(data) });
@@ -459,7 +469,7 @@ streams.post('/:id/pause', async (c) => {
 streams.post('/:id/resume', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -470,12 +480,13 @@ streams.post('/:id/resume', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (fetchError || !stream) {
     throw new NotFoundError('Stream', id);
   }
-  
+
   if (stream.status !== 'paused') {
     throw new ValidationError(`Cannot resume stream with status: ${stream.status}`);
   }
@@ -494,9 +505,10 @@ streams.post('/:id/resume', async (c) => {
       total_paused_seconds: totalPausedSeconds,
     })
     .eq('id', id)
+    .eq('environment', getEnv(ctx))
     .select()
     .single();
-  
+
   if (error) {
     console.error('Error resuming stream:', error);
     return c.json({ error: 'Failed to resume stream' }, 500);
@@ -505,8 +517,8 @@ streams.post('/:id/resume', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'resumed', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, { pausedSeconds, totalPausedSeconds });
   
   return c.json({ data: mapStreamFromDb(data) });
@@ -518,7 +530,7 @@ streams.post('/:id/resume', async (c) => {
 streams.post('/:id/cancel', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -529,12 +541,13 @@ streams.post('/:id/cancel', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (fetchError || !stream) {
     throw new NotFoundError('Stream', id);
   }
-  
+
   if (stream.status === 'cancelled') {
     throw new ValidationError('Stream is already cancelled');
   }
@@ -563,9 +576,10 @@ streams.post('/:id/cancel', async (c) => {
       total_streamed: calculation.balance.total,
     })
     .eq('id', id)
+    .eq('environment', getEnv(ctx))
     .select()
     .single();
-  
+
   if (error) {
     console.error('Error cancelling stream:', error);
     return c.json({ error: 'Failed to cancel stream' }, 500);
@@ -583,7 +597,7 @@ streams.post('/:id/cancel', async (c) => {
   
   // Update agent stream stats if applicable
   if (stream.managed_by_type === 'agent') {
-    const limitService = createLimitService(supabase);
+    const limitService = createLimitService(supabase, getEnv(ctx) as 'test' | 'live');
     await limitService.updateAgentStreamStats(
       stream.managed_by_id,
       -1,
@@ -594,8 +608,8 @@ streams.post('/:id/cancel', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'cancelled', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, {
     totalStreamed: calculation.balance.total,
     totalWithdrawn: calculation.balance.withdrawn,
@@ -623,7 +637,7 @@ streams.post('/:id/cancel', async (c) => {
 streams.post('/:id/top-up', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -648,12 +662,13 @@ streams.post('/:id/top-up', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (fetchError || !stream) {
     throw new NotFoundError('Stream', id);
   }
-  
+
   if (stream.status === 'cancelled') {
     throw new ValidationError('Cannot top-up cancelled stream');
   }
@@ -663,6 +678,7 @@ streams.post('/:id/top-up', async (c) => {
     .from('accounts')
     .select('balance_available')
     .eq('id', stream.sender_account_id)
+    .eq('environment', getEnv(ctx))
     .single();
   
   const availableBalance = parseFloat(sender?.balance_available) || 0;
@@ -698,9 +714,10 @@ streams.post('/:id/top-up', async (c) => {
       health: newRunwaySeconds > 7 * 24 * 60 * 60 ? 'healthy' : newRunwaySeconds > 24 * 60 * 60 ? 'warning' : 'critical',
     })
     .eq('id', id)
+    .eq('environment', getEnv(ctx))
     .select()
     .single();
-  
+
   if (error) {
     console.error('Error updating stream:', error);
     return c.json({ error: 'Failed to top-up stream' }, 500);
@@ -713,8 +730,8 @@ streams.post('/:id/top-up', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'topped_up', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, { amount, newFundedAmount, newRunwaySeconds });
   
   return c.json({ data: mapStreamFromDb(data) });
@@ -726,7 +743,7 @@ streams.post('/:id/top-up', async (c) => {
 streams.post('/:id/withdraw', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -749,12 +766,13 @@ streams.post('/:id/withdraw', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
-  
+
   if (fetchError || !stream) {
     throw new NotFoundError('Stream', id);
   }
-  
+
   // Calculate current available balance
   const calculation = calculateStreamState({
     status: stream.status,
@@ -793,6 +811,7 @@ streams.post('/:id/withdraw', async (c) => {
       total_streamed: calculation.balance.total, // Update with current calculation
     })
     .eq('id', id)
+    .eq('environment', getEnv(ctx))
     .select()
     .single();
   
@@ -814,8 +833,8 @@ streams.post('/:id/withdraw', async (c) => {
   // Log event
   await logStreamEvent(supabase, id, ctx.tenantId, 'withdrawn', {
     type: ctx.actorType,
-    id: ctx.actorId,
-    name: ctx.actorName,
+    id: ctx.actorId || '',
+    name: ctx.actorName || '',
   }, {
     amount: withdrawAmount,
     newTotalWithdrawn,
@@ -838,7 +857,7 @@ streams.post('/:id/withdraw', async (c) => {
 streams.get('/:id/events', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   if (!isValidUUID(id)) {
     throw new ValidationError('Invalid stream ID format');
@@ -850,6 +869,7 @@ streams.get('/:id/events', async (c) => {
     .select('id')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
   
   if (!stream) {
@@ -868,7 +888,7 @@ streams.get('/:id/events', async (c) => {
     return c.json({ error: 'Failed to fetch events' }, 500);
   }
   
-  const events = (data || []).map(row => ({
+  const events = (data || []).map((row: any) => ({
     id: row.id,
     streamId: row.stream_id,
     type: row.event_type,
@@ -889,12 +909,13 @@ streams.get('/:id/events', async (c) => {
 // ============================================
 streams.get('/stats', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   
   const { data: streams } = await supabase
     .from('streams')
     .select('status, flow_rate_per_month, funded_amount, total_streamed')
-    .eq('tenant_id', ctx.tenantId);
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx));
   
   const stats = {
     total: streams?.length || 0,

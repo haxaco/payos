@@ -12,7 +12,8 @@ import { getAP2MandateService } from '../services/ap2/index.js';
 import { ValidationError } from '../middleware/error.js';
 import { randomUUID } from 'crypto';
 import { createClient } from '../db/client.js';
-import { sanitizeSearchInput } from '../utils/helpers.js';
+import { sanitizeSearchInput, getEnv, assertAgentActive } from '../utils/helpers.js';
+import { LimitService } from '../services/limits.js';
 import { 
   createSpendingPolicyService,
   type PolicyContext 
@@ -24,6 +25,7 @@ import { getLiveFXService } from '../services/fx/live-rates.js';
 import { createCheckoutTelemetryService, extractMerchantDomain } from '../services/telemetry/checkout-telemetry.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
+import { authorizeWalletTransfer } from '../services/wallet-settlement.js';
 
 const ap2 = new Hono();
 
@@ -61,7 +63,7 @@ ap2.get('/agent-card', async (c) => {
  */
 ap2.post('/mandates', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -88,6 +90,14 @@ ap2.post('/mandates', async (c) => {
     throw new ValidationError('mandate_type must be one of: intent, cart, payment');
   }
 
+  // Kill-switch enforcement: both parties must be active.
+  //   - Provider (agent_id / payee): a suspended agent can't be paid.
+  //   - Caller (buyer, when agent-authed): a suspended agent can't initiate.
+  await assertAgentActive(supabase, agent_id, 'provider');
+  if (ctx.actorType === 'agent' && ctx.actorId && ctx.actorId !== agent_id) {
+    await assertAgentActive(supabase, ctx.actorId, 'buyer');
+  }
+
   // Validate optional funding_source_id
   const funding_source_id = body.funding_source_id || null;
   if (funding_source_id) {
@@ -96,6 +106,7 @@ ap2.post('/mandates', async (c) => {
       .select('id, status, account_id')
       .eq('id', funding_source_id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
     if (fsError || !fs) {
       throw new ValidationError('funding_source_id not found');
@@ -114,17 +125,75 @@ ap2.post('/mandates', async (c) => {
     throw new ValidationError(`settlement_rail must be one of: ${VALID_SETTLEMENT_RAILS.join(', ')}`);
   }
 
-  // Look up agent name
+  // ─── Per-agent mandate velocity limit (scales with KYA tier) ───────────
+  // Prevents rapid-fire mandate creation (velocity attacks). The limit scales
+  // with the agent's KYA tier: higher trust = higher throughput.
+  const VELOCITY_BY_TIER: Record<number, number> = { 0: 5, 1: 10, 2: 20, 3: 50 };
+  const baseVelocity = parseInt(process.env.AGENT_MANDATE_VELOCITY_LIMIT || '10', 10);
+  // Look up agent's KYA tier (already fetching agent below, but we need it now)
+  const { data: agentForVelocity } = await supabase
+    .from('agents')
+    .select('kya_tier')
+    .eq('id', agent_id)
+    .maybeSingle();
+  const agentTier = (agentForVelocity as any)?.kya_tier ?? 0;
+  const velocityLimit = VELOCITY_BY_TIER[agentTier] ?? baseVelocity;
+  const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
+  const { count: recentCount } = await supabase
+    .from('ap2_mandates')
+    .select('*', { count: 'exact', head: true })
+    .eq('agent_id', agent_id)
+    .gte('created_at', oneMinAgo);
+  if (typeof recentCount === 'number' && recentCount >= velocityLimit) {
+    return c.json(
+      { error: `Agent mandate velocity limit exceeded: ${recentCount} mandates in the last 60s (max ${velocityLimit}/min for tier ${agentTier}). Slow down.` },
+      429 as any,
+    );
+  }
+
+  // ─── KYA per-transaction amount check at mandate creation ──────────────
+  // Epic 73 + per-tenant tier limits (20260419_tier_limits_per_tenant.sql):
+  // kya_tier_limits now has both platform rows (tenant_id IS NULL) AND
+  // per-tenant override rows. A plain .eq('tier', agentTier).maybeSingle()
+  // returns null when both exist → fell back to $20 for every tier, which
+  // is what the sim was hitting. Mirror the DB function's resolution:
+  // prefer the tenant-specific row, fall back to the platform ceiling.
+  // T3 has per_transaction = 0 which means unlimited (no cap).
+  const { data: tierRows } = await supabase
+    .from('kya_tier_limits')
+    .select('per_transaction, tenant_id')
+    .eq('tier', agentTier)
+    .or(`tenant_id.eq.${ctx.tenantId},tenant_id.is.null`);
+  const tierRow =
+    (tierRows || []).find((r: any) => r.tenant_id === ctx.tenantId)
+    ?? (tierRows || []).find((r: any) => r.tenant_id === null)
+    ?? null;
+  const maxPerTx = Number((tierRow as any)?.per_transaction) || 20; // fallback to T0 default
+  if (maxPerTx > 0 && Number(authorized_amount) > maxPerTx) {
+    return c.json(
+      { error: `Mandate amount $${authorized_amount} exceeds KYA tier ${agentTier} per-transaction limit of $${maxPerTx}. Request a tier upgrade.` },
+      403 as any,
+    );
+  }
+
+  // Look up agent name (cross-tenant: agent may be on a different tenant)
   const { data: agent } = await supabase
     .from('agents')
-    .select('name')
+    .select('name, tenant_id')
     .eq('id', agent_id)
     .single();
+
+  // Optional: link the mandate to an existing A2A task. Mirrors what
+  // A2ATaskProcessor does internally — populates a2a_session_id on the
+  // mandate AND writes settlementMandateId onto the task metadata so the
+  // /complete + /respond flow can resolve the mandate without an extra round-trip.
+  const a2a_session_id: string | null = body.a2a_session_id || body.a2aSessionId || null;
 
   const { data: mandate, error } = await supabase
     .from('ap2_mandates')
     .insert({
       tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
       account_id,
       mandate_id,
       mandate_type,
@@ -138,6 +207,7 @@ ap2.post('/mandates', async (c) => {
       metadata: body.metadata || {},
       funding_source_id,
       settlement_rail,
+      a2a_session_id,
     })
     .select('*')
     .single();
@@ -146,13 +216,39 @@ ap2.post('/mandates', async (c) => {
     throw new ValidationError(`Failed to create mandate: ${error.message}`);
   }
 
+  // Write the mandate ID onto the task so /complete and /respond can find it.
+  // We update only when the caller actually owns / is participating in the task.
+  if (a2a_session_id) {
+    const { data: task } = await supabase
+      .from('a2a_tasks')
+      .select('metadata, agent_id, client_agent_id')
+      .eq('id', a2a_session_id)
+      .eq('environment', getEnv(ctx))
+      .maybeSingle();
+    if (task) {
+      const callerAgentId = ctx.actorType === 'agent' ? ctx.actorId : null;
+      const isParticipant =
+        !callerAgentId ||
+        callerAgentId === (task as any).client_agent_id ||
+        callerAgentId === (task as any).agent_id;
+      if (isParticipant) {
+        await supabase
+          .from('a2a_tasks')
+          .update({
+            metadata: { ...((task as any).metadata || {}), settlementMandateId: mandate_id },
+          })
+          .eq('id', a2a_session_id);
+      }
+    }
+  }
+
   trackOp({
     tenantId: ctx.tenantId,
     operation: OpType.AP2_MANDATE_CREATED,
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -166,7 +262,7 @@ ap2.post('/mandates', async (c) => {
 ap2.get('/mandates/:id', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Query by UUID id or user-defined mandate_id (avoid UUID cast error)
   const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
@@ -174,6 +270,7 @@ ap2.get('/mandates/:id', async (c) => {
     .from('ap2_mandates')
     .select('*')
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq(col, id)
     .single();
 
@@ -217,7 +314,7 @@ ap2.get('/mandates/:id', async (c) => {
 ap2.patch('/mandates/:id', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -264,6 +361,7 @@ ap2.patch('/mandates/:id', async (c) => {
     .update(updates)
     .eq(col, id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .select('*')
     .single();
 
@@ -277,7 +375,7 @@ ap2.patch('/mandates/:id', async (c) => {
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -291,7 +389,7 @@ ap2.patch('/mandates/:id', async (c) => {
 ap2.patch('/mandates/:id/cancel', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Look up by UUID id or user-defined mandate_id (avoid UUID cast error)
   const col = UUID_RE.test(id) ? 'id' : 'mandate_id';
@@ -300,6 +398,7 @@ ap2.patch('/mandates/:id/cancel', async (c) => {
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq(col, id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('status', 'active')
     .select('*')
     .single();
@@ -314,7 +413,7 @@ ap2.patch('/mandates/:id/cancel', async (c) => {
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -389,7 +488,7 @@ ap2.post('/mandates/:id/revoke', async (c) => {
  */
 ap2.get('/mandates', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Parse query params
   const page = parseInt(c.req.query('page') || '1');
@@ -405,6 +504,7 @@ ap2.get('/mandates', async (c) => {
     .from('ap2_mandates')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -449,7 +549,7 @@ ap2.get('/mandates', async (c) => {
 ap2.post('/mandates/:id/execute', async (c) => {
   const id = c.req.param('id');
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   let body;
   try {
@@ -469,6 +569,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     .from('ap2_mandates')
     .select('*')
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq(col, id)
     .single();
 
@@ -489,17 +590,20 @@ ap2.post('/mandates/:id/execute', async (c) => {
 
   if (mandate.status !== 'active') {
     const telemetry = createCheckoutTelemetryService(supabase);
+    // ap2_mandates row no longer carries a `description` column; fall back
+    // to mandate_id for domain extraction. agent_name / currency are
+    // `string | null` per the schema while telemetry expects `undefined`.
     telemetry.record({
       protocol: 'ap2',
       event_type: 'mandate.not_active',
       success: false,
-      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
       failure_reason: `Mandate is ${mandate.status}`,
       failure_code: 'MANDATE_NOT_ACTIVE',
       agent_id: mandate.agent_id,
-      agent_name: mandate.agent_name,
+      agent_name: mandate.agent_name ?? undefined,
       amount: Number(amount),
-      currency: currency || mandate.currency,
+      currency: currency || mandate.currency || undefined,
       protocol_metadata: { mandate_id: mandate.id, mandate_status: mandate.status },
     });
     return c.json({ error: `Mandate is ${mandate.status}, not active` }, 400);
@@ -515,16 +619,27 @@ ap2.post('/mandates/:id/execute', async (c) => {
       protocol: 'ap2',
       event_type: 'mandate.budget_exceeded',
       success: false,
-      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
       failure_reason: 'Amount exceeds remaining mandate budget',
       failure_code: 'BUDGET_EXCEEDED',
       agent_id: mandate.agent_id,
-      agent_name: mandate.agent_name,
+      agent_name: mandate.agent_name ?? undefined,
       amount: execAmount,
-      currency: currency || mandate.currency,
+      currency: currency || mandate.currency || undefined,
       protocol_metadata: { mandate_id: mandate.id, remaining, requested: execAmount },
     });
     return c.json({ error: 'Amount exceeds remaining mandate budget' }, 400);
+  }
+
+  // KYA limit enforcement — prevent mandate bypass of per-transaction limits
+  try {
+    const limitService = new LimitService(supabase);
+    const limitCheck = await limitService.checkTransactionLimit(mandate.agent_id, execAmount);
+    if (!limitCheck.allowed) {
+      return c.json({ error: `Limit check failed: ${limitCheck.reason}`, code: 'LIMIT_EXCEEDED', details: limitCheck }, 403);
+    }
+  } catch (limitErr: any) {
+    console.warn('[AP2] Limit check warning:', limitErr.message);
   }
 
   const newExecIndex = (mandate.execution_count || 0) + 1;
@@ -535,6 +650,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     .from('ap2_mandate_executions')
     .insert({
       tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
       mandate_id: mandate.id,
       execution_index: newExecIndex,
       amount: execAmount,
@@ -555,8 +671,13 @@ ap2.post('/mandates/:id/execute', async (c) => {
   // ============================================
   // Cross-border detection & FX resolution
   // ============================================
-  const destCurrency = destination_currency || mandate.mandate_data?.destination_currency;
-  const destAccountId = to_account_id || mandate.mandate_data?.destination_account_id;
+  // mandate_data is a Json column; narrow to the fields we read.
+  const mandateData = (mandate.mandate_data as {
+    destination_currency?: string;
+    destination_account_id?: string;
+  } | null) ?? {};
+  const destCurrency = destination_currency || mandateData.destination_currency;
+  const destAccountId = to_account_id || mandateData.destination_account_id;
   const isCrossBorder = !!destCurrency && !['USD', 'USDC'].includes(destCurrency.toUpperCase());
 
   let crossBorderInfo: {
@@ -578,6 +699,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
         .select('name')
         .eq('id', destAccountId)
         .eq('tenant_id', ctx.tenantId)
+        .eq('environment', getEnv(ctx))
         .single();
       if (destAccount) destAccountName = destAccount.name;
     }
@@ -614,6 +736,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
       .select('id, status, provider, type, account_id')
       .eq('id', mandate.funding_source_id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
 
     if (fs && fs.status === 'active') {
@@ -622,6 +745,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
         .from('funding_transactions')
         .insert({
           tenant_id: ctx.tenantId,
+          environment: getEnv(ctx),
           funding_source_id: fs.id,
           account_id: fs.account_id,
           amount_cents: Math.round(execAmount * 100),
@@ -649,100 +773,304 @@ ap2.post('/mandates/:id/execute', async (c) => {
   // Wallet deduction (settle funds from agent wallet)
   // ============================================
   let walletDeduction: { walletId: string; previousBalance: number; newBalance: number; transferId?: string } | null = null;
+  let settlementTxHash: string | undefined;
+  let settlementNetwork: string | undefined;
 
-  // Find wallet managed by this agent or owned by the mandate's account
-  const { data: wallet } = !skipWalletDeduction ? await supabase
-    .from('wallets')
-    .select('id, balance, currency, owner_account_id, status')
-    .eq('tenant_id', ctx.tenantId)
-    .or(`managed_by_agent_id.eq.${mandate.agent_id},owner_account_id.eq.${mandate.account_id}`)
-    .eq('status', 'active')
-    .order('managed_by_agent_id', { ascending: false, nullsFirst: false })
-    .limit(1)
-    .single() : { data: null };
+  // Find wallet: prefer the mandate agent's wallet, fall back to account-owned wallet
+  let wallet: any = null;
+  if (!skipWalletDeduction) {
+    // Find the PAYER wallet: owned by the mandate's account (the authorizer)
+    const mandateCurrency = currency || mandate.currency;
+    const { data: accountWallets } = await supabase
+      .from('wallets')
+      .select('id, balance, currency, owner_account_id, status, wallet_type, wallet_address, provider_wallet_id')
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
+      .eq('owner_account_id', mandate.account_id)
+      .eq('status', 'active')
+      .order('managed_by_agent_id', { ascending: false, nullsFirst: false });
+
+    if (accountWallets && accountWallets.length > 0) {
+      wallet = accountWallets.find(w => w.currency === mandateCurrency) || accountWallets[0];
+    } else {
+      // Fallback: wallet managed by the mandate's agent (may be cross-tenant)
+      const { data: mandateAgent } = await supabase
+        .from('agents')
+        .select('tenant_id')
+        .eq('id', mandate.agent_id)
+        .single();
+      const agentTenantId = mandateAgent?.tenant_id || ctx.tenantId;
+
+      const { data: agentWallets } = await supabase
+        .from('wallets')
+        .select('id, balance, currency, owner_account_id, status, wallet_type, wallet_address, provider_wallet_id')
+        .eq('tenant_id', agentTenantId)
+        .eq('environment', getEnv(ctx))
+        .eq('managed_by_agent_id', mandate.agent_id)
+        .eq('status', 'active');
+
+      if (agentWallets && agentWallets.length > 0) {
+        wallet = agentWallets.find(w => w.currency === mandateCurrency) || agentWallets[0];
+      }
+    }
+  }
 
   if (wallet) {
     const currentBalance = Number(wallet.balance);
     if (currentBalance >= execAmount) {
-      const updatedBalance = currentBalance - execAmount;
-      const updatedStatus = updatedBalance === 0 ? 'depleted' : 'active';
 
-      // Look up account name and agent name for the transfer record
-      const [{ data: fromAccount }, { data: agentRecord }] = await Promise.all([
-        supabase.from('accounts').select('name').eq('id', wallet.owner_account_id).eq('tenant_id', ctx.tenantId).single(),
-        supabase.from('agents').select('name').eq('id', mandate.agent_id).eq('tenant_id', ctx.tenantId).single(),
+      // Resolve the agent's tenant for cross-tenant recipient lookups
+      const { data: recipientAgent } = await supabase
+        .from('agents')
+        .select('name, parent_account_id, tenant_id')
+        .eq('id', mandate.agent_id)
+        .single();
+      const recipientTenantId = recipientAgent?.tenant_id || ctx.tenantId;
+
+      // Look up account name, agent name, and recipient wallet for the transfer record
+      const [{ data: fromAccount }, { data: recipientWallets }] = await Promise.all([
+        supabase.from('accounts').select('name').eq('id', wallet.owner_account_id).eq('tenant_id', ctx.tenantId).eq('environment', getEnv(ctx)).single(),
+        supabase.from('wallets').select('id, balance, wallet_type, wallet_address, provider_wallet_id, owner_account_id').eq('managed_by_agent_id', mandate.agent_id).eq('tenant_id', recipientTenantId).eq('environment', getEnv(ctx)).eq('status', 'active').limit(1),
       ]);
+      const agentRecord = recipientAgent;
+      const recipientWallet = recipientWallets?.[0] || null;
+      const destWallet = recipientWallet?.id !== wallet.id ? recipientWallet : null;
 
-      const { error: walletUpdateError } = await supabase
-        .from('wallets')
-        .update({
-          balance: updatedBalance,
-          status: updatedStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', wallet.id)
-        .eq('tenant_id', ctx.tenantId);
+      // Build transfer record as pending — authorizeWalletTransfer will set to 'authorized'
+      const now = new Date().toISOString();
+      const settlementMetadata: Record<string, any> = {
+        protocol: 'ap2',
+        wallet_id: wallet.id,
+        source_wallet_id: wallet.id,
+        destination_wallet_id: destWallet?.id || null,
+        settlement_type: 'ledger',
+        authorized_at: now,
+        operation: 'mandate_execution',
+        mandate_id: mandate.id,
+        execution_index: newExecIndex,
+      };
 
-      if (walletUpdateError) {
-        console.error('[AP2] Wallet deduction error:', walletUpdateError);
-      } else {
-        // Build transfer record — cross-border or internal
-        const now = new Date().toISOString();
-        const transferInsert: Record<string, any> = {
-          tenant_id: ctx.tenantId,
-          from_account_id: wallet.owner_account_id,
-          from_account_name: fromAccount?.name || '',
-          amount: execAmount,
-          currency: currency || mandate.currency,
-          type: isCrossBorder ? 'cross_border' : 'internal',
-          status: 'completed',
-          completed_at: now,
-          initiated_by_type: 'agent',
-          initiated_by_id: mandate.agent_id,
-          initiated_by_name: agentRecord?.name || '',
-          description: description || `Mandate execution #${newExecIndex}`,
-          protocol_metadata: {
-            protocol: 'ap2',
-            wallet_id: wallet.id,
-            operation: 'mandate_execution',
-            mandate_id: mandate.id,
-            execution_index: newExecIndex,
-          },
+      const transferInsert: Record<string, any> = {
+        tenant_id: ctx.tenantId,
+        destination_tenant_id: recipientTenantId,
+        environment: getEnv(ctx),
+        from_account_id: wallet.owner_account_id,
+        from_account_name: fromAccount?.name || '',
+        amount: execAmount,
+        currency: currency || mandate.currency,
+        type: isCrossBorder ? 'cross_border' : 'ap2',
+        status: 'pending',
+        initiated_by_type: 'agent',
+        initiated_by_id: mandate.agent_id,
+        initiated_by_name: agentRecord?.name || '',
+        description: description || `Mandate execution #${newExecIndex}`,
+        protocol_metadata: settlementMetadata,
+      };
+
+      // Attach cross-border fields
+      if (crossBorderInfo) {
+        transferInsert.to_account_id = crossBorderInfo.to_account_id;
+        transferInsert.to_account_name = crossBorderInfo.to_account_name;
+        transferInsert.destination_amount = crossBorderInfo.destination_amount;
+        transferInsert.destination_currency = crossBorderInfo.destination_currency;
+        transferInsert.fx_rate = crossBorderInfo.fx_rate;
+        transferInsert.corridor_id = crossBorderInfo.corridor_id;
+        transferInsert.fee_amount = crossBorderInfo.fee_amount;
+        transferInsert.settled_at = now;
+        transferInsert.settlement_metadata = {
+          corridor: crossBorderInfo.corridor_id,
+          rail: mandate.settlement_rail || 'raast',
+          fx_rate: crossBorderInfo.fx_rate,
+          fx_source: 'live_exchangerate_api',
+          destination_amount: crossBorderInfo.destination_amount,
+          destination_currency: crossBorderInfo.destination_currency,
+          fee_percent: 0.7,
+          fee_amount: crossBorderInfo.fee_amount,
+          settled_at: now,
         };
+      }
 
-        // Attach cross-border fields
-        if (crossBorderInfo) {
-          transferInsert.to_account_id = crossBorderInfo.to_account_id;
-          transferInsert.to_account_name = crossBorderInfo.to_account_name;
-          transferInsert.destination_amount = crossBorderInfo.destination_amount;
-          transferInsert.destination_currency = crossBorderInfo.destination_currency;
-          transferInsert.fx_rate = crossBorderInfo.fx_rate;
-          transferInsert.corridor_id = crossBorderInfo.corridor_id;
-          transferInsert.fee_amount = crossBorderInfo.fee_amount;
-          transferInsert.settled_at = now;
-          transferInsert.settlement_metadata = {
-            corridor: crossBorderInfo.corridor_id,
-            rail: mandate.settlement_rail || 'raast',
-            fx_rate: crossBorderInfo.fx_rate,
-            fx_source: 'live_exchangerate_api',
-            destination_amount: crossBorderInfo.destination_amount,
-            destination_currency: crossBorderInfo.destination_currency,
-            fee_percent: 0.7,
-            fee_amount: crossBorderInfo.fee_amount,
-            settled_at: now,
-          };
+      // Cast at the boundary: transferInsert is a freeform record that
+      // includes optional cross-border fields, and Supabase's typed
+      // insert overload chokes on the Json union (TS2769 / TS2589).
+      const { data: transfer } = await (supabase
+        .from('transfers') as any)
+        .insert(transferInsert)
+        .select('id')
+        .single();
+
+      // Ledger authorization — debits/credits wallets and sets status='authorized'.
+      // The async settlement worker picks up 'authorized' transfers for on-chain execution.
+      if (transfer) {
+        const authorization = await authorizeWalletTransfer({
+          supabase,
+          tenantId: ctx.tenantId,
+          destinationTenantId: recipientTenantId,
+          // The wallet rows we pulled have `wallet_address: string | null`,
+          // but SettlementWallet wants `string`. We've already filtered on
+          // active wallets that the ledger will accept; cast at boundary.
+          sourceWallet: wallet as any,
+          destinationWallet: destWallet as any,
+          amount: execAmount,
+          transferId: transfer.id,
+          protocolMetadata: settlementMetadata,
+        });
+
+        if (!authorization.success) {
+          console.error('[AP2] Ledger authorization failed:', authorization.error);
         }
+      }
 
-        const { data: transfer } = await supabase
-          .from('transfers')
-          .insert(transferInsert)
-          .select('id')
+      if (transfer) {
+
+        // ============================================
+        // On-chain Tempo settlement (if wallet has private key)
+        // ============================================
+
+        const walletMeta = await supabase
+          .from('wallets')
+          .select('provider_metadata, wallet_address, network')
+          .eq('id', wallet.id)
           .single();
+
+        // provider_metadata, mandate.metadata, mandate.mandate_data are
+        // all Json columns. Narrow once before the on-chain settlement
+        // path so the property accesses below typecheck cleanly.
+        const providerMeta = (walletMeta.data?.provider_metadata as {
+          encrypted_private_key?: string;
+        } | null) ?? {};
+        const mandateMeta = (mandate.metadata as {
+          recipientAgentId?: string;
+          providerAgentId?: string;
+          recipientAddress?: string;
+        } | null) ?? {};
+        const mandateDataExt = (mandate.mandate_data as {
+          recipient_agent_id?: string;
+          provider_agent_id?: string;
+          recipient_address?: string;
+        } | null) ?? {};
+        const encryptedKey = providerMeta.encrypted_private_key;
+        if (encryptedKey && walletMeta.data?.network?.startsWith('tempo')) {
+          try {
+            // Resolve recipient wallet address (counterparty agent)
+            const recipientAgentId = mandateMeta.recipientAgentId
+              || mandateDataExt.recipient_agent_id
+              || mandateMeta.providerAgentId
+              || mandateDataExt.provider_agent_id;
+
+            // Find recipient agent's wallet address
+            const { data: recipientWallet } = await supabase
+              .from('wallets')
+              .select('wallet_address, network')
+              .eq('managed_by_agent_id', recipientAgentId ?? '')
+              .eq('tenant_id', ctx.tenantId)
+              .eq('environment', getEnv(ctx))
+              .like('network', 'tempo-%')
+              .eq('status', 'active')
+              .limit(1)
+              .single();
+
+            const recipientAddress = recipientWallet?.wallet_address
+              || mandateMeta.recipientAddress
+              || mandateDataExt.recipient_address;
+
+            if (recipientAddress) {
+              const isTestnet = walletMeta.data.network === 'tempo-testnet';
+              const rpcUrl = isTestnet
+                ? 'https://rpc.moderato.tempo.xyz'
+                : 'https://rpc.tempo.xyz';
+              const tokenContract = isTestnet
+                ? '0x20c0000000000000000000000000000000000000'
+                : '0x20C000000000000000000000b9537d11c60E8b50';
+              const chainId = isTestnet ? 42431 : 4217;
+
+              // Use viem directly for ERC20 token transfer
+              const { privateKeyToAccount } = await import('viem/accounts');
+              const { createPublicClient, createWalletClient, http, defineChain } = await import('viem');
+
+              const tempoChain = defineChain({
+                id: chainId,
+                name: isTestnet ? 'Tempo Testnet' : 'Tempo',
+                nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                rpcUrls: { default: { http: [rpcUrl] } },
+              });
+
+              const senderAccount = privateKeyToAccount(encryptedKey as `0x${string}`);
+              const walletClient = createWalletClient({
+                account: senderAccount,
+                chain: tempoChain,
+                transport: http(rpcUrl),
+              });
+              const publicClient = createPublicClient({
+                chain: tempoChain,
+                transport: http(rpcUrl),
+              });
+
+              // Convert amount to token units (6 decimals for pathUSD/USDC)
+              const amountUnits = BigInt(Math.round(execAmount * 1e6));
+
+              const txHash = await walletClient.writeContract({
+                address: tokenContract as `0x${string}`,
+                abi: [{
+                  name: 'transfer',
+                  type: 'function',
+                  inputs: [
+                    { name: 'to', type: 'address' },
+                    { name: 'amount', type: 'uint256' },
+                  ],
+                  outputs: [{ name: 'success', type: 'bool' }],
+                  stateMutability: 'nonpayable',
+                }],
+                functionName: 'transfer',
+                args: [recipientAddress as `0x${string}`, amountUnits],
+              });
+
+              // Wait for confirmation
+              await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+              settlementTxHash = txHash;
+              settlementNetwork = walletMeta.data.network;
+
+              console.log(`[AP2] On-chain settlement: ${txHash} on ${settlementNetwork}`);
+
+              // Update transfer record with tx hash
+              if (transfer?.id) {
+                await supabase
+                  .from('transfers')
+                  .update({
+                    tx_hash: txHash,
+                    settlement_network: settlementNetwork,
+                    protocol_metadata: {
+                      ...transferInsert.protocol_metadata,
+                      settlement: 'on_chain',
+                      settlement_network: settlementNetwork,
+                      settlement_tx_hash: txHash,
+                    },
+                  })
+                  .eq('id', transfer.id);
+              }
+
+              // Update execution record with settlement tx hash
+              await supabase
+                .from('ap2_mandate_executions')
+                .update({
+                  authorization_proof: txHash,
+                  settlement_tx_hash: txHash,
+                  settlement_network: settlementNetwork,
+                })
+                .eq('mandate_id', mandate.id)
+                .eq('execution_index', newExecIndex);
+            }
+          } catch (settlementError: any) {
+            console.warn('[AP2] On-chain settlement failed (ledger deduction still applied):', settlementError.message);
+            // Settlement failure is non-fatal — ledger deduction already succeeded
+          }
+        }
 
         walletDeduction = {
           walletId: wallet.id,
           previousBalance: currentBalance,
-          newBalance: updatedBalance,
+          newBalance: currentBalance - execAmount,
           transferId: transfer?.id,
         };
 
@@ -752,6 +1080,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
           .select('balance_total, balance_available')
           .eq('id', wallet.owner_account_id)
           .eq('tenant_id', ctx.tenantId)
+          .eq('environment', getEnv(ctx))
           .single();
 
         if (account) {
@@ -765,7 +1094,8 @@ ap2.post('/mandates/:id/execute', async (c) => {
               updated_at: new Date().toISOString(),
             })
             .eq('id', wallet.owner_account_id)
-            .eq('tenant_id', ctx.tenantId);
+            .eq('tenant_id', ctx.tenantId)
+            .eq('environment', getEnv(ctx));
 
           // Debit ledger entry for sender
           await supabase
@@ -790,6 +1120,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
             .select('balance_total, balance_available, currency')
             .eq('id', crossBorderInfo.to_account_id)
             .eq('tenant_id', ctx.tenantId)
+            .eq('environment', getEnv(ctx))
             .single();
 
           if (destAcct) {
@@ -803,7 +1134,8 @@ ap2.post('/mandates/:id/execute', async (c) => {
                 updated_at: new Date().toISOString(),
               })
               .eq('id', crossBorderInfo.to_account_id)
-              .eq('tenant_id', ctx.tenantId);
+              .eq('tenant_id', ctx.tenantId)
+              .eq('environment', getEnv(ctx));
 
             // Credit ledger entry for recipient
             await supabase
@@ -829,13 +1161,13 @@ ap2.post('/mandates/:id/execute', async (c) => {
         protocol: 'ap2',
         event_type: 'mandate.insufficient_balance',
         success: false,
-        merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+        merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
         failure_reason: 'Insufficient wallet balance',
         failure_code: 'INSUFFICIENT_BALANCE',
         agent_id: mandate.agent_id,
-        agent_name: mandate.agent_name,
+        agent_name: mandate.agent_name ?? undefined,
         amount: execAmount,
-        currency: currency || mandate.currency,
+        currency: currency || mandate.currency || undefined,
         protocol_metadata: { mandate_id: mandate.id, wallet_id: wallet.id, available: currentBalance },
       });
     }
@@ -855,6 +1187,8 @@ ap2.post('/mandates/:id/execute', async (c) => {
     wallet_deduction: walletDeduction,
     funding_source_charge: fundingSourceCharge,
     settlement_rail: mandate.settlement_rail || null,
+    settlement_tx_hash: settlementTxHash || undefined,
+    settlement_network: settlementNetwork || undefined,
   };
 
   // Record successful mandate execution telemetry
@@ -864,11 +1198,11 @@ ap2.post('/mandates/:id/execute', async (c) => {
       protocol: 'ap2',
       event_type: 'mandate.executed',
       success: true,
-      merchant_domain: extractMerchantDomain(mandate.description || mandate.mandate_id || '') || undefined,
+      merchant_domain: extractMerchantDomain((mandate as any).description || mandate.mandate_id || '') || undefined,
       agent_id: mandate.agent_id,
-      agent_name: mandate.agent_name,
+      agent_name: mandate.agent_name ?? undefined,
       amount: execAmount,
-      currency: currency || mandate.currency,
+      currency: currency || mandate.currency || undefined,
       protocol_metadata: { mandate_id: mandate.id, execution_index: newExecIndex },
     });
   }
@@ -890,7 +1224,7 @@ ap2.post('/mandates/:id/execute', async (c) => {
     subject: `ap2/mandate/${mandate.id}`,
     actorType: ctx.actorType,
     actorId: ctx.actorId || ctx.userId || ctx.apiKeyId,
-    correlationId: c.get('requestId'),
+    correlationId: (c as any).get('requestId') as string | undefined,
     success: true,
   });
 
@@ -923,7 +1257,7 @@ ap2.post('/payments', async (c) => {
     throw new ValidationError('mandate_id, amount, and currency are required');
   }
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const mandateService = getAP2MandateService();
 
   // Get mandate to check payer info
@@ -946,6 +1280,7 @@ ap2.post('/payments', async (c) => {
       .select('id')
       .eq('managed_by_agent_id', mandate.payer.agent_id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('status', 'active')
       .single();
     
@@ -969,7 +1304,7 @@ ap2.post('/payments', async (c) => {
       walletId,
       amount,
       policyContext,
-      c.get('requestId')
+      (c as any).get('requestId') as string | undefined
     );
 
     if (!policyCheck.allowed) {
@@ -1003,7 +1338,7 @@ ap2.post('/payments', async (c) => {
           requestedByType: ctx.actorType,
           requestedById: ctx.userId || ctx.apiKeyId || ctx.actorId || 'unknown',
           requestedByName: ctx.userName || ctx.actorName || undefined,
-          correlationId: c.get('requestId'),
+          correlationId: (c as any).get('requestId') as string | undefined,
         });
 
         return c.json({
@@ -1120,7 +1455,7 @@ ap2.get('/analytics', async (c) => {
   try {
     const ctx = c.get('ctx');
     const period = c.req.query('period') || '30d';
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Calculate date range
     const end = new Date();
@@ -1138,6 +1473,7 @@ ap2.get('/analytics', async (c) => {
       .from('transfers')
       .select('id, amount, fee_amount, created_at, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('type', 'ap2')
       .eq('status', 'completed')
       .gte('created_at', start.toISOString())
@@ -1147,11 +1483,12 @@ ap2.get('/analytics', async (c) => {
     const { data: mandates } = await supabase
       .from('ap2_mandates')
       .select('*')
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
 
     // Calculate revenue and fees
-    const revenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount), 0) || 0;
-    const fees = transfers?.reduce((sum, t) => sum + parseFloat(t.fee_amount || '0'), 0) || 0;
+    const revenue = transfers?.reduce((sum, t) => sum + parseFloat(t.amount as any), 0) || 0;
+    const fees = transfers?.reduce((sum, t) => sum + parseFloat((t.fee_amount as any) || '0'), 0) || 0;
 
     // Mandate stats (from DB or empty if table doesn't exist)
     const mandateList = mandates || [];

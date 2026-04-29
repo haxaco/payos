@@ -115,11 +115,45 @@ function ActivityItem({ activity }: { activity: AgentAction }) {
           </div>
           
           {/* Details */}
-          {activity.details.amount && (
+          {activity.details.amount != null && activity.details.amount > 0 && (
             <p className="text-sm text-gray-600 dark:text-gray-400">
+              {activity.status === 'failed' && <span className="text-gray-400 line-through mr-1">attempted</span>}
               {formatCurrency(activity.details.amount, activity.details.currency || 'USD')}
               {activity.details.recipient && (
                 <span> → {activity.details.recipient}</span>
+              )}
+              {!activity.details.recipient && activity.details.externalAddress && (
+                <>
+                  <span> → </span>
+                  {(() => {
+                    const addr = activity.details.externalAddress;
+                    const short = addr.length >= 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr;
+                    const net = activity.details.settlementNetwork;
+                    const scanBase = net === 'base'
+                      ? 'https://basescan.org/address/'
+                      : net === 'base-sepolia'
+                        ? 'https://sepolia.basescan.org/address/'
+                        : null;
+                    return scanBase ? (
+                      <a
+                        href={`${scanBase}${addr}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-blue-600 dark:text-blue-400 hover:underline"
+                        title={addr}
+                      >
+                        {short}
+                      </a>
+                    ) : (
+                      <code className="font-mono text-gray-700 dark:text-gray-300" title={addr}>{short}</code>
+                    );
+                  })()}
+                  {activity.details.settlementNetwork && (
+                    <span className="ml-2 inline-flex items-center rounded bg-blue-100 dark:bg-blue-950 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                      {activity.details.settlementNetwork}
+                    </span>
+                  )}
+                </>
               )}
             </p>
           )}

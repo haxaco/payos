@@ -1,0 +1,43 @@
+---
+title: "Debugging"
+description: "First-aid for production bugs and partner-reported issues."
+---
+
+<CardGroup cols={2}>
+  <Card title="Error catalog" href="/debugging/error-catalog">
+    What every error code means + how to diagnose.
+  </Card>
+  <Card title="Common issues" href="/debugging/common-issues">
+    Recurring problems and their fixes.
+  </Card>
+  <Card title="Tracing" href="/debugging/tracing">
+    Follow a request across the stack via request_id.
+  </Card>
+</CardGroup>
+
+## Before you debug
+
+Three things you always want on hand:
+
+1. **`request_id`** — from the partner's error response
+2. **Environment** — test or live
+3. **Timestamp** — to narrow the log search window
+
+With these, you can pull the full execution trace in seconds.
+
+## First moves
+
+| Symptom | First move |
+|---|---|
+| 401 from partner | Check API key not revoked, not stale, correct environment |
+| 403 from partner | Check scope, wallet policy, KYA tier, approval threshold |
+| 500s briefly | Vercel deploys log; recent migration? |
+| 500s persistent | Supabase health, external provider status |
+| Stuck transfers | Rail status, worker running, scheduled-transfers running |
+| Missing webhook deliveries | Webhook worker status, target endpoint reachable, signature rotation lag |
+| Agent can't authenticate | Clock skew, cached stale token, revoked auth key |
+| Dashboard 400s but API works | Stale JWT, refresh loop, browser cache |
+
+## Escalation
+
+If you're stuck after 30 min: post in `#eng-help` with `request_id`, what you've tried, what you think is happening. Don't suffer alone.

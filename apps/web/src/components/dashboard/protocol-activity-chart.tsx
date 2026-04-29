@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, TrendingUp, Hash, Loader2 } from 'lucide-react';
-import { useApiConfig } from '@/lib/api-client';
+import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import { cn } from '@sly/ui';
 
 type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
@@ -33,18 +33,13 @@ const PROTOCOL_NAMES: Record<ProtocolId, string> = {
 };
 
 async function fetchProtocolActivity(
-  authToken: string,
+  apiFetch: ApiFetchFn,
+  apiUrl: string,
   timeRange: TimeRange,
   metric: Metric
 ): Promise<{ data: ProtocolActivityPoint[] }> {
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/v1/analytics/protocol-activity?timeRange=${timeRange}&metric=${metric}`,
-    {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
+  const response = await apiFetch(
+    `${apiUrl}/v1/analytics/protocol-activity?timeRange=${timeRange}&metric=${metric}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch protocol activity');
@@ -55,14 +50,15 @@ async function fetchProtocolActivity(
 }
 
 export function ProtocolActivityChart() {
-  const { authToken, isConfigured } = useApiConfig();
+  const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
+  const apiFetch = useApiFetch();
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [metric, setMetric] = useState<Metric>('volume');
   const [selectedProtocols, setSelectedProtocols] = useState<ProtocolId[]>(['x402', 'ap2', 'acp', 'ucp']);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['protocol-activity', timeRange, metric],
-    queryFn: () => fetchProtocolActivity(authToken!, timeRange, metric),
+    queryKey: ['protocol-activity', timeRange, metric, apiEnvironment],
+    queryFn: () => fetchProtocolActivity(apiFetch, apiUrl, timeRange, metric),
     enabled: !!authToken && isConfigured,
     staleTime: 60 * 1000,
   });

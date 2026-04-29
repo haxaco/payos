@@ -13,7 +13,7 @@ function extractUcpTotal(totals: unknown): number {
   return Number(entry?.amount || 0) / 100;
 }
 
-export type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
+export type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp' | 'mpp';
 export type TimeRange = '24h' | '7d' | '30d';
 
 export interface ProtocolDistribution {
@@ -29,6 +29,7 @@ export interface ProtocolActivityPoint {
   ap2: number;
   acp: number;
   ucp: number;
+  mpp: number;
 }
 
 export interface ProtocolStats {
@@ -72,9 +73,11 @@ export async function getProtocolDistribution(
   options: {
     timeRange: TimeRange;
     metric: 'volume' | 'count';
+    environment?: 'test' | 'live';
   }
 ): Promise<ProtocolDistribution[]> {
-  const { timeRange } = options;
+  const { timeRange, environment } = options;
+  const env = environment || 'test';
 
   // Calculate time boundary
   const now = new Date();
@@ -93,19 +96,35 @@ export async function getProtocolDistribution(
 
   const fxService = getCircleFXService();
 
-  // Query x402 payments (stored as transfers with type = 'x402')
-  const { data: x402Data } = await supabase
-    .from('transfers')
-    .select('amount, currency')
-    .eq('tenant_id', tenantId)
-    .eq('type', 'x402')
-    .gte('created_at', startTime.toISOString());
+  // Query x402 payments (transfers with type = 'x402' + deferred payment_intents)
+  // Volume counts money that actually moved — `cancelled` x402 rows are
+  // failed attempts where no settlement occurred, so excluding them.
+  const [{ data: x402Transfers }, { data: x402Intents }] = await Promise.all([
+    supabase
+      .from('transfers')
+      .select('amount, currency, status')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'x402')
+      .eq('environment', env)
+      .in('status', ['completed', 'pending', 'processing'])
+      .gte('created_at', startTime.toISOString()),
+    supabase
+      .from('payment_intents')
+      .select('amount, currency')
+      .eq('tenant_id', tenantId)
+      .eq('protocol', 'x402')
+      .eq('environment', env)
+      .in('status', ['authorized', 'settled', 'completed'])
+      .gte('created_at', startTime.toISOString()),
+  ]);
+  const x402Data = [...(x402Transfers || []), ...(x402Intents || [])];
 
   // Query AP2 mandate executions
   const { data: ap2Data } = await supabase
     .from('ap2_mandate_executions')
     .select('amount, currency')
     .eq('tenant_id', tenantId)
+    .eq('environment', env)
     .gte('created_at', startTime.toISOString());
 
   // Query ACP checkouts (completed)
@@ -114,6 +133,7 @@ export async function getProtocolDistribution(
     .select('total_amount, currency')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', env)
     .gte('created_at', startTime.toISOString());
 
   // Query UCP checkouts (completed) — total is inside JSONB `totals` array
@@ -122,6 +142,16 @@ export async function getProtocolDistribution(
     .select('totals, currency')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', env)
+    .gte('created_at', startTime.toISOString());
+
+  // Query MPP transfers
+  const { data: mppData } = await supabase
+    .from('transfers')
+    .select('amount, currency')
+    .eq('tenant_id', tenantId)
+    .eq('type', 'mpp')
+    .eq('environment', env)
     .gte('created_at', startTime.toISOString());
 
   // Calculate FX-normalized volumes and counts
@@ -153,8 +183,15 @@ export async function getProtocolDistribution(
   }, 0) || 0;
   const ucpCount = ucpData?.length || 0;
 
-  const totalVolume = x402Volume + ap2Volume + acpVolume + ucpVolume;
-  const totalCount = x402Count + ap2Count + acpCount + ucpCount;
+  const mppVolume = mppData?.reduce((sum, p) => {
+    const amt = Number(p.amount || 0);
+    const ccy = (p.currency || 'USDC').toUpperCase();
+    return sum + fxService.toUSD(amt, ccy);
+  }, 0) || 0;
+  const mppCount = mppData?.length || 0;
+
+  const totalVolume = x402Volume + ap2Volume + acpVolume + ucpVolume + mppVolume;
+  const totalCount = x402Count + ap2Count + acpCount + ucpCount + mppCount;
 
   // Build distribution array
   const distribution: ProtocolDistribution[] = [
@@ -182,6 +219,12 @@ export async function getProtocolDistribution(
       transaction_count: ucpCount,
       percentage: totalVolume > 0 ? Math.round((ucpVolume / totalVolume) * 100) : 0,
     },
+    {
+      protocol: 'mpp',
+      volume_usd: mppVolume,
+      transaction_count: mppCount,
+      percentage: totalVolume > 0 ? Math.round((mppVolume / totalVolume) * 100) : 0,
+    },
   ];
 
   // Sort by volume descending
@@ -199,9 +242,11 @@ export async function getProtocolActivity(
   options: {
     timeRange: TimeRange;
     metric: 'volume' | 'count';
+    environment?: 'test' | 'live';
   }
 ): Promise<ProtocolActivityPoint[]> {
-  const { timeRange, metric } = options;
+  const { timeRange, metric, environment } = options;
+  const env = environment || 'test';
 
   // Calculate time boundary and interval
   const now = new Date();
@@ -230,29 +275,40 @@ export async function getProtocolActivity(
   const fxService = getCircleFXService();
 
   // Query all protocol data
-  const [x402Result, ap2Result, acpResult, ucpResult] = await Promise.all([
+  const [x402Result, ap2Result, acpResult, ucpResult, mppResult] = await Promise.all([
     supabase
       .from('transfers')
       .select('amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('ap2_mandate_executions')
       .select('amount, currency, created_at')
       .eq('tenant_id', tenantId)
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('acp_checkouts')
       .select('total_amount, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
     supabase
       .from('ucp_checkout_sessions')
       .select('totals, currency, created_at')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', env)
+      .gte('created_at', startTime.toISOString()),
+    supabase
+      .from('transfers')
+      .select('amount, currency, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'mpp')
+      .eq('environment', env)
       .gte('created_at', startTime.toISOString()),
   ]);
 
@@ -272,6 +328,7 @@ export async function getProtocolActivity(
     const ap2InBucket = ap2Result.data?.filter((e) => inBucket(e.created_at)) || [];
     const acpInBucket = acpResult.data?.filter((c) => inBucket(c.created_at)) || [];
     const ucpInBucket = ucpResult.data?.filter((c) => inBucket(c.created_at)) || [];
+    const mppInBucket = mppResult.data?.filter((p) => inBucket(p.created_at)) || [];
 
     if (metric === 'volume') {
       activity.push({
@@ -280,6 +337,7 @@ export async function getProtocolActivity(
         ap2: ap2InBucket.reduce((sum, e) => sum + fxService.toUSD(Number(e.amount || 0), (e.currency || 'USDC').toUpperCase()), 0),
         acp: acpInBucket.reduce((sum, c) => sum + fxService.toUSD(Number(c.total_amount || 0), (c.currency || 'USD').toUpperCase()), 0),
         ucp: ucpInBucket.reduce((sum, c) => sum + fxService.toUSD(extractUcpTotal(c.totals), (c.currency || 'USD').toUpperCase()), 0),
+        mpp: mppInBucket.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0),
       });
     } else {
       activity.push({
@@ -288,6 +346,7 @@ export async function getProtocolActivity(
         ap2: ap2InBucket.length,
         acp: acpInBucket.length,
         ucp: ucpInBucket.length,
+        mpp: mppInBucket.length,
       });
     }
   }
@@ -300,7 +359,8 @@ export async function getProtocolActivity(
  */
 export async function getProtocolStats(
   supabase: SupabaseClient,
-  tenantId: string
+  tenantId: string,
+  environment: 'test' | 'live' = 'test'
 ): Promise<ProtocolStats[]> {
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -315,8 +375,9 @@ export async function getProtocolStats(
 
   // enabled_protocols is stored as an object: { x402: { enabled_at: '...' }, ... }
   const enabledProtocols = tenant?.settings?.enabled_protocols || {};
-  const isProtocolEnabled = (protocol: string): boolean => {
-    return !!enabledProtocols[protocol];
+  // Auto-detect: protocol is enabled if explicitly set OR has volume activity
+  const isProtocolEnabled = (protocol: string, volume30d: number = 0): boolean => {
+    return !!enabledProtocols[protocol] || volume30d > 0;
   };
 
   const stats: ProtocolStats[] = [];
@@ -329,18 +390,21 @@ export async function getProtocolStats(
       .from('x402_endpoints')
       .select('id')
       .eq('tenant_id', tenantId)
-      .eq('status', 'active'),
+      .eq('status', 'active')
+      .eq('environment', environment),
     supabase
       .from('transfers')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('transfers')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
       .eq('type', 'x402')
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -354,7 +418,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'x402',
     protocol_name: 'x402 Micropayments',
-    enabled: isProtocolEnabled('x402'),
+    enabled: isProtocolEnabled('x402', x402TodayVolume),
     primary_metric: {
       label: 'Active Endpoints',
       value: x402Endpoints.data?.length || 0,
@@ -375,16 +439,19 @@ export async function getProtocolStats(
       .from('ap2_mandates')
       .select('id, authorized_amount, currency')
       .eq('tenant_id', tenantId)
-      .eq('status', 'active'),
+      .eq('status', 'active')
+      .eq('environment', environment),
     supabase
       .from('ap2_mandate_executions')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('ap2_mandate_executions')
       .select('amount, currency')
       .eq('tenant_id', tenantId)
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -399,7 +466,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'ap2',
     protocol_name: 'AP2 Mandates',
-    enabled: isProtocolEnabled('ap2'),
+    enabled: isProtocolEnabled('ap2', ap2TodayVolume),
     primary_metric: {
       label: 'Active Mandates',
       value: ap2Mandates.data?.length || 0,
@@ -421,12 +488,14 @@ export async function getProtocolStats(
       .select('total_amount, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('acp_checkouts')
       .select('total_amount, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -440,7 +509,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'acp',
     protocol_name: 'ACP Commerce',
-    enabled: isProtocolEnabled('acp'),
+    enabled: isProtocolEnabled('acp', acpTodayVolume),
     primary_metric: {
       label: 'Checkouts (30d)',
       value: acpToday.data?.length || 0,
@@ -462,12 +531,14 @@ export async function getProtocolStats(
       .select('totals, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', thirtyDaysAgo.toISOString()),
     supabase
       .from('ucp_checkout_sessions')
       .select('totals, currency')
       .eq('tenant_id', tenantId)
       .eq('status', 'completed')
+      .eq('environment', environment)
       .gte('created_at', sixtyDaysAgo.toISOString())
       .lt('created_at', thirtyDaysAgo.toISOString()),
   ]);
@@ -481,7 +552,7 @@ export async function getProtocolStats(
   stats.push({
     protocol: 'ucp',
     protocol_name: 'UCP Checkouts',
-    enabled: isProtocolEnabled('ucp'),
+    enabled: isProtocolEnabled('ucp', ucpTodayVolume),
     primary_metric: {
       label: 'Checkouts (30d)',
       value: ucpToday.data?.length || 0,
@@ -496,6 +567,55 @@ export async function getProtocolStats(
     },
   });
 
+  // MPP Stats
+  const [mppSessions, mppToday, mppYesterday] = await Promise.all([
+    supabase
+      .from('mpp_sessions')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .in('status', ['open', 'active'])
+      .eq('environment', environment),
+    supabase
+      .from('transfers')
+      .select('amount, currency')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'mpp')
+      .eq('environment', environment)
+      .gte('created_at', thirtyDaysAgo.toISOString()),
+    supabase
+      .from('transfers')
+      .select('amount, currency')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'mpp')
+      .eq('environment', environment)
+      .gte('created_at', sixtyDaysAgo.toISOString())
+      .lt('created_at', thirtyDaysAgo.toISOString()),
+  ]);
+
+  const mppTodayVolume = mppToday.data?.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0) || 0;
+  const mppYesterdayVolume = mppYesterday.data?.reduce((sum, p) => sum + fxService.toUSD(Number(p.amount || 0), (p.currency || 'USDC').toUpperCase()), 0) || 0;
+  const mppTrend = mppYesterdayVolume > 0
+    ? Math.round(((mppTodayVolume - mppYesterdayVolume) / mppYesterdayVolume) * 100)
+    : 0;
+
+  stats.push({
+    protocol: 'mpp',
+    protocol_name: 'MPP Payments',
+    enabled: isProtocolEnabled('mpp', mppTodayVolume),
+    primary_metric: {
+      label: 'Active Sessions',
+      value: mppSessions.data?.length || 0,
+    },
+    secondary_metric: {
+      label: '30d Volume',
+      value: mppTodayVolume,
+    },
+    trend: {
+      value: Math.abs(mppTrend),
+      direction: mppTrend > 0 ? 'up' : mppTrend < 0 ? 'down' : 'flat',
+    },
+  });
+
   return stats;
 }
 
@@ -505,7 +625,8 @@ export async function getProtocolStats(
 export async function getRecentActivity(
   supabase: SupabaseClient,
   tenantId: string,
-  limit: number = 10
+  limit: number = 10,
+  environment: 'test' | 'live' = 'test'
 ): Promise<RecentActivity[]> {
   const activities: RecentActivity[] = [];
 
@@ -515,6 +636,7 @@ export async function getRecentActivity(
     .select('id, amount, currency, description, created_at')
     .eq('tenant_id', tenantId)
     .eq('type', 'x402')
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -535,6 +657,7 @@ export async function getRecentActivity(
     .from('ap2_mandate_executions')
     .select('id, amount, currency, created_at')
     .eq('tenant_id', tenantId)
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -556,6 +679,7 @@ export async function getRecentActivity(
     .select('id, total_amount, currency, created_at')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -577,6 +701,7 @@ export async function getRecentActivity(
     .select('id, totals, currency, created_at')
     .eq('tenant_id', tenantId)
     .eq('status', 'completed')
+    .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -589,6 +714,28 @@ export async function getRecentActivity(
       currency: c.currency || 'USDC',
       description: 'UCP checkout',
       timestamp: c.created_at,
+    });
+  });
+
+  // Query recent MPP payments
+  const { data: mpp } = await supabase
+    .from('transfers')
+    .select('id, amount, currency, description, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('type', 'mpp')
+    .eq('environment', environment)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  mpp?.forEach((p: any) => {
+    activities.push({
+      id: p.id,
+      protocol: 'mpp',
+      type: 'payment',
+      amount: Number(p.amount),
+      currency: p.currency || 'USDC',
+      description: p.description || 'MPP payment',
+      timestamp: p.created_at,
     });
   });
 

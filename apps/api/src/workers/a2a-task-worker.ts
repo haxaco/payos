@@ -36,8 +36,8 @@ const DEFAULT_CONFIG: WorkerConfig = {
   pollIntervalMs: parseInt(process.env.A2A_WORKER_POLL_MS || '500'),
   maxConcurrent: parseInt(process.env.A2A_WORKER_MAX_CONCURRENT || '5'),
   maxPerTenant: parseInt(process.env.A2A_WORKER_MAX_PER_TENANT || '3'),
-  taskTimeoutMs: parseInt(process.env.A2A_WORKER_TASK_TIMEOUT || '60000'),
-  forwardedTaskTimeoutMs: parseInt(process.env.A2A_WORKER_FORWARDED_TIMEOUT || '120000'),
+  taskTimeoutMs: parseInt(process.env.A2A_WORKER_TASK_TIMEOUT || '300000'),
+  forwardedTaskTimeoutMs: parseInt(process.env.A2A_WORKER_FORWARDED_TIMEOUT || '300000'),
   shutdownGracePeriodMs: parseInt(process.env.A2A_WORKER_SHUTDOWN_GRACE || '30000'),
 };
 
@@ -48,6 +48,8 @@ interface ClaimedTask {
   context_id: string | null;
   state: string;
   mandate_id: string | null;
+  client_agent_id: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 interface AgentRow {
@@ -193,16 +195,28 @@ export class A2ATaskWorker {
     // Supabase doesn't support FOR UPDATE SKIP LOCKED directly,
     // so we use an atomic update with a WHERE clause on processor_id IS NULL
     // R1: Exclude tasks in retry backoff (retry_after > now)
+    // Externally-managed tasks (metadata.externallyManaged === true) are owned
+    // by another process — typically the marketplace-sim validation harness or
+    // a polling agent backend — so the worker leaves them alone. They drive
+    // their own lifecycle via the public claim/complete/respond endpoints.
     const now = new Date().toISOString();
-    const { data: candidates } = await supabase
+    const { data: rawCandidates } = await supabase
       .from('a2a_tasks')
-      .select('id, tenant_id, agent_id, context_id, state, mandate_id')
+      .select('id, tenant_id, agent_id, context_id, state, mandate_id, client_agent_id, metadata')
       .eq('state', 'submitted')
       .is('processor_id', null)
       .eq('direction', 'inbound')
       .or(`retry_after.is.null,retry_after.lte.${now}`)
       .order('created_at', { ascending: true })
-      .limit(5);
+      .limit(10);
+
+    // Filter out externally-managed tasks in JS — Supabase's .not() with JSON
+     // path is unreliable across versions. The metadata column is small enough
+    // that pulling 10 candidates and filtering in memory is cheap.
+    const candidates = (rawCandidates || []).filter((row: any) => {
+      const meta = row.metadata as Record<string, unknown> | null;
+      return meta?.externallyManaged !== true;
+    }).slice(0, 5);
 
     if (!candidates?.length) return null;
 
@@ -230,7 +244,7 @@ export class A2ATaskWorker {
         .eq('id', candidate.id)
         .is('processor_id', null)
         .eq('state', 'submitted')
-        .select('id, tenant_id, agent_id, context_id, state, mandate_id')
+        .select('id, tenant_id, agent_id, context_id, state, mandate_id, client_agent_id, metadata')
         .single();
 
       if (!error && claimed) {
@@ -238,8 +252,14 @@ export class A2ATaskWorker {
         taskEventBus.emitTask(claimed.id, {
           type: 'status',
           taskId: claimed.id,
-          data: { state: 'working', workerId: this.workerId },
+          data: { state: 'working', workerId: this.workerId, clientAgentId: claimed.client_agent_id || null, providerAgentId: claimed.agent_id },
           timestamp: new Date().toISOString(),
+        }, {
+          tenantId: claimed.tenant_id,
+          agentId: claimed.agent_id,
+          actorType: 'worker',
+          fromState: 'submitted',
+          toState: 'working',
         });
         return claimed as ClaimedTask;
       }
@@ -257,12 +277,11 @@ export class A2ATaskWorker {
     const startTime = Date.now();
 
     try {
-      // Load agent's processing config
+      // Load agent's processing config (no tenant filter — target agent may be cross-tenant)
       const { data: agent } = await supabase
         .from('agents')
         .select('id, processing_mode, processing_config, name, status')
         .eq('id', task.agent_id)
-        .eq('tenant_id', task.tenant_id)
         .single();
 
       if (!agent || agent.status !== 'active') {
@@ -293,8 +312,14 @@ export class A2ATaskWorker {
           await this.handleManual(supabase, task, agent as any);
           break;
 
+        case 'autonomous':
+          // Autonomous mode: process like managed but task-processor will
+          // leave tasks in 'working' for local agent backends to pick up
+          await this.handleManaged(supabase, task, agent as any, config);
+          break;
+
         default:
-          await this.failTask(supabase, task, `Unknown processing mode: ${mode}`);
+          await this.failTask(supabase, task, 'Task processing failed: unsupported agent configuration');
       }
     } catch (err: any) {
       this.log(task.id, 'error', `Task failed: ${err.message}`);
@@ -315,8 +340,9 @@ export class A2ATaskWorker {
   }
 
   /**
-   * Managed handler placeholder.
-   * Uses the existing regex-based processor until Story 58.4 adds LLM.
+   * Managed handler: Sly handles payment intents directly via regex processor.
+   * Unmatched intents are forwarded to agent's webhook if registered,
+   * otherwise task is set to input-required with webhook registration guidance.
    */
   private async handleManaged(
     supabase: SupabaseClient,
@@ -324,16 +350,9 @@ export class A2ATaskWorker {
     agent: AgentRow,
     config: Record<string, unknown>,
   ): Promise<void> {
-    // Import existing processor for backward compatibility
     const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
     const processor = new A2ATaskProcessor(supabase, task.tenant_id);
-
-    // The existing processTask transitions from submitted→working→completed
-    // But we already set state to 'working' during claim, so we need to
-    // call it with the task ID. The existing processor will re-fetch and handle.
-    // It transitions submitted→working internally, but since it's already working,
-    // it will just process the intent.
-    await processor.processTask(task.id);
+    await processor.processTask(task.id, { slyFirst: true });
   }
 
   /**
@@ -341,12 +360,51 @@ export class A2ATaskWorker {
    * On success, task stays in 'working' state awaiting external state update.
    * On failure, schedules retry or moves to DLQ.
    */
+  /**
+   * Create settlement mandate for a task if skill has a price.
+   * Shared by manual and webhook handlers.
+   */
+  private async createMandateIfNeeded(supabase: SupabaseClient, task: ClaimedTask): Promise<void> {
+    const callerAgentId = task.client_agent_id;
+    const skillId = (task.metadata as any)?.skillId as string | undefined;
+    if (!callerAgentId || !skillId) return;
+
+    const { data: skill } = await supabase
+      .from('agent_skills')
+      .select('base_price, currency')
+      .eq('agent_id', task.agent_id)
+      .eq('skill_id', skillId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!skill || Number(skill.base_price) <= 0) return;
+
+    const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
+    const processor = new A2ATaskProcessor(supabase, task.tenant_id);
+    const result = await processor.createSettlementMandate(
+      task.id, callerAgentId, task.agent_id,
+      Number(skill.base_price), skill.currency || 'USDC',
+    );
+
+    if (result && 'mandateId' in result) {
+      await supabase.from('a2a_tasks').update({
+        metadata: { ...(task.metadata || {}), settlementMandateId: result.mandateId },
+      }).eq('id', task.id);
+      console.log(`[A2A Worker] Task ${task.id.slice(0, 8)}: mandate ${result.mandateId} ($${skill.base_price})`);
+    } else if (result && 'error' in result) {
+      console.log(`[A2A Worker] Task ${task.id.slice(0, 8)}: mandate skipped (${result.error})`);
+    }
+  }
+
   private async handleWebhook(
     supabase: SupabaseClient,
     task: ClaimedTask,
     agent: AgentRow,
     config: Record<string, unknown>,
   ): Promise<void> {
+    // Create settlement mandate before dispatching to webhook
+    await this.createMandateIfNeeded(supabase, task);
+
     const callbackUrl = config.callbackUrl as string;
     if (!callbackUrl) {
       await this.failTask(supabase, task, 'Webhook agent missing callbackUrl in processing_config');
@@ -416,12 +474,11 @@ export class A2ATaskWorker {
     console.log(`[A2A Worker] Found ${retryTasks.length} webhook tasks ready for retry`);
 
     for (const retryTask of retryTasks) {
-      // Load agent config
+      // Load agent config (no tenant filter — target agent may be cross-tenant)
       const { data: agent } = await supabase
         .from('agents')
         .select('id, processing_mode, processing_config, name, status')
         .eq('id', retryTask.agent_id)
-        .eq('tenant_id', retryTask.tenant_id)
         .single();
 
       if (!agent || agent.status !== 'active') {
@@ -499,7 +556,8 @@ export class A2ATaskWorker {
   }
 
   /**
-   * Manual handler: leave task in queue for human processing.
+   * Manual handler: create settlement mandate if skill has a price,
+   * then leave task in queue for human/agent-backend processing.
    */
   private async handleManual(
     supabase: SupabaseClient,
@@ -508,14 +566,12 @@ export class A2ATaskWorker {
   ): Promise<void> {
     const taskService = new A2ATaskService(supabase, task.tenant_id);
 
-    await taskService.addMessage(task.id, 'agent', [
-      { text: 'Task queued for manual processing. A human operator will review this shortly.' },
-    ]);
+    // Create settlement mandate so money is held in escrow
+    await this.createMandateIfNeeded(supabase, task);
 
-    // Set to input-required with structured context so callers know what to do
     await taskService.setInputRequired(
       task.id,
-      'Awaiting manual processing',
+      'Awaiting agent backend',
       {
         reason_code: 'manual_processing',
         next_action: 'human_respond',
@@ -584,25 +640,23 @@ export class A2ATaskWorker {
     const forwardedCutoff = new Date(Date.now() - this.config.forwardedTaskTimeoutMs).toISOString();
 
     // Find stuck tasks: local tasks past localCutoff, forwarded tasks past forwardedCutoff
+    // Exclude autonomous agents (they have longer timeouts — 30 min)
+    const autonomousCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const { data: stuckTasks } = await supabase
       .from('a2a_tasks')
-      .select('id, tenant_id, metadata, remote_task_id')
+      .select('id, tenant_id, metadata, remote_task_id, agent_id, webhook_status')
       .eq('state', 'working')
       .lt('processing_started_at', localCutoff)
-      .limit(10);
+      .limit(20);
 
     if (!stuckTasks?.length) return;
 
-    // Filter: forwarded tasks only count as stuck if past the longer cutoff
+    // Filter out tasks that were successfully delivered to a webhook backend.
+    // These are actively being processed by external agents — not stuck.
+    // Also filter forwarded tasks within their longer timeout budget.
     const actuallyStuck = stuckTasks.filter((task: any) => {
-      if (task.remote_task_id) {
-        // Forwarded task — check against longer cutoff
-        // We already filtered by localCutoff, so re-check against forwardedCutoff
-        // by comparing processing_started_at. Since we don't have it in select,
-        // the forwardedCutoff is stricter (older), so if task is past localCutoff
-        // but not forwardedCutoff, skip it.
-        return true; // Will be filtered by atomic claim below if needed
-      }
+      // Webhook-delivered tasks are being worked on externally — don't kill them
+      if (task.webhook_status === 'delivered') return false;
       return true;
     });
 
@@ -625,21 +679,64 @@ export class A2ATaskWorker {
     console.log(`[A2A Worker] Found ${tasksToFail.length} stuck tasks past timeout`);
 
     for (const task of tasksToFail) {
+      // Skip autonomous agents unless past the 30-min autonomous cutoff
+      if ((task as any).agent_id) {
+        const { data: agentRow } = await supabase
+          .from('agents')
+          .select('processing_mode')
+          .eq('id', (task as any).agent_id)
+          .single();
+        if (agentRow?.processing_mode === 'autonomous') {
+          // Only timeout autonomous tasks after 30 minutes
+          const { data: taskRow } = await supabase
+            .from('a2a_tasks')
+            .select('processing_started_at')
+            .eq('id', task.id)
+            .single();
+          if (taskRow?.processing_started_at && taskRow.processing_started_at > autonomousCutoff) {
+            continue; // Not yet timed out for autonomous agent
+          }
+        }
+      }
+
       const isForwarded = !!(task as any).remote_task_id;
       const timeoutMs = isForwarded ? this.config.forwardedTaskTimeoutMs : this.config.taskTimeoutMs;
+
+      // Check if task has a settlement mandate (payment already processed) — auto-complete instead of fail
+      const hasSettlement = !!(task as any).transfer_id || !!(task as any).mandate_id;
+      const finalState = hasSettlement ? 'completed' : 'failed';
+      const statusMsg = hasSettlement
+        ? `Auto-completed after ${timeoutMs / 1000}s (payment already settled)`
+        : `Timed out after ${timeoutMs / 1000}s`;
 
       // Atomic claim: only proceed if we successfully transition from 'working'
       const { data: claimed, error } = await supabase
         .from('a2a_tasks')
-        .update({ state: 'failed', processor_id: null })
+        .update({ state: finalState, status_message: statusMsg, processor_id: null })
         .eq('id', task.id)
         .eq('state', 'working')
         .select('id')
         .single();
 
-      if (error || !claimed) continue; // Another sweep or handler got it first
+      if (error || !claimed) continue;
 
-      this.log(task.id, 'warn', `Task stuck past timeout (${timeoutMs / 1000}s${isForwarded ? ', forwarded' : ''}), failing`);
+      this.log(task.id, hasSettlement ? 'info' : 'warn', `Task stuck past timeout — ${finalState}`);
+
+      // Story 58.17: Emit audit event for timeout failure
+      taskEventBus.emitTask(task.id, {
+        type: 'timeout',
+        taskId: task.id,
+        data: { timeoutMs, isForwarded, previousState: 'working' },
+        timestamp: new Date().toISOString(),
+      }, {
+        tenantId: task.tenant_id,
+        agentId: task.agent_id,
+        actorType: 'worker',
+        actorId: this.workerId,
+        fromState: 'working',
+        toState: 'failed',
+        durationMs: timeoutMs,
+      });
 
       // Cancel linked settlement mandate if any
       const mandateId = (task.metadata as any)?.settlementMandateId;
@@ -692,6 +789,16 @@ export class A2ATaskWorker {
     console.log(`[A2A Worker] Found ${orphanMandates.length} orphan mandates (active >1h)`);
 
     for (const mandate of orphanMandates) {
+      // Skip mandates linked to webhook-delivered tasks — they're still being processed
+      if (mandate.a2a_session_id) {
+        const { data: linkedTask } = await supabase
+          .from('a2a_tasks')
+          .select('webhook_status')
+          .eq('id', mandate.a2a_session_id)
+          .single();
+        if (linkedTask?.webhook_status === 'delivered') continue;
+      }
+
       // Cancel the mandate
       await supabase
         .from('ap2_mandates')

@@ -1,11 +1,15 @@
 import { Context, Next } from 'hono';
 import { createClient } from '../db/client.js';
+import crypto from 'node:crypto';
 import { hashApiKey, getKeyPrefix, verifyApiKey } from '../utils/crypto.js';
 import { logSecurityEvent } from '../utils/auth.js';
+import { trackFirstEvent } from '../services/beta-access.js';
 
 export interface RequestContext {
   tenantId: string;
   actorType: 'api_key' | 'user' | 'agent' | 'portal';
+  // Environment scoping (test = sandbox, live = production)
+  environment?: 'test' | 'live';
   // For user (JWT) auth
   userId?: string;
   userRole?: 'owner' | 'admin' | 'member' | 'viewer';
@@ -17,9 +21,25 @@ export interface RequestContext {
   actorId?: string;
   actorName?: string;
   kyaTier?: number;
+  parentAccountId?: string;
   // For portal token auth (Epic 65)
   portalTokenId?: string;
   portalScopes?: string[];
+  // For session token auth (Epic 72)
+  sessionBased?: boolean;
+  // Session id (PK on agent_sessions) — anchor for one_shot scope
+  // grants. Set when the calling token is a sess_*.
+  sessionId?: string;
+  // Epic 82 — populated by the auth middleware after agent token
+  // verification. The highest-tier active scope grant the calling
+  // session/agent currently holds. Defaults to 'agent' (the implicit
+  // baseline for any agent-bound auth) and gets bumped to
+  // 'tenant_read' / 'tenant_write' / 'treasury' when a matching grant
+  // row in auth_scope_grants is active.
+  elevatedScope?: 'agent' | 'tenant_read' | 'tenant_write' | 'treasury';
+  // Set when the elevated scope came from a one_shot grant — the
+  // service layer consumes the grant atomically on first use.
+  elevatedGrantId?: string;
 }
 
 declare module 'hono' {
@@ -42,8 +62,8 @@ const JWT_CACHE_TTL_MS = 60 * 1000; // 1 minute cache
 const JWT_CACHE_MAX_SIZE = 1000;
 
 function getJWTCacheKey(token: string): string {
-  // Use last 20 chars of token as cache key (faster than hashing)
-  return token.slice(-20);
+  // Hash the full token to avoid cache key collisions
+  return crypto.createHash('sha256').update(token).digest('hex').slice(0, 32);
 }
 
 function getCachedJWT(token: string): RequestContext | null {
@@ -82,6 +102,118 @@ function setCachedJWT(token: string, ctx: RequestContext): void {
     ctx,
     expiresAt: Date.now() + JWT_CACHE_TTL_MS,
   });
+}
+
+// ============================================
+// Agent Token Cache (mirrors JWT cache pattern)
+// ============================================
+
+interface AgentCacheEntry {
+  ctx: RequestContext;
+  agentRow: Record<string, unknown>;
+  tokenHash: string;
+  expiresAt: number;
+}
+
+const AGENT_TOKEN_CACHE = new Map<string, AgentCacheEntry>();
+const AGENT_TOKEN_CACHE_TTL_MS = 60 * 1000; // 60 second TTL
+const AGENT_TOKEN_CACHE_MAX_SIZE = 1000;
+
+function getAgentCacheKey(tokenPrefix: string): string {
+  return tokenPrefix;
+}
+
+function getCachedAgent(tokenPrefix: string, tokenHash: string): { ctx: RequestContext; agentRow: Record<string, unknown> } | null {
+  const entry = AGENT_TOKEN_CACHE.get(getAgentCacheKey(tokenPrefix));
+  if (!entry) return null;
+
+  if (Date.now() > entry.expiresAt) {
+    AGENT_TOKEN_CACHE.delete(getAgentCacheKey(tokenPrefix));
+    return null;
+  }
+
+  // Constant-time hash comparison to prevent timing attacks
+  if (entry.tokenHash.length !== tokenHash.length ||
+      !crypto.timingSafeEqual(Buffer.from(entry.tokenHash), Buffer.from(tokenHash))) return null;
+
+  return { ctx: entry.ctx, agentRow: entry.agentRow };
+}
+
+function setCachedAgent(tokenPrefix: string, tokenHash: string, ctx: RequestContext, agentRow: Record<string, unknown>): void {
+  if (AGENT_TOKEN_CACHE.size >= AGENT_TOKEN_CACHE_MAX_SIZE) {
+    const now = Date.now();
+    const keysToDelete: string[] = [];
+    AGENT_TOKEN_CACHE.forEach((entry, key) => {
+      if (now > entry.expiresAt) keysToDelete.push(key);
+    });
+    keysToDelete.forEach(key => AGENT_TOKEN_CACHE.delete(key));
+
+    if (AGENT_TOKEN_CACHE.size >= AGENT_TOKEN_CACHE_MAX_SIZE) {
+      const entries = Array.from(AGENT_TOKEN_CACHE.entries());
+      entries.sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      const toDelete = entries.slice(0, Math.floor(AGENT_TOKEN_CACHE_MAX_SIZE / 2));
+      toDelete.forEach(([key]) => AGENT_TOKEN_CACHE.delete(key));
+    }
+  }
+
+  AGENT_TOKEN_CACHE.set(getAgentCacheKey(tokenPrefix), {
+    ctx,
+    agentRow,
+    tokenHash,
+    expiresAt: Date.now() + AGENT_TOKEN_CACHE_TTL_MS,
+  });
+}
+
+// ============================================
+// Epic 82 — elevated-scope lookup
+// ============================================
+
+const SCOPE_TIER_ORDER: Record<string, number> = {
+  tenant_read: 1,
+  tenant_write: 2,
+  treasury: 3,
+};
+
+/**
+ * Pull the highest-tier active scope grant that applies to the calling
+ * agent/session. Defaults to 'agent' baseline if no row matches.
+ *
+ * - agent_* tokens (no session): only un-anchored grants apply
+ *   (parent_session_id IS NULL — i.e., standing grants issued by a
+ *   tenant owner from the dashboard).
+ * - sess_* tokens: both un-anchored grants AND one_shot grants
+ *   anchored to the calling session apply.
+ *
+ * One round-trip per request — falls within the 60s ctx cache window
+ * for agent_* tokens; sess_* path queries on every request (no ctx
+ * cache for sessions).
+ */
+async function lookupElevatedScope(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  agentId: string,
+  sessionId: string | null,
+): Promise<{ scope: 'agent' | 'tenant_read' | 'tenant_write' | 'treasury'; grantId?: string }> {
+  const { data, error } = await ((supabase as any).from('auth_scope_grants'))
+    .select('id, scope, parent_session_id')
+    .eq('tenant_id', tenantId)
+    .eq('agent_id', agentId)
+    .eq('status', 'active')
+    .gt('expires_at', new Date().toISOString());
+
+  if (error || !data || data.length === 0) return { scope: 'agent' };
+
+  const applicable = (data as any[]).filter((row) => {
+    if (!row.parent_session_id) return true;
+    return sessionId !== null && row.parent_session_id === sessionId;
+  });
+  if (applicable.length === 0) return { scope: 'agent' };
+
+  applicable.sort(
+    (a, b) => (SCOPE_TIER_ORDER[b.scope] ?? 0) - (SCOPE_TIER_ORDER[a.scope] ?? 0),
+  );
+  const top = applicable[0];
+  return { scope: top.scope, grantId: top.id };
 }
 
 /**
@@ -161,7 +293,7 @@ export async function authMiddleware(c: Context, next: Next) {
     // Check the new api_keys table first
     const { data: apiKey, error: apiKeyError } = await (supabase
       .from('api_keys') as any)
-      .select('id, tenant_id, environment, status, expires_at, key_hash')
+      .select('id, tenant_id, environment, status, expires_at, key_hash, name')
       .eq('key_prefix', keyPrefix)
       .single();
 
@@ -237,11 +369,15 @@ export async function authMiddleware(c: Context, next: Next) {
       c.set('ctx', {
         tenantId: tenant.id,
         actorType: 'api_key',
-        actorId: apiKey.id, // Use API key ID as actor ID
+        environment: apiKey.environment || 'test',
+        actorId: apiKey.id,
         actorName: apiKey.name || 'API Key',
         apiKeyId: apiKey.id,
         apiKeyEnvironment: apiKey.environment,
       });
+
+      // Track first API call for beta funnel (fire-and-forget)
+      trackFirstEvent(tenant.id, 'first_api_call').catch(() => {});
 
       return next();
     }
@@ -260,7 +396,7 @@ export async function authMiddleware(c: Context, next: Next) {
         return c.json({ error: 'Invalid API key' }, 401);
       }
     } else {
-      // Fallback to legacy plaintext lookup (for backwards compatibility during migration)
+      // Fallback to legacy plaintext lookup — DEPRECATED, schedule removal
       const legacyResult = await (supabase
         .from('tenants') as any)
         .select('id, name, status')
@@ -269,6 +405,9 @@ export async function authMiddleware(c: Context, next: Next) {
 
       tenant = legacyResult.data;
       error = legacyResult.error;
+      if (tenant) {
+        console.warn(`[Auth] DEPRECATED: Tenant ${tenant.id} using plaintext API key. Migrate to hashed key.`);
+      }
     }
 
     if (error || !tenant) {
@@ -289,13 +428,18 @@ export async function authMiddleware(c: Context, next: Next) {
 
     await logAuthAttempt(true, 'api_key', tenant.id, 'legacy_api_key', ip, userAgent);
 
+    const legacyEnv: 'test' | 'live' = token.startsWith('pk_live_') ? 'live' : 'test';
     c.set('ctx', {
       tenantId: tenant.id,
       actorType: 'api_key',
-      actorId: 'legacy_api_key', // Placeholder for legacy keys
+      environment: legacyEnv,
+      actorId: 'legacy_api_key',
       actorName: tenant.name || 'Legacy API Key',
-      apiKeyEnvironment: token.startsWith('pk_live_') ? 'live' : 'test',
+      apiKeyEnvironment: legacyEnv,
     });
+
+    // Track first API call for beta funnel (fire-and-forget)
+    trackFirstEvent(tenant.id, 'first_api_call').catch(() => {});
 
     return next();
   }
@@ -305,10 +449,17 @@ export async function authMiddleware(c: Context, next: Next) {
   // ============================================
   // JWTs typically start with "eyJ" (base64 encoded JSON header)
   if (token.startsWith('eyJ')) {
+    // Read environment header (may change per request even with same JWT)
+    const envHeader = c.req.header('X-Environment');
+    const requestEnv: 'test' | 'live' = envHeader === 'live' ? 'live' : 'test';
+
     // Check cache first for performance
     const cachedCtx = getCachedJWT(token);
     if (cachedCtx) {
-      c.set('ctx', cachedCtx);
+      // Override environment from header (it can change per request)
+      c.set('ctx', { ...cachedCtx, environment: requestEnv, apiKeyEnvironment: requestEnv });
+      // Track first API call for beta funnel (fire-and-forget)
+      trackFirstEvent(cachedCtx.tenantId, 'first_api_call').catch(() => {});
       return next();
     }
 
@@ -371,12 +522,17 @@ export async function authMiddleware(c: Context, next: Next) {
         userId: userId,
         userRole: profile.role,
         userName: profile.name || userData.user.email?.split('@')[0] || 'Unknown',
+        environment: requestEnv,
+        apiKeyEnvironment: requestEnv,
       };
 
       // Cache the result for subsequent requests
       setCachedJWT(token, ctx);
       
       c.set('ctx', ctx);
+
+      // Track first API call for beta funnel (fire-and-forget)
+      trackFirstEvent(ctx.tenantId, 'first_api_call').catch(() => {});
 
       return next();
     } catch (error) {
@@ -392,10 +548,34 @@ export async function authMiddleware(c: Context, next: Next) {
     const tokenPrefix = getKeyPrefix(token);
     const tokenHash = hashApiKey(token);
 
-    // First, try the new secure method (prefix + hash)
+    // Check agent token cache first (avoids DB round-trip on repeat requests)
+    const cached = getCachedAgent(tokenPrefix, tokenHash);
+    if (cached) {
+      // Epic 82 — scope state must be FRESH on every request. The
+      // grant lifecycle (consume / revoke / kill-switch cascade) flips
+      // rows in auth_scope_grants and we cannot let a 60s ctx cache
+      // mask those changes. Re-query the active set every time and
+      // overwrite the cached elevation fields before handing ctx off.
+      const elevated = await lookupElevatedScope(
+        supabase,
+        cached.ctx.tenantId,
+        cached.ctx.actorId!,
+        null,
+      );
+      const refreshedCtx: RequestContext = {
+        ...cached.ctx,
+        elevatedScope: elevated.scope,
+        elevatedGrantId: elevated.grantId,
+      };
+      c.set('ctx', refreshedCtx);
+      c.set('agentRow', cached.agentRow);
+      return next();
+    }
+
+    // Cache miss — query DB
     let { data: agent, error } = await (supabase
       .from('agents') as any)
-      .select('id, name, tenant_id, status, kya_tier, kya_status, auth_token_hash')
+      .select('id, name, tenant_id, status, kya_tier, kya_status, auth_token_hash, parent_account_id, environment')
       .eq('auth_token_prefix', tokenPrefix)
       .single();
 
@@ -409,12 +589,15 @@ export async function authMiddleware(c: Context, next: Next) {
       // Fallback to legacy plaintext lookup (for backwards compatibility during migration)
       const legacyResult = await (supabase
         .from('agents') as any)
-        .select('id, name, tenant_id, status, kya_tier, kya_status')
+        .select('id, name, tenant_id, status, kya_tier, kya_status, parent_account_id, environment')
         .eq('auth_client_id', token)
         .single();
 
       agent = legacyResult.data;
       error = legacyResult.error;
+      if (agent) {
+        console.warn(`[Auth] DEPRECATED: Agent ${agent.id} using plaintext auth_client_id. Migrate to hashed token.`);
+      }
     }
 
     if (error || !agent) {
@@ -427,15 +610,36 @@ export async function authMiddleware(c: Context, next: Next) {
       return c.json({ error: 'Agent is not active', status: agent.status }, 403);
     }
 
-    await logAuthAttempt(true, 'agent', agent.tenant_id, agent.id, ip, userAgent);
+    logAuthAttempt(true, 'agent', agent.tenant_id, agent.id, ip, userAgent).catch(() => {});
 
-    c.set('ctx', {
+    // Epic 82 — pick up any active elevated-scope grant for this agent.
+    const elevated = await lookupElevatedScope(
+      supabase,
+      agent.tenant_id,
+      agent.id,
+      null, // agent_* tokens have no session anchor
+    );
+
+    const ctx: RequestContext = {
       tenantId: agent.tenant_id,
       actorType: 'agent',
+      environment: agent.environment || 'test',
       actorId: agent.id,
       actorName: agent.name,
       kyaTier: agent.kya_tier,
-    });
+      parentAccountId: agent.parent_account_id,
+      apiKeyEnvironment: agent.environment || 'test',
+      elevatedScope: elevated.scope,
+      elevatedGrantId: elevated.grantId,
+    };
+
+    // Cache the agent row + context for subsequent requests
+    setCachedAgent(tokenPrefix, tokenHash, ctx, agent);
+    c.set('ctx', ctx);
+    c.set('agentRow', agent);
+
+    // Track first API call for beta funnel (fire-and-forget)
+    trackFirstEvent(agent.tenant_id, 'first_api_call').catch(() => {});
 
     return next();
   }
@@ -489,6 +693,77 @@ export async function authMiddleware(c: Context, next: Next) {
       portalTokenId: portalToken.id,
       portalScopes: portalToken.scopes || ['usage:read'],
     });
+
+    // Track first API call for beta funnel (fire-and-forget)
+    trackFirstEvent(portalToken.tenant_id, 'first_api_call').catch(() => {});
+
+    return next();
+  }
+
+  // ============================================
+  // 5. Session Token Auth (sess_xxx) — Epic 72
+  // Ed25519 challenge-response issued session tokens.
+  // Sets identical RequestContext as agent_* tokens.
+  // ============================================
+  if (token.startsWith('sess_')) {
+    const { validateSession } = await import('../services/agent-auth/session.js');
+    const session = await validateSession(supabase, token);
+
+    if (!session) {
+      await logAuthAttempt(false, 'agent', null, null, ip, userAgent, 'Invalid or expired session token');
+      return c.json({ error: 'Invalid or expired session token' }, 401);
+    }
+
+    // Look up the agent (same query as agent_* auth)
+    const { data: agent, error: agentError } = await (supabase
+      .from('agents') as any)
+      .select('id, name, tenant_id, status, kya_tier, kya_status, parent_account_id, environment')
+      .eq('id', session.agentId)
+      .eq('tenant_id', session.tenantId)
+      .single();
+
+    if (agentError || !agent) {
+      await logAuthAttempt(false, 'agent', session.tenantId, session.agentId, ip, userAgent, 'Session agent not found');
+      return c.json({ error: 'Session agent not found' }, 401);
+    }
+
+    if (agent.status !== 'active') {
+      await logAuthAttempt(false, 'agent', agent.tenant_id, agent.id, ip, userAgent, `Agent status: ${agent.status}`);
+      return c.json({ error: 'Agent is not active', status: agent.status }, 403);
+    }
+
+    logAuthAttempt(true, 'agent', agent.tenant_id, agent.id, ip, userAgent).catch(() => {});
+
+    // Epic 82 — pick up active scope grants. For sess_* tokens we
+    // include grants anchored to this specific session (one_shot
+    // request_scope flow) plus un-anchored standing grants.
+    const elevated = await lookupElevatedScope(
+      supabase,
+      agent.tenant_id,
+      agent.id,
+      session.sessionId,
+    );
+
+    const ctx: RequestContext = {
+      tenantId: agent.tenant_id,
+      actorType: 'agent',
+      environment: agent.environment || 'test',
+      actorId: agent.id,
+      actorName: agent.name,
+      kyaTier: agent.kya_tier,
+      parentAccountId: agent.parent_account_id,
+      apiKeyEnvironment: agent.environment || 'test',
+      // Epic 72: flag for audit differentiation
+      sessionBased: true,
+      sessionId: session.sessionId,
+      elevatedScope: elevated.scope,
+      elevatedGrantId: elevated.grantId,
+    };
+
+    c.set('ctx', ctx);
+    c.set('agentRow', agent);
+
+    trackFirstEvent(agent.tenant_id, 'first_api_call').catch(() => {});
 
     return next();
   }

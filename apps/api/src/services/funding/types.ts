@@ -78,6 +78,7 @@ export interface FundingTransaction {
   tenant_id: string;
   funding_source_id: string;
   account_id: string;
+  wallet_id: string | null;
   amount_cents: number;
   currency: string;
   converted_amount_cents: number | null;
@@ -153,6 +154,7 @@ export interface InitiateFundingParams {
   source_id: string;
   amount_cents: number;
   currency: string;
+  wallet_id?: string;
   idempotency_key?: string;
   metadata?: Record<string, unknown>;
 }

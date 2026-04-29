@@ -6,6 +6,7 @@ import {
   isValidUUID,
   getPaginationParams,
   paginationResponse,
+  getEnv,
 } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../middleware/error.js';
 
@@ -49,16 +50,17 @@ const updatePaymentMethodSchema = z.object({
 // ============================================
 paymentMethods.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const typeFilter = c.req.query('type'); // Optional filter: card, bank_account, wallet
-  const { page, limit, offset } = getPaginationParams(c);
-  const safeOffset = offset || 0; // Ensure offset is never undefined
+  const { page, limit } = getPaginationParams(c.req.query() as Record<string, string>);
+  const safeOffset = (page - 1) * limit;
 
   let query = supabase
     .from('payment_methods')
     .select('*', { count: 'exact' })
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .order('created_at', { ascending: false })
     .range(safeOffset, safeOffset + limit - 1);
 
@@ -74,7 +76,7 @@ paymentMethods.get('/', async (c) => {
 
   return c.json({
     data: data || [],
-    pagination: paginationResponse(page, limit, count || 0),
+    pagination: paginationResponse(data || [], count || 0, { page, limit }).pagination,
   });
 });
 
@@ -83,7 +85,7 @@ paymentMethods.get('/', async (c) => {
 // ============================================
 paymentMethods.get('/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
 
   if (!isValidUUID(id)) {
@@ -95,6 +97,7 @@ paymentMethods.get('/:id', async (c) => {
     .select('*')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (error || !data) {
@@ -109,7 +112,7 @@ paymentMethods.get('/:id', async (c) => {
 // ============================================
 paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const accountId = c.req.param('accountId');
 
   if (!isValidUUID(accountId)) {
@@ -122,6 +125,7 @@ paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {
     .select('id')
     .eq('id', accountId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (accountError || !account) {
@@ -133,6 +137,7 @@ paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {
     .select('*')
     .eq('account_id', accountId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .order('is_default', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -149,7 +154,7 @@ paymentMethods.get('/accounts/:accountId/payment-methods', async (c) => {
 // ============================================
 paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const accountId = c.req.param('accountId');
 
   if (!isValidUUID(accountId)) {
@@ -162,6 +167,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
     .select('id, name')
     .eq('id', accountId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (accountError || !account) {
@@ -218,7 +224,8 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
       .from('payment_methods')
       .update({ is_default: false })
       .eq('account_id', accountId)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
   }
 
   // Create payment method (STUB: no real verification)
@@ -226,6 +233,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
     .from('payment_methods')
     .insert({
       tenant_id: ctx.tenantId,
+      environment: getEnv(ctx),
       account_id: accountId,
       type,
       label: label || `${type} payment method`,
@@ -286,7 +294,7 @@ paymentMethods.post('/accounts/:accountId/payment-methods', async (c) => {
 // ============================================
 paymentMethods.patch('/payment-methods/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const methodId = c.req.param('id');
 
   if (!isValidUUID(methodId)) {
@@ -299,6 +307,7 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
     .select('*')
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (fetchError || !method) {
@@ -326,6 +335,7 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
       .update({ is_default: false })
       .eq('account_id', method.account_id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .neq('id', methodId);
   }
 
@@ -341,6 +351,7 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
     .from('payment_methods')
     .update(updates)
     .eq('id', methodId)
+    .eq('environment', getEnv(ctx))
     .select()
     .single();
 
@@ -367,7 +378,7 @@ paymentMethods.patch('/payment-methods/:id', async (c) => {
 // ============================================
 paymentMethods.delete('/payment-methods/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const methodId = c.req.param('id');
 
   if (!isValidUUID(methodId)) {
@@ -380,6 +391,7 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
     .select('*')
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (fetchError || !method) {
@@ -391,6 +403,8 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
     .from('transfer_schedules')
     .select('id')
     .eq('to_payment_method_id', methodId)
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .eq('status', 'active')
     .limit(1);
 
@@ -402,7 +416,8 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
     .from('payment_methods')
     .delete()
     .eq('id', methodId)
-    .eq('tenant_id', ctx.tenantId);
+    .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx));
 
   if (deleteError) {
     console.error('Error deleting payment method:', deleteError);
@@ -427,7 +442,7 @@ paymentMethods.delete('/payment-methods/:id', async (c) => {
 // ============================================
 paymentMethods.get('/payment-methods/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const methodId = c.req.param('id');
 
   if (!isValidUUID(methodId)) {
@@ -439,6 +454,7 @@ paymentMethods.get('/payment-methods/:id', async (c) => {
     .select('*')
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (error || !method) {
@@ -453,14 +469,15 @@ paymentMethods.get('/payment-methods/:id', async (c) => {
 // ============================================
 cardTransactionsRouter.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const methodId = c.req.param('id');
 
-  if (!isValidUUID(methodId)) {
+  if (!methodId || !isValidUUID(methodId)) {
     throw new ValidationError('Invalid payment method ID format');
   }
 
-  const { limit, offset } = getPaginationParams(c.req.query(), { defaultLimit: 20, maxLimit: 100 });
+  const { page, limit } = getPaginationParams(c.req.query() as Record<string, string>);
+  const offset = (page - 1) * limit;
 
   // Verify payment method exists and belongs to tenant
   const { data: method, error: methodError } = await supabase
@@ -468,6 +485,7 @@ cardTransactionsRouter.get('/', async (c) => {
     .select('id, type')
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (methodError || !method) {
@@ -479,6 +497,7 @@ cardTransactionsRouter.get('/', async (c) => {
     .from('card_transactions')
     .select('id, type, status, amount, currency, merchant_name, merchant_category, transaction_time, created_at, is_disputed, card_last_four, description:merchant_name') // Added description alias for frontend compatibility if needed, though frontend uses merchant?.name
     .eq('payment_method_id', methodId)
+    .eq('environment', getEnv(ctx))
     .order('transaction_time', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -491,9 +510,10 @@ cardTransactionsRouter.get('/', async (c) => {
   const { count } = await supabase
     .from('card_transactions')
     .select('id', { count: 'exact', head: true })
-    .eq('payment_method_id', methodId);
+    .eq('payment_method_id', methodId)
+    .eq('environment', getEnv(ctx));
 
-  return c.json(paginationResponse(transactions || [], count || 0, limit, offset));
+  return c.json(paginationResponse(transactions || [], count || 0, { page, limit }));
 });
 
 // ============================================
@@ -501,11 +521,11 @@ cardTransactionsRouter.get('/', async (c) => {
 // ============================================
 cardTransactionsRouter.get('/spending-summary', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const methodId = c.req.param('id');
   const days = parseInt(c.req.query('days') || '30', 10);
 
-  if (!isValidUUID(methodId)) {
+  if (!methodId || !isValidUUID(methodId)) {
     throw new ValidationError('Invalid payment method ID format');
   }
 
@@ -515,6 +535,7 @@ cardTransactionsRouter.get('/spending-summary', async (c) => {
     .select('id, type')
     .eq('id', methodId)
     .eq('tenant_id', ctx.tenantId)
+    .eq('environment', getEnv(ctx))
     .single();
 
   if (methodError || !method) {

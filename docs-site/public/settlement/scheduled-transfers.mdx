@@ -1,0 +1,176 @@
+---
+title: "Scheduled transfers"
+description: "Recurring transfers with frequency, timezone, and retry controls."
+---
+
+Scheduled transfers execute on a cadence you define — daily, weekly, biweekly, monthly, or custom. Each execution creates a [transfer](/core-concepts/transfers) with idempotency; retries are automatic within a configurable window.
+
+Use for: payroll, recurring vendor payouts, subscription revenue deposits, scheduled rebalancing, anything that repeats.
+
+Compare to [AP2 mandates](/protocols/ap2) — mandates are pre-authorized envelopes agents spend within; scheduled transfers are unconditional cadence-based executions.
+
+## Create a schedule
+
+```bash
+curl -X POST https://api.getsly.ai/v1/scheduled-transfers \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "fromAccountId": "acc_...",
+    "toAccountId": "acc_payroll_dest",
+    "amount": "2500.00",
+    "currency": "USDC",
+    "frequency": "monthly",
+    "dayOfMonth": 1,
+    "timezone": "America/New_York",
+    "startDate": "2026-05-01T09:00:00-04:00",
+    "endDate": "2027-05-01T00:00:00Z",
+    "retryEnabled": true,
+    "maxRetryAttempts": 3,
+    "retryWindowDays": 14
+  }'
+```
+
+## Frequency options
+
+| `frequency` | Config | Meaning |
+|---|---|---|
+| `daily` | `intervalValue` (days between runs, default 1) | Every N days |
+| `weekly` | `dayOfWeek` (0-6, Sunday=0) | On a specific weekday |
+| `biweekly` | `dayOfWeek` | Every two weeks on a weekday |
+| `monthly` | `dayOfMonth` (1-31) | Nth of the month |
+| `custom` | `cronExpression` | Arbitrary cron |
+
+Timezone matters: `"America/New_York"` means 9am Eastern regardless of DST.
+
+## Retry policy
+
+When an execution fails (rail outage, insufficient funds), Sly retries automatically:
+
+```json
+{
+  "retryEnabled": true,
+  "maxRetryAttempts": 3,
+  "retryWindowDays": 14,
+  "retryBackoff": "exponential"
+}
+```
+
+Retries:
+- Happen hourly for 24 hours
+- Then daily up to `retryWindowDays`
+- Up to `maxRetryAttempts` total
+- On final failure, schedule moves to `failed` state
+
+`retryEnabled: false` = single-attempt only; failures go to `failed` immediately.
+
+## List schedules
+
+```bash
+curl "https://api.getsly.ai/v1/scheduled-transfers?status=active&account_id=acc_..." \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Each schedule shows its `next_execution_at`, `last_execution_at`, `executions_completed`, and `executions_remaining`.
+
+## Schedule detail
+
+```bash
+curl https://api.getsly.ai/v1/scheduled-transfers/sch_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Includes recent execution history + status of each execution.
+
+## Pause and resume
+
+```bash
+curl -X PATCH https://api.getsly.ai/v1/scheduled-transfers/sch_... \
+  -d '{ "status": "paused" }'
+
+curl -X PATCH https://api.getsly.ai/v1/scheduled-transfers/sch_... \
+  -d '{ "status": "active" }'
+```
+
+Paused schedules skip all executions until resumed. Previously-executed transfers are unaffected.
+
+## End a schedule
+
+Either let it run out (hits `endDate` or `maxOccurrences`) or cancel:
+
+```bash
+curl -X PATCH https://api.getsly.ai/v1/scheduled-transfers/sch_... \
+  -d '{ "status": "completed" }'
+```
+
+Cancellation doesn't undo already-executed transfers — those already moved money.
+
+## Execution state machine
+
+```
+Schedule: active ──pause──▶ paused
+            │                  │
+            └────resume────────┘
+            │
+            └──complete──▶ completed
+            │
+            └─(maxRetry hit)─▶ failed
+
+Execution: pending ──▶ completed | failed ──retry──▶ retrying
+```
+
+## Worker cadence
+
+A background worker polls for scheduled transfers with `scheduled_at <= NOW()`:
+- Dev / sandbox: every 30 seconds
+- Production: every 60 seconds
+
+So a schedule at "9:00 am" may actually fire at 9:00:45. For most partner use cases this doesn't matter; for time-sensitive flows (market-open trading), don't rely on sub-minute precision.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/scheduled-transfers` | List |
+| `POST /v1/scheduled-transfers` | Create |
+| `GET /v1/scheduled-transfers/:id` | Detail |
+| `PATCH /v1/scheduled-transfers/:id` | Update (incl. pause/resume/cancel) |
+
+## Webhooks
+
+- `scheduled_transfer.executed` — per execution, with `status: completed | failed`
+- `scheduled_transfer.retrying` — retry attempt initiated
+- `scheduled_transfer.failed` — exhausted retries
+- `scheduled_transfer.completed` — schedule finished (endDate / maxOccurrences)
+
+## Common patterns
+
+**Payroll (bi-weekly every other Friday):**
+```json
+{ "frequency": "biweekly", "dayOfWeek": 5, "timezone": "America/New_York" }
+```
+
+**Quarterly subscription:**
+```json
+{ "frequency": "custom", "cronExpression": "0 9 1 1,4,7,10 *", "timezone": "UTC" }
+```
+
+**Weekly merchant payout:**
+```json
+{ "frequency": "weekly", "dayOfWeek": 2, "amount": "AUTO_BALANCE" }
+```
+(with a [settlement rule](/settlement/rules) calculating the balance)
+
+**One-time delayed transfer (not technically a schedule):**
+For single future-dated transfers, use `POST /v1/scheduled-transfers` with `frequency: daily`, `startDate: <future>`, `maxOccurrences: 1`, or better — the direct `POST /v1/transfers` with `scheduled_at` param.
+
+## Coordinating with mandates
+
+If you're already using [AP2 mandates](/protocols/ap2) for recurring payments, do you also need scheduled transfers? Usually not:
+
+| Mandate | Scheduled transfer |
+|---|---|
+| Agent decides *when* to execute within scope | Fixed cadence, no agent in the loop |
+| Partner defines rules, agent acts | Partner defines every execution |
+| Best for: agent-driven subscriptions | Best for: treasury / payroll / internal |
+
+Use mandates for agent-mediated recurring flow, scheduled transfers for partner-mediated recurring flow.

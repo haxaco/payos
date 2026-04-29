@@ -198,7 +198,7 @@ async function handleMessageSend(
 
   // If contextId matches an existing task, add message (multi-turn)
   if (contextId) {
-    const existingTask = await taskService.findTaskByContext(agentId, contextId);
+    const existingTask = await taskService.findTaskByContext(agentId, contextId, callerAgentId);
     if (existingTask && !['completed', 'failed', 'canceled', 'rejected'].includes(existingTask.status.state)) {
       await taskService.addMessage(existingTask.id, role, message.parts, message.metadata);
 
@@ -229,10 +229,49 @@ async function handleMessageSend(
     }
   }
 
+  // --- Idempotency check (fail-fast before skill validation / task creation) ---
+  // Derive a key from the caller + JSON-RPC request id so retried requests with
+  // the same id return the existing task instead of creating a duplicate + charging twice.
+  // Scoped to (tenant_id, agent_id) via the unique index, so different callers can safely
+  // reuse the same JSON-RPC id value (e.g. "1") without colliding.
+  const idempotencyKey = request.id != null
+    ? `${callerAgentId || 'anon'}:${String(request.id)}`
+    : undefined;
+  if (idempotencyKey) {
+    const existing = await taskService.findByIdempotencyKey(agentId, idempotencyKey);
+    if (existing) {
+      return { jsonrpc: '2.0', result: existing, id: request.id };
+    }
+  }
+
   // Create new task — resolve contextId via session affinity if caller didn't provide one
   let resolvedContextId = contextId;
   if (!resolvedContextId && callerAgentId) {
     resolvedContextId = await taskService.findRecentSession(agentId, callerAgentId) || undefined;
+  }
+
+  // --- Cross-tenant opt-in check ---
+  if (callerAgentId && supabase) {
+    const { data: callerRow } = await supabase
+      .from('agents')
+      .select('tenant_id')
+      .eq('id', callerAgentId)
+      .single();
+    if (callerRow && tenantId && callerRow.tenant_id !== tenantId) {
+      // Cross-tenant call — check if target allows it
+      const { data: targetAgent } = await supabase
+        .from('agents')
+        .select('allow_cross_tenant')
+        .eq('id', agentId)
+        .single();
+      if (targetAgent?.allow_cross_tenant === false) {
+        return {
+          jsonrpc: '2.0',
+          error: { code: JSON_RPC_ERRORS.UNAUTHORIZED, message: 'This agent does not accept cross-tenant tasks' },
+          id: request.id,
+        };
+      }
+    }
   }
 
   // --- Skill validation at receive time (fail-fast before task creation) ---
@@ -248,18 +287,31 @@ async function handleMessageSend(
     enrichedMetadata.skillId = extractedSkillId;
   }
 
+  // Allow externally-managed callers (e.g. marketplace-sim) to opt out of
+  // the background task worker by marking the task externally-managed.
+  // We honor this only when both the metadata flag and an authenticated
+  // caller agent are present, so anonymous traffic can't bypass processing.
+  const externallyManaged =
+    enrichedMetadata.externallyManaged === true && !!callerAgentId;
+  // For externally-managed tasks we also store the row as 'outbound' so
+  // older deployed workers (which filter on direction='inbound') leave it
+  // alone. The semantic meaning is "this task is driven from outside the
+  // platform's auto-processor" — true regardless of which workers see it.
+  const taskDirection: 'inbound' | 'outbound' = externallyManaged ? 'outbound' : 'inbound';
+
   const callbackUrl = configuration?.callbackUrl;
   const callbackSecret = configuration?.callbackSecret;
   const task = await taskService.createTask(
     agentId,
     { role, parts: message.parts, metadata: enrichedMetadata },
     resolvedContextId,
-    'inbound',
+    taskDirection,
     undefined,
     undefined,
     callbackUrl,
     callbackSecret,
     callerAgentId,
+    idempotencyKey,
   );
 
   return {
@@ -430,12 +482,12 @@ async function validateSkillAtReceive(
   const skillId = extractSkillId(parts);
   if (!skillId) return null; // No skill specified — skip validation
 
-  // Query agent_skills for the specified skill
+  // Query agent_skills for the specified skill — use agent's own tenant (no caller tenant filter)
+  // This supports cross-tenant calls where caller and provider are in different tenants.
   const { data: skill } = await supabase
     .from('agent_skills')
     .select('skill_id, base_price, currency, status')
     .eq('agent_id', agentId)
-    .eq('tenant_id', tenantId)
     .eq('skill_id', skillId)
     .maybeSingle();
 

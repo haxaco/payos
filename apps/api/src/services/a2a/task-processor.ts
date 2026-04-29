@@ -17,8 +17,9 @@ import { A2APaymentHandler } from './payment-handler.js';
 import { AgentToolRegistry } from './tools/registry.js';
 import { toolHandlers } from './tools/handlers.js';
 import type { AgentContext } from './tools/context-injector.js';
-import type { A2ATask } from './types.js';
-import { authorizeWalletTransfer, isOnChainCapable } from '../wallet-settlement.js';
+import type { A2ATask, AcceptancePolicy } from './types.js';
+import { DEFAULT_ACCEPTANCE_POLICY } from './types.js';
+import { authorizeWalletTransfer } from '../wallet-settlement.js';
 import { A2AClient } from './client.js';
 import { A2AWebhookHandler } from './webhook-handler.js';
 import { createPaymentProofJWT } from '../../routes/x402-payments.js';
@@ -150,7 +151,7 @@ export class A2ATaskProcessor {
   /**
    * Process a single task through the full lifecycle.
    */
-  async processTask(taskId: string): Promise<A2ATask | null> {
+  async processTask(taskId: string, opts?: { slyFirst?: boolean }): Promise<A2ATask | null> {
     const task = await this.taskService.getTask(taskId);
     if (!task) return null;
 
@@ -218,6 +219,13 @@ export class A2ATaskProcessor {
     // Check agent limits for operations involving money before any payment/forwarding.
     // Also extract amount from DataPart (e.g. quoted_price, amount) for skill-based tasks.
     let effectiveAmount = intent.amount;
+
+    // Reject negative amounts immediately
+    if (effectiveAmount < 0) {
+      await this.taskService.updateTaskState(taskId, 'failed', 'Invalid amount: negative values not allowed');
+      return this.taskService.getTask(taskId);
+    }
+
     if (effectiveAmount <= 0) {
       // Check DataParts for amount-like fields
       for (const part of lastUserMsg.parts) {
@@ -249,8 +257,61 @@ export class A2ATaskProcessor {
 
     // --- Routing: Sly-native vs agent forwarding ---
     const msgMetadata = lastUserMsg.metadata;
-    const explicitSkillId = msgMetadata?.skillId as string | undefined;
+    const explicitSkillId = (msgMetadata?.skillId || msgMetadata?.skill_id) as string | undefined;
 
+    // SHORT-CIRCUIT: If caller explicitly specified a skillId in metadata, trust it
+    // and forward directly to the agent's skill handler. This prevents regex-based
+    // intent extraction from mis-routing to Sly-native handlers (e.g. a "translation"
+    // request being hijacked by the `balance` intent regex and returning a wallet
+    // balance instead of a translation).
+    if (explicitSkillId) {
+      const { data: skillRow } = await this.supabase
+        .from('agent_skills')
+        .select('skill_id, handler_type, base_price, currency, x402_endpoint_id')
+        .eq('agent_id', agentCtx.agentId)
+        .eq('skill_id', explicitSkillId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (skillRow) {
+        // Skill exists — forward to agent using the registered skill config
+        const skill = {
+          skill_id: skillRow.skill_id,
+          handler_type: skillRow.handler_type || 'agent_provided',
+          base_price: Number(skillRow.base_price),
+          currency: skillRow.currency || 'USDC',
+          x402_endpoint_id: skillRow.x402_endpoint_id,
+        };
+        this.log(taskId, 'info', `Explicit skillId "${explicitSkillId}" — forwarding to agent (bypass intent regex)`);
+        return await this.forwardToAgent(taskId, text, skill, agentCtx, msgMetadata);
+      }
+      // Explicit skillId was provided but the agent doesn't have it registered — fail fast
+      await this.taskService.addMessage(taskId, 'agent', [
+        { text: `Skill "${explicitSkillId}" not found on this agent. Available skills can be discovered via the agent card.` },
+      ]);
+      await this.taskService.updateTaskState(taskId, 'failed', `Unknown skill: ${explicitSkillId}`);
+      return this.taskService.getTask(taskId);
+    }
+
+    // Auto-detect processing_mode from DB so callers don't need to pass the flag
+    let slyFirst = opts?.slyFirst === true;
+    if (!slyFirst) {
+      const { data: agentRow } = await this.supabase
+        .from('agents')
+        .select('processing_mode')
+        .eq('id', agentCtx.agentId)
+        .single();
+      if (agentRow?.processing_mode === 'managed') {
+        slyFirst = true;
+      }
+    }
+
+    if (slyFirst) {
+      // Managed mode: Sly handles payment intents directly, forwards unmatched to webhook
+      return await this.routeSlyFirst(taskId, text, intent, agentCtx, msgMetadata, explicitSkillId);
+    }
+
+    // Default routing: check endpoint first → forward all, then fall back to switch
     // Check if this intent maps to a Sly-native skill the agent registered
     const slySkillId = A2ATaskProcessor.INTENT_TO_SKILL[intent.action];
     let hasSlyNativeSkill = false;
@@ -260,7 +321,6 @@ export class A2ATaskProcessor {
         .from('agent_skills')
         .select('skill_id, handler_type')
         .eq('agent_id', agentCtx.agentId)
-        .eq('tenant_id', this.tenantId)
         .eq('skill_id', slySkillId)
         .eq('handler_type', 'sly_native')
         .eq('status', 'active')
@@ -274,30 +334,125 @@ export class A2ATaskProcessor {
       const hasEndpoint = await this.agentHasEndpoint(agentCtx.agentId);
       if (hasEndpoint) {
         // Look up skill pricing from DB
-        let skillRow: { skill_id: string; handler_type: string; base_price: number; currency: string } | null = null;
+        let skillRow: { skill_id: string; handler_type: string; base_price: number; currency: string; x402_endpoint_id: string | null } | null = null;
 
         const targetSkillId = explicitSkillId || msgMetadata?.skill_id as string | undefined;
         if (targetSkillId) {
           const { data } = await this.supabase
             .from('agent_skills')
-            .select('skill_id, handler_type, base_price, currency')
+            .select('skill_id, handler_type, base_price, currency, x402_endpoint_id')
             .eq('agent_id', agentCtx.agentId)
-            .eq('tenant_id', this.tenantId)
             .eq('skill_id', targetSkillId)
             .eq('status', 'active')
             .maybeSingle();
           if (data) skillRow = data;
+          else {
+            // Explicit skillId was provided but not found on this agent
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: `Skill "${targetSkillId}" not found on this agent. Available skills can be discovered via the agent card.` },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'failed', `Unknown skill: ${targetSkillId}`);
+            return this.taskService.getTask(taskId);
+          }
         }
 
         const skill = skillRow
           ? { skill_id: skillRow.skill_id, handler_type: skillRow.handler_type || 'agent_provided',
-              base_price: Number(skillRow.base_price), currency: skillRow.currency || 'USDC' }
-          : { skill_id: explicitSkillId || 'default', handler_type: 'agent_provided', base_price: 0, currency: 'USDC' };
+              base_price: Number(skillRow.base_price), currency: skillRow.currency || 'USDC',
+              x402_endpoint_id: skillRow.x402_endpoint_id }
+          : { skill_id: explicitSkillId || 'default', handler_type: 'agent_provided', base_price: 0, currency: 'USDC', x402_endpoint_id: null as string | null };
 
         return await this.forwardToAgent(taskId, text, skill, agentCtx, msgMetadata);
       }
     }
 
+    return await this.executeIntentSwitch(taskId, text, intent, agentCtx);
+  }
+
+  // --- Managed mode routing (slyFirst) ---
+
+  /**
+   * Managed mode routing: Sly handles payment intents directly.
+   * Unmatched (generic) intents → forward to agent's webhook if registered.
+   * No webhook → input-required with guidance to register one.
+   */
+  private async routeSlyFirst(
+    taskId: string,
+    text: string,
+    intent: { action: string; amount: number; currency: string; destination?: string; description?: string },
+    agentCtx: AgentContext,
+    msgMetadata?: Record<string, unknown>,
+    explicitSkillId?: string,
+  ): Promise<A2ATask | null> {
+    // If it's a recognized payment action, Sly handles it directly
+    if (intent.action !== 'generic') {
+      return await this.executeIntentSwitch(taskId, text, intent, agentCtx);
+    }
+
+    // Generic/unmatched intent — try forwarding to agent's webhook
+    const hasEndpoint = await this.agentHasEndpoint(agentCtx.agentId);
+    if (hasEndpoint) {
+      // Look up skill pricing from DB
+      let skillRow: { skill_id: string; handler_type: string; base_price: number; currency: string } | null = null;
+
+      const targetSkillId = explicitSkillId || msgMetadata?.skill_id as string | undefined;
+      if (targetSkillId) {
+        const { data } = await this.supabase
+          .from('agent_skills')
+          .select('skill_id, handler_type, base_price, currency')
+          .eq('agent_id', agentCtx.agentId)
+          .eq('skill_id', targetSkillId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (data) skillRow = data;
+        else {
+          await this.taskService.addMessage(taskId, 'agent', [
+            { text: `Skill "${targetSkillId}" not found on this agent.` },
+          ]);
+          await this.taskService.updateTaskState(taskId, 'failed', `Unknown skill: ${targetSkillId}`);
+          return this.taskService.getTask(taskId);
+        }
+      }
+
+      const skill = skillRow
+        ? { skill_id: skillRow.skill_id, handler_type: skillRow.handler_type || 'agent_provided',
+            base_price: Number(skillRow.base_price), currency: skillRow.currency || 'USDC' }
+        : { skill_id: explicitSkillId || 'default', handler_type: 'agent_provided', base_price: 0, currency: 'USDC' };
+
+      this.log(taskId, 'info', 'Managed mode: unmatched intent, forwarding to agent webhook');
+      return await this.forwardToAgent(taskId, text, skill, agentCtx, msgMetadata);
+    }
+
+    // No webhook registered — set input-required with guidance
+    this.log(taskId, 'info', 'Managed mode: unmatched intent, no webhook — requesting input');
+    await this.taskService.addMessage(taskId, 'agent', [
+      {
+        text: "This task doesn't match a built-in payment action. To handle custom tasks, register a webhook endpoint: `PUT /v1/a2a/agents/:id/endpoint`",
+      },
+    ]);
+    await this.taskService.setInputRequired(
+      taskId,
+      'No matching payment action and no webhook endpoint registered',
+      {
+        reason_code: 'no_handler',
+        next_action: 'register_webhook',
+        resolve_endpoint: 'PUT /v1/a2a/agents/:id/endpoint',
+        required_auth: 'api_key',
+      },
+    );
+    return this.taskService.getTask(taskId);
+  }
+
+  /**
+   * Execute the intent switch for Sly-native payment handlers.
+   * Shared between default routing and slyFirst routing.
+   */
+  private async executeIntentSwitch(
+    taskId: string,
+    text: string,
+    intent: { action: string; amount: number; currency: string; destination?: string; description?: string },
+    agentCtx: AgentContext,
+  ): Promise<A2ATask | null> {
     try {
       switch (intent.action) {
         case 'payment':
@@ -372,12 +527,15 @@ export class A2ATaskProcessor {
       return { charged: false, fee, currency };
     }
 
-    // Check balance
+    // Use caller's own tenant for wallet lookup (cross-tenant: caller wallet lives in caller's tenant)
+    const callerTenantId = agentCtx.agentTenantId || this.tenantId;
+
+    // Check balance — fetch full wallet fields for authorizeWalletTransfer
     const { data: wallet } = await this.supabase
       .from('wallets')
-      .select('balance')
+      .select('id, balance, owner_account_id, wallet_type, wallet_address, provider_wallet_id')
       .eq('id', agentCtx.walletId)
-      .eq('tenant_id', this.tenantId)
+      .eq('tenant_id', callerTenantId)
       .single();
 
     if (!wallet || Number(wallet.balance) < fee) {
@@ -387,25 +545,38 @@ export class A2ATaskProcessor {
       return { charged: false, fee, currency };
     }
 
-    // Deduct atomically
-    const { error: deductError } = await this.supabase
-      .from('wallets')
-      .update({ balance: Number(wallet.balance) - fee })
-      .eq('id', agentCtx.walletId)
-      .eq('tenant_id', this.tenantId)
-      .gte('balance', fee);
-
-    if (deductError) {
-      return { charged: false, fee, currency };
+    // Look up destination (provider) wallet for on-chain settlement
+    let providerWallet: any = null;
+    if (this.config.agentId) {
+      const { data } = await this.supabase
+        .from('wallets')
+        .select('id, balance, wallet_type, wallet_address, provider_wallet_id, owner_account_id')
+        .eq('managed_by_agent_id', this.config.agentId)
+        .eq('tenant_id', this.tenantId)
+        .eq('status', 'active')
+        .order('balance', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      providerWallet = data;
     }
 
-    // Create transfer record for the service fee
-    await this.supabase
+    const settlementMetadata = {
+      protocol: 'a2a',
+      serviceFee: true,
+      skillId,
+      source_wallet_id: wallet.id,
+      destination_wallet_id: providerWallet?.id || null,
+      wallet_id: wallet.id,
+    };
+
+    // Create transfer record as pending — authorizeWalletTransfer will set to 'authorized'
+    const { data: transferRecord } = await this.supabase
       .from('transfers')
       .insert({
-        tenant_id: this.tenantId,
+        tenant_id: callerTenantId,
+        destination_tenant_id: this.tenantId,
         type: 'internal',
-        status: 'completed',
+        status: 'pending',
         amount: fee,
         currency,
         destination_amount: fee,
@@ -420,9 +591,49 @@ export class A2ATaskProcessor {
         initiated_by_type: 'agent',
         initiated_by_id: agentCtx.agentId,
         initiated_by_name: 'Agent',
-        completed_at: new Date().toISOString(),
-        protocol_metadata: { protocol: 'a2a', serviceFee: true, skillId },
+        protocol_metadata: settlementMetadata,
+      })
+      .select('id')
+      .single();
+
+    if (transferRecord) {
+      // Ledger authorization — debits/credits wallets and sets status='authorized'.
+      // The async settlement worker picks up 'authorized' transfers for on-chain execution.
+      const authorization = await authorizeWalletTransfer({
+        supabase: this.supabase,
+        tenantId: callerTenantId,
+        destinationTenantId: this.tenantId,
+        sourceWallet: wallet,
+        destinationWallet: providerWallet,
+        amount: fee,
+        transferId: transferRecord.id,
+        protocolMetadata: settlementMetadata,
       });
+
+      if (!authorization.success) {
+        this.log(taskId, 'warn', `Service fee ledger authorization failed: ${authorization.error}`);
+        return { charged: false, fee, currency };
+      }
+    } else {
+      return { charged: false, fee, currency };
+    }
+
+    // Emit payment audit event for timeline visibility
+    await this.supabase.from('a2a_audit_events').insert({
+      tenant_id: this.tenantId,
+      task_id: taskId,
+      agent_id: agentCtx.agentId,
+      event_type: 'payment',
+      actor_type: 'system',
+      data: {
+        type: 'service_fee_charged',
+        skill_id: skillId,
+        amount: fee,
+        currency,
+        transfer_id: transferRecord?.id,
+        wallet_id: agentCtx.walletId,
+      },
+    });
 
     // Increment usage stats on the skill row (best-effort)
     if (skill) {
@@ -459,23 +670,32 @@ export class A2ATaskProcessor {
     amount: number,
     currency: string,
   ): Promise<{ mandateId: string } | { error: 'kya_required' | 'insufficient_funds' } | null> {
-    // 1. Look up caller agent — check KYA tier before anything else
+    if (amount <= 0) return null; // Reject zero/negative amounts
+
+    // 1. Look up caller agent — check KYA tier (tier 0 allowed if effective limits > 0)
     const { data: callerAgent } = await this.supabase
       .from('agents')
-      .select('parent_account_id, name, kya_tier')
+      .select('parent_account_id, name, kya_tier, effective_limit_per_tx')
       .eq('id', callerAgentId)
       .single();
 
-    if (!callerAgent || (callerAgent.kya_tier ?? 0) < 1) {
+    if (!callerAgent) {
+      return { error: 'kya_required' };
+    }
+    const callerTier = callerAgent.kya_tier ?? 0;
+    const callerLimit = parseFloat(callerAgent.effective_limit_per_tx) || 0;
+    if (callerTier < 1 && callerLimit <= 0) {
       return { error: 'kya_required' };
     }
 
-    // 2. Check caller's wallet has enough balance (read-only check)
+    // 2. Check caller's wallet has enough balance (no tenant filter — caller may be cross-tenant)
     const { data: callerWallet } = await this.supabase
       .from('wallets')
       .select('id, balance')
       .eq('managed_by_agent_id', callerAgentId)
-      .eq('tenant_id', this.tenantId)
+      .eq('status', 'active')
+      .order('balance', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (!callerWallet || Number(callerWallet.balance) < amount) {
@@ -515,7 +735,157 @@ export class A2ATaskProcessor {
       .single();
 
     if (error || !mandate) return null;
+
+    // Emit audit event for mandate creation
+    const { taskEventBus } = await import('./task-event-bus.js');
+    taskEventBus.emitTask(taskId, {
+      type: 'payment',
+      taskId,
+      data: {
+        action: 'mandate_created',
+        mandateId: mandate.mandate_id,
+        amount,
+        currency,
+        callerAgentId,
+        providerAgentId,
+      },
+      timestamp: new Date().toISOString(),
+    }, { tenantId: this.tenantId, agentId: providerAgentId, actorType: 'system' });
+
     return { mandateId: mandate.mandate_id };
+  }
+
+  // --- Epic 69: Acceptance Gate ---
+
+  /**
+   * Read acceptance_policy from a skill's metadata.
+   * Returns DEFAULT_ACCEPTANCE_POLICY if missing or invalid.
+   */
+  private async getAcceptancePolicy(agentId: string, skillId?: string): Promise<AcceptancePolicy> {
+    if (!skillId) return DEFAULT_ACCEPTANCE_POLICY;
+
+    const { data: skill } = await this.supabase
+      .from('agent_skills')
+      .select('metadata')
+      .eq('agent_id', agentId)
+      .eq('skill_id', skillId)
+      .eq('tenant_id', this.tenantId)
+      .maybeSingle();
+
+    if (!skill?.metadata?.acceptance_policy) return DEFAULT_ACCEPTANCE_POLICY;
+
+    const raw = skill.metadata.acceptance_policy as Record<string, unknown>;
+    return {
+      requires_acceptance: typeof raw.requires_acceptance === 'boolean' ? raw.requires_acceptance : DEFAULT_ACCEPTANCE_POLICY.requires_acceptance,
+      auto_accept_below: typeof raw.auto_accept_below === 'number' && raw.auto_accept_below >= 0 ? raw.auto_accept_below : DEFAULT_ACCEPTANCE_POLICY.auto_accept_below,
+      review_timeout_minutes: typeof raw.review_timeout_minutes === 'number' && raw.review_timeout_minutes > 0 ? raw.review_timeout_minutes : DEFAULT_ACCEPTANCE_POLICY.review_timeout_minutes,
+    };
+  }
+
+  /**
+   * Check if a completed task should pause for caller acceptance.
+   * Returns true if the gate is engaged (task set to input-required).
+   * Returns false if the task should proceed to immediate settlement.
+   */
+  async checkAcceptanceGate(
+    taskId: string,
+    mandateId: string,
+    outcome: 'completed' | 'failed',
+  ): Promise<boolean> {
+    if (outcome !== 'completed') return false;
+
+    // Read task metadata for skill and agent info
+    const { data: task } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id, metadata, client_agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+
+    if (!task) return false;
+
+    const skillId = task.metadata?.skillId as string | undefined;
+    const policy = await this.getAcceptancePolicy(task.agent_id, skillId);
+
+    if (!policy.requires_acceptance) return false;
+
+    // Check auto-accept threshold
+    const { data: mandate } = await this.supabase
+      .from('ap2_mandates')
+      .select('authorized_amount')
+      .eq('mandate_id', mandateId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+
+    if (!mandate) return false;
+
+    const amount = Number(mandate.authorized_amount);
+
+    // Auto-accept for micropayments, but check cumulative threshold to prevent splitting attacks.
+    // If buyer has spent > $1 to this same seller in the last 24h, engage escrow regardless.
+    if (policy.auto_accept_below > 0 && amount < policy.auto_accept_below) {
+      const CUMULATIVE_THRESHOLD = 1.00; // $1.00 rolling 24h per buyer-seller pair
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+      // Track by seller regardless of buyer identity — prevents bypass via rotating agents
+      const { data: recentTasks } = await this.supabase
+        .from('a2a_tasks')
+        .select('metadata')
+        .eq('agent_id', task.agent_id)
+        .eq('tenant_id', this.tenantId)
+        .eq('state', 'completed')
+        .gte('updated_at', twentyFourHoursAgo);
+
+      // Sum amounts from completed tasks' mandate data
+      let cumulativeSpend = amount;
+      if (recentTasks) {
+        for (const rt of recentTasks) {
+          const rtAmount = (rt.metadata as any)?.input_required_context?.details?.amount;
+          if (typeof rtAmount === 'number') cumulativeSpend += rtAmount;
+        }
+      }
+
+      if (cumulativeSpend < CUMULATIVE_THRESHOLD) {
+        return false; // Under both per-task and cumulative thresholds — auto-accept
+      }
+      this.log(taskId, 'info', `Cumulative 24h spend $${cumulativeSpend.toFixed(2)} exceeds $${CUMULATIVE_THRESHOLD} — engaging escrow despite micro-task`);
+    }
+
+    // Engage the gate: set input-required with review context
+    this.log(taskId, 'info', `Acceptance gate engaged — awaiting caller review (timeout: ${policy.review_timeout_minutes}m)`);
+
+    await this.taskService.setInputRequired(taskId, 'Task completed — awaiting caller acceptance', {
+      reason_code: 'result_review',
+      next_action: 'accept_or_reject',
+      resolve_endpoint: `POST /v1/a2a/tasks/${taskId}/respond`,
+      required_auth: 'api_key',
+      details: {
+        mandate_id: mandateId,
+        amount,
+        review_timeout_minutes: policy.review_timeout_minutes,
+      },
+    });
+
+    // Store review metadata on the task
+    await this.supabase
+      .from('a2a_tasks')
+      .update({
+        metadata: {
+          ...task.metadata,
+          review_status: 'pending',
+          review_requested_at: new Date().toISOString(),
+          review_timeout_minutes: policy.review_timeout_minutes,
+          input_required_context: {
+            reason_code: 'result_review',
+            next_action: 'accept_or_reject',
+            details: { mandate_id: mandateId, amount },
+          },
+        },
+      })
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId);
+
+    return true;
   }
 
   /**
@@ -523,29 +893,60 @@ export class A2ATaskProcessor {
    * On 'completed': deducts from caller wallet, credits provider wallet,
    * creates a transfer record, and marks mandate completed.
    * On 'failed': cancels the mandate — no money moves.
+   * @param overrideAmount — Optional partial settlement amount (must be <= authorized_amount)
    */
   async resolveSettlementMandate(
     taskId: string,
     mandateId: string,
     outcome: 'completed' | 'failed',
+    overrideAmount?: number,
   ): Promise<void> {
-    const { data: mandate } = await this.supabase
+    // Read the mandate. NOTE: previously this destructured only `data` and
+    // silently returned on error, which produced a stranded-active-mandate
+    // bug under transient DB failures (mandate stayed active even though the
+    // task transitioned to terminal). We now surface read errors and let the
+    // caller decide what to do (callers in this file already wrap with
+    // try/catch and log a warning).
+    const { data: mandate, error: readError } = await this.supabase
       .from('ap2_mandates')
       .select('*')
       .eq('mandate_id', mandateId)
-      .eq('tenant_id', this.tenantId)
       .single();
 
-    if (!mandate || mandate.status !== 'active') return;
+    if (readError) {
+      this.log(taskId, 'error', `resolveSettlementMandate read failed for ${mandateId}: ${readError.message}`);
+      throw new Error(`Mandate read failed for ${mandateId}: ${readError.message}`);
+    }
+    if (!mandate) {
+      this.log(taskId, 'warn', `resolveSettlementMandate: mandate ${mandateId} not found`);
+      throw new Error(`Mandate not found: ${mandateId}`);
+    }
+    // Idempotent: if already in a terminal state, treat as success.
+    if (mandate.status !== 'active') {
+      this.log(taskId, 'info', `resolveSettlementMandate: mandate ${mandateId} already ${mandate.status} — no-op`);
+      return;
+    }
 
     if (outcome === 'completed') {
-      const amount = Number(mandate.authorized_amount);
+      const amount = overrideAmount ?? Number(mandate.authorized_amount);
       const providerAgentId = mandate.metadata?.providerAgentId;
       const providerAccountId = mandate.metadata?.providerAccountId;
 
+      // Resolve tenant_ids for caller and provider (cross-tenant support)
+      const { data: callerAgent } = await this.supabase
+        .from('agents').select('tenant_id').eq('id', mandate.agent_id).single();
+      const callerTenantId = callerAgent?.tenant_id || this.tenantId;
+
+      let providerTenantId = this.tenantId;
+      if (providerAgentId) {
+        const { data: provAgent } = await this.supabase
+          .from('agents').select('tenant_id').eq('id', providerAgentId).single();
+        providerTenantId = provAgent?.tenant_id || this.tenantId;
+      }
+
       // Insert execution record
       await this.supabase.from('ap2_mandate_executions').insert({
-        tenant_id: this.tenantId,
+        tenant_id: mandate.tenant_id,
         mandate_id: mandate.id,
         execution_index: 1,
         amount,
@@ -554,34 +955,49 @@ export class A2ATaskProcessor {
         completed_at: new Date().toISOString(),
       });
 
-      // Fetch both wallets with type info for real settlement
-      const { data: callerWallet } = await this.supabase
-        .from('wallets')
-        .select('id, balance, owner_account_id, wallet_type, wallet_address, provider_wallet_id')
-        .eq('managed_by_agent_id', mandate.agent_id)
-        .eq('tenant_id', this.tenantId)
-        .maybeSingle();
+      // Fetch on-chain wallets preferring circle_custodial > smart_wallet > internal.
+      // This ensures settlements go on-chain instead of staying on internal ledger.
+      const pickOnChainWallet = async (agentId: string, tenantId: string) => {
+        const { data: wallets } = await this.supabase
+          .from('wallets')
+          .select('id, balance, owner_account_id, wallet_type, wallet_address, provider_wallet_id')
+          .eq('managed_by_agent_id', agentId)
+          .eq('tenant_id', tenantId)
+          .eq('status', 'active');
+        if (!wallets?.length) return null;
+        // Prefer on-chain wallets
+        const priority: Record<string, number> = { circle_custodial: 1, smart_wallet: 2, external: 3, internal: 4 };
+        wallets.sort((a: any, b: any) => (priority[a.wallet_type] || 5) - (priority[b.wallet_type] || 5));
+        return wallets[0];
+      };
+
+      const callerWallet = await pickOnChainWallet(mandate.agent_id, callerTenantId);
 
       let providerWallet: any = null;
       if (providerAgentId) {
-        const { data } = await this.supabase
-          .from('wallets')
-          .select('id, balance, wallet_type, wallet_address, provider_wallet_id')
-          .eq('managed_by_agent_id', providerAgentId)
-          .eq('tenant_id', this.tenantId)
-          .maybeSingle();
-        providerWallet = data;
+        providerWallet = await pickOnChainWallet(providerAgentId, providerTenantId);
       }
 
       if (callerWallet) {
-        const destAddress = providerWallet?.wallet_address;
-        const onChainCapable = isOnChainCapable(callerWallet, destAddress);
+        const settlementMetadata = {
+          protocol: 'a2a',
+          settlement: true,
+          mandateId,
+          taskId,
+          // Canonical keys for async settlement worker
+          source_wallet_id: callerWallet.id,
+          destination_wallet_id: providerWallet?.id,
+          // Legacy aliases (kept for backward compat)
+          wallet_id: callerWallet.id,
+          provider_wallet_id: providerWallet?.id,
+        };
 
         // Create transfer record first
         const { data: transfer } = await this.supabase
           .from('transfers')
           .insert({
-            tenant_id: this.tenantId,
+            tenant_id: callerTenantId,
+            destination_tenant_id: providerTenantId,
             type: 'internal',
             status: 'pending',
             amount,
@@ -595,59 +1011,29 @@ export class A2ATaskProcessor {
             description: `A2A settlement: task ${taskId.slice(0, 8)}`,
             initiated_by_type: 'agent',
             initiated_by_id: mandate.agent_id,
-            protocol_metadata: {
-              protocol: 'a2a',
-              settlement: true,
-              mandateId,
-              taskId,
-              wallet_id: callerWallet.id,
-              provider_wallet_id: providerWallet?.id,
-            },
+            protocol_metadata: settlementMetadata,
           })
           .select('id')
           .single();
 
         if (transfer) {
-          // Fast ledger authorization — on-chain deferred to async worker (Epic 38, Story 38.2)
+          // Fast ledger authorization — on-chain deferred to async settlement worker
+          // authorizeWalletTransfer debits/credits wallets and sets status='authorized'.
+          // The async settlement worker picks up 'authorized' transfers, checks on-chain
+          // capability, executes Circle transferTokens() if possible, then marks 'completed'.
           const authorization = await authorizeWalletTransfer({
             supabase: this.supabase,
-            tenantId: this.tenantId,
+            tenantId: callerTenantId,
+            destinationTenantId: providerTenantId,
             sourceWallet: callerWallet,
             destinationWallet: providerWallet,
             amount,
             transferId: transfer.id,
-            protocolMetadata: {
-              protocol: 'a2a',
-              settlement: true,
-              mandateId,
-              taskId,
-              wallet_id: callerWallet.id,
-              provider_wallet_id: providerWallet?.id,
-            },
+            protocolMetadata: settlementMetadata,
           });
 
           if (!authorization.success) {
             this.log(taskId, 'warn', `A2A ledger authorization failed: ${authorization.error}`);
-          }
-
-          // If not on-chain capable, mark as completed (ledger-only is final)
-          if (authorization.success && !onChainCapable) {
-            await this.supabase
-              .from('transfers')
-              .update({
-                status: 'completed',
-                completed_at: new Date().toISOString(),
-                protocol_metadata: {
-                  protocol: 'a2a',
-                  settlement: true,
-                  mandateId,
-                  taskId,
-                  wallet_id: callerWallet.id,
-                  provider_wallet_id: providerWallet?.id,
-                  settlement_type: 'ledger',
-                },
-              })
-              .eq('id', transfer.id);
           }
 
           // Link transfer to task
@@ -673,16 +1059,71 @@ export class A2ATaskProcessor {
         .update({ status: 'completed', updated_at: new Date().toISOString() })
         .eq('id', mandate.id);
 
+      // Emit audit event for successful settlement
+      const { taskEventBus: bus1 } = await import('./task-event-bus.js');
+      bus1.emitTask(taskId, {
+        type: 'payment',
+        taskId,
+        data: {
+          action: 'mandate_settled',
+          mandateId,
+          amount,
+          currency: mandate.currency,
+          outcome: 'completed',
+        },
+        timestamp: new Date().toISOString(),
+      }, { tenantId: this.tenantId, agentId: mandate.metadata?.providerAgentId || '', actorType: 'system' });
+
     } else {
-      // Cancel mandate — no money moves
-      await this.supabase
+      // Cancel mandate — no money moves.
+      // Use a conditional UPDATE (status='active') as an optimistic lock so a
+      // concurrent caller can't double-cancel and so we get a clear signal if
+      // the row was already moved out of 'active' between our read and write.
+      const { data: cancelled, error: cancelError } = await this.supabase
         .from('ap2_mandates')
         .update({
           status: 'cancelled',
           cancelled_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', mandate.id);
+        .eq('id', mandate.id)
+        .eq('status', 'active')
+        .select('id, status')
+        .maybeSingle();
+
+      if (cancelError) {
+        this.log(taskId, 'error', `resolveSettlementMandate cancel failed for ${mandateId}: ${cancelError.message}`);
+        throw new Error(`Mandate cancel failed for ${mandateId}: ${cancelError.message}`);
+      }
+      if (!cancelled) {
+        // Row exists (we read it above) but the conditional update affected
+        // 0 rows — something flipped its status between our read and write.
+        // Re-read and verify it's now in a terminal state.
+        const { data: postRead } = await this.supabase
+          .from('ap2_mandates')
+          .select('status')
+          .eq('id', mandate.id)
+          .single();
+        if (postRead && postRead.status === 'active') {
+          // Still active — UPDATE genuinely failed to apply. Surface as an error.
+          this.log(taskId, 'error', `resolveSettlementMandate: mandate ${mandateId} still active after cancel UPDATE`);
+          throw new Error(`Mandate cancel did not apply: ${mandateId}`);
+        }
+        this.log(taskId, 'info', `resolveSettlementMandate: mandate ${mandateId} concurrently moved to ${postRead?.status} — no-op`);
+      }
+
+      // Emit audit event for mandate cancellation
+      const { taskEventBus: bus2 } = await import('./task-event-bus.js');
+      bus2.emitTask(taskId, {
+        type: 'payment',
+        taskId,
+        data: {
+          action: 'mandate_cancelled',
+          mandateId,
+          outcome: 'failed',
+        },
+        timestamp: new Date().toISOString(),
+      }, { tenantId: this.tenantId, agentId: mandate.metadata?.providerAgentId || '', actorType: 'system' });
     }
   }
 
@@ -710,7 +1151,6 @@ export class A2ATaskProcessor {
       .from('agents')
       .select('endpoint_enabled')
       .eq('id', agentId)
-      .eq('tenant_id', this.tenantId)
       .eq('endpoint_enabled', true)
       .maybeSingle();
     return !!data;
@@ -723,16 +1163,15 @@ export class A2ATaskProcessor {
   private async forwardToAgent(
     taskId: string,
     messageText: string,
-    skill: { skill_id: string; handler_type: string; base_price: number; currency: string },
+    skill: { skill_id: string; handler_type: string; base_price: number; currency: string; x402_endpoint_id?: string | null },
     agentCtx: AgentContext,
     callerMetadata?: Record<string, unknown>,
   ): Promise<A2ATask | null> {
-    // Look up agent's endpoint configuration
+    // Look up agent's endpoint configuration (no tenant filter — cross-tenant support)
     const { data: agent } = await this.supabase
       .from('agents')
-      .select('id, endpoint_url, endpoint_type, endpoint_secret, endpoint_enabled')
+      .select('id, endpoint_url, endpoint_type, endpoint_secret, endpoint_enabled, processing_mode')
       .eq('id', agentCtx.agentId)
-      .eq('tenant_id', this.tenantId)
       .single();
 
     if (!agent?.endpoint_url || !agent.endpoint_enabled || agent.endpoint_type === 'none') {
@@ -802,6 +1241,16 @@ export class A2ATaskProcessor {
           next_action: isKya ? 'verify_agent' : 'fund_wallet',
           resolve_endpoint: isKya ? 'POST /a2a with skill: verify_agent' : undefined,
           required_auth: 'agent_token',
+          payment_required: true,
+          ...(skill.x402_endpoint_id ? {
+            x402: {
+              endpoint_id: skill.x402_endpoint_id,
+              amount: skill.base_price,
+              currency: skill.currency,
+              skill_id: skill.skill_id,
+              provider_agent_id: agentCtx.agentId,
+            },
+          } : {}),
           details: {
             skill_price: skill.base_price,
             currency: skill.currency,
@@ -843,10 +1292,47 @@ export class A2ATaskProcessor {
       return this.releaseForRetry(taskId, 'Agent circuit breaker open', taskRow2?.retry_count ?? 0);
     }
 
+    // Check if agent endpoint points back to this Sly platform (self-referencing)
+    // If so, use auto-responder instead of forwarding (which would loop)
+    const isSelfReferencing = agent.endpoint_url?.includes('/a2a/') &&
+      (agent.endpoint_url.includes('getsly.ai') || agent.endpoint_url.includes('localhost'));
+
+    if (isSelfReferencing || (!agent.endpoint_url && agent.endpoint_type !== 'x402')) {
+      // For self-referencing autonomous agents (endpoint points back to Sly),
+      // fall through to auto-responder instead of leaving in 'working' forever.
+      // The auto-responder has peer awareness and will generate a real response.
+      // External autonomous agents (with non-Sly endpoints) would be handled
+      // by the forwardViaA2A path above, not here.
+      this.log(taskId, 'info', `Self-referencing agent (${agent.processing_mode}) — using auto-responder`);
+
+      // Auto-respond: generate skill response and complete immediately
+      try {
+        const { autoRespondToTask } = await import('./auto-responder.js');
+        const autoResult = await autoRespondToTask(this.supabase, taskId, agent.id, messageText, skill.skill_id);
+        if (autoResult.success) {
+          await this.taskService.addMessage(taskId, 'agent', [{ text: autoResult.response }]);
+
+          // Execute settlement if present
+          if (settlementMandateId) {
+            try {
+              await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
+            } catch (e: any) {
+              this.log(taskId, 'warn', `Settlement failed: ${e.message}`);
+            }
+          }
+
+          await this.taskService.updateTaskState(taskId, 'completed', 'Task completed');
+          return this.taskService.getTask(taskId);
+        }
+      } catch (autoErr: any) {
+        this.log(taskId, 'warn', `Auto-responder failed: ${autoErr.message}`);
+      }
+    }
+
     if (agent.endpoint_type === 'a2a') {
-      return await this.forwardViaA2A(taskId, messageText, agent, skill, callerMetadata);
+      return await this.forwardViaA2A(taskId, messageText, agent, skill, callerMetadata, settlementMandateId);
     } else if (agent.endpoint_type === 'webhook') {
-      return await this.forwardViaWebhook(taskId, messageText, agent, skill);
+      return await this.forwardViaWebhook(taskId, messageText, agent, skill, settlementMandateId);
     } else if (agent.endpoint_type === 'x402') {
       return await this.forwardViaX402(taskId, messageText, agent, skill, callerMetadata);
     }
@@ -865,11 +1351,13 @@ export class A2ATaskProcessor {
     agent: { id: string; endpoint_url: string; endpoint_secret?: string | null },
     skill: { skill_id: string },
     callerMetadata?: Record<string, unknown>,
+    passedSettlementMandateId?: string,
   ): Promise<A2ATask | null> {
     const client = new A2AClient();
 
-    // Helper: read settlement mandate ID from task metadata
+    // Helper: read settlement mandate ID from passed param or task metadata
     const getSettlementMandateId = async (): Promise<string | undefined> => {
+      if (passedSettlementMandateId) return passedSettlementMandateId;
       const { data: taskMeta } = await this.supabase
         .from('a2a_tasks')
         .select('metadata')
@@ -933,6 +1421,14 @@ export class A2ATaskProcessor {
           // Execute settlement mandate — deduct caller, credit provider
           const settlementMandateId = await getSettlementMandateId();
           if (settlementMandateId) {
+            // Check acceptance gate before settling
+            const gateEngaged = await this.checkAcceptanceGate(taskId, settlementMandateId, 'completed');
+            if (gateEngaged) {
+              // Gate engaged — task set to input-required, skip settlement and completion
+              agentCircuitBreaker.recordSuccess(agent.id);
+              return this.taskService.getTask(taskId);
+            }
+
             await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
             await this.taskService.addArtifact(taskId, {
               name: 'settlement-receipt',
@@ -963,12 +1459,37 @@ export class A2ATaskProcessor {
 
           await this.taskService.updateTaskState(taskId, 'failed', errorMsg);
         } else {
-          // Task is still working on the remote side — mark as working, await callback
-          // Settlement mandate stays active — will be resolved when callback arrives
-          await this.taskService.addMessage(taskId, 'agent', [
-            { text: `Task forwarded to agent. Awaiting response (remote state: ${remoteState || 'working'}).` },
-          ]);
-          await this.taskService.updateTaskState(taskId, 'working', 'Awaiting agent response');
+          // Task is still working on the remote side.
+          // If the remote response contains agent messages, the auto-responder
+          // already generated a response — complete immediately instead of
+          // leaving in 'working' forever (which was causing 67% failure rate).
+          const history = result.history || [];
+          const agentMessages = history.filter((m: any) => m.role === 'agent');
+          if (agentMessages.length > 0) {
+            // Auto-responder produced output — extract and complete
+            const lastMsg = agentMessages[agentMessages.length - 1];
+            if (lastMsg?.parts?.length) {
+              await this.taskService.addMessage(taskId, 'agent', lastMsg.parts, lastMsg.metadata);
+            }
+            if (result.artifacts?.length) {
+              for (const artifact of result.artifacts) {
+                await this.taskService.addArtifact(taskId, artifact);
+              }
+            }
+            const settlementMandateId = await getSettlementMandateId();
+            if (settlementMandateId) {
+              await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
+            }
+            agentCircuitBreaker.recordSuccess(agent.id);
+            await this.taskService.updateTaskState(taskId, 'completed', 'Task completed (agent responded)');
+            this.log(taskId, 'info', 'Agent responded with working state but had messages — completing');
+          } else {
+            // Truly still working with no response yet — await callback
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: `Task forwarded to agent. Awaiting response (remote state: ${remoteState || 'working'}).` },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'working', 'Awaiting agent response');
+          }
         }
       } else if ((response as any).error) {
         const rpcError = (response as any).error;
@@ -1035,8 +1556,9 @@ export class A2ATaskProcessor {
   private async forwardViaWebhook(
     taskId: string,
     messageText: string,
-    agent: { id: string; endpoint_url: string; endpoint_secret?: string | null },
+    agent: { id: string; endpoint_url: string; endpoint_secret?: string | null; processing_mode?: string },
     skill: { skill_id: string },
+    settlementMandateId?: string,
   ): Promise<A2ATask | null> {
     const webhookHandler = new A2AWebhookHandler(this.supabase);
     const deliveryId = crypto.randomUUID();
@@ -1060,12 +1582,59 @@ export class A2ATaskProcessor {
 
     if (result.success) {
       await webhookHandler.recordSuccess(taskId, result);
-      await this.taskService.addMessage(taskId, 'agent', [
-        { text: `Task dispatched to agent webhook. Awaiting response.` },
-      ]);
-      // Mark as working — agent will call back via POST /a2a/:agentId/callback
-      await this.taskService.updateTaskState(taskId, 'working', 'Dispatched to agent webhook');
+
+      // Execute settlement mandate — debit caller, credit provider
+      if (settlementMandateId) {
+        try {
+          await this.resolveSettlementMandate(taskId, settlementMandateId, 'completed');
+          this.log(taskId, 'info', `Settlement mandate executed: ${settlementMandateId}`);
+          await this.taskService.updateTaskState(taskId, 'completed', 'Payment processed');
+        } catch (e: any) {
+          this.log(taskId, 'warn', `Settlement failed: ${e.message}`);
+          await this.taskService.addMessage(taskId, 'agent', [
+            { text: `Task completed but payment settlement failed: ${e.message}` },
+          ]);
+          await this.taskService.updateTaskState(taskId, 'completed', 'Task completed (settlement pending)');
+        }
+      } else if (agent.processing_mode === 'autonomous' && agent.endpoint_url && !agent.endpoint_url.includes('getsly.ai') && !agent.endpoint_url.includes('localhost')) {
+        // External autonomous agent with real endpoint — leave in working for external pickup
+        await this.taskService.updateTaskState(taskId, 'working', 'Awaiting external autonomous agent');
+        this.log(taskId, 'info', 'External autonomous agent — task left in working for external pickup');
+      } else {
+        // Auto-respond for managed agents — generate AI response and complete immediately
+        try {
+          const { autoRespondToTask } = await import('./auto-responder.js');
+          const autoResult = await autoRespondToTask(this.supabase, taskId, agent.id, messageText, skill.skill_id);
+          if (autoResult.success) {
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: autoResult.response },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'completed', 'Task completed');
+            this.log(taskId, 'info', 'Auto-responded and completed');
+          } else {
+            // Auto-responder returned but with no content — fail immediately
+            // instead of leaving in 'working' forever
+            await this.taskService.addMessage(taskId, 'agent', [
+              { text: 'Agent could not generate a response for this task.' },
+            ]);
+            await this.taskService.updateTaskState(taskId, 'failed', 'Auto-responder returned empty');
+          }
+        } catch (autoErr: any) {
+          this.log(taskId, 'warn', `Auto-responder failed: ${autoErr.message}`);
+          await this.taskService.addMessage(taskId, 'agent', [
+            { text: `Agent processing error: ${autoErr.message?.slice(0, 100)}` },
+          ]);
+          await this.taskService.updateTaskState(taskId, 'failed', `Auto-responder error: ${autoErr.message?.slice(0, 100)}`);
+        }
+      }
     } else {
+      // Cancel settlement mandate on failure
+      if (settlementMandateId) {
+        try {
+          await this.resolveSettlementMandate(taskId, settlementMandateId, 'failed');
+        } catch { /* non-fatal */ }
+      }
+
       // R1: Retry transient webhook failures before giving up
       const webhookError = result.error || 'Unknown error';
       const isTransient = webhookError.includes('fetch failed') || webhookError.includes('ECONNREFUSED')
@@ -2330,6 +2899,22 @@ export class A2ATaskProcessor {
     });
 
     await this.taskService.updateTaskState(taskId, 'completed', 'Mandate created');
+
+    // Emit audit event for timeline visibility
+    const { taskEventBus } = await import('./task-event-bus.js');
+    taskEventBus.emitTask(taskId, {
+      type: 'payment',
+      taskId,
+      data: {
+        action: 'mandate_created',
+        mandateId: mandate.mandate_id,
+        amount: intent.amount,
+        currency: intent.currency,
+        mandateType,
+      },
+      timestamp: new Date().toISOString(),
+    }, { tenantId: this.tenantId, agentId: agentCtx.agentId, actorType: 'agent' });
+
     return this.taskService.getTask(taskId);
   }
 

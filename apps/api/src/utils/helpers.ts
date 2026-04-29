@@ -7,15 +7,18 @@ import type { Account, Agent, Transfer, Stream } from '@sly/types';
 
 export function mapAccountFromDb(row: any): Account {
   const currency = row.currency || 'USDC';
-  
+
   return {
     id: row.id,
     tenantId: row.tenant_id,
+    environment: row.environment || 'test',
     type: row.type,
+    subtype: row.subtype || null,
     name: row.name,
     email: row.email || undefined,
     country: row.country || undefined,
     currency: currency,
+    metadata: row.metadata || {},
     // Flat verification fields for client compatibility
     verificationTier: row.verification_tier || 0,
     verificationStatus: row.verification_status || 'unverified',
@@ -30,6 +33,7 @@ export function mapAccountFromDb(row: any): Account {
       tier: row.verification_tier || 0,
       status: row.verification_status || 'unverified',
       type: row.verification_type || (row.type === 'person' ? 'kyc' : 'kyb'),
+      path: row.verification_path || 'standard',
     },
     balance: {
       total: parseFloat(row.balance_total) || 0,
@@ -51,9 +55,10 @@ export function mapAccountFromDb(row: any): Account {
 }
 
 export function mapAgentFromDb(row: any): Agent {
-  return {
+  return ({
     id: row.id,
     tenantId: row.tenant_id,
+    environment: row.environment || 'test',
     name: row.name,
     description: row.description || '',
     status: row.status,
@@ -101,6 +106,28 @@ export function mapAgentFromDb(row: any): Agent {
       type: row.auth_type || 'api_key',
       clientId: row.auth_client_id || undefined,
     },
+    cai: row.skill_manifest || row.model_family || row.escalation_policy ? {
+      modelFamily: row.model_family || undefined,
+      modelVersion: row.model_version || undefined,
+      skillManifest: row.skill_manifest || undefined,
+      useCaseDescription: row.use_case_description || undefined,
+      escalationPolicy: row.escalation_policy || 'DECLINE',
+      operationalHistoryStart: row.operational_history_start || undefined,
+      policyViolationCount: row.policy_violation_count || 0,
+      behavioralConsistencyScore: row.behavioral_consistency_score != null
+        ? parseFloat(row.behavioral_consistency_score)
+        : undefined,
+      enterpriseOverride: row.kya_enterprise_override || false,
+      overrideAssessedAt: row.kya_override_assessed_at || undefined,
+      killSwitch: row.kill_switch_operator_id ? {
+        operatorId: row.kill_switch_operator_id,
+        operatorName: row.kill_switch_operator_name,
+        operatorEmail: row.kill_switch_operator_email,
+      } : undefined,
+    } : undefined,
+    erc8004AgentId: row.erc8004_agent_id || undefined,
+    walletAddress: row.circle_wallet_address || row.wallet_address || undefined,
+    avatarUrl: row.avatar_url ?? null,
     // Flat fields for UI compatibility
     limit_per_transaction: parseFloat(row.limit_per_transaction) || 0,
     limit_daily: parseFloat(row.limit_daily) || 0,
@@ -122,9 +149,9 @@ export function mapAgentFromDb(row: any): Agent {
     ap2_enabled: row.ap2_enabled !== null ? row.ap2_enabled : false,
     acp_enabled: row.acp_enabled !== null ? row.acp_enabled : false,
     ucp_enabled: row.ucp_enabled !== null ? row.ucp_enabled : false,
-    processing_mode: row.processing_mode || 'manual',
+    processing_mode: row.processing_mode || 'managed',
     processing_config: row.processing_config || {},
-    processingMode: row.processing_mode || 'manual',
+    processingMode: row.processing_mode || 'managed',
     processingConfig: row.processing_config || {},
     total_volume: parseFloat(row.total_volume) || 0,
     total_transactions: row.total_transactions || 0,
@@ -134,13 +161,14 @@ export function mapAgentFromDb(row: any): Agent {
     updated_at: row.updated_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
+  } as any) as Agent;
 }
 
 export function mapTransferFromDb(row: any): Transfer {
   return {
     id: row.id,
     tenantId: row.tenant_id,
+    environment: row.environment || 'test',
     type: row.type,
     status: row.status,
     from: {
@@ -155,8 +183,11 @@ export function mapTransferFromDb(row: any): Transfer {
       type: row.initiated_by_type,
       id: row.initiated_by_id,
       name: row.initiated_by_name || '',
+      erc8004AgentId: row.initiator_erc8004_agent_id || undefined,
+      walletAddress: row.initiator_wallet_address || undefined,
     },
     description: row.description || undefined,
+    txHash: row.tx_hash || undefined,
     amount: parseFloat(row.amount),
     currency: row.currency || 'USDC',
     destinationAmount: row.destination_amount ? parseFloat(row.destination_amount) : undefined,
@@ -252,13 +283,21 @@ function formatRunway(seconds: number): string {
 // ============================================
 
 export interface AuditLogEntry {
-  tenantId: string;
+  tenantId: string | null;
   entityType: string;
-  entityId: string;
+  entityId: string | null;
   action: string;
-  actorType: 'user' | 'agent' | 'system';
-  actorId: string;
-  actorName: string;
+  description?: string;
+  // The auth middleware can set actorType to 'api_key' (tenant API key
+  // callers) or 'portal' (Epic 65 portal tokens). The audit_log table
+  // stores any string; the previous narrow union was an internal
+  // contract that didn't match what callers actually sent, leading to
+  // TS2322 fanout across every logAudit() callsite.
+  actorType: 'user' | 'agent' | 'system' | 'api_key' | 'portal';
+  // actorId is null for system actions and for legacy code paths that
+  // pre-date per-actor identity (e.g. the legacy_api_key tenant key).
+  actorId?: string | null;
+  actorName?: string | null;
   changes?: Record<string, any>;
   metadata?: Record<string, any>;
 }
@@ -283,6 +322,51 @@ export async function logAudit(
     // Don't fail the request if audit logging fails
     console.error('Failed to log audit entry:', error);
   }
+}
+
+// ============================================
+// AGENT-STATUS GUARD
+// ============================================
+
+/**
+ * Reject the request if the agent is not in the 'active' state.
+ *
+ * Callers: any endpoint that lets an agent take an action or receive new
+ * work — task creation, claim, respond, rate, mandate creation, etc.
+ *
+ * The kill switch sets `agents.status = 'suspended'`. Before this helper was
+ * added, only POST /a2a/:agentId checked status — so killed buyers kept
+ * posting /v1/a2a/tasks + /v1/ap2/mandates and killed sellers receiving work
+ * via /v1/a2a/tasks never got -32004. Point-of-enforcement fix.
+ *
+ * The throw uses ForbiddenError (HTTP 403) with the literal "suspended" in
+ * the message so the marketplace-sim's isSuspensionError() classifier picks
+ * it up and adds the agent to its killed set.
+ *
+ * @param agentId  Agent UUID to check
+ * @param role     Optional role hint ("buyer", "seller", "target", …) for
+ *                 clearer error messages
+ * @returns        The agent row (id, status, tenant_id, environment) so
+ *                 callers that already need it can skip a second fetch
+ */
+export async function assertAgentActive(
+  supabase: SupabaseClient,
+  agentId: string,
+  role?: string,
+): Promise<{ id: string; status: string; tenant_id: string; environment: string }> {
+  const { ForbiddenError, NotFoundError } = await import('../middleware/error.js');
+  const { data, error } = await supabase
+    .from('agents')
+    .select('id, status, tenant_id, environment')
+    .eq('id', agentId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to check agent status: ${error.message}`);
+  if (!data) throw new NotFoundError('Agent', agentId);
+  if ((data as any).status !== 'active') {
+    const label = role ? `${role} agent` : 'Agent';
+    throw new ForbiddenError(`${label} is suspended (status=${(data as any).status}). Cannot proceed.`);
+  }
+  return data as any;
 }
 
 // ============================================
@@ -325,25 +409,49 @@ export interface PaginationParams {
   limit: number;
 }
 
-export function getPaginationParams(query: Record<string, string>): PaginationParams {
+export function getPaginationParams(
+  queryOrContext: Record<string, string> | { req: { query: () => Record<string, string> } }
+): PaginationParams {
+  // Accept either a plain query record or a Hono context (with c.req.query()).
+  const query: Record<string, string> =
+    typeof (queryOrContext as any)?.req?.query === 'function'
+      ? (queryOrContext as any).req.query()
+      : (queryOrContext as Record<string, string>);
   const page = Math.max(1, parseInt(query.page || '1'));
   const limit = Math.min(100, Math.max(1, parseInt(query.limit || '20')));
   return { page, limit };
 }
 
 export function paginationResponse<T>(
-  data: T[],
-  total: number,
-  pagination: PaginationParams
+  pageOrData: number | T[],
+  limitOrTotal?: number,
+  totalOrPagination?: number | PaginationParams
 ) {
+  // Two call shapes are used across the codebase:
+  //   paginationResponse(page, limit, total)              -> returns { page, limit, total, totalPages }
+  //   paginationResponse(data, total, { page, limit })     -> returns { data, pagination: {...} }
+  if (Array.isArray(pageOrData)) {
+    const data = pageOrData;
+    const total = limitOrTotal ?? 0;
+    const pagination = totalOrPagination as PaginationParams;
+    return {
+      data,
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        totalPages: Math.ceil(total / pagination.limit),
+      },
+    };
+  }
+  const page = pageOrData as number;
+  const limit = (limitOrTotal as number) || 20;
+  const total = (totalOrPagination as number) || 0;
   return {
-    data,
-    pagination: {
-      page: pagination.page,
-      limit: pagination.limit,
-      total,
-      totalPages: Math.ceil(total / pagination.limit),
-    },
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
   };
 }
 
@@ -408,5 +516,17 @@ export function buildDeprecationHeader(deprecatedFields: string[]): string | nul
   });
 
   return warnings.join('; ');
+}
+
+// ============================================
+// ENVIRONMENT HELPERS
+// ============================================
+
+/**
+ * Get the environment ('test' or 'live') from the request context.
+ * Used to filter queries by environment column for sandbox/production isolation.
+ */
+export function getEnv(ctx: { environment?: string; apiKeyEnvironment?: string }): 'test' | 'live' {
+  return (ctx.environment || ctx.apiKeyEnvironment || 'test') as 'test' | 'live';
 }
 

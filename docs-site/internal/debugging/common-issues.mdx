@@ -1,0 +1,115 @@
+---
+title: "Common issues"
+description: "Recurring problems and their fixes, as we've seen them."
+---
+
+Living document. When you debug something twice, it goes here.
+
+## "Transfer stuck in `processing`"
+
+**Causes:**
+- Scheduled-transfers worker not running
+- Rail provider incident
+- Webhook from provider lost (we never learned it settled)
+
+**Diagnose:**
+```sql
+-- Is the worker even seeing it?
+SELECT id, scheduled_at, status, updated_at FROM transfers
+  WHERE id = 'tx_...';
+
+-- Are there pending transfers broadly? Worker might be stopped.
+SELECT COUNT(*) FROM transfers
+  WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes';
+```
+
+**Fix:**
+- If worker stopped: restart
+- If rail outage: wait, update partner
+- If webhook lost: manually poll provider and update status
+
+## "Webhook deliveries all 400ing for one tenant"
+
+**Causes:**
+- Partner rotated webhook secret but didn't update on their side
+- Partner endpoint returning 401 (auth regression on their side)
+- TLS cert expired on partner endpoint
+- Clock skew (rejecting all signatures as stale)
+
+**Diagnose:**
+```sql
+SELECT attempts, last_response_code, last_response_body, created_at
+  FROM webhook_deliveries
+  WHERE webhook_id = 'wh_...' AND status = 'failed'
+  ORDER BY created_at DESC LIMIT 20;
+```
+
+**Fix:**
+- Reach out to partner; usually their side
+- If their fix takes time: pause the subscription so events queue instead of failing
+
+## "Agent authenticates briefly then stops working"
+
+**Cause:** Almost always the 60s auth cache. Agent's credentials changed (rotation, revocation) but cache hadn't expired.
+
+**Diagnose:** check `api_keys` / `agents` for recent changes.
+
+**Fix:** wait 60 seconds, or restart API to flush cache.
+
+## "Dashboard hangs, API works"
+
+**Cause:** JWT refresh loop — user JWT expired, refresh endpoint is failing, frontend keeps retrying.
+
+**Diagnose:** browser dev tools → network tab → look for `/v1/auth/refresh` returning 401.
+
+**Fix:**
+- User logs out + back in (clears stale refresh token)
+- If affecting many users: Supabase Auth incident
+
+## "Test tenant data showing up in live"
+
+**This is Sev 1.** Cross-environment leak. Immediate:
+1. Identify the endpoint
+2. Disable via feature flag
+3. Find the missing `.eq('environment', getEnv(ctx))` filter
+4. Hotfix + rolling release
+5. Audit recent data for other missing filters
+
+## "Cross-tenant leak suspected"
+
+**Also Sev 1.** Same playbook as above but for `.eq('tenant_id', ctx.tenantId)`. See [database + RLS](/engineering/database-rls).
+
+## "Build fails locally after pulling main"
+
+**Cause:** Shared package versions changed.
+
+**Fix:**
+```bash
+pnpm install
+pnpm build
+```
+
+## "RLS errors in integration tests"
+
+**Cause:** Missing `INTEGRATION=true` or missing Supabase creds.
+
+**Fix:**
+```bash
+INTEGRATION=true SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... pnpm test:integration
+```
+
+## "Type errors in apps/web after API change"
+
+**Cause:** `@sly/types` wasn't rebuilt after your edit.
+
+**Fix:**
+```bash
+pnpm --filter @sly/types build
+pnpm --filter @sly/web dev   # restart
+```
+
+## "mintlify dev shows 404s for valid pages"
+
+**Cause:** Page referenced in `docs.json` navigation but MDX file doesn't exist (or name mismatch).
+
+**Fix:** `mintlify broken-links` shows the offenders; create the missing MDX or remove from nav.

@@ -1,0 +1,98 @@
+name: Docs & OpenAPI spec
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/src/routes/openapi/**'
+      - 'apps/api/src/app-openapi.ts'
+      - 'apps/api/scripts/generate-openapi.ts'
+      - 'docs-site/**'
+      - 'packages/types/**'
+      - '.github/workflows/docs-spec.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/api/src/routes/openapi/**'
+      - 'apps/api/src/app-openapi.ts'
+      - 'apps/api/scripts/generate-openapi.ts'
+      - 'docs-site/**'
+      - 'packages/types/**'
+      - '.github/workflows/docs-spec.yml'
+
+jobs:
+  regenerate-specs:
+    name: Regenerate OpenAPI specs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm build --filter=@sly/types --filter=@sly/utils
+
+      - name: Generate OpenAPI specs
+        run: pnpm --filter @sly/api generate:openapi
+
+      - name: Validate public spec
+        run: npx @redocly/cli@latest lint docs-site/public/api-reference/openapi.json
+
+      - name: Validate internal spec
+        run: npx @redocly/cli@latest lint docs-site/internal/api-reference/openapi.json
+
+      - name: Check for spec drift (PRs only)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [[ -n $(git status --porcelain docs-site/public/api-reference/openapi.json docs-site/internal/api-reference/openapi.json) ]]; then
+            echo "::error::OpenAPI specs are out of date. Run \`pnpm --filter @sly/api generate:openapi\` locally and commit."
+            git diff docs-site/public/api-reference/openapi.json
+            exit 1
+          fi
+
+      - name: Commit regenerated specs (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if [[ -n $(git status --porcelain docs-site/public/api-reference/openapi.json docs-site/internal/api-reference/openapi.json) ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add docs-site/public/api-reference/openapi.json docs-site/internal/api-reference/openapi.json
+            git commit -m "chore(docs): regenerate OpenAPI specs [skip ci]"
+            git push
+          fi
+
+  mintlify-broken-links:
+    name: Mintlify broken links
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install mintlify CLI
+        run: npm install -g mintlify
+
+      - name: Check public portal links
+        working-directory: docs-site/public
+        run: mintlify broken-links || true # non-blocking warning for now
+
+      - name: Check internal portal links
+        working-directory: docs-site/internal
+        run: mintlify broken-links || true

@@ -338,7 +338,7 @@ This SDK is under active development as part of Epic 36:
 
 ## Contributing
 
-See the main [PayOS repository](https://github.com/payos/payos) for contribution guidelines.
+See the main [Sly repository](https://github.com/Sly-devs/sly) for contribution guidelines.
 
 ## License
 

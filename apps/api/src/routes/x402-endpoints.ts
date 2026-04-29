@@ -11,6 +11,7 @@ import { createClient } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
+import { getEnv } from '../utils/helpers.js';
 
 const app = new Hono();
 
@@ -93,7 +94,7 @@ app.post('/', async (c) => {
     // Validate request
     const validated = createEndpointSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Verify account belongs to tenant
     const { data: account, error: accountError } = await supabase
@@ -101,6 +102,7 @@ app.post('/', async (c) => {
       .select('id')
       .eq('id', validated.accountId)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
     
     if (accountError || !account) {
@@ -114,6 +116,7 @@ app.post('/', async (c) => {
       .from('x402_endpoints')
       .select('id')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('path', validated.path)
       .eq('method', validated.method)
       .single();
@@ -136,6 +139,7 @@ app.post('/', async (c) => {
       .from('x402_endpoints')
       .insert({
         tenant_id: ctx.tenantId,
+        environment: getEnv(ctx),
         account_id: validated.accountId,
         name: validated.name,
         path: validated.path,
@@ -193,7 +197,7 @@ app.post('/', async (c) => {
 app.get('/', async (c) => {
   try {
     const ctx = c.get('ctx');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Parse query params
     const status = c.req.query('status');
@@ -207,6 +211,7 @@ app.get('/', async (c) => {
       .from('x402_endpoints')
       .select('*', { count: 'exact' })
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .order('created_at', { ascending: false });
     
     // Apply filters
@@ -252,7 +257,7 @@ app.get('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     console.log('DEBUG: Fetching endpoint', { endpointId: id, tenantId: ctx.tenantId });
     
@@ -262,16 +267,17 @@ app.get('/:id', async (c) => {
       .select('*')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
-    
+
     if (error) {
       console.error('DEBUG: Error fetching endpoint:', error);
       return c.json({ error: 'Endpoint not found', details: error.message }, 404);
     }
-    
+
     if (!endpoint) {
       console.log('DEBUG: Endpoint not found for tenant', { endpointId: id, tenantId: ctx.tenantId });
-      
+
       // Check if endpoint exists with different tenant (for debugging)
       const { data: anyEndpoint } = await supabase
         .from('x402_endpoints')
@@ -295,6 +301,7 @@ app.get('/:id', async (c) => {
       .from('transfers')
       .select('id, from_account_id, amount, currency, status, created_at, protocol_metadata')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('type', 'x402')
       .contains('protocol_metadata', { endpoint_id: id })
       .order('created_at', { ascending: false })
@@ -335,7 +342,7 @@ app.patch('/:id', async (c) => {
     // Validate request
     const validated = updateEndpointSchema.parse(body);
     
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Check endpoint exists and belongs to tenant
     const { data: existing, error: fetchError } = await supabase
@@ -343,12 +350,13 @@ app.patch('/:id', async (c) => {
       .select('id')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
-    
+
     if (fetchError || !existing) {
       return c.json({ error: 'Endpoint not found' }, 404);
     }
-    
+
     // Update endpoint
     const { data: updated, error: updateError } = await supabase
       .from('x402_endpoints')
@@ -363,9 +371,10 @@ app.patch('/:id', async (c) => {
       })
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .select()
       .single();
-    
+
     if (updateError) {
       console.error('Error updating x402 endpoint:', updateError);
       return c.json({ error: 'Failed to update endpoint' }, 500);
@@ -405,7 +414,7 @@ app.delete('/:id', async (c) => {
   try {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
-    const supabase = createClient();
+    const supabase: any = createClient();
     
     // Check endpoint exists and belongs to tenant
     const { data: existing, error: fetchError } = await supabase
@@ -413,12 +422,13 @@ app.delete('/:id', async (c) => {
       .select('id, total_calls')
       .eq('id', id)
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single();
-    
+
     if (fetchError || !existing) {
       return c.json({ error: 'Endpoint not found' }, 404);
     }
-    
+
     // Warn if endpoint has transactions
     if (existing.total_calls > 0) {
       // Check if force delete is requested
@@ -438,7 +448,8 @@ app.delete('/:id', async (c) => {
       .from('x402_endpoints')
       .delete()
       .eq('id', id)
-      .eq('tenant_id', ctx.tenantId);
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx));
     
     if (deleteError) {
       console.error('Error deleting x402 endpoint:', deleteError);

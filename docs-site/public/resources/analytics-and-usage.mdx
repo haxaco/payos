@@ -1,0 +1,205 @@
+---
+title: "Analytics + Usage"
+description: "Tenant usage metrics for billing, dashboards, and embedded customer portals."
+---
+
+Two related API surfaces:
+
+- **`/v1/usage`** — tenant-scoped billing and cost data. Used by your own billing and for [portal-token-gated](/authentication/portal-tokens) customer dashboards.
+- **`/v1/analytics`** — protocol-level activity metrics for dashboards.
+
+Both are read-only.
+
+## Usage API
+
+All endpoints accept `start` and `end` ISO-8601 query params; default window is **last 30 days**.
+
+### Summary
+
+```bash
+curl "https://api.getsly.ai/v1/usage/summary?start=2026-04-01&end=2026-04-30" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Response:
+
+```json
+{
+  "period": { "start": "2026-04-01T00:00:00Z", "end": "2026-04-30T00:00:00Z" },
+  "total_operations": 18234,
+  "by_category": {
+    "transfer": 14022,
+    "mandate_execution": 2100,
+    "checkout": 1500,
+    "stream_action": 612
+  },
+  "by_protocol": {
+    "x402": 8450,
+    "ucp": 3200,
+    "ap2": 2100,
+    "acp": 1500,
+    "internal": 2984
+  },
+  "total_external_cost_usd": "542.18",
+  "success_rate": 0.9984
+}
+```
+
+Useful for: monthly billing reports, dashboard tiles, capacity forecasting.
+
+### Operation events (paginated)
+
+Every billable operation, individually:
+
+```bash
+curl "https://api.getsly.ai/v1/usage/operations?start=2026-04-23&end=2026-04-24&limit=100" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Returns:
+
+```json
+{
+  "data": [
+    {
+      "id": "op_<uuid>",
+      "time": "2026-04-23T15:30:00Z",
+      "category": "transfer",
+      "operation": "transfer.created",
+      "protocol": "x402",
+      "success": true,
+      "amount_usd": "0.05",
+      "external_cost_usd": "0.002",
+      "actor_type": "agent",
+      "actor_id": "agt_<uuid>"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 100, "total": 18234, "totalPages": 183 }
+}
+```
+
+### Request counts
+
+API request aggregations (distinct from business operations — every HTTP call):
+
+```bash
+curl "https://api.getsly.ai/v1/usage/requests?start=2026-04-01&end=2026-04-30" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Useful for monitoring API-quota usage and debugging unexpected traffic.
+
+### External costs
+
+Breakdown of costs Sly paid to external providers on your behalf (Circle fees, Stripe processing, etc.):
+
+```bash
+curl "https://api.getsly.ai/v1/usage/costs?start=2026-04-01&end=2026-04-30" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+```json
+{
+  "period": { "start": "...", "end": "..." },
+  "total_usd": "542.18",
+  "by_provider": {
+    "circle": "412.50",
+    "stripe": "98.22",
+    "solana_rpc": "18.46",
+    "persona": "13.00"
+  }
+}
+```
+
+Use this to understand unit economics on each protocol and decide where to batch, cache, or route differently.
+
+## Analytics API
+
+Protocol-level activity over time — drives the Sly dashboard's charts. Typically fetched from server-rendered or client-rendered dashboards.
+
+### Protocol distribution
+
+```bash
+curl "https://api.getsly.ai/v1/analytics/protocol-distribution?timeRange=7d&metric=volume" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Params:
+- `timeRange`: `24h` | `7d` | `30d`
+- `metric`: `volume` (USD) | `count` (number of operations)
+
+Returns per-protocol totals for the window.
+
+### Protocol activity (time series)
+
+```bash
+curl "https://api.getsly.ai/v1/analytics/protocol-activity?timeRange=7d&metric=volume" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Returns per-protocol time-bucketed activity — bucket size scales with `timeRange` (hourly for 24h, daily for 7d/30d).
+
+### Protocol stats
+
+```bash
+curl https://api.getsly.ai/v1/analytics/protocol-stats?timeRange=7d \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Summary statistics per protocol: total volume, transaction count, average amount, success rate.
+
+### Recent activity
+
+```bash
+curl "https://api.getsly.ai/v1/analytics/recent-activity?limit=20" \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Last N operations across all protocols. Good for an activity-feed widget.
+
+### Checkout demand
+
+```bash
+curl https://api.getsly.ai/v1/analytics/checkout-demand?timeRange=7d \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Checkout funnel metrics: sessions opened, completion rate, drop-off points, time-to-complete. Drives e-commerce conversion dashboards.
+
+## Portal token access
+
+The `/v1/usage/*` endpoints accept [portal tokens](/authentication/portal-tokens) with the `usage:read` scope, letting you safely embed usage views in customer-facing dashboards without exposing your API key.
+
+```bash
+# Mint a portal token server-side, scoped to one customer
+curl -X POST https://api.getsly.ai/v1/portal-tokens \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "customer_reference": "cust_abc",
+    "scopes": ["usage:read"],
+    "expires_in": 3600
+  }'
+```
+
+Return the `portal_*` token to the browser; it can call `/v1/usage/summary` etc. directly. Scope is enforced — out-of-scope calls return `403`.
+
+`/v1/analytics/*` doesn't support portal tokens (it's tenant-wide, not customer-scoped).
+
+## Freshness
+
+- **Usage API** — operation_events table is updated within seconds of each operation. Summary aggregations may cache up to 30 seconds.
+- **Analytics API** — up-to-5-minute lag on materialized views for large tenants. For real-time signals, subscribe to webhooks instead.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/usage/summary` | Aggregated totals for a window |
+| `GET /v1/usage/operations` | Paginated event list |
+| `GET /v1/usage/requests` | API request counts |
+| `GET /v1/usage/costs` | External provider cost breakdown |
+| `GET /v1/analytics/protocol-distribution` | Per-protocol totals |
+| `GET /v1/analytics/protocol-activity` | Per-protocol time series |
+| `GET /v1/analytics/protocol-stats` | Per-protocol summary stats |
+| `GET /v1/analytics/recent-activity` | Recent-N activity feed |
+| `GET /v1/analytics/checkout-demand` | Checkout funnel metrics |

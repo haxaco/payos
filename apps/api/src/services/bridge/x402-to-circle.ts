@@ -169,7 +169,7 @@ export class X402ToCircleBridge {
     }
 
     const settlementId = randomUUID();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Calculate fiat amount
     const quote = this.getQuote(request.amount, 'BRL');
@@ -289,7 +289,7 @@ export class X402ToCircleBridge {
     }
 
     const settlementId = randomUUID();
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Calculate fiat amount
     const quote = this.getQuote(request.amount, 'MXN');
@@ -399,7 +399,7 @@ export class X402ToCircleBridge {
   ): Promise<void> {
     console.log(`[Bridge] Handling webhook for payout ${circlePayoutId}: ${status}`);
 
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     // Map Circle status to our status
     const statusMap: Record<string, BridgeSettlement['status']> = {
@@ -444,7 +444,7 @@ export class X402ToCircleBridge {
    * Get settlement status by ID
    */
   async getSettlement(settlementId: string): Promise<BridgeSettlement | null> {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('settlements')
@@ -464,7 +464,7 @@ export class X402ToCircleBridge {
    * Get settlement by x402 transfer ID
    */
   async getSettlementByTransfer(transferId: string): Promise<BridgeSettlement | null> {
-    const supabase = createClient();
+    const supabase: any = createClient();
 
     const { data, error } = await supabase
       .from('settlements')

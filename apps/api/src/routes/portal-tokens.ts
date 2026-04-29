@@ -54,7 +54,7 @@ router.post('/', async (c) => {
     ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString()
     : null;
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { data, error } = await (supabase.from('portal_tokens') as any)
     .insert({
       tenant_id: ctx.tenantId,
@@ -89,7 +89,7 @@ router.get('/', async (c) => {
   const ctx = c.get('ctx');
   const { page, limit } = getPaginationParams(c);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: tokens, error, count } = await (supabase.from('portal_tokens') as any)
     .select('id, name, token_prefix, scopes, status, expires_at, created_at, last_used_at', { count: 'exact' })
@@ -114,7 +114,7 @@ router.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { data: token, error } = await (supabase.from('portal_tokens') as any)
     .select('id, name, token_prefix, scopes, status, expires_at, created_at, last_used_at')
     .eq('id', id)
@@ -135,7 +135,7 @@ router.delete('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
 
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { data, error } = await (supabase.from('portal_tokens') as any)
     .update({ status: 'revoked' })
     .eq('id', id)

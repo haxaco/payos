@@ -61,7 +61,7 @@ interface UpdateFlagPayload {
 // ============================================
 compliance.get('/flags', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Parse filters from query params
   const filters: ComplianceFlagFilters = {
@@ -138,7 +138,7 @@ compliance.get('/flags', async (c) => {
 // ============================================
 compliance.get('/flags/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
 
   if (!isValidUUID(id)) {
@@ -164,7 +164,7 @@ compliance.get('/flags/:id', async (c) => {
 // ============================================
 compliance.post('/flags', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const payload: CreateFlagPayload = await c.req.json();
 
   // Validation
@@ -210,7 +210,7 @@ compliance.post('/flags', async (c) => {
   if (error) throw error;
 
   // Audit log
-  await logAudit({
+  await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'compliance_flag',
     entityId: data.id,
@@ -233,7 +233,7 @@ compliance.post('/flags', async (c) => {
 // ============================================
 compliance.patch('/flags/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
   const payload: UpdateFlagPayload = await c.req.json();
 
@@ -287,7 +287,7 @@ compliance.patch('/flags/:id', async (c) => {
   if (error) throw error;
 
   // Audit log
-  await logAudit({
+  await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'compliance_flag',
     entityId: id,
@@ -306,7 +306,7 @@ compliance.patch('/flags/:id', async (c) => {
 // ============================================
 compliance.post('/flags/:id/resolve', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
   const { action, notes } = await c.req.json();
 
@@ -353,7 +353,7 @@ compliance.post('/flags/:id/resolve', async (c) => {
   if (error) throw error;
 
   // Audit log
-  await logAudit({
+  await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'compliance_flag',
     entityId: id,
@@ -375,7 +375,7 @@ compliance.post('/flags/:id/resolve', async (c) => {
 // ============================================
 compliance.post('/flags/:id/assign', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
   const { user_id } = await c.req.json();
 
@@ -407,7 +407,7 @@ compliance.post('/flags/:id/assign', async (c) => {
   }
 
   // Audit log
-  await logAudit({
+  await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'compliance_flag',
     entityId: id,
@@ -428,7 +428,7 @@ compliance.post('/flags/:id/assign', async (c) => {
 // ============================================
 compliance.get('/stats', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Get counts by status
   const { data: statusCounts } = await supabase
@@ -484,7 +484,7 @@ compliance.get('/stats', async (c) => {
  */
 compliance.post('/screen/wallet', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { address, chain, context } = await c.req.json();
 
   if (!address || !chain) {
@@ -534,7 +534,7 @@ compliance.post('/screen/wallet', async (c) => {
   }
 
   // Audit log
-  await logAudit({
+  await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'compliance_screening',
     entityId: result.id,
@@ -567,7 +567,7 @@ compliance.post('/screen/wallet', async (c) => {
  */
 compliance.post('/screen/entity', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { name, type, country, date_of_birth, context } = await c.req.json();
 
   if (!name || !type) {
@@ -622,7 +622,7 @@ compliance.post('/screen/entity', async (c) => {
   }
 
   // Audit log
-  await logAudit({
+  await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'compliance_screening',
     entityId: result.id,
@@ -656,7 +656,7 @@ compliance.post('/screen/entity', async (c) => {
  */
 compliance.post('/screen/bank', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const { account_type, account_id, country, context } = await c.req.json();
 
   if (!account_type || !account_id || !country) {
@@ -708,7 +708,7 @@ compliance.post('/screen/bank', async (c) => {
   }
 
   // Audit log
-  await logAudit({
+  await logAudit(supabase, {
     tenantId: ctx.tenantId,
     entityType: 'compliance_screening',
     entityId: result.id,
@@ -742,7 +742,7 @@ compliance.post('/screen/bank', async (c) => {
  */
 compliance.get('/screenings', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const type = c.req.query('type');
   const risk_level = c.req.query('risk_level');
@@ -778,7 +778,7 @@ compliance.get('/screenings', async (c) => {
  */
 compliance.get('/screenings/:id', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const id = c.req.param('id');
 
   if (!isValidUUID(id)) {

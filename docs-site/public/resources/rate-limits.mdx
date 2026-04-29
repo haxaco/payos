@@ -1,0 +1,84 @@
+---
+title: "Rate limits"
+description: "Request budgets, headers, and graceful degradation."
+---
+
+Sly enforces rate limits per IP and per authenticated actor. Standard plans share a generous budget; tighter limits apply to auth endpoints and abusive patterns.
+
+## Default limits
+
+| Scope | Limit |
+|---|---|
+| General API | 100 req/min per IP |
+| Auth endpoints (`/v1/auth/*`, `/v1/agents/:id/challenge`, `/v1/agents/:id/authenticate`) | 5 req/min per IP |
+| Sandbox | 1,000 req/min per IP (generous for dev) |
+
+Enterprise plans get higher ceilings and/or dedicated rate-limit buckets — contact support.
+
+## Response headers
+
+Every response includes:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 87
+X-RateLimit-Reset: 1713800060
+```
+
+- `Limit` — total requests in the current window
+- `Remaining` — requests left before throttling
+- `Reset` — Unix timestamp when the window resets
+
+## When you hit the limit
+
+Sly returns `429 Too Many Requests` with a `Retry-After` header:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 20
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1713800060
+
+{ "error": "rate_limit_exceeded", "retry_after": 20 }
+```
+
+**Respect `Retry-After`.** Don't retry immediately — it extends the window.
+
+## Graceful handling in the SDK
+
+The Node SDK automatically respects `429` + `Retry-After`:
+
+```ts
+const sly = new Sly({
+  apiKey,
+  retries: 5,
+  rateLimitBackoff: 'respect_retry_after',  // default
+});
+```
+
+Custom backoff for bulk operations:
+
+```ts
+await pMap(transfers, (t) => sly.transfers.create(t), { concurrency: 5 });
+```
+
+With concurrency set below your rate limit, you rarely hit 429 at all.
+
+## Bulk operations
+
+For high-volume workflows, use batch endpoints instead of parallel individual requests:
+
+- `POST /v1/transfers/batch` — hundreds of transfers in one request
+- `POST /v1/acp/checkouts/batch` — batch ACP checkouts
+- `POST /v1/ucp/checkouts/batch` — batch UCP checkouts
+
+Batch endpoints count as one request against your limit.
+
+## Webhook delivery vs. rate limits
+
+Webhook delivery doesn't count against your rate limit — Sly is delivering *to* you, not the other way around. But **your** response time affects *our* throughput: respond fast and async-process if you need more than a few hundred ms.
+
+## Different environments, different limits
+
+Sandbox and production have separate budgets. Hitting sandbox's 1k/min cap doesn't slow down your production traffic. Dev-testing heavy operations in sandbox won't starve your live workload.

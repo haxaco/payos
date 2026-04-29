@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useApiClient } from '@/lib/api-client';
+import { useApiClient, useApiConfig, useApiFetch } from '@/lib/api-client';
 import Link from 'next/link';
 import { LobsterClaw } from '@/components/icons/lobster-claw';
 import {
@@ -27,9 +27,17 @@ import {
   Trash2,
   Network,
   CreditCard,
+  Wallet,
+  Star,
+  ThumbsUp,
+  ThumbsDown,
+  ExternalLink,
 } from 'lucide-react';
-import { useQuery as useTanstackQuery } from '@tanstack/react-query';
+import { useQuery as useTanstackQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { Agent, Stream, AgentLimits } from '@sly/api-client';
+import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { AvatarUpload } from '@/components/agents/avatar-upload';
 import {
   Badge,
   Table,
@@ -43,11 +51,12 @@ import { AgentActivityFeed } from '@/components/agents/agent-activity-feed';
 import { AgentQuickActions } from '@/components/agents/agent-quick-actions';
 import { ConfigureAgentDialog } from '@/components/agents/configure-agent-dialog';
 import { KyaTierBadge } from '@/components/agents/kya-tier-badge';
+import { WalletTab } from '@/components/agents/wallet-tab';
 import type { AgentAction } from '@/lib/mock-data/agent-activity';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 
-type TabType = 'overview' | 'streams' | 'mandates' | 'checkouts' | 'a2a' | 'permissions' | 'kya' | 'activity';
+type TabType = 'overview' | 'streams' | 'mandates' | 'checkouts' | 'a2a' | 'wallet' | 'ratings' | 'permissions' | 'kya' | 'scopes' | 'activity';
 
 function getAgentIcon(agentName: string) {
   if (agentName.includes('Inference API Consumer')) {
@@ -68,6 +77,7 @@ export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const api = useApiClient();
+  const { apiUrl } = useApiConfig();
   const agentId = params.id as string;
 
   const [agent, setAgent] = useState<Agent | null>(null);
@@ -219,8 +229,11 @@ export default function AgentDetailPage() {
     { id: 'mandates' as TabType, label: 'Mandates', icon: FileText },
     { id: 'checkouts' as TabType, label: 'Checkouts', icon: ShoppingCart },
     { id: 'a2a' as TabType, label: 'A2A', icon: Network },
+    { id: 'wallet' as TabType, label: 'Wallet', icon: Wallet },
+    { id: 'ratings' as TabType, label: 'Ratings', icon: Star },
     { id: 'permissions' as TabType, label: 'Permissions', icon: Key },
     { id: 'kya' as TabType, label: 'KYA', icon: Shield },
+    { id: 'scopes' as TabType, label: 'Scopes', icon: Shield },
     { id: 'activity' as TabType, label: 'Activity', icon: History },
   ];
 
@@ -272,14 +285,7 @@ export default function AgentDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div className="flex items-center gap-4">
-          {(() => {
-            const { Icon, bgColor, textColor } = getAgentIcon(agent.name);
-            return (
-              <div className={`w-16 h-16 ${bgColor} rounded-2xl flex items-center justify-center`}>
-                <Icon className={`h-8 w-8 ${textColor}`} />
-              </div>
-            );
-          })()}
+          <AgentAvatar agent={agent as any} size="lg" />
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{agent.name}</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -312,6 +318,8 @@ export default function AgentDetailPage() {
               setLimits(rawL.data?.data || rawL.data || rawL);
             }}
           />
+
+          <AgentReadinessPill agentId={agent.id} agentStatus={agent.status} kyaTier={agent.kyaTier} />
 
           <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${agent.status === 'active'
             ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
@@ -427,11 +435,40 @@ export default function AgentDetailPage() {
           <div className="text-xs text-gray-400 mt-1">{formatCurrency((agent as any).totalVolume ?? (agent as any).total_volume ?? 0)} volume</div>
         </div>
         <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">KYA Tier</div>
-          <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-500" />
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm text-gray-500 dark:text-gray-400">KYA Tier</div>
             <KyaTierBadge tier={agent.kyaTier} />
           </div>
+          {limits ? (() => {
+            const daily = (limits as any)?.effectiveLimits?.daily ?? (limits as any)?.limits?.daily ?? 0;
+            const used = (limits as any)?.usage?.daily ?? 0;
+            const pct = daily > 0 ? Math.min(100, (used / daily) * 100) : 0;
+            const near = pct >= 80;
+            const barColor = near ? 'bg-amber-500' : 'bg-emerald-500';
+            return (
+              <div>
+                <div className="flex items-baseline justify-between mb-1">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Daily budget</div>
+                  <div className="text-xs font-medium text-gray-900 dark:text-white">
+                    {formatCurrency(used)} / {formatCurrency(daily)}
+                  </div>
+                </div>
+                <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${barColor} transition-all`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                {near && (
+                  <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    Approaching daily cap
+                  </div>
+                )}
+              </div>
+            );
+          })() : (
+            <div className="text-xs text-gray-400">Loading limits…</div>
+          )}
         </div>
         <Link
           href={`/dashboard/accounts/${agent.parentAccount?.id || (agent as any).parent_account_id || '#'}`}
@@ -485,11 +522,20 @@ export default function AgentDetailPage() {
       {activeTab === 'a2a' && (
         <A2ATab agentId={agentId} />
       )}
+      {activeTab === 'wallet' && (
+        <WalletTab agentId={agentId} />
+      )}
+      {activeTab === 'ratings' && (
+        <RatingsTab agentId={agentId} />
+      )}
       {activeTab === 'permissions' && (
         <PermissionsTab agent={agent} />
       )}
       {activeTab === 'kya' && (
         <KYATab agent={agent} limits={limits} />
+      )}
+      {activeTab === 'scopes' && (
+        <ScopesTab agentId={agentId} />
       )}
       {activeTab === 'activity' && (
         <ActivityTab agentId={agentId} />
@@ -506,6 +552,512 @@ const permissionMatrix: Record<string, string[]> = {
   treasury: ['view', 'manage', 'rebalance'],
 };
 
+// Inline rating summary for overview card
+function AgentRatingBadge({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+  const { data: summary } = useTanstackQuery({
+    queryKey: ['agent-feedback-summary', agentId],
+    queryFn: async () => {
+      if (!api) return null;
+      const res = await fetch(`${api.baseUrl}/v1/agents/${agentId}/feedback/summary`, {
+        headers: { Authorization: `Bearer ${api.apiKey}` },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data;
+    },
+    enabled: !!api,
+  });
+
+  if (!summary || summary.total_reviews === 0) {
+    return <span className="text-sm text-gray-400">No reviews</span>;
+  }
+
+  const scoreColor = summary.avg_score >= 70
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : summary.avg_score >= 40
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-red-600 dark:text-red-400';
+
+  return (
+    <div className="flex items-center gap-2">
+      <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
+      <span className={`text-sm font-semibold ${scoreColor}`}>
+        {summary.avg_score !== null ? summary.avg_score : '--'}
+      </span>
+      <span className="text-xs text-gray-400">/ 100</span>
+      <span className="text-xs text-gray-400">({summary.total_reviews})</span>
+    </div>
+  );
+}
+
+const TIER_COLORS: Record<string, string> = {
+  A: 'text-emerald-600 dark:text-emerald-400',
+  B: 'text-blue-600 dark:text-blue-400',
+  C: 'text-yellow-600 dark:text-yellow-400',
+  D: 'text-orange-600 dark:text-orange-400',
+  E: 'text-red-600 dark:text-red-400',
+  F: 'text-gray-500 dark:text-gray-500',
+};
+
+function ReputationCard({ agentId }: { agentId: string }) {
+  const { apiUrl } = useApiConfig();
+  const apiFetch = useApiFetch();
+
+  const { data: reputation, isLoading } = useTanstackQuery({
+    queryKey: ['agent-reputation', agentId],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/reputation/${agentId}`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data ?? json;
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="animate-pulse space-y-3">
+          <div className="h-5 w-32 bg-gray-200 dark:bg-gray-800 rounded" />
+          <div className="h-12 w-24 bg-gray-200 dark:bg-gray-800 rounded" />
+          <div className="h-3 w-full bg-gray-200 dark:bg-gray-800 rounded-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!reputation) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-center gap-3 mb-2">
+          <Shield className="h-5 w-5 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Reputation</h3>
+        </div>
+        <p className="text-sm text-gray-400">No reputation data available yet.</p>
+      </div>
+    );
+  }
+
+  const score: number = reputation.score ?? reputation.trust_score ?? reputation.trustScore ?? 0;
+  const tier: string = reputation.tier ?? 'F';
+  const confidence: string = reputation.confidence ?? reputation.confidence_level ?? 'low';
+  const scorePct = Math.min((score / 1000) * 100, 100);
+  const dimensions: Array<{ name: string; score: number; weight: number; sources?: string[]; dataPoints?: number }> =
+    reputation.dimensions ?? [];
+
+  // Human-readable labels + descriptions for each dimension
+  const DIM_META: Record<string, { label: string; icon: string; desc: string }> = {
+    identity: {
+      label: 'Identity',
+      icon: '🛡️',
+      desc: 'On-chain NFT + KYA tier + account age + rating volume',
+    },
+    service_quality: {
+      label: 'Service Quality',
+      icon: '⭐',
+      desc: 'Buyer ratings, accept rate, completion history',
+    },
+    trade_volume: {
+      label: 'Trade Volume',
+      icon: '📈',
+      desc: 'Settled transaction history',
+    },
+    dispute_rate: {
+      label: 'Dispute Rate',
+      icon: '⚖️',
+      desc: 'Frequency of filed disputes',
+    },
+    age: {
+      label: 'Account Age',
+      icon: '📅',
+      desc: 'How long the agent has been active',
+    },
+  };
+
+  const SOURCE_LABELS: Record<string, string> = {
+    erc8004: 'ERC-8004 NFT',
+    a2a_feedback: 'A2A trade ratings',
+    ap2_mandates: 'AP2 payment mandates',
+    kya: 'KYA verification',
+    disputes: 'Dispute history',
+  };
+
+  const scoreColor =
+    score >= 800 ? 'text-emerald-600 dark:text-emerald-400' :
+    score >= 600 ? 'text-blue-600 dark:text-blue-400' :
+    score >= 400 ? 'text-yellow-600 dark:text-yellow-400' :
+    score >= 200 ? 'text-orange-600 dark:text-orange-400' :
+    'text-red-600 dark:text-red-400';
+
+  const barColor =
+    score >= 800 ? 'bg-emerald-500' :
+    score >= 600 ? 'bg-blue-500' :
+    score >= 400 ? 'bg-yellow-500' :
+    score >= 200 ? 'bg-orange-500' :
+    'bg-red-500';
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <Shield className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Reputation</h3>
+      </div>
+      <div className="flex items-end gap-4 mb-4">
+        <div className={`text-5xl font-bold tabular-nums ${scoreColor}`}>{score}</div>
+        <div className="mb-1">
+          <span className="text-sm text-gray-400">/ 1000</span>
+        </div>
+        <div className="ml-auto">
+          <span className={`text-3xl font-bold ${TIER_COLORS[tier] ?? TIER_COLORS['F']}`}>
+            {tier}
+          </span>
+          <span className="ml-1 text-xs text-gray-400 uppercase tracking-wide">tier</span>
+        </div>
+      </div>
+      <div className="h-2.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-3">
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${scorePct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-4">
+        <span className="flex items-center gap-3">
+          <span>Confidence: <span className="capitalize font-medium">{confidence}</span></span>
+          {typeof reputation.ratingCount === 'number' && reputation.ratingCount > 0 && (
+            <span>
+              <span className="font-medium">{reputation.ratingCount}</span>{' '}
+              rating{reputation.ratingCount === 1 ? '' : 's'}
+            </span>
+          )}
+        </span>
+        <span>0 — 1000</span>
+      </div>
+
+      {/* Collusion ring detector — flagged when the rating graph looks closed */}
+      {reputation.collusion && (
+        <div className={`mb-4 rounded-lg p-3 text-xs border ${
+          reputation.collusion.flagged
+            ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-800 dark:text-red-200'
+            : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 font-semibold">
+              {reputation.collusion.flagged ? '⚠️ Rating ring detected' : 'Rater diversity'}
+            </div>
+            {reputation.collusion.flagged && (
+              <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/60">
+                capped at C
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <div>
+              <div className="text-[10px] opacity-70 uppercase">Unique raters</div>
+              <div className="tabular-nums font-medium">
+                {reputation.collusion.uniqueRaters} / {reputation.collusion.totalRatings}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] opacity-70 uppercase">Top rater share</div>
+              <div className="tabular-nums font-medium">
+                {Math.round(reputation.collusion.topRaterShare * 100)}%
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] opacity-70 uppercase">Reciprocal</div>
+              <div className="tabular-nums font-medium">
+                {Math.round(reputation.collusion.reciprocalRatio * 100)}%
+              </div>
+            </div>
+            <div title="Fraction of raters' own raters that are inside this agent's rating circle — high value = closed subgraph">
+              <div className="text-[10px] opacity-70 uppercase">Ring coef</div>
+              <div className="tabular-nums font-medium">
+                {Math.round((reputation.collusion.ringCoefficient ?? 0) * 100)}%
+              </div>
+            </div>
+          </div>
+          {reputation.collusion.flagged && reputation.collusion.reason && (
+            <div className="mt-2 opacity-90">{reputation.collusion.reason}</div>
+          )}
+        </div>
+      )}
+
+      {/* Dimension breakdown — shows why the score is what it is */}
+      {dimensions.length > 0 && (
+        <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+            How it's calculated
+          </div>
+          <div className="space-y-3">
+            {dimensions.map((dim) => {
+              const meta = DIM_META[dim.name] ?? { label: dim.name, icon: '•', desc: '' };
+              const weightPct = Math.round(dim.weight * 100);
+              const contribution = Math.round(dim.score * dim.weight);
+              const dimPct = Math.min((dim.score / 1000) * 100, 100);
+              const dimColor =
+                dim.score >= 800 ? 'bg-emerald-500' :
+                dim.score >= 600 ? 'bg-blue-500' :
+                dim.score >= 400 ? 'bg-yellow-500' :
+                dim.score >= 200 ? 'bg-orange-500' : 'bg-red-500';
+              return (
+                <div key={dim.name} className="text-xs">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{meta.icon}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{meta.label}</span>
+                      <span className="text-gray-400">×</span>
+                      <span className="text-gray-500 dark:text-gray-400 font-medium">{weightPct}%</span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="tabular-nums font-semibold text-gray-900 dark:text-white">{dim.score}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className="tabular-nums font-semibold text-indigo-600 dark:text-indigo-400">+{contribution}</span>
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-1">
+                    <div className={`h-full rounded-full ${dimColor}`} style={{ width: `${dimPct}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                    <span>{meta.desc}</span>
+                    {dim.sources && dim.sources.length > 0 && (
+                      <span className="text-gray-400">
+                        {dim.sources.map((s) => SOURCE_LABELS[s] ?? s).join(', ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between text-xs">
+            <span className="text-gray-500 dark:text-gray-400">
+              Total: {dimensions.map((d, i) => (
+                <span key={d.name}>
+                  {i > 0 && ' + '}
+                  <span className="tabular-nums">{Math.round(d.score * d.weight)}</span>
+                </span>
+              ))}
+            </span>
+            <span className={`tabular-nums font-bold ${scoreColor}`}>= {score}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RatingHistoryCard({ agentId }: { agentId: string }) {
+  const { apiUrl } = useApiConfig();
+  const apiFetch = useApiFetch();
+
+  const { data: ratingsData, isLoading } = useTanstackQuery({
+    queryKey: ['agent-ratings-history', agentId],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/agents/${agentId}/ratings?limit=50`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data ?? json;
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="animate-pulse space-y-3">
+          <div className="h-5 w-40 bg-gray-200 dark:bg-gray-800 rounded" />
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-10 bg-gray-200 dark:bg-gray-800 rounded" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const ratings: any[] = Array.isArray(ratingsData) ? ratingsData : (ratingsData?.ratings ?? ratingsData?.items ?? []);
+  const aggregate = ratingsData?.aggregate ?? ratingsData?.summary ?? null;
+
+  const totalRatings = aggregate?.total ?? ratings.length;
+  const avgScore = aggregate?.avg_score ?? aggregate?.avgScore ?? (
+    ratings.length > 0
+      ? Math.round(ratings.reduce((s: number, r: any) => s + (r.score ?? r.rating ?? 0), 0) / ratings.length)
+      : null
+  );
+  const acceptCount = ratings.filter((r: any) => (r.action ?? r.outcome) === 'accept').length;
+  const rawAcceptRate = (aggregate?.accept_rate ?? aggregate?.acceptRate);
+  // API returns acceptRate as a percentage (e.g. 68), not a decimal (0.68).
+  // If > 1, it's already a percentage. If <= 1, it's a decimal ratio.
+  const acceptRate = totalRatings > 0
+    ? (rawAcceptRate != null
+        ? (rawAcceptRate > 1 ? rawAcceptRate / 100 : rawAcceptRate)
+        : (acceptCount / totalRatings))
+    : null;
+
+  if (ratings.length === 0 && !aggregate) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-center gap-3 mb-2">
+          <Star className="h-5 w-5 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Rating History</h3>
+        </div>
+        <p className="text-sm text-gray-400">No ratings recorded yet.</p>
+      </div>
+    );
+  }
+
+  const satisfactionBadge: Record<string, string> = {
+    excellent: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
+    acceptable: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    partial: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+    unacceptable: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <Star className="h-5 w-5 text-amber-500" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Rating History</h3>
+      </div>
+
+      {/* Aggregate stats */}
+      <div className="grid grid-cols-3 gap-4 mb-5">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalRatings}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total Ratings</div>
+        </div>
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">
+            {avgScore !== null ? avgScore : '—'}
+            {avgScore !== null && <span className="text-sm font-normal text-gray-400">/100</span>}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Avg Score</div>
+        </div>
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-3 text-center">
+          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+            {acceptRate !== null ? `${(acceptRate * 100).toFixed(0)}%` : '—'}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Accept Rate</div>
+        </div>
+      </div>
+
+      {/* Recent ratings table */}
+      {ratings.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-800">
+                <th className="text-left pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+                <th className="text-left pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Rated by</th>
+                <th className="text-left pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Score</th>
+                <th className="text-left pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Satisfaction</th>
+                <th className="text-left pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Action</th>
+                <th className="text-left pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Comment</th>
+                <th className="text-left pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">On-chain</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              {ratings.slice(0, 50).map((r: any, idx: number) => {
+                const dateStr = r.created_at ?? r.createdAt ?? r.rated_at ?? r.ratedAt ?? '';
+                const score = r.score ?? r.rating ?? null;
+                const satisfaction = r.satisfaction ?? r.satisfaction_level ?? '';
+                const action = r.action ?? r.outcome ?? '';
+                const comment = r.comment ?? r.feedback ?? '';
+                const rater = r.rater ?? null;
+                return (
+                  <tr key={r.id ?? idx} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                    <td className="py-2 pr-4 text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                      {dateStr ? format(new Date(dateStr), 'MMM d, yyyy') : '—'}
+                    </td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {rater ? (
+                        <a
+                          href={`/dashboard/agents/${rater.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                          title={rater.id}
+                        >
+                          {rater.name}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4 font-medium text-gray-900 dark:text-white">
+                      {score !== null ? score : '—'}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {satisfaction ? (
+                        <span className={`px-2 py-0.5 text-xs rounded-full capitalize ${satisfactionBadge[satisfaction] ?? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
+                          {satisfaction}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {action === 'accept' ? (
+                        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                          <ThumbsUp className="h-3.5 w-3.5" /> Accept
+                        </span>
+                      ) : action === 'reject' ? (
+                        <span className="flex items-center gap-1 text-red-500 dark:text-red-400">
+                          <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                        </span>
+                      ) : action ? (
+                        <span className="capitalize text-gray-500">{action}</span>
+                      ) : '—'}
+                    </td>
+                    <td className="py-2 pr-4 text-gray-500 dark:text-gray-400 max-w-[200px] truncate" title={comment}>
+                      {comment || '—'}
+                    </td>
+                    <td className="py-2 whitespace-nowrap">
+                      {r.attestation ? (
+                        <div className="flex items-center gap-2">
+                          {r.attestation.eascanUrl && (
+                            <a
+                              href={r.attestation.eascanUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                              title={`EAS attestation ${r.attestation.uid}`}
+                            >
+                              <ExternalLink className="h-3 w-3" /> EAS
+                            </a>
+                          )}
+                          {r.attestation.txHash && (
+                            <a
+                              href={`https://sepolia.basescan.org/tx/${r.attestation.txHash}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 hover:underline"
+                              title={`Tx ${r.attestation.txHash}`}
+                            >
+                              tx
+                            </a>
+                          )}
+                          {r.attestation.artifactHash && (
+                            <span
+                              className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500 font-mono"
+                              title={`Artifact SHA-256: ${r.attestation.artifactHash}`}
+                            >
+                              PoW {String(r.attestation.artifactHash).slice(0, 8)}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Overview Tab
 function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | null }) {
   return (
@@ -513,6 +1065,15 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Agent Details</h3>
+        <div className="mb-5 pb-5 border-b border-gray-100 dark:border-gray-800">
+          <dt className="text-gray-500 dark:text-gray-400 text-sm mb-3">Avatar</dt>
+          <AvatarUpload
+            agentId={agent.id}
+            agentName={agent.name}
+            currentUrl={(agent as any).avatarUrl ?? (agent as any).avatar_url ?? null}
+            size="lg"
+          />
+        </div>
         <dl className="space-y-4">
           <div className="flex justify-between">
             <dt className="text-gray-500 dark:text-gray-400">Agent ID</dt>
@@ -525,6 +1086,10 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
           <div className="flex justify-between items-center">
             <dt className="text-gray-500 dark:text-gray-400">KYA Tier</dt>
             <dd><KyaTierBadge tier={agent.kyaTier} /></dd>
+          </div>
+          <div className="flex justify-between items-center">
+            <dt className="text-gray-500 dark:text-gray-400">Rating</dt>
+            <dd><AgentRatingBadge agentId={agent.id} /></dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-gray-500 dark:text-gray-400">Created</dt>
@@ -540,6 +1105,60 @@ function OverviewTab({ agent, limits }: { agent: Agent; limits: AgentLimits | nu
         <RecentTransfers agentId={agent.id} />
       </div>
     </div>
+    {((agent as any).erc8004AgentId || (agent as any).walletAddress) && (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Shield className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">On-Chain Identity</h3>
+        </div>
+        <dl className="space-y-4">
+          {(agent as any).erc8004AgentId && (
+            <div className="flex justify-between items-center">
+              <dt className="text-gray-500 dark:text-gray-400">ERC-8004 Token</dt>
+              <dd className="flex items-center gap-2">
+                <span className="font-mono text-sm text-gray-900 dark:text-white">#{(agent as any).erc8004AgentId}</span>
+                <a
+                  href={`https://sepolia.basescan.org/nft/0x13b52042ef3e0e84d7ad49fdc1b71848b187a89c/${(agent as any).erc8004AgentId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline text-xs"
+                >
+                  View NFT &rarr;
+                </a>
+              </dd>
+            </div>
+          )}
+          {(agent as any).walletAddress && (
+            <div className="flex justify-between items-center">
+              <dt className="text-gray-500 dark:text-gray-400">Wallet</dt>
+              <dd className="flex items-center gap-2">
+                <span className="font-mono text-xs text-gray-900 dark:text-white">
+                  {(agent as any).walletAddress.slice(0, 6)}...{(agent as any).walletAddress.slice(-4)}
+                </span>
+                <a
+                  href={`https://sepolia.basescan.org/address/${(agent as any).walletAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline text-xs"
+                >
+                  Transfers &rarr;
+                </a>
+              </dd>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <dt className="text-gray-500 dark:text-gray-400">Network</dt>
+            <dd className="text-gray-900 dark:text-white">Base Sepolia</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-gray-500 dark:text-gray-400">Registry</dt>
+            <dd className="font-mono text-xs text-gray-500 dark:text-gray-400">
+              0x7177...d09A
+            </dd>
+          </div>
+        </dl>
+      </div>
+    )}
     <WalletSpendingPolicies agent={agent} />
     <LinkedPaymentInstruments agent={agent} />
     </div>
@@ -709,9 +1328,18 @@ function RecentTransfers({ agentId }: { agentId: string }) {
                 </div>
               </div>
               <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {formatCurrency(tx.amount, tx.currency)}
-                </span>
+                {/* Show the attempted amount for failed/cancelled rows
+                    as muted-and-strikethrough so users understand no
+                    money moved there. Completed rows render bold. */}
+                {tx.amount > 0 && (
+                  <span className={
+                    tx.status === 'completed' || tx.status === 'confirmed'
+                      ? 'text-sm font-medium text-gray-900 dark:text-white'
+                      : 'text-xs text-gray-400 line-through'
+                  }>
+                    {formatCurrency(tx.amount, tx.currency)}
+                  </span>
+                )}
                 <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getStatusColor(tx.status)}`}>
                   {tx.status}
                 </span>
@@ -779,16 +1407,32 @@ function WalletSpendingPolicies({ agent }: { agent: Agent }) {
       <div className="space-y-4">
         {wallets.map((wallet: any) => {
           const policy = wallet.spending_policy || wallet.spendingPolicy;
+          const addr = wallet.wallet_address || wallet.walletAddress || wallet.address;
+          const network = wallet.network;
+          const provider = wallet.provider;
+          const walletName = wallet.name || (provider === 'tempo' ? 'Tempo Wallet' : provider === 'circle' ? 'Circle Wallet' : 'Wallet');
           return (
             <div key={wallet.id} className="border border-gray-200 dark:border-gray-800 rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <div>
-                  <span className="font-medium text-gray-900 dark:text-white">{wallet.name}</span>
+                <div className="flex items-center gap-2">
+                  <Link href={`/dashboard/wallets/${wallet.id}`} className="font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 underline-offset-2 hover:underline">
+                    {walletName}
+                  </Link>
+                  {network && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium">
+                      {network}
+                    </span>
+                  )}
                   {wallet.purpose && (
-                    <span className="ml-2 text-xs text-muted-foreground">{wallet.purpose}</span>
+                    <span className="text-xs text-muted-foreground">{wallet.purpose}</span>
                   )}
                 </div>
-                <span className="text-sm font-medium">{formatCurrency(wallet.balance, wallet.currency)}</span>
+                <div className="text-right">
+                  <span className="text-sm font-medium">{formatCurrency(wallet.balance, wallet.currency)}</span>
+                  {addr && addr.startsWith('0x') && (
+                    <div className="text-[10px] font-mono text-gray-400 mt-0.5">{addr.slice(0, 6)}...{addr.slice(-4)}</div>
+                  )}
+                </div>
               </div>
               {policy ? (
                 <div className="flex flex-wrap gap-2 mt-2">
@@ -821,6 +1465,172 @@ function WalletSpendingPolicies({ agent }: { agent: Agent }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Ratings Tab — Feedback summary + recent reviews
+function RatingsTab({ agentId }: { agentId: string }) {
+  const api = useApiClient();
+
+  const { data: summary, isLoading: summaryLoading } = useTanstackQuery({
+    queryKey: ['agent-feedback-summary', agentId],
+    queryFn: async () => {
+      if (!api) return null;
+      const res = await fetch(`${api.baseUrl}/v1/agents/${agentId}/feedback/summary`, {
+        headers: { Authorization: `Bearer ${api.apiKey}` },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data;
+    },
+    enabled: !!api,
+  });
+
+  const { data: recentFeedback, isLoading: feedbackLoading } = useTanstackQuery({
+    queryKey: ['agent-feedback-list', agentId],
+    queryFn: async () => {
+      if (!api) return [];
+      const res = await fetch(`${api.baseUrl}/v1/agents/${agentId}/feedback?limit=20`, {
+        headers: { Authorization: `Bearer ${api.apiKey}` },
+      });
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || [];
+    },
+    enabled: !!api,
+  });
+
+  const isLoading = summaryLoading || feedbackLoading;
+
+  if (isLoading) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
+        <div className="text-gray-500">Loading ratings...</div>
+      </div>
+    );
+  }
+
+  if (!summary || summary.total_reviews === 0) {
+    return (
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center">
+        <Star className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No ratings yet</h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          This agent hasn&apos;t received any feedback from callers.
+        </p>
+      </div>
+    );
+  }
+
+  const satisfactionColors: Record<string, string> = {
+    excellent: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
+    acceptable: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    partial: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+    unacceptable: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+  };
+
+  const dist = summary.satisfaction_distribution || {};
+  const total = summary.total_reviews;
+
+  return (
+    <div className="space-y-6">
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Avg Score</p>
+          <p className="text-3xl font-bold mt-1">
+            {summary.avg_score !== null ? summary.avg_score : '--'}
+            <span className="text-sm font-normal text-gray-400">/100</span>
+          </p>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Total Reviews</p>
+          <p className="text-3xl font-bold mt-1">{total}</p>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Acceptance Rate</p>
+          <p className="text-3xl font-bold mt-1 text-emerald-600">
+            {((1 - summary.rejection_rate) * 100).toFixed(0)}%
+          </p>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-5">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Rejection Rate</p>
+          <p className="text-3xl font-bold mt-1 text-red-600">
+            {(summary.rejection_rate * 100).toFixed(0)}%
+          </p>
+        </div>
+      </div>
+
+      {/* Satisfaction Distribution */}
+      <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Satisfaction Distribution</h3>
+        <div className="space-y-3">
+          {(['excellent', 'acceptable', 'partial', 'unacceptable'] as const).map((level) => {
+            const count = dist[level] || 0;
+            const pct = total > 0 ? (count / total) * 100 : 0;
+            return (
+              <div key={level} className="flex items-center gap-3">
+                <span className="text-sm capitalize w-28 text-gray-600 dark:text-gray-400">{level}</span>
+                <div className="flex-1 h-6 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${satisfactionColors[level].split(' ')[0]}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="text-sm font-medium w-16 text-right text-gray-700 dark:text-gray-300">
+                  {count} ({pct.toFixed(0)}%)
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Recent Feedback */}
+      {recentFeedback && recentFeedback.length > 0 && (
+        <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Reviews</h3>
+          <div className="space-y-3">
+            {recentFeedback.map((fb: any) => (
+              <div
+                key={fb.id}
+                className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-800"
+              >
+                {fb.action === 'accept' ? (
+                  <ThumbsUp className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                ) : (
+                  <ThumbsDown className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {fb.satisfaction && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${satisfactionColors[fb.satisfaction] || 'bg-gray-100 text-gray-700'}`}>
+                        {fb.satisfaction}
+                      </span>
+                    )}
+                    {fb.score !== null && fb.score !== undefined && (
+                      <span className="text-xs text-gray-500 font-mono">{fb.score}/100</span>
+                    )}
+                    {fb.skill_id && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500">
+                        {fb.skill_id}
+                      </span>
+                    )}
+                  </div>
+                  {fb.comment && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{fb.comment}</p>
+                  )}
+                </div>
+                <span className="text-[10px] text-gray-400 whitespace-nowrap shrink-0">
+                  {format(new Date(fb.created_at), 'MMM d, HH:mm')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1387,6 +2197,7 @@ function KYATab({ agent, limits }: { agent: Agent; limits: AgentLimits | null })
 // A2A Tab — shows agent card, inbound/outbound tasks
 function A2ATab({ agentId }: { agentId: string }) {
   const api = useApiClient();
+  const { apiUrl } = useApiConfig();
   const [showCard, setShowCard] = useState(false);
 
   // Fetch agent card
@@ -1413,9 +2224,8 @@ function A2ATab({ agentId }: { agentId: string }) {
   });
 
   const tasks = (tasksData as any)?.data || [];
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-  const cardUrl = `${baseUrl}/a2a/agents/${agentId}/card`;
-  const rpcUrl = `${baseUrl}/a2a/${agentId}`;
+  const cardUrl = `${apiUrl}/a2a/agents/${agentId}/card`;
+  const rpcUrl = `${apiUrl}/a2a/${agentId}`;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -1499,7 +2309,7 @@ function A2ATab({ agentId }: { agentId: string }) {
           </pre>
         )}
         {!showCard && cardData && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
             <div>
               <dt className="text-gray-500 dark:text-gray-400">Skills</dt>
               <dd className="font-medium text-gray-900 dark:text-white">{(cardData as any).skills?.length || 0}</dd>
@@ -1515,6 +2325,10 @@ function A2ATab({ agentId }: { agentId: string }) {
             <div>
               <dt className="text-gray-500 dark:text-gray-400">Version</dt>
               <dd className="font-medium text-gray-900 dark:text-white">{(cardData as any).version || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500 dark:text-gray-400">Rating</dt>
+              <dd><AgentRatingBadge agentId={agentId} /></dd>
             </div>
           </div>
         )}
@@ -1566,6 +2380,252 @@ function A2ATab({ agentId }: { agentId: string }) {
   );
 }
 
+// Epic 82 Story 82.7 — per-agent scopes tab. Shows just this agent's
+// active grants + recent scope-lifecycle audit events. Read-only here;
+// for issuing/approving requests use /dashboard/security/scopes (or
+// the deep-link button at the top of this tab pre-filters to this id).
+
+interface ScopeGrantMini {
+  id: string;
+  scope: 'tenant_read' | 'tenant_write' | 'treasury';
+  lifecycle: 'one_shot' | 'standing';
+  status: 'active' | 'consumed' | 'revoked' | 'expired';
+  purpose: string;
+  granted_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  use_count: number;
+  environment?: 'test' | 'live' | null;
+}
+
+interface ScopeAuditMini {
+  id: string;
+  action:
+    | 'scope_requested'
+    | 'scope_granted'
+    | 'scope_denied'
+    | 'scope_used'
+    | 'scope_expired'
+    | 'scope_revoked'
+    | 'scope_heartbeat';
+  scope: string | null;
+  actor_type: string;
+  request_summary: Record<string, unknown> | null;
+  created_at: string;
+}
+
+const SCOPE_TAB_COLORS: Record<string, string> = {
+  tenant_read: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200',
+  tenant_write: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200',
+  treasury: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200',
+};
+
+const SCOPE_TAB_ACTION_COLORS: Record<string, string> = {
+  scope_requested: 'text-slate-600 dark:text-slate-300',
+  scope_granted: 'text-green-600 dark:text-green-400',
+  scope_denied: 'text-red-600 dark:text-red-400',
+  scope_used: 'text-blue-600 dark:text-blue-400',
+  scope_expired: 'text-slate-500 dark:text-slate-400',
+  scope_revoked: 'text-orange-600 dark:text-orange-400',
+  scope_heartbeat: 'text-slate-400',
+};
+
+function fmtRelative(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s ago`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)}h ago`;
+  return `${Math.round(ms / 86_400_000)}d ago`;
+}
+
+function fmtRemaining(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'expired';
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s left`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m left`;
+  if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)}h left`;
+  return `${Math.round(ms / 86_400_000)}d left`;
+}
+
+function ScopesTab({ agentId }: { agentId: string }) {
+  const apiFetch = useApiFetch();
+  const { apiUrl } = useApiConfig();
+  const queryClient = useQueryClient();
+
+  async function unwrap<T>(res: Response): Promise<T> {
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const json = await res.json();
+    return (json?.data ?? json) as T;
+  }
+
+  const grantsQuery = useTanstackQuery({
+    queryKey: ['agent-scopes', 'grants', agentId],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/organization/scopes?agent_id=${agentId}`);
+      return unwrap<{ grants: ScopeGrantMini[] }>(res);
+    },
+    refetchInterval: 30_000,
+  });
+
+  const auditQuery = useTanstackQuery({
+    queryKey: ['agent-scopes', 'audit', agentId],
+    queryFn: async () => {
+      const res = await apiFetch(
+        `${apiUrl}/v1/organization/scopes/audit?agent_id=${agentId}&limit=100`,
+      );
+      return unwrap<{ events: ScopeAuditMini[] }>(res);
+    },
+    refetchInterval: 30_000,
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: async (grantId: string) => {
+      const res = await apiFetch(`${apiUrl}/v1/organization/scopes/${grantId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success('Grant revoked');
+      queryClient.invalidateQueries({ queryKey: ['agent-scopes'] });
+    },
+    onError: (err: any) => toast.error(err.message ?? 'Revoke failed'),
+  });
+
+  const grants = grantsQuery.data?.grants ?? [];
+  const events = auditQuery.data?.events ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Capability grants this agent currently holds, plus a complete history of every
+          request, decision, use, and revocation. Issuing new grants happens on the global
+          scopes dashboard.
+        </p>
+        <Link
+          href={`/dashboard/security/scopes`}
+          className="shrink-0 inline-flex items-center gap-1 rounded-md border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+        >
+          Issue / approve →
+        </Link>
+      </div>
+
+      {/* Active grants */}
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800">
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            Active grants ({grants.length})
+          </h3>
+        </div>
+        {grants.length === 0 ? (
+          <div className="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            No active grants. This agent is operating at default <code className="rounded bg-gray-100 dark:bg-gray-800 px-1 py-0.5">agent</code> scope.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <tr>
+                <th className="p-3">Scope</th>
+                <th className="p-3">Lifecycle</th>
+                <th className="p-3">Purpose</th>
+                <th className="p-3">Used</th>
+                <th className="p-3">Expires</th>
+                <th className="p-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+              {grants.map((g) => (
+                <tr key={g.id} className="hover:bg-gray-50 dark:hover:bg-gray-900">
+                  <td className="p-3">
+                    <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${SCOPE_TAB_COLORS[g.scope]}`}>
+                      {g.scope}
+                    </span>
+                  </td>
+                  <td className="p-3 text-xs text-gray-600 dark:text-gray-300">{g.lifecycle}</td>
+                  <td className="p-3 text-gray-700 dark:text-gray-200">{g.purpose}</td>
+                  <td className="p-3 text-xs text-gray-500">
+                    {g.use_count}× {g.last_used_at ? `· last ${fmtRelative(g.last_used_at)}` : ''}
+                  </td>
+                  <td className="p-3 text-xs text-gray-500">{fmtRemaining(g.expires_at)}</td>
+                  <td className="p-3 text-right">
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Revoke ${g.scope} grant?`)) {
+                          revokeMutation.mutate(g.id);
+                        }
+                      }}
+                      disabled={revokeMutation.isPending}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Audit feed */}
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800">
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            Recent activity ({events.length})
+          </h3>
+        </div>
+        {events.length === 0 ? (
+          <div className="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            No scope events yet.
+          </div>
+        ) : (
+          <ul className="max-h-[480px] divide-y divide-gray-200 dark:divide-gray-800 overflow-y-auto">
+            {events.map((e) => {
+              const summary = e.request_summary as any;
+              return (
+                <li key={e.id} className="flex flex-wrap items-center gap-3 p-3 text-xs">
+                  <span className="w-16 shrink-0 text-gray-400">{fmtRelative(e.created_at)}</span>
+                  <span className={`w-24 shrink-0 font-medium ${SCOPE_TAB_ACTION_COLORS[e.action] ?? ''}`}>
+                    {e.action.replace('scope_', '')}
+                  </span>
+                  {e.scope && (
+                    <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${SCOPE_TAB_COLORS[e.scope]}`}>
+                      {e.scope}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-gray-400">via {e.actor_type}</span>
+                  {summary?.purpose ? (
+                    <span className="truncate text-gray-700 dark:text-gray-300">
+                      {String(summary.purpose)}
+                    </span>
+                  ) : null}
+                  {summary?.reason ? (
+                    <span className="truncate text-red-600 dark:text-red-400">
+                      reason: {String(summary.reason)}
+                    </span>
+                  ) : null}
+                  {summary?.route ? (
+                    <span className="font-mono text-[10px] text-gray-500">{String(summary.route)}</span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ActivityTab({ agentId }: { agentId: string }) {
   const api = useApiClient();
 
@@ -1597,6 +2657,10 @@ function ActivityTab({ agentId }: { agentId: string }) {
       currency: tx.currency || 'USDC',
       recipient: tx.to_account_name || undefined,
       reference: tx.id?.slice(0, 12),
+      // External x402: agent paid an on-chain address outside the Sly ledger.
+      externalAddress: tx.external?.to_address || undefined,
+      settlementNetwork: tx.external?.settlement_network || undefined,
+      txHash: tx.external?.tx_hash || undefined,
     },
   }));
 
@@ -1623,3 +2687,128 @@ function ActivityTab({ agentId }: { agentId: string }) {
     </div>
   );
 }
+
+// ─── Agent Readiness Pill ──────────────────────────────
+// Compact "can this agent actually shop?" glance next to the status pill.
+// Rolls up four checks (provisioned EOA · on-chain funds · auto-refill ·
+// KYA tier) into a single Ready / Partial / Setup / Blocked state, with a
+// hover popover that spells each check out. Keeps tenants from having to
+// flip between the Wallet tab, KYA tab, and agent detail to confirm an
+// agent can run.
+
+function AgentReadinessPill({
+  agentId,
+  agentStatus,
+  kyaTier,
+}: {
+  agentId: string;
+  agentStatus: string | undefined;
+  kyaTier: number | undefined;
+}) {
+  const api = useApiClient();
+  const apiFetch = useApiFetch();
+  const { apiUrl, apiEnvironment } = useApiConfig();
+
+  // Agent wallets — want to know if an EOA exists and its balance.
+  const { data: walletData } = useTanstackQuery({
+    queryKey: ['readiness-wallet', agentId, apiEnvironment],
+    queryFn: async () => {
+      if (!api) return null;
+      try {
+        const raw: any = await api.agents.getWallet(agentId);
+        return raw?.data ?? raw ?? null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!api,
+    staleTime: 30_000,
+  });
+
+  // Auto-refill policy — unlocks the "has-fallback-funding" check even
+  // when the EOA balance is currently low.
+  const { data: autoRefill } = useTanstackQuery({
+    queryKey: ['readiness-auto-refill', agentId, apiEnvironment],
+    queryFn: async () => {
+      try {
+        const res = await apiFetch(`${apiUrl}/v1/agents/${agentId}/auto-refill`);
+        if (!res.ok) return null;
+        const body = await res.json();
+        return body.data || body;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!apiUrl,
+    staleTime: 60_000,
+  });
+
+  const eoa = (walletData?.all_wallets || []).find((w: any) => w.wallet_type === 'agent_eoa');
+  const provisioned = !!eoa;
+  const eoaBalance = eoa ? Number(eoa.balance || 0) : 0;
+  const hasAutoRefill = !!autoRefill?.enabled;
+  const funded = eoaBalance > 0 || hasAutoRefill;
+  const isActive = agentStatus === 'active';
+  const tier = typeof kyaTier === 'number' ? kyaTier : null;
+
+  const [state, label, cls] = ((): [string, string, string] => {
+    if (!isActive) return ['blocked', 'Blocked', 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'];
+    if (provisioned && funded) return ['ready', 'Ready to shop', 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'];
+    if (provisioned) return ['partial', 'Needs funding', 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400'];
+    return ['setup', 'Setup needed', 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'];
+  })();
+
+  const [showPopover, setShowPopover] = useState(false);
+
+  return (
+    <div className="relative" onMouseEnter={() => setShowPopover(true)} onMouseLeave={() => setShowPopover(false)}>
+      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full cursor-help ${cls}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${
+          state === 'ready' ? 'bg-emerald-500'
+          : state === 'partial' ? 'bg-amber-500'
+          : state === 'blocked' ? 'bg-red-500'
+          : 'bg-gray-400'
+        }`} />
+        {label}
+      </span>
+      {showPopover && (
+        <div className="absolute right-0 top-full mt-2 z-50 w-72 p-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl">
+          <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Readiness</div>
+          <ul className="space-y-1.5 text-sm">
+            <ReadinessLine ok={isActive} label={isActive ? 'Agent is active' : `Agent is ${agentStatus}`} />
+            <ReadinessLine ok={provisioned} label={provisioned ? 'x402 signing key provisioned' : 'No x402 signing key'} />
+            <ReadinessLine
+              ok={funded}
+              label={
+                eoaBalance > 0
+                  ? `Funded (${eoaBalance.toFixed(3)} USDC on-chain)`
+                  : hasAutoRefill
+                    ? 'Auto-refill enabled (falls back to Circle master)'
+                    : 'No funds; auto-refill off'
+              }
+            />
+            <ReadinessLine
+              ok={tier != null}
+              label={tier != null ? `KYA Tier ${tier}` : 'KYA tier unknown'}
+            />
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadinessLine({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <li className="flex items-start gap-2">
+      {ok
+        ? <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+        : <XCircle className="h-4 w-4 text-gray-400 flex-shrink-0 mt-0.5" />
+      }
+      <span className={ok ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'}>
+        {label}
+      </span>
+    </li>
+  );
+}
+

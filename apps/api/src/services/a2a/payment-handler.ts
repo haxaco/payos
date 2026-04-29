@@ -11,6 +11,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { A2ATaskService } from './task-service.js';
 import type { InputRequiredContext } from './types.js';
 import { authorizeWalletTransfer, isOnChainCapable } from '../wallet-settlement.js';
+import { ContractPolicyEngine } from '../contract-policy-engine.js';
+import { CounterpartyExposureService } from '../counterparty-exposure.service.js';
 
 interface PaymentRequirement {
   amount: number;
@@ -46,20 +48,34 @@ export class A2APaymentHandler {
     amount: number,
     currency: string = 'USDC',
   ): Promise<{ success: boolean; transferId?: string; txHash?: string; error?: string }> {
-    // Fetch both agents' wallets
+    // Resolve each agent's tenant_id (supports cross-tenant payments)
+    const [fromAgentResult, toAgentResult] = await Promise.all([
+      this.supabase.from('agents').select('id, tenant_id').eq('id', fromAgentId).single(),
+      this.supabase.from('agents').select('id, tenant_id').eq('id', toAgentId).single(),
+    ]);
+
+    if (!fromAgentResult.data || !toAgentResult.data) {
+      return { success: false, error: 'One or both agents not found' };
+    }
+
+    const fromTenantId = fromAgentResult.data.tenant_id;
+    const toTenantId = toAgentResult.data.tenant_id;
+    const isCrossTenant = fromTenantId !== toTenantId;
+
+    // Fetch both agents' wallets using their respective tenant_ids
     const [fromWalletResult, toWalletResult] = await Promise.all([
       this.supabase
         .from('wallets')
         .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id')
         .eq('managed_by_agent_id', fromAgentId)
-        .eq('tenant_id', this.tenantId)
+        .eq('tenant_id', fromTenantId)
         .limit(1)
         .maybeSingle(),
       this.supabase
         .from('wallets')
         .select('id, wallet_address, wallet_type, provider_wallet_id, balance, owner_account_id')
         .eq('managed_by_agent_id', toAgentId)
-        .eq('tenant_id', this.tenantId)
+        .eq('tenant_id', toTenantId)
         .limit(1)
         .maybeSingle(),
     ]);
@@ -74,6 +90,63 @@ export class A2APaymentHandler {
     // Check balance
     if (parseFloat(fromWallet.balance) < amount) {
       return { success: false, error: `Insufficient balance: ${fromWallet.balance} < ${amount}` };
+    }
+
+    // Epic 18: Contract policy engine check before payment
+    try {
+      const policyEngine = new ContractPolicyEngine(this.supabase);
+      const policyResult = await policyEngine.evaluate({
+        walletId: fromWallet.id,
+        agentId: fromAgentId,
+        tenantId: fromTenantId,
+        amount,
+        currency,
+        actionType: 'payment',
+        counterpartyAgentId: toAgentId,
+        protocol: 'a2a',
+        correlationId: taskId,
+      });
+
+      if (policyResult.decision === 'deny') {
+        return {
+          success: false,
+          error: `Contract policy denied: ${policyResult.reasons.join('; ')}`,
+        };
+      }
+
+      if (policyResult.decision === 'escalate') {
+        // Wire to existing approval workflow
+        try {
+          const { ApprovalWorkflowService } = await import('../approval-workflow.js');
+          const approvalService = new ApprovalWorkflowService(this.supabase);
+          const approval = await approvalService.createApproval({
+            tenantId: this.tenantId,
+            walletId: fromWallet.id,
+            agentId: fromAgentId,
+            protocol: 'x402', // closest match for A2A internal payments
+            amount,
+            currency,
+            recipient: { name: `agent:${toAgentId}` },
+            paymentContext: {
+              task_id: taskId,
+              from_agent_id: fromAgentId,
+              to_agent_id: toAgentId,
+              escalation_reasons: policyResult.reasons,
+            },
+          });
+          return {
+            success: false,
+            error: `Payment requires approval (${approval.id}): ${policyResult.reasons.join('; ')}`,
+          };
+        } catch (approvalErr: any) {
+          console.warn('[A2A-policy] Approval creation failed, denying payment:', approvalErr.message);
+          return { success: false, error: `Policy escalation failed: ${approvalErr.message}` };
+        }
+      }
+    } catch (policyErr: any) {
+      // Policy engine failure is non-fatal for backwards compatibility
+      // Log but allow payment to proceed
+      console.warn('[A2A-policy] Contract policy engine error (non-fatal):', policyErr.message);
     }
 
     const onChainCapable = isOnChainCapable(fromWallet, toWallet.wallet_address);
@@ -115,7 +188,8 @@ export class A2APaymentHandler {
     const { data: transfer, error: transferError } = await this.supabase
       .from('transfers')
       .insert({
-        tenant_id: this.tenantId,
+        tenant_id: fromTenantId,
+        destination_tenant_id: toTenantId,
         from_account_id: fromWallet.owner_account_id,
         to_account_id: toWallet.owner_account_id,
         amount,
@@ -133,6 +207,7 @@ export class A2APaymentHandler {
           to_agent_id: toAgentId,
           wallet_id: fromWallet.id,
           provider_wallet_id: toWallet.id,
+          cross_tenant: isCrossTenant,
         },
       })
       .select('id')
@@ -145,7 +220,8 @@ export class A2APaymentHandler {
     // Fast ledger authorization — on-chain deferred to async worker (Epic 38, Story 38.2)
     const authorization = await authorizeWalletTransfer({
       supabase: this.supabase,
-      tenantId: this.tenantId,
+      tenantId: fromTenantId,
+      destinationTenantId: toTenantId,
       sourceWallet: fromWallet,
       destinationWallet: toWallet,
       amount,
@@ -157,6 +233,7 @@ export class A2APaymentHandler {
         to_agent_id: toAgentId,
         wallet_id: fromWallet.id,
         provider_wallet_id: toWallet.id,
+        cross_tenant: isCrossTenant,
       },
     });
 
@@ -187,6 +264,43 @@ export class A2APaymentHandler {
 
     // Link payment to task
     await this.taskService.linkPayment(taskId, transfer.id);
+
+    // Emit audit event for timeline visibility
+    const { taskEventBus } = await import('./task-event-bus.js');
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+    taskEventBus.emitTask(taskId, {
+      type: 'payment',
+      taskId,
+      data: {
+        action: 'transfer_created',
+        transferId: transfer.id,
+        amount,
+        currency,
+        settlement: onChainCapable ? 'on_chain' : 'ledger',
+      },
+      timestamp: new Date().toISOString(),
+    }, { tenantId: this.tenantId, agentId: taskRow?.agent_id || '', actorType: 'system' });
+
+    // Epic 18: Record counterparty exposure after successful payment
+    try {
+      const exposureService = new CounterpartyExposureService(this.supabase);
+      await exposureService.recordExposure({
+        tenantId: this.tenantId,
+        walletId: fromWallet.id,
+        agentId: fromAgentId,
+        counterparty: { counterpartyAgentId: toAgentId },
+        amount,
+        currency,
+        type: 'payment',
+      });
+    } catch (expErr: any) {
+      console.warn('[A2A-exposure] Failed to record exposure (non-fatal):', expErr.message);
+    }
 
     return { success: true, transferId: transfer.id };
   }
@@ -231,6 +345,25 @@ export class A2APaymentHandler {
         text: `This task requires a payment of ${requirement.amount} ${requirement.currency}. Please submit payment to proceed.`,
       },
     ]);
+
+    // Emit audit event for timeline visibility
+    const { taskEventBus } = await import('./task-event-bus.js');
+    const { data: task } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+    taskEventBus.emitTask(taskId, {
+      type: 'payment',
+      taskId,
+      data: {
+        action: 'payment_requested',
+        amount: requirement.amount,
+        currency: requirement.currency,
+      },
+      timestamp: new Date().toISOString(),
+    }, { tenantId: this.tenantId, agentId: task?.agent_id || '', actorType: 'system' });
   }
 
   /**
@@ -315,6 +448,27 @@ export class A2APaymentHandler {
       },
     ]);
 
+    // Emit audit event for timeline visibility
+    const { taskEventBus } = await import('./task-event-bus.js');
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+    taskEventBus.emitTask(taskId, {
+      type: 'payment',
+      taskId,
+      data: {
+        action: 'payment_verified',
+        paymentType: 'x402',
+        transferId: transfer.id,
+        amount: transfer.amount,
+        currency: transfer.currency,
+      },
+      timestamp: new Date().toISOString(),
+    }, { tenantId: this.tenantId, agentId: taskRow?.agent_id || '', actorType: 'system' });
+
     return { verified: true };
   }
 
@@ -349,6 +503,26 @@ export class A2APaymentHandler {
       .eq('tenant_id', this.tenantId);
 
     await this.taskService.updateTaskState(taskId, 'working', 'Mandate verified, processing task');
+
+    // Emit audit event for timeline visibility
+    const { taskEventBus } = await import('./task-event-bus.js');
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+    taskEventBus.emitTask(taskId, {
+      type: 'payment',
+      taskId,
+      data: {
+        action: 'payment_verified',
+        paymentType: 'ap2',
+        mandateId,
+      },
+      timestamp: new Date().toISOString(),
+    }, { tenantId: this.tenantId, agentId: taskRow?.agent_id || '', actorType: 'system' });
+
     return { verified: true };
   }
 
@@ -369,6 +543,28 @@ export class A2APaymentHandler {
 
     await this.taskService.linkPayment(taskId, transferId);
     await this.taskService.updateTaskState(taskId, 'working', 'Payment verified, processing task');
+
+    // Emit audit event for timeline visibility
+    const { taskEventBus } = await import('./task-event-bus.js');
+    const { data: taskRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('agent_id')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+    taskEventBus.emitTask(taskId, {
+      type: 'payment',
+      taskId,
+      data: {
+        action: 'payment_verified',
+        paymentType: 'wallet',
+        transferId,
+        amount: transfer.amount,
+        currency: transfer.currency,
+      },
+      timestamp: new Date().toISOString(),
+    }, { tenantId: this.tenantId, agentId: taskRow?.agent_id || '', actorType: 'system' });
+
     return { verified: true };
   }
 }

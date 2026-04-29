@@ -1,0 +1,87 @@
+---
+title: "apps/api"
+description: "The Hono API server — primary product surface."
+---
+
+The API server is the primary product. It terminates partner API calls, agent requests, and internal dashboard traffic.
+
+## Tech
+
+- **Hono** — HTTP framework
+- **Supabase** — Postgres + Auth
+- **@hono/zod-openapi** — spec generation (migration in progress)
+- **Fluid Compute** on Vercel — deployment target
+
+## Entry points
+
+- `src/index.ts` — HTTP server startup
+- `src/worker.ts` — background workers (scheduled transfers, webhook delivery, stream monitor)
+- `src/app.ts` — Hono app + middleware + route mounting
+
+## Route organization
+
+Routes live in `src/routes/`. Each file is one resource or one protocol:
+
+- CRUD resources: `accounts.ts`, `agents.ts`, `wallets.ts`, `transfers.ts`, `streams.ts`, `quotes.ts`
+- Protocols: `ucp.ts`, `acp.ts`, `ap2.ts`, `x402-*.ts`, `a2a.ts`, `mcp.ts`, `mpp.ts`
+- Webhooks: `webhooks.ts`, `webhooks/*.ts`
+- Admin: `round-viewer.ts`, `beta-admin.ts`
+- Auth: `auth.ts`, `agent-connect.ts`, `api-keys.ts`, `portal-tokens.ts`
+
+## Migration to OpenAPI-driven routes
+
+New work happens under `src/routes/openapi/*.ts` using `@hono/zod-openapi`. Each route declared via `createRoute()` with typed request/response schemas. Both the spec and the runtime validation come from the same Zod definitions — no drift.
+
+Migration status (as of 2026-04):
+- ✅ x402 endpoints (PoC)
+- ⬜ UCP, ACP, AP2, A2A, MCP (planned)
+- ⬜ CRUD resources (deferred to after protocols)
+
+See [protocol-internals](/protocol-internals/ucp) for per-protocol migration notes.
+
+## Middleware stack
+
+In order (from `src/app.ts`):
+
+1. `requestId` — generate per-request UUID
+2. `securityHeaders` — CSP, X-Frame-Options, HSTS
+3. `cors` — configurable via `CORS_ORIGINS`
+4. `logger` (dev only)
+5. `prettyJSON` (dev only)
+6. `rateLimiter` — 100 req/min/IP general, 5/min on auth
+7. `authMiddleware` (for `/v1/*`) — populates `RequestContext`
+8. `idempotencyMiddleware` — for writes with `Idempotency-Key` header
+9. Route handlers
+10. `errorHandler` — catches thrown errors, shapes response
+
+## Services
+
+`src/services/` holds reusable business logic:
+
+- `balances/*` — balance math (available, pending, holds)
+- `streams/*` — runway calc, flow rate, alerts
+- `kyc/*` — Persona integration, enterprise-review, sanctions screening
+- `ops/*` — operation tracking (audit log)
+- `tier-limits.ts` — KYA tier lookup + effective limits
+- `beta-access.ts` — first-event gating
+
+Handlers call services; services call Supabase. Services are pure-ish (the DB is the only side effect).
+
+## Testing
+
+- `tests/unit/` — fast, mocked Supabase. Run via `pnpm test:unit`
+- `tests/integration/` — real Supabase. Run via `INTEGRATION=true pnpm test:integration`
+- Every RLS-adjacent change gets an integration test that tries to violate RLS
+
+## Deployment
+
+Deployed to Vercel under Fluid Compute. The HTTP server (`src/index.ts`) runs as a serverless function; the worker (`src/worker.ts`) runs as a separate function cluster with workers gated by env vars.
+
+Envs: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `API_PORT`, `CORS_ORIGINS`, plus feature flags for workers.
+
+## See also
+
+- [Auth middleware](/engineering/auth-middleware)
+- [Database + RLS](/engineering/database-rls)
+- [Background workers](/engineering/background-workers)
+- [RequestContext](/engineering/request-context)

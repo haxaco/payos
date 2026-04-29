@@ -7,7 +7,7 @@
  */
 
 import { getEnvironment, isServiceEnabled, getServiceConfig } from '../../config/environment.js';
-import { CircleClient, getCircleClient, createCircleClient, CircleApiClientError } from './client.js';
+import { CircleClient, getCircleClient, getCircleLiveClient, getCircleTestClient, createCircleClient, CircleApiClientError } from './client.js';
 import { CircleMockService, getCircleService as getMockCircleService } from '../circle-mock.js';
 import type {
   CircleWallet,
@@ -33,6 +33,7 @@ export interface CircleServiceInterface {
     name?: string;
     refId?: string;
     accountType?: 'SCA' | 'EOA';
+    testnet?: boolean;
   }): Promise<{
     id: string;
     address: string;
@@ -93,6 +94,7 @@ class RealCircleService implements CircleServiceInterface {
     name?: string;
     refId?: string;
     accountType?: 'SCA' | 'EOA';
+    testnet?: boolean;
   }): Promise<{
     id: string;
     address: string;
@@ -100,7 +102,7 @@ class RealCircleService implements CircleServiceInterface {
     state: string;
   }> {
     const walletSetId = params.walletSetId || await this.ensureWalletSet();
-    const circleBlockchain = toCircleBlockchain(params.blockchain, true); // Use testnet
+    const circleBlockchain = toCircleBlockchain(params.blockchain, params.testnet ?? true);
 
     const wallet = await this.client.createWallet(
       walletSetId,
@@ -188,6 +190,7 @@ class MockCircleServiceAdapter implements CircleServiceInterface {
     name?: string;
     refId?: string;
     accountType?: 'SCA' | 'EOA';
+    testnet?: boolean;
   }): Promise<{
     id: string;
     address: string;
@@ -253,24 +256,42 @@ const serviceCache = new Map<string, CircleServiceInterface>();
  * Get Circle service for a tenant
  * Automatically uses mock or real client based on environment
  */
-export function getCircleServiceForTenant(tenantId: string): CircleServiceInterface {
-  const cacheKey = `${tenantId}:${getEnvironment()}`;
-  
+export function getCircleServiceForTenant(
+  tenantId: string,
+  apiKeyEnvironment?: 'test' | 'live',
+): CircleServiceInterface {
+  const cacheKey = `${tenantId}:${getEnvironment()}:${apiKeyEnvironment || 'default'}`;
+
   if (serviceCache.has(cacheKey)) {
     return serviceCache.get(cacheKey)!;
   }
 
   const env = getEnvironment();
-  const circleConfig = getServiceConfig('circle');
 
   let service: CircleServiceInterface;
 
-  if (env === 'mock' || !isServiceEnabled('circle')) {
-    // Use mock service
+  // Route to the correct Circle client based on the API key environment
+  if (apiKeyEnvironment === 'live') {
+    // Live/production — use live Circle key (mainnet)
+    console.log(`[Circle] Using REAL service (LIVE key, mainnet) for tenant ${tenantId}`);
+    const client = getCircleLiveClient();
+    service = new RealCircleService(client);
+  } else if (apiKeyEnvironment === 'test') {
+    // Test/sandbox — use test Circle key (testnet)
+    try {
+      console.log(`[Circle] Using REAL service (TEST key, testnet) for tenant ${tenantId}`);
+      const client = getCircleTestClient();
+      service = new RealCircleService(client);
+    } catch {
+      // No test key available — fall back to mock
+      console.log(`[Circle] No test key, falling back to MOCK for tenant ${tenantId}`);
+      service = new MockCircleServiceAdapter(tenantId);
+    }
+  } else if (env === 'mock' || !isServiceEnabled('circle')) {
     console.log(`[Circle] Using MOCK service for tenant ${tenantId}`);
     service = new MockCircleServiceAdapter(tenantId);
   } else {
-    // Use real Circle API
+    const circleConfig = getServiceConfig('circle');
     console.log(`[Circle] Using REAL service (${circleConfig.environment}) for tenant ${tenantId}`);
     const client = getCircleClient();
     service = new RealCircleService(client);
@@ -352,7 +373,6 @@ export type {
   TokenBalance,
   CircleTransaction,
   PayOSBlockchain,
-  CircleServiceInterface,
   GasStationConfig,
   GasStationStatus,
 };

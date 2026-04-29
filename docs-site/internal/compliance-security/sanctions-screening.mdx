@@ -1,0 +1,70 @@
+---
+title: "Sanctions screening"
+description: "Watchlist matching, hit handling, escalation."
+---
+
+See [KYC/KYB](/compliance-security/kyc-kyb) for the higher-level compliance context. This page is specifically about sanctions.
+
+## Lists screened
+
+- **OFAC SDN** (US) — Specially Designated Nationals
+- **EU consolidated sanctions**
+- **UK HMT consolidated**
+- **UN Security Council consolidated**
+
+All refreshed daily from upstream feeds.
+
+## Screening points
+
+- **Account creation** — name + DOB/DOI against SDN
+- **Transfer** — sender + recipient, both sides
+- **Mandate creation** — merchant + counterparty
+- **Mandate execution** — re-screen merchant at spend time (they might have been added since)
+- **Scheduled transfer execution** — re-screen at execution time
+
+## Match behavior
+
+Three outcomes per check:
+
+- **No match** — proceed
+- **Soft match** (fuzzy name match, partial DoB) — transaction held, queue for review
+- **Hard match** (exact name + DoB or strong multi-factor match) — transaction rejected, escalation email to compliance@
+
+## Soft match queue
+
+Compliance reviews within 24h. Options:
+- **Clear** — release transaction, whitelist the entity (no re-match future)
+- **Confirm hit** — escalate to hard match
+- **Request more info** — ask partner / originator for additional context
+
+Queue is visible in the internal dashboard. On-call can escalate to compliance if queue grows unexpectedly.
+
+## Hard hit handling
+
+1. Transaction rejected immediately with `SANCTIONS_HIT` error code
+2. Logged to `screening_hits` with full detail
+3. Compliance notified via PagerDuty + email
+4. Partner notified that their transfer was blocked (without divulging sanctions detail)
+5. Account frozen pending compliance review
+6. If confirmed: SAR filing consideration, legal notification
+
+## Tenant-level configuration
+
+Tenants operating in specific jurisdictions can have tightened screening (e.g. adding provincial lists). Configured at the tenant level; check `tenants.compliance_config`.
+
+## False positives
+
+Common sources:
+- Common names matching SDN entries (e.g. "John Smith")
+- Name transliteration mismatches (Cyrillic ↔ Latin)
+- Companies matching unrelated flagged individuals
+
+Mitigation: DoB + DOI combined with name reduces FP rate. Whitelisting after review makes repeated FPs non-events.
+
+## Audit trail
+
+Every check, match, and resolution is in `screening_hits`. Retained 7 years. Surfaces in compliance exports.
+
+## Sandbox
+
+Sandbox screens against a synthetic test list (no real SDN data). Includes known-test-bad names for integration testing. Real OFAC data is live-only.

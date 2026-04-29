@@ -16,12 +16,10 @@ import {
   History,
   X,
   ChevronRight,
-  ArrowLeft,
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@sly/ui';
-import Link from 'next/link';
 
 // Types
 type TriggerType = 'schedule' | 'threshold' | 'manual' | 'immediate';
@@ -110,10 +108,8 @@ const SETTLEMENT_RAILS: { value: SettlementRail; label: string }[] = [
 ];
 
 // API functions
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-
-async function fetchRules(authToken: string): Promise<SettlementRule[]> {
-  const response = await fetch(`${API_URL}/v1/settlement-rules`, {
+async function fetchRules(authToken: string, apiUrl: string): Promise<SettlementRule[]> {
+  const response = await fetch(`${apiUrl}/v1/settlement-rules`, {
     headers: {
       Authorization: `Bearer ${authToken}`,
       'Content-Type': 'application/json',
@@ -124,8 +120,8 @@ async function fetchRules(authToken: string): Promise<SettlementRule[]> {
   return json.data?.data || json.data || [];
 }
 
-async function createRule(authToken: string, rule: Partial<SettlementRule>): Promise<SettlementRule> {
-  const response = await fetch(`${API_URL}/v1/settlement-rules`, {
+async function createRule(authToken: string, apiUrl: string, rule: Partial<SettlementRule>): Promise<SettlementRule> {
+  const response = await fetch(`${apiUrl}/v1/settlement-rules`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${authToken}`,
@@ -141,8 +137,8 @@ async function createRule(authToken: string, rule: Partial<SettlementRule>): Pro
   return json.data || json;
 }
 
-async function updateRule(authToken: string, id: string, updates: Partial<SettlementRule>): Promise<SettlementRule> {
-  const response = await fetch(`${API_URL}/v1/settlement-rules/${id}`, {
+async function updateRule(authToken: string, apiUrl: string, id: string, updates: Partial<SettlementRule>): Promise<SettlementRule> {
+  const response = await fetch(`${apiUrl}/v1/settlement-rules/${id}`, {
     method: 'PATCH',
     headers: {
       Authorization: `Bearer ${authToken}`,
@@ -158,8 +154,8 @@ async function updateRule(authToken: string, id: string, updates: Partial<Settle
   return json.data || json;
 }
 
-async function deleteRule(authToken: string, id: string): Promise<void> {
-  const response = await fetch(`${API_URL}/v1/settlement-rules/${id}`, {
+async function deleteRule(authToken: string, apiUrl: string, id: string): Promise<void> {
+  const response = await fetch(`${apiUrl}/v1/settlement-rules/${id}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${authToken}`,
@@ -172,8 +168,8 @@ async function deleteRule(authToken: string, id: string): Promise<void> {
   }
 }
 
-async function fetchExecutions(authToken: string, ruleId: string): Promise<RuleExecution[]> {
-  const response = await fetch(`${API_URL}/v1/settlement-rules/${ruleId}/executions?limit=20`, {
+async function fetchExecutions(authToken: string, apiUrl: string, ruleId: string): Promise<RuleExecution[]> {
+  const response = await fetch(`${apiUrl}/v1/settlement-rules/${ruleId}/executions?limit=20`, {
     headers: {
       Authorization: `Bearer ${authToken}`,
       'Content-Type': 'application/json',
@@ -184,8 +180,8 @@ async function fetchExecutions(authToken: string, ruleId: string): Promise<RuleE
   return json.data?.data || json.data || [];
 }
 
-async function fetchWallets(authToken: string): Promise<Wallet[]> {
-  const response = await fetch(`${API_URL}/v1/wallets?limit=100`, {
+async function fetchWallets(authToken: string, apiUrl: string): Promise<Wallet[]> {
+  const response = await fetch(`${apiUrl}/v1/wallets?limit=100`, {
     headers: {
       Authorization: `Bearer ${authToken}`,
       'Content-Type': 'application/json',
@@ -644,15 +640,17 @@ function RuleFormDialog({
 function ExecutionHistoryDialog({
   rule,
   authToken,
+  apiUrl,
   onClose,
 }: {
   rule: SettlementRule;
   authToken: string;
+  apiUrl: string;
   onClose: () => void;
 }) {
   const { data: executions, isLoading } = useQuery({
     queryKey: ['settlement-rule-executions', rule.id],
-    queryFn: () => fetchExecutions(authToken, rule.id),
+    queryFn: () => fetchExecutions(authToken, apiUrl, rule.id),
   });
 
   const statusColors: Record<string, string> = {
@@ -728,7 +726,7 @@ function ExecutionHistoryDialog({
 
 // Main Page Component
 export default function SettlementRulesPage() {
-  const { isConfigured, isLoading: isAuthLoading, authToken } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, authToken, apiUrl } = useApiConfig();
   const queryClient = useQueryClient();
 
   // State
@@ -741,20 +739,20 @@ export default function SettlementRulesPage() {
   // Fetch rules
   const { data: rules, isLoading: isLoadingRules } = useQuery({
     queryKey: ['settlement-rules'],
-    queryFn: () => fetchRules(authToken!),
+    queryFn: () => fetchRules(authToken!, apiUrl),
     enabled: !!authToken,
   });
 
   // Fetch wallets for scoping
   const { data: wallets = [] } = useQuery({
     queryKey: ['wallets'],
-    queryFn: () => fetchWallets(authToken!),
+    queryFn: () => fetchWallets(authToken!, apiUrl),
     enabled: !!authToken,
   });
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: (rule: Partial<SettlementRule>) => createRule(authToken!, rule),
+    mutationFn: (rule: Partial<SettlementRule>) => createRule(authToken!, apiUrl, rule),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settlement-rules'] });
       setShowCreateDialog(false);
@@ -768,7 +766,7 @@ export default function SettlementRulesPage() {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Partial<SettlementRule> }) =>
-      updateRule(authToken!, id, updates),
+      updateRule(authToken!, apiUrl, id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settlement-rules'] });
       setEditingRule(null);
@@ -783,7 +781,7 @@ export default function SettlementRulesPage() {
 
   // Delete mutation
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteRule(authToken!, id),
+    mutationFn: (id: string) => deleteRule(authToken!, apiUrl, id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settlement-rules'] });
       setDeletingRuleId(null);
@@ -810,18 +808,10 @@ export default function SettlementRulesPage() {
   // Loading state
   if (isAuthLoading || isLoadingRules) {
     return (
-      <div className="p-8 max-w-[1200px] mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Link
-            href="/dashboard/settings"
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <div className="h-8 w-48 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse mb-2" />
-            <div className="h-4 w-64 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
-          </div>
+      <div className="space-y-6">
+        <div>
+          <div className="h-6 w-48 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse mb-2" />
+          <div className="h-4 w-64 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
@@ -845,12 +835,10 @@ export default function SettlementRulesPage() {
   // Auth required state
   if (!isConfigured) {
     return (
-      <div className="p-8">
-        <div className="text-center py-12">
-          <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Authentication Required</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">Please log in to manage settlement rules.</p>
-        </div>
+      <div className="text-center py-12">
+        <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Authentication Required</h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">Please log in to manage settlement rules.</p>
       </div>
     );
   }
@@ -863,21 +851,9 @@ export default function SettlementRulesPage() {
   }, {} as Record<TriggerType, SettlementRule[]>);
 
   return (
-    <div className="p-8 max-w-[1200px] mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/dashboard/settings"
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settlement Rules</h1>
-            <p className="text-gray-500 dark:text-gray-400">Configure when and how settlements are triggered</p>
-          </div>
-        </div>
+    <div className="space-y-6">
+      {/* Action Button */}
+      <div className="flex justify-end">
         <button
           onClick={() => setShowCreateDialog(true)}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
@@ -961,6 +937,7 @@ export default function SettlementRulesPage() {
         <ExecutionHistoryDialog
           rule={viewingHistoryRule}
           authToken={authToken}
+          apiUrl={apiUrl}
           onClose={() => setViewingHistoryRule(null)}
         />
       )}

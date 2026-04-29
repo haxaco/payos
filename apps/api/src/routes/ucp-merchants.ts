@@ -13,6 +13,7 @@ import { createClient } from '../db/client.js';
 import { NotFoundError } from '../middleware/error.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
+import { logCatalogView, viewerFromCtx } from '../services/catalog-view-log.js';
 
 const router = new Hono();
 
@@ -21,7 +22,7 @@ const router = new Hono();
 // ============================================
 router.get('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const type = c.req.query('type');         // restaurant, bar, hotel, retail
   const country = c.req.query('country');   // PA, CR
@@ -82,7 +83,7 @@ router.get('/', async (c) => {
 router.get('/:id', async (c) => {
   const ctx = c.get('ctx');
   const id = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Support lookup by account UUID or by invu_merchant_id (e.g. "invu_merch_003")
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
@@ -125,6 +126,19 @@ router.get('/:id', async (c) => {
     success: true,
     data: { merchantId: meta.invu_merchant_id, name: account.name, type: meta.merchant_type },
   });
+
+  // Also log as a catalog view for the merchant Discovery panel.
+  if ((account as any).subtype === 'merchant' || meta.pos_provider) {
+    const { viewerType, viewerAgentId } = viewerFromCtx(ctx);
+    logCatalogView(supabase, {
+      tenantId: ctx.tenantId,
+      merchantAccountId: (account as any).id,
+      endpoint: 'detail',
+      viewerType,
+      viewerAgentId,
+      refererSku: c.req.query('sku') || undefined,
+    });
+  }
 
   return c.json({
     id: account.id,

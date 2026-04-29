@@ -1,0 +1,63 @@
+---
+title: "Tracing"
+description: "Follow a request across services via request_id."
+---
+
+Every API response includes `X-Request-Id` and every error body has `request_id`. Partners quote this when reporting issues — use it as the thread to pull.
+
+## Pulling the trace
+
+Once you have a `request_id`:
+
+1. **API logs** — structured JSON, grep by `requestId`
+2. **Worker logs** — any downstream worker actions are tagged with the triggering `requestId`
+3. **Webhook deliveries** — webhook events carry the originating `requestId`
+4. **Supabase logs** — RPC calls and slow queries linked via `requestId`
+
+## Log aggregation
+
+Production logs go to our aggregator (Grafana Loki). Query:
+
+```logql
+{app="sly-api"} |= "req_abc123def" | json
+```
+
+Returns every log line across API, workers, and webhook delivery that touched that request.
+
+## Structured fields we always log
+
+- `requestId` — incoming header or generated
+- `tenantId` — from `RequestContext`
+- `actorType` + `actorId` — who authenticated
+- `method` + `path`
+- `statusCode`
+- `latencyMs`
+- `event` — semantic name of what happened (`transfer.created`, `policy.violated`, etc.)
+
+Anything in the request body, response body, or side effect is tagged with these five.
+
+## Correlating with partner logs
+
+Partners see the `request_id` in error responses. They quote it; we pull. If the partner can also send their own trace ID (their internal request UUID), we can map 1:1 — useful for complex incidents.
+
+## Tracing across protocols
+
+A UCP settlement that triggers an x402 payment that bridges to Circle:
+
+```
+UCP token issued     → req_ucp_1
+  → UCP settle       → req_ucp_2
+    → x402 payment   → req_x402_1
+      → Circle bridge → req_circle_1
+        → Webhook out → webhook_delivery_1
+```
+
+Each step logs its parent `requestId` in a `parentRequestId` field. The first call is the root; every downstream is linked.
+
+## Metrics and traces
+
+For performance debugging (not error debugging), use the metrics dashboards. Latency percentiles, error rates, queue depths. See [runbooks overview](/runbooks/overview).
+
+## When tracing fails
+
+If the trace is incomplete (missing from a service that touched the request), that's a logging bug. File it. Structured logs are infrastructure.

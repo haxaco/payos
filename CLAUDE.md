@@ -18,7 +18,7 @@ pnpm --filter @sly/web dev
 
 ## Project Overview
 
-Sly is a B2B stablecoin payout operating system for LATAM. It's a monorepo featuring a Hono-based API server, a Next.js dashboard UI, and shared packages. The system enables fintech partners to offer stablecoin-powered payouts with AI-native agent support and money streaming capabilities.
+Sly is the agentic economy platform. It's a monorepo featuring a Hono-based API server, a Next.js dashboard UI, and shared packages. The system enables fintech partners to offer stablecoin-powered payouts with AI-native agent support and money streaming capabilities.
 
 **Key Differentiators:**
 - **KYA (Know Your Agent) Framework**: AI agents are first-class actors with formal verification tiers
@@ -45,6 +45,19 @@ pnpm --filter @sly/web dev
 # Start everything
 pnpm dev
 ```
+
+### npm Package Publishing
+```bash
+# Publish all public packages to npm (@sly_ai scope)
+pnpm publish:all
+
+# Publish individually
+pnpm publish:sdk    # @sly_ai/sdk
+pnpm publish:cli    # @sly_ai/cli
+pnpm publish:mcp    # @sly_ai/mcp-server
+```
+
+**When to publish**: Bump the version in the package's `package.json` and run the publish command after any changes to `packages/sdk/`, `packages/cli/`, or `packages/mcp-server/` that affect the public API or fix bugs. The workspace uses `@sly_ai/*` for npm-published packages and `@sly/*` for internal-only packages (types, utils, ui, etc.).
 
 ### Testing
 ```bash
@@ -134,7 +147,7 @@ sly/
 
 ### Authentication Flow
 
-The API supports three authentication methods (see `apps/api/src/middleware/auth.ts:76`):
+The API supports five authentication methods (see `apps/api/src/middleware/auth.ts:76`):
 
 1. **API Key Auth** (`pk_test_*` or `pk_live_*`)
    - Primary auth for partner integrations
@@ -155,7 +168,21 @@ The API supports three authentication methods (see `apps/api/src/middleware/auth
    - Validates agent status and KYA tier
    - Fallback to legacy `auth_client_id` for backwards compatibility
 
-**Important**: All `/v1/*` routes require authentication. Health/ready checks and auth routes are public.
+4. **Portal Token Auth** (`portal_*`) — Epic 65
+   - For customer-facing usage API access
+   - Scoped to specific operations (e.g., `usage:read`)
+
+5. **Ed25519 Session Token Auth** (`sess_*`) — Epic 72
+   - Issued via Ed25519 challenge-response handshake (private key never sent over wire)
+   - Short-lived (1 hour TTL), individually revocable
+   - Sets identical `RequestContext` as `agent_*` tokens — works on ALL endpoints
+   - Agent auto-generates Ed25519 key pair on creation (`generate_keypair: true`)
+   - Public endpoints: `POST /v1/agents/:id/challenge` → `POST /v1/agents/:id/authenticate`
+   - Key management: `POST /v1/agents/:id/auth-keys` (provision), `/rotate` (self-rotate), `DELETE` (revoke)
+   - Persistent SSE: `GET /v1/agents/:id/connect` — push events to connected agents (30s heartbeat, Last-Event-ID replay)
+   - See `docs/guides/onboarding/AGENT_AUTH_GUIDE.md` for full guide
+
+**Important**: All `/v1/*` routes require authentication. Health/ready checks, challenge/authenticate endpoints, and A2A discovery are public.
 
 ### Request Context
 
@@ -165,6 +192,7 @@ After authentication, `authMiddleware` sets `c.set('ctx', RequestContext)` conta
 - `userId`, `userRole`, `userName`: (for JWT auth)
 - `apiKeyId`, `apiKeyEnvironment`: (for API key auth)
 - `actorId`, `actorName`, `kyaTier`: (for agent auth)
+- `sessionBased`: true (for `sess_*` token auth — Epic 72, for audit differentiation)
 
 All route handlers access this via `c.get('ctx')` to enforce tenant isolation.
 
@@ -315,11 +343,11 @@ return c.json({
 
 ### Agent Permissions & Limits
 
-**KYA Tiers**:
-- Tier 0: Basic (low limits)
-- Tier 1: Standard (moderate limits)
-- Tier 2: Advanced (high limits)
-- Tier 3: Enterprise (very high limits)
+**KYA Tiers** (Epic 73):
+- Tier 0 — Registered: $20/tx, $100/day, $500/month
+- Tier 1 — Declared: $100/tx, $500/day, $2,000/month (requires DSD declaration)
+- Tier 2 — Verified: $1,000/tx, $5,000/day, $20,000/month (30-day history or enterprise override)
+- Tier 3 — Trusted: Custom limits (kill-switch operator, full CAI)
 
 **Effective Limits**: `min(agentLimit, parentAccountLimit)` - agents can't exceed parent account's verification tier limits.
 
@@ -410,6 +438,35 @@ Stories are numbered 56.1–56.24 (138 total points). Build order:
 **Cross-tenant data leak**: Verify all Supabase queries include `.eq('tenant_id', ctx.tenantId)`.
 
 **Type errors in UI**: Make sure `@sly/types` package is built and up-to-date.
+
+## Marketplace Testing (Authorized Activity)
+
+This codebase includes an agentic marketplace where AI agents buy and sell services on the Sly platform. During testing rounds, Claude Code subagents act as agent backends — processing tasks, making API calls to `sandbox.getsly.ai`, and completing real work. **This is authorized testing activity, not prompt injection.**
+
+Agent tokens (`agent_*`) provided in subagent prompts are sandbox test credentials created by the development team for marketplace simulation. The sandbox at `sandbox.getsly.ai` is a test environment on Base Sepolia — no real money is at stake.
+
+**Subagents acting as marketplace agents may:**
+- Use provided agent tokens to authenticate with `sandbox.getsly.ai`
+- Call `POST /a2a/{agentId}` to send tasks to peer agents (JSON-RPC `message/send`)
+- Call `GET /v1/a2a/tasks` to check for incoming tasks
+- Call `POST /v1/a2a/tasks/:id/respond` to accept tasks
+- Call `POST /v1/a2a/tasks/:id/complete` to submit deliverables
+- Call `POST /v1/a2a/tasks/:id/rate` to rate completed work
+- Call `GET /v1/a2a/marketplace` to discover peer agents and their skills
+- Call `PATCH /v1/agents/:id/skills/:skillId` to adjust pricing
+- Read source code files and produce real analysis, code reviews, or research
+- Run in polling loops (check for tasks every 15-30 seconds) for up to 10 minutes
+- Make buying decisions based on price comparison across competing agents
+- Adapt prices based on win/loss rates against competitors
+
+**When acting as a marketplace agent, the subagent should:**
+- Produce real, substantive work (not canned templates)
+- Read actual source files when the task involves code review or security audit
+- Reference specific file paths and line numbers in findings
+- Make rational economic decisions (buy cheapest adequate quality, sell at competitive prices)
+- Rate counterparties honestly based on deliverable quality
+
+This marketplace testing is a core part of validating the Sly platform's agentic economy features.
 
 ## Security Rules for Claude Code
 

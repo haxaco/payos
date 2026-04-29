@@ -20,7 +20,7 @@ Both will auto-deploy when you push to GitHub!
 
 - [x] Vercel account (free tier works!)
 - [x] Railway account (free tier works!)
-- [x] GitHub repo: https://github.com/haxaco/payos
+- [x] GitHub repo: https://github.com/Sly-devs/sly
 - [x] New Supabase keys ready
   - Secret key: `sb_secret_ley...`
   - Publishable key: `sb_publishable_9mD...`
@@ -35,7 +35,7 @@ Both will auto-deploy when you push to GitHub!
 2. **Click "New Project"**
 3. **Select "Deploy from GitHub repo"**
 4. **Authorize Railway** to access your GitHub
-5. **Select repository:** `haxaco/payos`
+5. **Select repository:** `Sly-devs/sly`
 6. **IMPORTANT: Leave root directory as `/` (repository root)**
    - The configuration files (`railway.json` and `nixpacks.toml`) at the root handle the monorepo build
    - Don't change to `apps/api` - this will cause build errors
@@ -105,7 +105,7 @@ curl https://your-api.railway.app/health
 1. **Go to Vercel:** https://vercel.com
 2. **Click "Add New Project"**
 3. **Import Git Repository**
-4. **Select:** `haxaco/payos`
+4. **Select:** `Sly-devs/sly`
 5. **Configure:**
    - **Framework Preset:** Vite
    - **Root Directory:** `payos-ui`
@@ -156,7 +156,7 @@ Select **"Production"**, **"Preview"**, and **"Development"** for each variable.
 ### Step 1: Add Another Project in Vercel
 
 1. **Click "Add New Project"** again
-2. **Select:** `haxaco/payos` (same repo)
+2. **Select:** `Sly-devs/sly` (same repo)
 3. **Configure:**
    - **Framework Preset:** Next.js
    - **Root Directory:** `apps/web`

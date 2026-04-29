@@ -1,0 +1,74 @@
+---
+title: "Which protocol should I use?"
+description: "A flowchart for picking the right protocol for your use case."
+---
+
+Here's a decision tree, followed by concrete recommendations by scenario.
+
+## Flowchart
+
+```
+Is the buyer an AI agent?
+│
+├─ No ─ You probably want traditional checkout; Sly supports UCP tokens that
+│       wrap card / ACH / stablecoin rails for agentic AND human buyers.
+│       → UCP
+│
+└─ Yes — agent-initiated purchase
+   │
+   ├─ Buying from a service (API, compute, data)?
+   │  │
+   │  ├─ Per-request micropayments (pay for each API call)?
+   │  │  → x402 (HTTP-402-based payment metadata)
+   │  │
+   │  └─ Subscription or larger purchase?
+   │     → UCP (tokenize the purchase + settle via preferred rail)
+   │
+   ├─ Buying from another agent?
+   │  → A2A (task delegation with built-in payment)
+   │
+   ├─ Buying from a human merchant's storefront?
+   │  │
+   │  ├─ Merchant on Stripe / OpenAI ecosystem?
+   │  │  → ACP (agentic commerce protocol)
+   │  │
+   │  ├─ Merchant on Google ecosystem?
+   │  │  → AP2 (mandate-based spending)
+   │  │
+   │  └─ Generic merchant (e-commerce, SaaS, marketplace)?
+   │     → UCP (broadest compatibility)
+   │
+   └─ Exposing tools/capabilities to an LLM (Claude, GPT)?
+      → MCP (tool discovery + invocation)
+```
+
+## By scenario
+
+### "I run a fintech platform serving AI agents."
+You need the broadest surface. Enable **UCP** (your native checkout), **ACP** and **AP2** (for agents from Stripe/OpenAI and Google ecosystems), **x402** (for micropayments), and **A2A** (for agent-to-agent settlement). Five protocols; all through one Sly integration.
+
+### "I run a SaaS API and want to charge agents per request."
+**x402** — return `402 Payment Required` with a price quote; agent pays; retry the request with a payment proof header. Zero-friction pay-per-call.
+
+### "I run a marketplace of AI agents."
+**A2A** — agents discover peer agents via `/.well-known/agent.json` cards, send tasks with embedded payment mandates, rate counterparties. Sly provides the marketplace registry and settlement.
+
+### "I want to build an agent that shops for things."
+The protocols you speak depend on where you shop. The SDK is protocol-agnostic — you call `sly.checkout.create({...})` and Sly picks the right one based on the merchant's declared capabilities.
+
+### "I'm building an MCP server for Claude Desktop."
+**MCP** — both for your server's tool catalog and, if your tools need to transact, for payment-on-invocation patterns. See [@sly_ai/mcp-server](/sdks/mcp-server).
+
+### "I need pre-authorized recurring payments (subscriptions for agents)."
+**AP2 mandates** — the agent presents a signed mandate defining spend scope and frequency; the merchant executes within those bounds.
+
+## When you need more than one
+
+Many real integrations touch multiple protocols. Some common combinations:
+
+- **UCP + x402** — tokenized checkout with per-request billing on the service you're buying
+- **A2A + UCP** — agent delegates a task to a peer, pays via a UCP token that the peer can redeem on-chain
+- **ACP + AP2** — Stripe checkout backed by a Google AP2 mandate (cross-ecosystem compatibility)
+- **MCP + A2A** — your MCP tools invoke peer agents via A2A under the hood
+
+Sly's `/v1/composition` endpoint handles the routing between these automatically.

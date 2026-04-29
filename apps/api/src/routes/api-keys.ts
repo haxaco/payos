@@ -6,10 +6,11 @@ import {
   generateApiKey,
   hashApiKey,
   getKeyPrefix,
-  maskApiKey,
   checkRateLimit,
   logSecurityEvent,
 } from '../utils/auth.js';
+import { maskApiKey } from '../utils/crypto.js';
+import { sendApiKeyCreatedEmail, sendApiKeyRevokedEmail } from '../services/email.js';
 
 const apiKeys = new Hono();
 
@@ -21,7 +22,7 @@ async function getCurrentUserAndTenant(c: any) {
   }
 
   const accessToken = authHeader.slice(7);
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: userData, error } = await (supabase as any).auth.getUser(accessToken);
   if (error || !userData?.user) {
@@ -109,7 +110,7 @@ apiKeys.post('/', async (c) => {
   const keyPrefix = getKeyPrefix(key);
   const keyHash = hashApiKey(key);
 
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Insert into database
   const { data: apiKey, error } = await (supabase
@@ -149,6 +150,14 @@ apiKeys.post('/', async (c) => {
     userAgent,
   });
 
+  // Send confirmation email (fire-and-forget)
+  sendApiKeyCreatedEmail({
+    to: result.user.email,
+    keyPrefix,
+    keyName: validated.name,
+    environment: validated.environment,
+  }).catch(err => console.error('[email] API key created email error:', err));
+
   return c.json(
     {
       apiKey: {
@@ -177,7 +186,7 @@ apiKeys.get('/', async (c) => {
   }
 
   const { tenantId } = result;
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Optional filter by environment
   const environment = c.req.query('environment');
@@ -224,7 +233,7 @@ apiKeys.get('/:id', async (c) => {
 
   const { tenantId } = result;
   const keyId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   const { data: apiKey, error } = await (supabase
     .from('api_keys') as any)
@@ -271,7 +280,7 @@ apiKeys.delete('/:id', async (c) => {
   const { tenantId, userProfile } = result;
   const userId = result.user.id;
   const keyId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Fetch the key to check ownership
   const { data: apiKey, error: fetchError } = await (supabase
@@ -334,6 +343,14 @@ apiKeys.delete('/:id', async (c) => {
     userAgent,
   });
 
+  // Send revocation email (fire-and-forget)
+  sendApiKeyRevokedEmail({
+    to: result.user.email,
+    keyPrefix: apiKey.key_prefix,
+    keyName: apiKey.name,
+    environment: apiKey.environment,
+  }).catch(err => console.error('[email] API key revoked email error:', err));
+
   return c.json({ success: true }, 200);
 });
 
@@ -350,7 +367,7 @@ apiKeys.post('/:id/rotate', async (c) => {
   const { tenantId, userProfile } = result;
   const userId = result.user.id;
   const keyId = c.req.param('id');
-  const supabase = createClient();
+  const supabase: any = createClient();
 
   // Fetch the key to check ownership
   const { data: oldKey, error: fetchError } = await (supabase

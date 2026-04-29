@@ -1,0 +1,74 @@
+---
+title: "Support"
+description: "How to get help and what to include in your ticket."
+---
+
+## Channels
+
+<CardGroup cols={2}>
+  <Card title="Email support" icon="envelope" href="mailto:hello@getsly.ai">
+    `hello@getsly.ai` — integration questions, account issues, anything with a request ID.
+  </Card>
+  <Card title="Docs GitHub" icon="github" href="https://github.com/Sly-devs/sly/issues">
+    Open an issue for docs errors, typos, or missing content.
+  </Card>
+  <Card title="Dashboard chat" icon="comment" href="https://app.getsly.ai">
+    Intercom chat inside the dashboard, bottom-right. Fastest for account-specific issues.
+  </Card>
+  <Card title="Status" icon="heart-pulse" href="/resources/status">
+    Platform status + incident history. Public status page [coming soon](/resources/coming-soon).
+  </Card>
+</CardGroup>
+
+## What to include in a support ticket
+
+We resolve tickets ~10x faster when they include the full context upfront. Include:
+
+1. **`request_id`** from the failing response (every error carries one)
+2. **Environment** — `test` or `live`
+3. **Endpoint and method** — `POST /v1/transfers` etc.
+4. **Exact time range** of the issue (UTC, ISO 8601 preferred)
+5. **Your tenant ID** — from `GET /v1/context`
+6. **Reproduction steps** — ideally a curl command that fails
+7. **What you expected vs. what happened**
+
+<Warning>
+**Never include full API keys, agent tokens, or private keys in a ticket.** A request ID + tenant ID is enough for us to pull traces. If we need something more, we'll ask via a secure channel.
+</Warning>
+
+## Severity and response times
+
+| Severity | Definition | First response | Resolution target |
+|---|---|---|---|
+| **1** | Production down, money at risk | \<30 min | \<4 hours |
+| **2** | Production degraded, some flows failing | \<2 hours | \<1 business day |
+| **3** | Non-blocking bug, workaround exists | \<1 business day | \<1 week |
+| **4** | Feature request, general question | \<3 business days | — |
+
+Severity is triaged by our on-call; flag severity 1 with "URGENT" in the subject.
+
+## Paid support plans
+
+Enterprise plans include:
+- Dedicated Slack Connect channel
+- Named customer success engineer
+- 24/7 on-call phone escalation
+- Custom SLA on top of the table above
+
+Contact sales@getsly.ai.
+
+## Agentic support (Intercom Fin)
+
+The dashboard includes an AI support agent that can answer common integration questions, fetch recent errors for your tenant, and escalate to humans when it's stumped. For quick "where do I find X?" questions, try it first — it's faster than a ticket.
+
+## Security disclosures
+
+Found a security issue? **Do not open a public GitHub issue.** Email `security@getsly.ai` with details. We respond within 24 hours and follow a coordinated disclosure process.
+
+## Bug bounty
+
+Sly runs a private bug bounty program. Once you report a valid issue via security@, you'll receive an invitation with scope and reward tiers.
+
+## Feedback
+
+If this documentation is missing something, unclear, or wrong, open a GitHub issue or Slack us in `#docs-feedback`. Documentation debt is real debt; we treat doc bugs as P2.

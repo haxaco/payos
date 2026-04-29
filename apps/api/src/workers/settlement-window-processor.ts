@@ -164,7 +164,7 @@ export class SettlementWindowProcessor {
       const results = await this.settleTransfers(tenantId, rail, queuedTransfers);
 
       // Log execution
-      const totalAmount = queuedTransfers.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      const totalAmount = queuedTransfers.reduce((sum: number, t: any) => sum + parseFloat(String(t.amount)), 0);
       const currency = queuedTransfers[0]?.currency || 'USD';
 
       await settlementWindowsService.logExecution({
@@ -266,10 +266,14 @@ export class SettlementWindowProcessor {
 
     // Log audit for batch
     await logAudit(this.supabase, {
-      entity_type: 'settlement_batch',
-      entity_id: null,
+      tenantId,
+      actorType: 'system',
+      actorId: null,
+      actorName: 'SettlementWindowProcessor',
+      entityType: 'settlement_batch',
+      entityId: null,
       action: 'process',
-      new_values: {
+      changes: {
         tenant_id: tenantId,
         rail,
         total_count: queuedTransfers.length,

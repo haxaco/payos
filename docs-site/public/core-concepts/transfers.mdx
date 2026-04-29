@@ -1,0 +1,136 @@
+---
+title: "Transfers"
+description: "One-time movements of funds between wallets."
+---
+
+A **transfer** is a single, discrete movement of money. Compare with [streams](/core-concepts/streams), which are continuous flows.
+
+## Transfer types
+
+| Type | Purpose |
+|---|---|
+| `cross_border` | FX'd transfer between currencies (requires a [quote](/core-concepts/quotes)) |
+| `internal` | Same-currency transfer within Sly (near-instant) |
+| `stream_start` | Opens a money stream |
+| `stream_withdraw` | Withdraws accrued balance from a stream |
+| `stream_cancel` | Terminates a stream and returns unspent funds |
+| `wrap` | Converts native token to Sly's internal ledger format |
+| `unwrap` | The reverse |
+
+Most integrations use `cross_border` and `internal` heavily and touch the others via higher-level stream APIs.
+
+## Lifecycle
+
+```
+pending ──▶ processing ──▶ completed
+    │             │
+    │             ▼
+    │          failed
+    ▼
+cancelled
+```
+
+- **`pending`** — queued, not yet submitted to settlement
+- **`processing`** — submitted, awaiting on-chain or rail confirmation
+- **`completed`** — finalized; funds settled at destination
+- **`failed`** — settlement rejected (insufficient funds, rail error, compliance block)
+- **`cancelled`** — withdrawn before submission (only from `pending`)
+
+Typical sandbox settlement time: ~2–5 seconds. Live settlement varies by rail (Base L2: ~10s; US ACH: 1–2 business days).
+
+## Create a transfer
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/transfers \
+  -H "Authorization: Bearer pk_test_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "internal",
+    "from_wallet_id": "wal_source_...",
+    "to_wallet_id": "wal_dest_...",
+    "amount": "42.00",
+    "currency": "USDC",
+    "memo": "Monthly subscription",
+    "idempotency_key": "tx_2026-04-22_001"
+  }'
+```
+
+<Warning>
+**Always send an `idempotency_key`.** Transfers are the most dangerous thing to accidentally duplicate. Sly caches the key for 24 hours — resubmissions return the original result without re-executing.
+</Warning>
+
+## Watch it settle
+
+Three options:
+
+**1. Poll the transfer**
+```bash
+curl https://api.getsly.ai/v1/transfers/tx_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+**2. Subscribe to webhooks** — you'll receive `transfer.created`, `transfer.completed`, `transfer.failed`, `transfer.refunded`. See [webhooks](/webhooks/events).
+
+**3. Open an SSE connection** — agents with `sess_*` tokens receive `transfer_completed` events pushed to their [persistent channel](/agents/persistent-sse).
+
+## Cross-border transfers
+
+Cross-border transfers need a quote for the FX rate. Quote first, then use the `quote_id` on the transfer:
+
+```bash
+# 1. Quote
+QUOTE=$(curl -X POST https://api.getsly.ai/v1/quotes \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "from_currency": "USD",
+    "to_currency": "EUR",
+    "amount": "1000.00"
+  }')
+
+# 2. Execute
+curl -X POST https://api.getsly.ai/v1/transfers \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "type": "cross_border",
+    "from_wallet_id": "wal_...",
+    "to_wallet_id": "wal_...",
+    "quote_id": "qt_...",
+    "idempotency_key": "..."
+  }'
+```
+
+Quotes expire (default TTL: 30 seconds). Expired → re-quote.
+
+## Batch transfers
+
+For payroll, mass disbursements, or marketplace payouts:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/transfers/batch \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "transfers": [
+      { "to_account_id": "acc_a", "amount": "100", "currency": "USDC" },
+      { "to_account_id": "acc_b", "amount": "250", "currency": "USDC" }
+    ],
+    "idempotency_key": "payroll_2026_04"
+  }'
+```
+
+Returns a batch ID; each child transfer gets its own lifecycle. Partial failures are possible (some succeed, some fail).
+
+## Refunds and disputes
+
+- **Refunds** — full or partial reversal of a completed transfer. See `/v1/refunds`.
+- **Disputes** — chargeback-style workflow for cards. See `/v1/disputes`.
+
+## Scheduled transfers
+
+Create a transfer for future execution:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/scheduled-transfers \
+  -d '{ ..., "scheduled_at": "2026-05-01T09:00:00Z" }'
+```
+
+A background worker executes at the scheduled time (30s polling in sandbox, 60s in production).

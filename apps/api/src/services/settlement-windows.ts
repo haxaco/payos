@@ -358,7 +358,7 @@ export class SettlementWindowsService {
       .eq('rail', rail)
       .eq('status', 'queued');
 
-    const queuedAmount = queuedSum?.reduce((sum, q) => sum + parseFloat(q.amount), 0) || 0;
+    const queuedAmount = queuedSum?.reduce((sum: number, q: any) => sum + parseFloat(String(q.amount)), 0) || 0;
 
     if (!config || config.frequency === 'realtime') {
       return {
@@ -589,7 +589,7 @@ export class SettlementWindowsService {
         priority: 'urgent',
         scheduled_for: new Date().toISOString(),
         metadata: {
-          ...queueItem.metadata,
+          ...((queueItem.metadata as Record<string, unknown> | null) || {}),
           emergency_override: true,
           emergency_reason: reason,
           emergency_at: new Date().toISOString(),
@@ -639,8 +639,8 @@ export class SettlementWindowsService {
     if (error || !data) return null;
 
     // Check if rail is affected
-    if (rail && data.affected_rails?.length > 0) {
-      if (!data.affected_rails.includes(rail)) {
+    if (rail && data.affected_rails && (data.affected_rails as any[]).length > 0) {
+      if (!(data.affected_rails as any[]).includes(rail)) {
         return null; // Rail not affected by this holiday
       }
     }

@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { 
+import {
   mapTransferFromDb,
   logAudit,
+  getEnv,
 } from '../utils/helpers.js';
 import { createBalanceService } from '../services/balances.js';
 import { ValidationError, NotFoundError, InsufficientBalanceError } from '../middleware/error.js';
@@ -28,7 +29,7 @@ const createInternalTransferSchema = z.object({
 // Completes synchronously with < 300ms target
 internalTransfers.post('/', async (c) => {
   const ctx = c.get('ctx');
-  const supabase = createClient();
+  const supabase: any = createClient();
   const startTime = Date.now();
   
   // Check for idempotency key
@@ -40,6 +41,7 @@ internalTransfers.post('/', async (c) => {
       .from('transfers')
       .select('*')
       .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .eq('idempotency_key', idempotencyKey)
       .single();
     
@@ -78,28 +80,32 @@ internalTransfers.post('/', async (c) => {
       .from('accounts')
       .select('id, name, balance_available, tenant_id')
       .eq('id', fromAccountId)
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
       .single(),
     supabase
       .from('accounts')
       .select('id, name, tenant_id')
       .eq('id', toAccountId)
+      .eq('environment', getEnv(ctx))
       .single(),
   ]);
-  
+
   if (fromAccountResult.error || !fromAccountResult.data) {
     throw new NotFoundError('Source account', fromAccountId);
   }
   if (toAccountResult.error || !toAccountResult.data) {
     throw new NotFoundError('Destination account', toAccountId);
   }
-  
+
   const fromAccount = fromAccountResult.data;
   const toAccount = toAccountResult.data;
-  
-  // Verify both accounts belong to the same tenant
-  if (fromAccount.tenant_id !== ctx.tenantId || toAccount.tenant_id !== ctx.tenantId) {
-    throw new ValidationError('Both accounts must belong to the same tenant');
+
+  // Source account must belong to caller's tenant
+  if (fromAccount.tenant_id !== ctx.tenantId) {
+    throw new ValidationError('Source account must belong to your tenant');
   }
+  const isCrossTenant = toAccount.tenant_id !== ctx.tenantId;
   
   // Check sufficient balance
   const availableBalance = parseFloat(fromAccount.balance_available) || 0;
@@ -112,6 +118,8 @@ internalTransfers.post('/', async (c) => {
     .from('transfers')
     .insert({
       tenant_id: ctx.tenantId,
+      destination_tenant_id: toAccount.tenant_id,
+      environment: getEnv(ctx),
       type: 'internal',
       status: 'completed',
       from_account_id: fromAccountId,

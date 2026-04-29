@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useApiConfig } from '@/lib/api-client';
 import { Button } from '@sly/ui';
 import { Input } from '@sly/ui';
 import { Label } from '@sly/ui';
@@ -13,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@sly/ui';
-import { Loader2, UserPlus, Copy, Check, Trash2, Users } from 'lucide-react';
+import { Loader2, UserPlus, Copy, Check, Trash2, Users, RefreshCw, X } from 'lucide-react';
 
 interface TeamMember {
   id: string;
@@ -31,9 +32,8 @@ interface TeamInvite {
   expiresAt?: string;
   accepted_at?: string;
   acceptedAt?: string;
+  expired?: boolean;
 }
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin' },
@@ -58,6 +58,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 }
 
 export default function TeamSettingsPage() {
+  const { apiUrl } = useApiConfig();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,8 +69,11 @@ export default function TeamSettingsPage() {
   const [inviteRole, setInviteRole] = useState('member');
   const [inviting, setInviting] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [inviteEmailSent, setInviteEmailSent] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [resendingInvite, setResendingInvite] = useState<string | null>(null);
+  const [revokingInvite, setRevokingInvite] = useState<string | null>(null);
 
   // Current user (to determine permissions)
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
@@ -82,9 +86,9 @@ export default function TeamSettingsPage() {
       const headers = await getAuthHeaders();
 
       const [teamRes, invitesRes, meRes] = await Promise.all([
-        fetch(`${API_URL}/v1/organization/team`, { headers }),
-        fetch(`${API_URL}/v1/organization/team/invites`, { headers }),
-        fetch(`${API_URL}/v1/auth/me`, { headers }),
+        fetch(`${apiUrl}/v1/organization/team`, { headers }),
+        fetch(`${apiUrl}/v1/organization/team/invites`, { headers }),
+        fetch(`${apiUrl}/v1/auth/me`, { headers }),
       ]);
 
       if (teamRes.ok) {
@@ -118,7 +122,7 @@ export default function TeamSettingsPage() {
     }
 
     setLoading(false);
-  }, []);
+  }, [apiUrl]);
 
   useEffect(() => {
     fetchTeam();
@@ -131,10 +135,11 @@ export default function TeamSettingsPage() {
     setInviting(true);
     setInviteError(null);
     setInviteUrl(null);
+    setInviteEmailSent(false);
 
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/v1/organization/team/invite`, {
+      const res = await fetch(`${apiUrl}/v1/organization/team/invite`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
@@ -150,6 +155,7 @@ export default function TeamSettingsPage() {
 
       if (data.invite?.inviteUrl) {
         setInviteUrl(data.invite.inviteUrl);
+        setInviteEmailSent(!!data.invite.emailSent);
       }
 
       setInviteEmail('');
@@ -171,7 +177,7 @@ export default function TeamSettingsPage() {
   async function handleRoleChange(userId: string, newRole: string) {
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/v1/organization/team/${userId}`, {
+      const res = await fetch(`${apiUrl}/v1/organization/team/${userId}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ role: newRole }),
@@ -194,7 +200,7 @@ export default function TeamSettingsPage() {
 
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/v1/organization/team/${userId}`, {
+      const res = await fetch(`${apiUrl}/v1/organization/team/${userId}`, {
         method: 'DELETE',
         headers,
       });
@@ -211,6 +217,59 @@ export default function TeamSettingsPage() {
     }
   }
 
+  async function handleResendInvite(inviteId: string) {
+    setResendingInvite(inviteId);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${apiUrl}/v1/organization/team/invites/${inviteId}/resend`, {
+        method: 'POST',
+        headers,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to resend invite');
+        setResendingInvite(null);
+        return;
+      }
+
+      if (data.invite?.inviteUrl) {
+        setInviteUrl(data.invite.inviteUrl);
+        setInviteEmailSent(!!data.invite.emailSent);
+      }
+
+      await fetchTeam();
+    } catch (err: any) {
+      setError(err.message || 'Failed to resend invite');
+    }
+    setResendingInvite(null);
+  }
+
+  async function handleRevokeInvite(inviteId: string, email: string) {
+    if (!confirm(`Revoke invite for ${email}?`)) return;
+    setRevokingInvite(inviteId);
+
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${apiUrl}/v1/organization/team/invites/${inviteId}`, {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || 'Failed to revoke invite');
+        setRevokingInvite(null);
+        return;
+      }
+
+      await fetchTeam();
+    } catch (err: any) {
+      setError(err.message || 'Failed to revoke invite');
+    }
+    setRevokingInvite(null);
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
@@ -220,12 +279,7 @@ export default function TeamSettingsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-2xl font-bold">Team</h1>
-        <p className="text-muted-foreground">Manage team members and invitations.</p>
-      </div>
-
+    <div className="space-y-6">
       {error && (
         <div className="p-3 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-md">
           {error}
@@ -287,7 +341,9 @@ export default function TeamSettingsPage() {
             {inviteUrl && (
               <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/10 rounded-md space-y-2">
                 <p className="text-sm text-green-800 dark:text-green-200">
-                  Invite sent! Share this link:
+                  {inviteEmailSent
+                    ? `Invite email sent to the recipient.`
+                    : 'Invite created! Share this link:'}
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-xs bg-white dark:bg-gray-900 rounded px-2 py-1 break-all">
@@ -370,19 +426,61 @@ export default function TeamSettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="divide-y">
-              {invites.map((invite) => (
-                <div key={invite.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="font-medium">{invite.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Expires {new Date(invite.expiresAt || invite.expires_at || '').toLocaleDateString()}
-                    </p>
+              {invites.map((invite) => {
+                const isExpired = invite.expired ?? new Date(invite.expiresAt || invite.expires_at || '') < new Date();
+                return (
+                  <div key={invite.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="font-medium">
+                        {invite.email}
+                        {isExpired && (
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300">
+                            Expired
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {isExpired ? 'Expired' : 'Expires'} {new Date(invite.expiresAt || invite.expires_at || '').toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${ROLE_BADGES[invite.role] || ROLE_BADGES.member}`}>
+                        {invite.role}
+                      </span>
+                      {canManageTeam && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={resendingInvite === invite.id}
+                            onClick={() => handleResendInvite(invite.id)}
+                            title="Resend invite"
+                          >
+                            {resendingInvite === invite.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={revokingInvite === invite.id}
+                            onClick={() => handleRevokeInvite(invite.id, invite.email)}
+                            title="Revoke invite"
+                          >
+                            {revokingInvite === invite.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <X className="h-4 w-4 text-red-500" />
+                            )}
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${ROLE_BADGES[invite.role] || ROLE_BADGES.member}`}>
-                    {invite.role}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

@@ -1,0 +1,241 @@
+---
+title: "Fund a wallet in live mode"
+description: "Move fiat into Sly wallets via card, bank, or crypto on-ramp."
+---
+
+In sandbox you fund wallets from the faucet. In live, funds come from actual money sources — cards, bank accounts, crypto wallets, or hosted on-ramp sessions. This guide covers the full spectrum.
+
+## Funding options at a glance
+
+| Source | Best for | Settlement time |
+|---|---|---|
+| **Card** (Stripe, Adyen) | Small amounts, immediate funding | Instant |
+| **Bank (US ACH)** | Large amounts, low fees | 1-3 business days |
+| **Bank (EU SEPA)** | Euro funding | 1-2 business days |
+| **Bank (LATAM Pix / SPEI)** | Brazilian / Mexican flows | Minutes |
+| **Crypto wallet** | Pre-existing stablecoin | On-chain confirmation (seconds-minutes) |
+| **Hosted on-ramp** (Coinbase, Stripe, Crossmint) | Consumer-facing signup-to-funded | Variable |
+
+## Step 1 — Register a funding source
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/sources \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "account_id": "acc_...",
+    "type": "bank_account_us",
+    "provider": "plaid",
+    "public_token": "public-sandbox-abc123"
+  }'
+```
+
+### Source types and required fields
+
+| `type` | `provider` | Required conditional fields |
+|---|---|---|
+| `card` | `stripe`, `adyen` | `setup_token` |
+| `bank_account_us` | `plaid`, `stripe` | `public_token` or `link_id` |
+| `bank_account_eu` | `plaid`, `stripe` | `public_token` |
+| `bank_account_latam` | `belvo` | `link_id` |
+| `crypto_wallet` | `circle` (custodial) | `wallet_address`, `network` |
+
+Non-custodial crypto wallets don't require registration — agents can send directly to their Sly wallet address.
+
+## Step 2 — Verify the source
+
+Bank accounts typically require verification (micro-deposits or identity check):
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/sources/fsr_.../verify \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+For Plaid-linked banks, verification happens in the link flow. For manual bank entry, micro-deposits arrive in 1-2 business days; the user confirms the amounts in your UI, which submits back to this endpoint.
+
+Source status transitions: `unverified` → `verified` | `blocked`.
+
+## Step 3 — Initiate funding
+
+Once verified:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/transactions \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "source_id": "fsr_...",
+    "wallet_id": "wal_...",
+    "amount_cents": 50000,
+    "currency": "USD",
+    "idempotency_key": "fund-2026-04-23-001"
+  }'
+```
+
+**Amount is in minor units** (`amount_cents`) — 50000 = $500.00 USD. Avoid float precision issues.
+
+Response:
+
+```json
+{
+  "id": "fx_...",
+  "status": "pending",
+  "source_id": "fsr_...",
+  "wallet_id": "wal_...",
+  "amount_cents": 50000,
+  "currency": "USD",
+  "estimated_settlement": "2026-04-26T00:00:00Z",
+  "fees": { "provider": 125, "sly": 0, "total": 125 }
+}
+```
+
+## Step 4 — Watch settlement
+
+```bash
+curl https://api.getsly.ai/v1/funding/transactions/fx_... \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+Status: `pending` → `processing` → `completed` | `failed`.
+
+Or subscribe to `funding.transaction.completed` webhook.
+
+## Hosted on-ramp (consumer-facing)
+
+For consumer flows where the end-user completes funding in a branded Sly-hosted page — useful when you don't want to build card/bank capture UI yourself.
+
+### Coinbase on-ramp (fiat → USDC → your wallet)
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/onramp-session \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "wallet_id": "wal_...",
+    "default_amount_usd": 100,
+    "supported_payment_methods": ["card", "ach"],
+    "return_url": "https://yourapp.example/funded"
+  }'
+```
+
+Returns `{ session_token, session_url }`. Redirect the user; they complete funding in Coinbase's flow; the wallet is credited on confirmation.
+
+### Stripe crypto on-ramp
+
+Similar pattern, different provider:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/stripe-onramp-session \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "wallet_id": "wal_...",
+    "default_amount_usd": 100
+  }'
+```
+
+### Crossmint order (card → USDC, web + mobile friendly)
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/crossmint-order \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "wallet_id": "wal_...",
+    "amount_usd": 100,
+    "return_url": "https://yourapp.example/funded"
+  }'
+```
+
+## Off-ramp (USDC → fiat)
+
+The inverse — move from a Sly wallet out to a bank:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/offramp-session \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "wallet_id": "wal_...",
+    "amount_usd": 500,
+    "destination_bank_account_id": "bank_..."
+  }'
+```
+
+## Embedded widget session
+
+For a Plaid / Belvo link flow embedded in your UI:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/widget-sessions \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "provider": "plaid",
+    "account_id": "acc_...",
+    "products": ["auth", "transactions"]
+  }'
+```
+
+Returns a short-lived session token. Pass it to the Plaid Link SDK client-side.
+
+## Estimate fees before funding
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/estimate-fees \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "source_type": "card",
+    "amount_cents": 50000,
+    "currency": "USD",
+    "destination_currency": "USDC"
+  }'
+```
+
+Returns provider fee, Sly fee, FX spread, and total — useful for displaying to end users.
+
+## Cross-currency funding
+
+Funding a USDC wallet from a USD bank account = on-ramp + FX.
+
+```bash
+curl -X POST https://api.getsly.ai/v1/funding/conversion-quote \
+  -H "Authorization: Bearer pk_live_..." \
+  -d '{
+    "from_currency": "USD",
+    "to_currency": "USDC",
+    "amount_cents": 50000
+  }'
+```
+
+Use the returned `quote_id` on the funding transaction to lock in the rate.
+
+## List providers + supported pairs
+
+```bash
+curl https://api.getsly.ai/v1/funding/providers \
+  -H "Authorization: Bearer pk_live_..."
+
+curl https://api.getsly.ai/v1/funding/conversion-rates \
+  -H "Authorization: Bearer pk_live_..."
+```
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/funding/sources` | Register source |
+| `GET /v1/funding/sources` | List sources |
+| `POST /v1/funding/sources/:id/verify` | Trigger verification |
+| `POST /v1/funding/transactions` | Initiate funding |
+| `GET /v1/funding/transactions/:id` | Transaction status |
+| `POST /v1/funding/widget-sessions` | Plaid/Belvo link session |
+| `POST /v1/funding/onramp-session` | Coinbase on-ramp |
+| `POST /v1/funding/stripe-onramp-session` | Stripe on-ramp |
+| `POST /v1/funding/crossmint-order` | Crossmint order |
+| `POST /v1/funding/offramp-session` | Off-ramp (USDC → fiat) |
+| `POST /v1/funding/estimate-fees` | Fee preview |
+| `POST /v1/funding/conversion-quote` | FX quote |
+| `GET /v1/funding/providers` | List providers |
+| `GET /v1/funding/conversion-rates` | List supported currency pairs |
+
+## Common pitfalls
+
+- **Forgetting `idempotency_key`** on funding transactions — retries create duplicate debits
+- **Rounding in amount** — always use `amount_cents`, never floats
+- **Stale quotes** — FX quotes expire in ~30 seconds; re-quote before large moves
+- **Unverified source** — sources in `unverified` state can't fund; verify first
+- **Provider-specific KYC** — some providers require additional KYC beyond Sly's; check the source's verification_status

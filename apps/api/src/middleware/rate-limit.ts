@@ -25,9 +25,14 @@ export interface RateLimitConfig {
   keyGenerator?: (c: Context) => string;
 }
 
+// Tunable via env (RATE_LIMIT_MAX_REQUESTS / RATE_LIMIT_WINDOW_MS) so ops can
+// loosen the ceiling without a redeploy — dashboards with lots of parallel
+// analytics calls routinely need more than 100/min. Defaults stay conservative.
+const envMax = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
+const envWindow = Number(process.env.RATE_LIMIT_WINDOW_MS);
 const defaultConfig: RateLimitConfig = {
-  windowMs: 60000,     // 1 minute
-  maxRequests: 1000,   // 1000 requests per minute (increased for dashboard multi-fetch patterns)
+  windowMs: Number.isFinite(envWindow) && envWindow > 0 ? envWindow : 60_000,
+  maxRequests: Number.isFinite(envMax) && envMax > 0 ? envMax : 300,
 };
 
 /**
@@ -39,7 +44,6 @@ export function rateLimiter(config: Partial<RateLimitConfig> = {}) {
   return async (c: Context, next: Next) => {
     // Skip rate limiting in test/development environment or when explicitly disabled
     if (
-      true || // FORCE DISABLE FOR TESTING
       process.env.NODE_ENV === 'test' ||
       process.env.NODE_ENV === 'development' ||
       process.env.INTEGRATION === 'true' ||

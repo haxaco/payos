@@ -1,0 +1,138 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Sly — Internal",
+  "description": "Internal engineering documentation for the Sly platform. Staff access only.",
+  "colors": {
+    "primary": "#0F172A",
+    "light": "#475569",
+    "dark": "#020617"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.jpeg"
+  },
+  "banner": {
+    "content": "**Internal documentation** — confidential. Do not share externally.",
+    "dismissible": false
+  },
+  "navbar": {
+    "links": [
+      { "label": "Public Docs", "href": "https://docs.getsly.ai" },
+      { "label": "Runbooks", "href": "/runbooks/overview" }
+    ]
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index",
+              "engineering/local-dev",
+              "engineering/monorepo-layout",
+              "engineering/conventions"
+            ]
+          },
+          {
+            "group": "Engineering",
+            "pages": [
+              "engineering/architecture",
+              "engineering/auth-middleware",
+              "engineering/database-rls",
+              "engineering/migrations",
+              "engineering/background-workers",
+              "engineering/request-context"
+            ]
+          },
+          {
+            "group": "Services",
+            "pages": [
+              "services/api",
+              "services/web",
+              "services/scanner",
+              "services/workers"
+            ]
+          },
+          {
+            "group": "Protocol Internals",
+            "pages": [
+              "protocol-internals/ucp",
+              "protocol-internals/acp",
+              "protocol-internals/ap2",
+              "protocol-internals/x402",
+              "protocol-internals/a2a",
+              "protocol-internals/mcp",
+              "protocol-internals/mpp"
+            ]
+          },
+          {
+            "group": "Scanner",
+            "pages": [
+              "scanner/overview",
+              "scanner/probes",
+              "scanner/analyzers",
+              "scanner/demand-intelligence",
+              "scanner/mcp-tools",
+              "scanner/synthetic-tests"
+            ]
+          },
+          {
+            "group": "Compliance & Security",
+            "pages": [
+              "compliance-security/kyc-kyb",
+              "compliance-security/sanctions-screening",
+              "compliance-security/aml",
+              "compliance-security/data-retention",
+              "compliance-security/rls-policies",
+              "compliance-security/secret-management"
+            ]
+          },
+          {
+            "group": "Runbooks",
+            "pages": [
+              "runbooks/overview",
+              "runbooks/deployment",
+              "runbooks/incident-response",
+              "runbooks/on-call",
+              "runbooks/rollback",
+              "runbooks/database-recovery"
+            ]
+          },
+          {
+            "group": "Testing",
+            "pages": [
+              "testing/overview",
+              "testing/unit-tests",
+              "testing/integration-tests",
+              "testing/marketplace-simulation"
+            ]
+          },
+          {
+            "group": "Debugging",
+            "pages": [
+              "debugging/overview",
+              "debugging/error-catalog",
+              "debugging/common-issues",
+              "debugging/tracing"
+            ]
+          },
+          {
+            "group": "In-Flight Epics",
+            "pages": [
+              "epics/overview",
+              "epics/epic-82-scoped-capability-tokens"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "api-reference/openapi.json"
+      }
+    ]
+  }
+}

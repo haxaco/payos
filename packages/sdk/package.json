@@ -1,7 +1,7 @@
 {
-  "name": "@sly/sdk",
-  "version": "0.1.0",
-  "description": "Unified PayOS SDK for multi-protocol settlement in LATAM",
+  "name": "@sly_ai/sdk",
+  "version": "0.1.6",
+  "description": "Unified Sly SDK for the agentic economy platform",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -45,6 +45,11 @@
       "types": "./dist/cards.d.ts",
       "import": "./dist/cards.mjs",
       "require": "./dist/cards.js"
+    },
+    "./a2a": {
+      "types": "./dist/a2a.d.ts",
+      "import": "./dist/a2a.mjs",
+      "require": "./dist/a2a.js"
     }
   },
   "files": [
@@ -76,7 +81,6 @@
     "agentic-commerce"
   ],
   "dependencies": {
-    "@sly/types": "workspace:*",
     "@x402/core": "^2.1.0",
     "@x402/evm": "^2.1.0",
     "@x402/express": "^2.1.0",
@@ -85,6 +89,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@sly/types": "workspace:*",
     "@types/express": "^4.17.21",
     "@types/node": "^20.10.0",
     "@vitest/coverage-v8": "^2.0.0",
@@ -105,7 +110,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/payos/payos",
+    "url": "https://github.com/Sly-devs/sly",
     "directory": "packages/sdk"
   },
   "author": "PayOS",

@@ -158,7 +158,7 @@ export function createError(
     type: 'error',
     code,
     severity: options.severity || codeConfig.severity,
-    path: options.path || codeConfig.path,
+    path: options.path || (codeConfig as any).path,
     content,
     content_type: options.contentType || 'plain',
     created_at: new Date().toISOString(),

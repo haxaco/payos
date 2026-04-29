@@ -1,0 +1,149 @@
+---
+title: "UCP (Unified Commerce Protocol)"
+description: "Sly's native tokenized commerce protocol. Broadest compatibility."
+---
+
+UCP (Unified Commerce Protocol) is Sly's native protocol for tokenized commerce. A merchant issues a **UCP token** representing an order; a buyer (human or agent) exchanges the token for settlement. UCP is the fallback / bridge protocol — if you don't know which protocol a merchant speaks, assume UCP.
+
+## Why UCP
+
+- **Rail-agnostic** — same token can settle via stablecoin, card, ACH, wire, or on-chain
+- **Human-and-agent compatible** — works for both AI buyers and traditional checkout
+- **Discoverable** — merchants publish their capabilities at `/.well-known/ucp`
+- **Programmable** — settlement rules, windows, and reconciliation built in
+
+## Anatomy
+
+```
+┌────────────────────┐           ┌────────────────────┐
+│  Merchant          │           │  Buyer (agent      │
+│  • Catalog         │           │   or human)        │
+│  • Inventory       │           │                    │
+│  • Settlement rules│           │                    │
+└────────┬───────────┘           └──────────┬─────────┘
+         │                                  │
+         │  1. Buyer selects items          │
+         │◀─────────────────────────────────┤
+         │                                  │
+         │  2. Merchant issues UCP token    │
+         ├─────────────────────────────────▶│
+         │                                  │
+         │  3. Buyer exchanges token for    │
+         │     payment via chosen rail      │
+         │─────── Sly settlement ──────────▶│
+         │                                  │
+         │  4. Settlement confirmation      │
+         │◀─────────────────────────────────┤
+         │                                  │
+```
+
+## Create a UCP token (merchant side)
+
+```bash
+curl -X POST https://api.getsly.ai/v1/ucp/tokens \
+  -H "Authorization: Bearer pk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "merchant_id": "mer_...",
+    "items": [
+      { "sku": "PRO-PLAN", "quantity": 1, "unit_price": "49.00", "currency": "USD" }
+    ],
+    "settlement_preferences": {
+      "accepted_rails": ["usdc", "ach", "card"],
+      "settlement_window": "T+1"
+    },
+    "expires_in": 900
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "ucp_tok_...",
+  "token": "ucp.eyJ...",
+  "total": "49.00",
+  "currency": "USD",
+  "expires_at": "2026-04-22T14:30:00Z",
+  "settlement_url": "https://api.getsly.ai/v1/ucp/settle"
+}
+```
+
+Return the `token` to the buyer.
+
+## Settle a UCP token (buyer side)
+
+```bash
+curl -X POST https://api.getsly.ai/v1/ucp/settle \
+  -H "Authorization: Bearer agent_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "ucp.eyJ...",
+    "rail": "usdc",
+    "from_wallet_id": "wal_..."
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "settle_...",
+  "status": "processing",
+  "rail": "usdc",
+  "tx_hash": "0x...",
+  "merchant_notified": true
+}
+```
+
+## Key endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/ucp/tokens` | Merchant creates a checkout token |
+| `POST /v1/ucp/settle` | Buyer settles a token |
+| `GET /v1/ucp/settlements/:id` | Poll settlement status |
+| `POST /v1/ucp/merchants` | Register a merchant catalog |
+| `GET /v1/ucp/merchants` | List merchants (discovery) |
+| `POST /v1/ucp/checkouts` | Full checkout session (cart model) |
+| `POST /v1/ucp/orders` | Order tracking + fulfillment events |
+| `POST /v1/ucp/identity` | Link buyer identity for compliance |
+| `GET /.well-known/ucp` | Merchant capability discovery (public) |
+| `GET /ucp/schemas` | JSON schemas for all UCP objects |
+
+## Settlement rules
+
+Merchants can define rules that automatically route or split settlements:
+
+```bash
+curl -X POST https://api.getsly.ai/v1/settlement-rules \
+  -d '{
+    "merchant_id": "mer_...",
+    "name": "Platform fee split",
+    "rules": [
+      { "type": "fee", "to_account": "acc_platform", "percentage": "2.5" },
+      { "type": "remainder", "to_account": "acc_merchant" }
+    ]
+  }'
+```
+
+See the [API reference](/api-reference) for the full rule grammar.
+
+## Discovery
+
+Merchants publish their UCP capabilities at a well-known URL:
+
+```bash
+curl https://merchant.example.com/.well-known/ucp
+```
+
+Returns JSON describing accepted rails, currencies, categories, and settlement windows. Agents use this to decide whether and how to transact.
+
+## When to use UCP vs. others
+
+- Use **UCP** when the merchant wants flexibility on settlement rails (stablecoin OR card OR ACH) or needs programmable fee splits
+- Use **ACP** or **AP2** when integrating into Stripe/OpenAI or Google ecosystems specifically — those protocols are prescribed for those marketplaces
+- Use **x402** when the purchase is per-API-call micropayment
+- Use **A2A** when the purchase is from another AI agent
+
+UCP is the most general of the six; start here if you're unsure.

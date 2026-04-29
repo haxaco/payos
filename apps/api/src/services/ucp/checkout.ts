@@ -238,7 +238,8 @@ function requiresShipping(metadata: Record<string, unknown>): boolean {
 export async function createCheckout(
   tenantId: string,
   request: CreateCheckoutRequest,
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<UCPCheckoutSession> {
   const id = generateCheckoutId();
   const now = new Date();
@@ -353,6 +354,7 @@ export async function createCheckout(
     const { data, error } = await supabase.from('ucp_checkout_sessions').insert({
       id,
       tenant_id: tenantId,
+      environment,
       status: stored.status,
       currency: stored.currency,
       line_items: stored.line_items,
@@ -400,7 +402,8 @@ export async function createCheckout(
 export async function getCheckout(
   tenantId: string,
   checkoutId: string,
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<UCPCheckoutSession | null> {
   // If supabase client provided, query database
   if (supabase) {
@@ -409,6 +412,7 @@ export async function getCheckout(
       .select('*')
       .eq('id', checkoutId)
       .eq('tenant_id', tenantId)
+      .eq('environment', environment)
       .single();
 
     if (error || !data) {
@@ -450,11 +454,12 @@ export async function updateCheckout(
   tenantId: string,
   checkoutId: string,
   request: UpdateCheckoutRequest,
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<UCPCheckoutSession> {
   // Try Supabase path first
   if (supabase) {
-    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    const existing = await getCheckout(tenantId, checkoutId, supabase, environment);
     if (!existing) {
       throw new Error('Checkout not found');
     }
@@ -655,11 +660,12 @@ export async function updateCheckout(
 export async function completeCheckout(
   tenantId: string,
   checkoutId: string,
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<UCPCheckoutSession> {
   // Try Supabase path first
   if (supabase) {
-    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    const existing = await getCheckout(tenantId, checkoutId, supabase, environment);
     if (!existing) {
       throw new Error('Checkout not found');
     }
@@ -727,7 +733,7 @@ export async function completeCheckout(
       // Determine handler and instrument
       // Prefer handler from selected instrument, fall back to payment_config
       const instrumentId = existing.selected_instrument_id || undefined;
-      let handlerId = existing.payment_config?.handlers?.[0] || 'payos_latam';
+      let handlerId = existing.payment_config?.handlers?.[0] || 'sly_latam';
       if (instrumentId && existing.payment_instruments) {
         const selectedInstrument = existing.payment_instruments.find(
           (pi: any) => pi.id === instrumentId
@@ -742,8 +748,78 @@ export async function completeCheckout(
       let settlementId: string | undefined;
       let paymentId: string | undefined;
 
-      const handler = getHandler(handlerId);
-      if (handler && instrumentId) {
+      // Try wallet payment first if agent_id is present
+      let walletPaymentUsed = false;
+      const agentId: string | null = existing.agent_id || (existing.metadata?.agent_id as string | undefined) || null;
+      console.log(`[UCP Checkout] Wallet path: agentId=${agentId}, totalAmount=${totalAmount}`);
+      if (agentId) {
+        const { data: agentWallet, error: walletQueryErr } = await supabase
+          .from('wallets')
+          .select('id, balance, wallet_type, wallet_address, provider_wallet_id, owner_account_id')
+          .eq('managed_by_agent_id', agentId)
+          .eq('status', 'active')
+          .order('balance', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        console.log(`[UCP Checkout] Wallet query: found=${!!agentWallet}, err=${walletQueryErr?.message || 'none'}, balance=${agentWallet?.balance || 'N/A'}`);
+        const amountInUnits = totalAmount / 100; // UCP amounts are in cents
+        if (agentWallet && parseFloat(agentWallet.balance) >= amountInUnits) {
+          try {
+            const { authorizeWalletTransfer } = await import('../wallet-settlement.js');
+
+            const { data: walletTransfer, error: xferErr } = await supabase
+              .from('transfers')
+              .insert({
+                tenant_id: tenantId,
+                environment,
+                from_account_id: agentWallet.owner_account_id,
+                type: 'ucp',
+                status: 'pending',
+                amount: amountInUnits,
+                currency: existing.currency,
+                description: `UCP checkout ${checkoutId}`,
+                initiated_by_type: 'agent',
+                initiated_by_id: agentId,
+                protocol_metadata: { protocol: 'ucp', checkout_id: checkoutId, agent_wallet: true },
+              })
+              .select('id')
+              .single();
+
+            if (xferErr) {
+              console.error('[UCP Checkout] Transfer insert failed:', xferErr.message);
+            }
+
+            if (walletTransfer) {
+              const result = await authorizeWalletTransfer({
+                supabase,
+                tenantId,
+                sourceWallet: agentWallet,
+                destinationWallet: null,
+                amount: amountInUnits,
+                transferId: walletTransfer.id,
+                protocolMetadata: { protocol: 'ucp', checkout_id: checkoutId },
+              });
+
+              if (result.success) {
+                walletPaymentUsed = true;
+                paymentStatus = 'completed';
+                paymentId = walletTransfer.id;
+                console.log(`[UCP Checkout] Wallet payment: $${amountInUnits} debited from agent ${agentId}`);
+              }
+            }
+          } catch (walletErr: any) {
+            console.warn('[UCP Checkout] Wallet payment failed:', walletErr.message);
+            throw new Error(`Payment failed: wallet debit error — ${walletErr.message}`);
+          }
+        } else if (agentId) {
+          throw new Error('Payment failed: agent wallet not found or insufficient balance');
+        }
+      }
+
+      // Skip external handler if wallet payment was used
+      const handler = !walletPaymentUsed ? getHandler(handlerId) : null;
+      if (!walletPaymentUsed && handler && instrumentId) {
         console.log(`[UCP Checkout] Processing payment via handler "${handlerId}" for ${totalAmount} ${existing.currency}`);
         const paymentResult = await handlerProcessPayment(handlerId, {
           instrumentId,
@@ -775,6 +851,7 @@ export async function completeCheckout(
           .from('ap2_mandate_executions')
           .insert({
             tenant_id: tenantId,
+            environment,
             mandate_id: resolvedMandate.id,
             execution_index: newExecIndex,
             amount: amountInDollars,
@@ -828,6 +905,7 @@ export async function completeCheckout(
                   .from('transfers')
                   .insert({
                     tenant_id: tenantId,
+                    environment,
                     from_account_id: wallet.owner_account_id,
                     to_account_id: wallet.owner_account_id,
                     amount: amountInDollars,
@@ -887,8 +965,8 @@ export async function completeCheckout(
       console.log(`[UCP Checkout] Checkout ${checkoutId} completed, order ${order.id} created (persisted)`);
 
       // Increment agent attribution counters if agent_id is set
-      const agentId = existing.agent_id || (existing.metadata?.agent_id as string | undefined);
-      if (agentId && supabase) {
+      const attrAgentId = existing.agent_id || (existing.metadata?.agent_id as string | undefined);
+      if (attrAgentId && supabase) {
         // Convert from minor units to major units, then to USD if non-USD currency
         const majorUnits = totalAmount / 100;
         const currency = existing.currency?.toUpperCase() || 'USD';
@@ -904,14 +982,16 @@ export async function completeCheckout(
         }
         try {
           await supabase.rpc('increment_agent_counters', {
-            p_agent_id: agentId,
+            p_agent_id: attrAgentId,
             p_volume: usdAmount,
           });
-          console.log(`[UCP Checkout] Incremented agent ${agentId} counters: +$${usdAmount} volume, +1 txn`);
+          console.log(`[UCP Checkout] Incremented agent ${attrAgentId} counters: +$${usdAmount} volume, +1 txn`);
 
           // Record daily/monthly usage for limit tracking
-          const limitService = new LimitService(supabase);
-          await limitService.recordUsage(agentId, usdAmount);
+          const limitService = new LimitService(supabase, environment);
+          if (agentId) {
+            await limitService.recordUsage(agentId, usdAmount);
+          }
           console.log(`[UCP Checkout] Recorded agent ${agentId} daily usage: +$${usdAmount}`);
         } catch (agentErr: any) {
           // Non-fatal: log but don't fail the checkout
@@ -1011,11 +1091,12 @@ export async function completeCheckout(
 export async function cancelCheckout(
   tenantId: string,
   checkoutId: string,
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<UCPCheckoutSession> {
   // Try Supabase path first
   if (supabase) {
-    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    const existing = await getCheckout(tenantId, checkoutId, supabase, environment);
     if (!existing) {
       throw new Error('Checkout not found');
     }
@@ -1079,7 +1160,8 @@ export async function listCheckouts(
     limit?: number;
     offset?: number;
   } = {},
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<{ data: UCPCheckoutSession[]; total: number }> {
   const { status, agent_id, limit = 20, offset = 0 } = options;
 
@@ -1089,6 +1171,7 @@ export async function listCheckouts(
       .from('ucp_checkout_sessions')
       .select('*', { count: 'exact' })
       .eq('tenant_id', tenantId)
+      .eq('environment', environment)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -1174,11 +1257,12 @@ export async function addPaymentInstrument(
   tenantId: string,
   checkoutId: string,
   instrument: Omit<UCPPaymentInstrument, 'created_at'>,
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<UCPCheckoutSession> {
   // Try Supabase path first
   if (supabase) {
-    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    const existing = await getCheckout(tenantId, checkoutId, supabase, environment);
     if (!existing) {
       throw new Error('Checkout not found');
     }
@@ -1278,11 +1362,12 @@ export async function selectPaymentInstrument(
   tenantId: string,
   checkoutId: string,
   instrumentId: string,
-  supabase?: SupabaseClient
+  supabase?: SupabaseClient,
+  environment: 'test' | 'live' = 'test',
 ): Promise<UCPCheckoutSession> {
   // Try Supabase path first
   if (supabase) {
-    const existing = await getCheckout(tenantId, checkoutId, supabase);
+    const existing = await getCheckout(tenantId, checkoutId, supabase, environment);
     if (!existing) {
       throw new Error('Checkout not found');
     }

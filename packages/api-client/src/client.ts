@@ -48,6 +48,13 @@ import type {
   ExecuteMandatePaymentInput,
   MandatesListParams,
   FundingSourceSummary,
+  OnrampSessionInput,
+  OnrampSessionResponse,
+  StripeOnrampSessionResponse,
+  CrossmintOrderInput,
+  CrossmintOrderResponse,
+  WithdrawExternalInput,
+  WithdrawExternalResponse,
   // x402 types
   X402Endpoint,
   CreateX402EndpointInput,
@@ -99,11 +106,18 @@ import type {
   A2AStreamEvent,
   A2AStreamEventType,
   RespondToTaskInput,
+  // MPP types
+  MppPayInput,
+  MppOpenSessionInput,
+  MppSessionsListParams,
+  MppTransfersListParams,
+  MppProvisionWalletInput,
 } from './types';
 
 export interface SlyClientConfig {
   baseUrl: string;
   apiKey: string;
+  defaultHeaders?: Record<string, string>;
   onError?: (error: SlyError) => void;
 }
 
@@ -175,6 +189,7 @@ export class SlyClient {
     const requestHeaders: Record<string, string> = {
       'Authorization': `Bearer ${this.config.apiKey}`,
       'Content-Type': 'application/json',
+      ...(this.config.defaultHeaders || {}),
       ...headers,
     };
 
@@ -293,6 +308,44 @@ export class SlyClient {
       this.get<PaginatedResponse<Stream>>(`/accounts/${id}/streams`, params),
 
     /**
+     * Merchant analytics — volume, top buyers, recent sales, x402 endpoints.
+     * 404s when the account exists but isn't a merchant (subtype !== 'merchant').
+     */
+    getMerchantStats: (id: string, params?: { minutes?: number }) =>
+      this.get<any>(`/accounts/${id}/merchant-stats`, params),
+
+    /**
+     * Product CRUD on a merchant account's catalog. Owner/admin only.
+     */
+    addProduct: (
+      id: string,
+      product: {
+        name: string;
+        category: string;
+        unit_price_cents: number;
+        currency?: string;
+        sku?: string;
+        description?: string;
+      },
+    ) => this.post<any>(`/accounts/${id}/products`, product),
+
+    updateProduct: (
+      id: string,
+      productId: string,
+      patch: Partial<{
+        name: string;
+        category: string;
+        unit_price_cents: number;
+        currency: string;
+        sku: string;
+        description: string;
+      }>,
+    ) => this.patch<any>(`/accounts/${id}/products/${productId}`, patch),
+
+    deleteProduct: (id: string, productId: string) =>
+      this.delete<any>(`/accounts/${id}/products/${productId}`),
+
+    /**
      * Verify account (mock KYC/KYB)
      */
     verify: (id: string, tier: number) =>
@@ -387,6 +440,58 @@ export class SlyClient {
      */
     getTransactions: (id: string, params?: PaginationParams & { type?: string; from?: string; to?: string }) =>
       this.get<{ data: AgentTransaction[]; pagination: { limit: number; offset: number; total: number } }>(`/agents/${id}/transactions`, params),
+
+    /**
+     * Get agent wallet details (balance, policy, status)
+     */
+    getWallet: (id: string) =>
+      this.get<any>(`/agents/${id}/wallet`),
+
+    /**
+     * Provision (or fetch existing) secp256k1 EVM signing key for the agent.
+     * Idempotent — returns the existing key when one already exists.
+     */
+    provisionEvmKey: (id: string) =>
+      this.post<{ keyId: string; ethereumAddress: string; publicKey: string; created: boolean }>(
+        `/agents/${id}/evm-keys`,
+        {},
+      ),
+
+    /**
+     * Freeze agent wallet
+     */
+    freezeWallet: (id: string) =>
+      this.post<any>(`/agents/${id}/wallet/freeze`),
+
+    /**
+     * Unfreeze agent wallet
+     */
+    unfreezeWallet: (id: string) =>
+      this.post<any>(`/agents/${id}/wallet/unfreeze`),
+
+    /**
+     * Set or update agent wallet contract policy
+     */
+    setWalletPolicy: (id: string, policy: any) =>
+      this.put<any>(`/agents/${id}/wallet/policy`, policy),
+
+    /**
+     * Evaluate a policy check against the agent wallet
+     */
+    evaluatePolicy: (id: string, request: any) =>
+      this.post<any>(`/agents/${id}/wallet/policy/evaluate`, request),
+
+    /**
+     * Get counterparty exposure data for agent wallet
+     */
+    getExposures: (id: string) =>
+      this.get<any>(`/agents/${id}/wallet/exposures`),
+
+    /**
+     * Get policy evaluation history for agent wallet
+     */
+    getEvaluations: (id: string, params?: { page?: number; limit?: number }) =>
+      this.get<any>(`/agents/${id}/wallet/policy/evaluations`, params),
   };
 
   // ============================================
@@ -874,6 +979,50 @@ export class SlyClient {
      */
     get: (id: string) =>
       this.get<{ data: FundingSourceSummary }>(`/funding/sources/${id}`).then(r => r.data),
+
+    /**
+     * Create a Coinbase Onramp session token for wallet funding
+     */
+    createOnrampSession: (input: OnrampSessionInput) =>
+      this.post<{ data: OnrampSessionResponse }>('/funding/onramp-session', {
+        wallet_id: input.walletId,
+      }).then(r => (r as any).data || r),
+
+    /**
+     * Create a Stripe Crypto Onramp session for embedded wallet funding
+     */
+    createStripeOnrampSession: (input: OnrampSessionInput) =>
+      this.post<{ data: StripeOnrampSessionResponse }>('/funding/stripe-onramp-session', {
+        wallet_id: input.walletId,
+      }).then(r => (r as any).data || r),
+
+    /**
+     * Create a Crossmint onramp order for embedded checkout
+     */
+    createCrossmintOrder: (input: CrossmintOrderInput) =>
+      this.post<{ data: CrossmintOrderResponse }>('/funding/crossmint-order', {
+        wallet_id: input.walletId,
+        amount: input.amount || '5.00',
+        receipt_email: input.receiptEmail,
+      }).then(r => (r as any).data || r),
+
+    /**
+     * Create a Coinbase Offramp session (sell USDC → fiat)
+     */
+    createOfframpSession: (input: OnrampSessionInput) =>
+      this.post<{ data: OnrampSessionResponse }>('/funding/offramp-session', {
+        wallet_id: input.walletId,
+      }).then(r => (r as any).data || r),
+
+    /**
+     * Withdraw USDC to an external wallet address
+     */
+    withdrawExternal: (input: WithdrawExternalInput) =>
+      this.post<{ data: WithdrawExternalResponse }>(`/wallets/${input.walletId}/transfer`, {
+        destinationAddress: input.destinationAddress,
+        amount: input.amount,
+        currency: input.currency || 'USDC',
+      }).then(r => (r as any).data || r),
   };
 
   // ============================================
@@ -1277,6 +1426,111 @@ export class SlyClient {
      */
     getStatus: (transferId: string) =>
       this.get<{ data: any }>(`/settlement/status/${transferId}`).then(r => r.data),
+  };
+
+  // ============================================
+  // MPP API (Machine Payments Protocol)
+  // ============================================
+
+  mpp = {
+    /**
+     * Make a one-shot MPP payment
+     */
+    pay: (input: MppPayInput) =>
+      this.post<any>('/mpp/pay', {
+        service_url: input.serviceUrl,
+        amount: input.amount,
+        currency: input.currency,
+        intent: input.intent,
+        agent_id: input.agentId,
+        wallet_id: input.walletId,
+      }),
+
+    /**
+     * List MPP sessions
+     */
+    listSessions: (params?: MppSessionsListParams) => {
+      const query = new URLSearchParams();
+      if (params?.agentId) query.set('agent_id', params.agentId);
+      if (params?.status) query.set('status', params.status);
+      if (params?.limit) query.set('limit', String(params.limit));
+      if (params?.offset) query.set('offset', String(params.offset));
+      const qs = query.toString();
+      return this.get<any>(`/mpp/sessions${qs ? `?${qs}` : ''}`);
+    },
+
+    /**
+     * Get session details with voucher history
+     */
+    getSession: (id: string) =>
+      this.get<any>(`/mpp/sessions/${id}`),
+
+    /**
+     * Open a new MPP session
+     */
+    openSession: (input: MppOpenSessionInput) =>
+      this.post<any>('/mpp/sessions', {
+        service_url: input.serviceUrl,
+        deposit_amount: input.depositAmount,
+        max_budget: input.maxBudget,
+        agent_id: input.agentId,
+        wallet_id: input.walletId,
+        currency: input.currency,
+      }),
+
+    /**
+     * Close an active session
+     */
+    closeSession: (id: string) =>
+      this.post<any>(`/mpp/sessions/${id}/close`, {}),
+
+    /**
+     * List MPP transfers
+     */
+    listTransfers: (params?: MppTransfersListParams) => {
+      const query = new URLSearchParams();
+      if (params?.serviceUrl) query.set('service_url', params.serviceUrl);
+      if (params?.sessionId) query.set('session_id', params.sessionId);
+      if (params?.limit) query.set('limit', String(params.limit));
+      if (params?.offset) query.set('offset', String(params.offset));
+      const qs = query.toString();
+      return this.get<any>(`/mpp/transfers${qs ? `?${qs}` : ''}`);
+    },
+
+    /**
+     * Verify an MPP payment receipt
+     */
+    verifyReceipt: (receiptId: string) =>
+      this.post<any>('/mpp/receipts/verify', { receipt_id: receiptId }),
+
+    /**
+     * Provision a wallet for MPP
+     */
+    provisionWallet: (input: MppProvisionWalletInput) =>
+      this.post<any>('/mpp/wallets/provision', {
+        agent_id: input.agentId,
+        owner_account_id: input.ownerAccountId,
+        testnet: input.testnet,
+        initial_balance: input.initialBalance,
+      }),
+
+    /**
+     * Browse MPP service directory
+     */
+    browseServices: (params?: { category?: string; limit?: number }) =>
+      this.get<any>('/mpp/services', params),
+
+    /**
+     * Get service pricing
+     */
+    getServicePricing: (domain: string) =>
+      this.get<any>(`/mpp/services/${domain}/pricing`),
+
+    /**
+     * Get MPP analytics summary
+     */
+    getAnalytics: (params?: { period?: string }) =>
+      this.get<any>('/mpp/analytics', params),
   };
 
   // ============================================
@@ -1711,6 +1965,44 @@ export class SlyClient {
       getScopes: () =>
         this.get<{ data: { scope: string; description: string }[] }>('/ucp/identity/scopes'),
     },
+  };
+
+  /**
+   * Merchant-facing helpers — cleaner namespace than /ucp/merchants.
+   * List + detail mirror /ucp/merchants (backed by the same handlers);
+   * ratings are new (Phase 3 of the merchant work).
+   */
+  merchants = {
+    list: (params?: { type?: string; country?: string; search?: string; limit?: number; page?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.type) q.set('type', params.type);
+      if (params?.country) q.set('country', params.country);
+      if (params?.search) q.set('search', params.search);
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.page) q.set('page', String(params.page));
+      return this.get<any>(`/merchants${q.toString() ? `?${q.toString()}` : ''}`);
+    },
+    get: (id: string) => this.get<any>(`/merchants/${id}`),
+    /** List recent ratings + per-dim averages for a merchant. Tenant-auth. */
+    listRatings: (accountId: string, params?: { limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.limit) q.set('limit', String(params.limit));
+      return this.get<any>(`/merchants/${accountId}/ratings${q.toString() ? `?${q.toString()}` : ''}`);
+    },
+    /** Submit a merchant rating. Agent-auth — will 403 for tenant/API-key callers. */
+    submitRating: (
+      accountId: string,
+      body: {
+        navigation?: number;
+        price_accuracy?: number;
+        response_speed?: number;
+        fulfillment?: number;
+        error_clarity?: number;
+        checkout_id?: string;
+        checkout_protocol?: 'acp' | 'ucp' | 'x402';
+        comment?: string;
+      },
+    ) => this.post<any>(`/merchants/${accountId}/ratings`, body),
   };
 }
 

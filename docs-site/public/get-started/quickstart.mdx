@@ -1,0 +1,202 @@
+---
+title: "Quickstart"
+description: "First transfer in 5 minutes — dashboard wizard or raw API, your choice."
+---
+
+Three paths to your first transfer. Pick the one that matches who you are.
+
+<CardGroup cols={3}>
+  <Card title="Dashboard wizard" icon="wand-magic-sparkles" href="/onboarding/overview">
+    **Operator path.** Pick a use-case template (API monetization, e-commerce, agent commerce, recurring payments). Wizards walk you through wallet, agent, and test in 10-15 minutes.
+  </Card>
+  <Card title="Raw API (this page)" icon="code">
+    **Operator path.** Direct REST calls. Best if you've done payments integrations before and want to understand the primitives first.
+  </Card>
+  <Card title="Agent quickstart" icon="robot" href="/agents/quickstart">
+    **Agent author path.** You're building an AI agent (Claude, Cursor, custom runtime) that needs to transact on Sly. From token → first paid call in 10 minutes.
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+- A Sly sandbox API key — see [sign up](/get-started/sign-up) or grab the shared playground key on any page's "Try it" panel
+- Node.js 18+ *or* `curl`
+
+```bash
+export SLY_API_KEY=pk_test_...
+```
+
+## 1. Create an account
+
+An [Account](/core-concepts/accounts) is the person or business that holds funds and owns agents.
+
+<CodeGroup>
+```bash cURL
+curl https://sandbox.getsly.ai/v1/accounts \
+  -H "Authorization: Bearer $SLY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "business",
+    "name": "Acme Robotics",
+    "email": "ops@acme.example"
+  }'
+```
+
+```ts Node SDK
+import { Sly } from '@sly_ai/sdk';
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY });
+
+const account = await sly.accounts.create({
+  type: 'business',
+  name: 'Acme Robotics',
+  email: 'ops@acme.example',
+});
+console.log(account.id); // acc_...
+```
+</CodeGroup>
+
+Save the returned `id` — you'll attach an agent to it next.
+
+## 2. Register an agent
+
+An [Agent](/core-concepts/agents) is an AI actor that transacts on behalf of an Account, under a [KYA tier](/agents/kya-tiers) and a [wallet policy](/agents/wallet-policies).
+
+<CodeGroup>
+```bash cURL
+curl https://sandbox.getsly.ai/v1/agents \
+  -H "Authorization: Bearer $SLY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_account_id": "acc_...",
+    "name": "Acme Payables Bot",
+    "kya_tier": 1,
+    "generate_keypair": true
+  }'
+```
+
+```ts Node SDK
+const agent = await sly.agents.create({
+  parentAccountId: account.id,
+  name: 'Acme Payables Bot',
+  kyaTier: 1,
+  generateKeypair: true,
+});
+
+console.log(agent.token);      // agent_test_... (save to env)
+console.log(agent.keypair);    // { public, private } — save the private key
+```
+</CodeGroup>
+
+<Warning>
+The response contains `token` and (if you asked for it) the keypair **once**. Store both securely. The token is shown in cleartext one time; Sly only keeps a hash.
+</Warning>
+
+## 3. Fund the wallet (sandbox only)
+
+In sandbox you can self-fund agent wallets from a faucet:
+
+<CodeGroup>
+```bash cURL
+curl https://sandbox.getsly.ai/v1/agent-wallets/$AGENT_WALLET_ID/fund \
+  -H "Authorization: Bearer $SLY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "amount": "500.00", "currency": "USDC" }'
+```
+
+```ts Node SDK
+await sly.agentWallets.fund({
+  agentWalletId: agent.walletId,
+  amount: '500.00',
+  currency: 'USDC',
+});
+```
+</CodeGroup>
+
+## 4. Send a transfer
+
+Move funds from the agent's wallet to a peer account:
+
+<CodeGroup>
+```bash cURL
+curl https://sandbox.getsly.ai/v1/transfers \
+  -H "Authorization: Bearer $SLY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": "agt_...",
+    "to_account_id": "acc_peer_...",
+    "amount": "42.00",
+    "currency": "USDC",
+    "memo": "Quickstart test",
+    "idempotency_key": "quickstart-2026-04-22"
+  }'
+```
+
+```ts Node SDK
+const transfer = await sly.transfers.create({
+  fromAgentId: agent.id,
+  toAccountId: 'acc_peer_...',
+  amount: '42.00',
+  currency: 'USDC',
+  memo: 'Quickstart test',
+  idempotencyKey: 'quickstart-2026-04-22',
+});
+
+console.log(transfer.status); // 'pending' → 'processing' → 'completed'
+```
+</CodeGroup>
+
+## 5. Watch it settle
+
+Poll the transfer, or subscribe to webhooks:
+
+```bash
+curl https://sandbox.getsly.ai/v1/transfers/$TRANSFER_ID \
+  -H "Authorization: Bearer $SLY_API_KEY"
+```
+
+In sandbox, transfers usually settle in \<5 seconds. Status progresses `pending` → `processing` → `completed`.
+
+## Shortcut: single-call setup
+
+If you want an even shorter version that creates the account + agent + wallet in one call, use the onboarding helper:
+
+```bash
+curl -X POST https://sandbox.getsly.ai/v1/onboarding/agent \
+  -H "Authorization: Bearer $SLY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "account_name": "Acme Robotics",
+    "account_type": "business",
+    "agent_name": "Acme Payables Bot",
+    "kya_tier": 1,
+    "initial_funding": "500.00"
+  }'
+```
+
+Returns `{ account, agent, wallet, credentials }` in one shot. Useful for scripted setups and CI.
+
+## What just happened
+
+You touched the full core loop:
+
+1. **Tenant → Account → Agent → Wallet** hierarchy
+2. **API key auth** (simplest of the [five methods](/authentication/overview))
+3. **Sandbox faucet** for test money
+4. **Transfer lifecycle** with observable state transitions
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Pick an onboarding wizard" icon="wand-magic-sparkles" href="/onboarding/overview">
+    If you prefer the UI-driven path going forward, start from a template that matches your use case.
+  </Card>
+  <Card title="Upgrade auth" icon="lock" href="/authentication/ed25519-sessions">
+    Agent tokens are fine to start. Move to Ed25519 sessions before production — same code, better security.
+  </Card>
+  <Card title="Understand the protocols" icon="network-wired" href="/protocols/overview">
+    Transfers are the simplest case. UCP, ACP, AP2, x402, A2A, and MCP unlock merchant checkout, mandates, micropayments, and peer-to-peer agent tasks.
+  </Card>
+  <Card title="Set wallet policies" icon="shield-halved" href="/agents/wallet-policies">
+    Before shipping to production, configure spending limits, allowlists, and kill-switches.
+  </Card>
+</CardGroup>
