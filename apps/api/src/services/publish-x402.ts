@@ -22,6 +22,7 @@ import type {
 } from '@sly/api-client';
 import type { RequestContext } from '../middleware/auth.js';
 import { buildBazaarExtension, validateBazaarExtension } from './bazaar-extension.js';
+import { getCdpCredentials } from './coinbase/cdp-client.js';
 import { probeEndpoint } from './endpoint-probe.js';
 import { getOrProvision, mapSlyNetworkToCAIP2 } from './payout-wallet.js';
 import { BazaarValidationError } from '../middleware/error.js';
@@ -134,16 +135,16 @@ async function triggerFirstSettle(
   endpoint: EndpointRow,
   payoutAddress: string
 ): Promise<{ extensionResponse: 'processing' | 'rejected' | 'unknown'; reason?: string }> {
-  const apiKeyId = process.env.CDP_API_KEY_ID;
-  const apiKeySecret = process.env.CDP_API_KEY_SECRET;
+  const creds = getCdpCredentials();
   const probeWalletId = process.env.SLY_PUBLISH_PROBE_WALLET_ID;
 
-  if (!apiKeyId || !apiKeySecret || !probeWalletId) {
+  if (!creds || !probeWalletId) {
     return {
       extensionResponse: 'processing',
       reason: 'probe-skipped:cdp-credentials-missing',
     };
   }
+  const { apiKeyId, apiKeySecret } = creds;
 
   const cdpUrl =
     process.env.CDP_FACILITATOR_URL || 'https://api.cdp.coinbase.com/platform/v2/x402';

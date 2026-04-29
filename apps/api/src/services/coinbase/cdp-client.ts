@@ -326,3 +326,26 @@ export function createCDPClient(config: CDPConfig): CDPClient {
   return new CDPClient(config);
 }
 
+/**
+ * Resolve CDP credentials from any of the env-var names this codebase has used
+ * historically. Returns null when neither half is configured.
+ *
+ * Naming variants in the wild:
+ *   - id:     CDP_API_KEY_ID     (Worktree B / publish flow / new code)
+ *             CDP_API_KEY_NAME   (legacy / prod env / cdp-client)
+ *   - secret: CDP_API_KEY_SECRET       (Worktree B / publish flow / new code)
+ *             CDP_API_KEY_PRIVATE_KEY  (legacy / prod env)
+ *             CDP_PRIVATE_KEY          (cdp-client.ts)
+ *
+ * All refer to the same Coinbase Developer Platform credential pair.
+ */
+export function getCdpCredentials(): { apiKeyId: string; apiKeySecret: string } | null {
+  const apiKeyId = process.env.CDP_API_KEY_ID || process.env.CDP_API_KEY_NAME;
+  const apiKeySecret =
+    process.env.CDP_API_KEY_SECRET ||
+    process.env.CDP_PRIVATE_KEY ||
+    process.env.CDP_API_KEY_PRIVATE_KEY;
+  if (!apiKeyId || !apiKeySecret) return null;
+  return { apiKeyId, apiKeySecret };
+}
+

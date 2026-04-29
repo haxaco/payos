@@ -538,3 +538,159 @@ describe('handleGatewayRequest — end-to-end branches', () => {
     expect(body.extensionResponses).toContain('rejected');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// Path-based gateway handler (temporary fallback while DNS for
+// `*.x402.getsly.ai` is being provisioned). URL shape:
+//   https://api.getsly.ai/x402/{tenant}/{service}/...
+// ────────────────────────────────────────────────────────────────────────
+
+import { handlePathBasedGatewayRequest } from '../../src/routes/gateway.js';
+
+function makePathContext(opts: {
+  tenant: string;
+  service: string;
+  /** Path remainder AFTER `/x402/{tenant}/{service}` — e.g. `/today` for /x402/acme/weather/today */
+  remainder?: string;
+  search?: string;
+  method?: string;
+  paymentHeader?: string;
+}): any {
+  const {
+    tenant,
+    service,
+    remainder = '',
+    search = '',
+    method = 'GET',
+    paymentHeader,
+  } = opts;
+  const pathname = `/x402/${tenant}/${service}${remainder}`;
+  const url = `https://api.getsly.ai${pathname}${search}`;
+  const headers = new Headers({
+    host: 'api.getsly.ai',
+    accept: 'application/json',
+    'user-agent': 'gateway-path-test/1.0',
+  });
+  if (paymentHeader) headers.set('x-payment', paymentHeader);
+
+  // Hono exposes route params via c.req.param(name); mock that.
+  const params: Record<string, string> = { tenant, service };
+
+  return {
+    req: {
+      url,
+      method,
+      header: (name: string) => headers.get(name) ?? undefined,
+      param: (name?: string) => (name ? params[name] : params),
+      arrayBuffer: async () => new ArrayBuffer(0),
+      raw: { headers },
+    },
+  };
+}
+
+describe('handlePathBasedGatewayRequest — DNS-fallback shape', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 404 for reserved tenant slugs (e.g. api)', async () => {
+    (mockedCreateClient as any).mockReturnValue(buildSupabaseMock({}));
+    const res = await handlePathBasedGatewayRequest(
+      makePathContext({ tenant: 'api', service: 'weather' }),
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe('reserved_slug');
+  });
+
+  it('returns 404 for invalid tenant slug shape', async () => {
+    (mockedCreateClient as any).mockReturnValue(buildSupabaseMock({}));
+    const res = await handlePathBasedGatewayRequest(
+      makePathContext({ tenant: '!!bad!!', service: 'weather' }),
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe('invalid_tenant_slug');
+  });
+
+  it('returns 404 for invalid service slug shape', async () => {
+    (mockedCreateClient as any).mockReturnValue(buildSupabaseMock({}));
+    const res = await handlePathBasedGatewayRequest(
+      makePathContext({ tenant: 'acme', service: '!!bad!!' }),
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe('invalid_service_slug');
+  });
+
+  it('returns 404 when tenant slug is unknown', async () => {
+    (mockedCreateClient as any).mockReturnValue(buildSupabaseMock({ tenant: null }));
+    const res = await handlePathBasedGatewayRequest(
+      makePathContext({ tenant: 'unknown', service: 'weather' }),
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe('tenant_not_found');
+  });
+
+  it('returns 402 with bazaar extension when no X-PAYMENT header is present', async () => {
+    (mockedCreateClient as any).mockReturnValue(
+      buildSupabaseMock({
+        tenant: TENANT,
+        endpoint: PUBLIC_ENDPOINT,
+        wallet: PAYOUT_WALLET,
+      }),
+    );
+    const res = await handlePathBasedGatewayRequest(
+      makePathContext({ tenant: 'acme', service: 'weather' }),
+    );
+    expect(res.status).toBe(402);
+    expect(res.headers.get('x402-version')).toBe('1');
+    const body = await res.json();
+    expect(body.x402Version).toBe(1);
+    expect(body.extensions?.bazaar?.description).toBe('Daily forecast');
+    // The resource URL should reflect the path-based shape.
+    expect(body.accepts[0].resource).toBe(
+      'https://api.getsly.ai/x402/acme/weather',
+    );
+  });
+
+  it('proxies to backend with correct remainder after stripping `/x402/{tenant}/{service}`', async () => {
+    (mockedCreateClient as any).mockReturnValue(
+      buildSupabaseMock({
+        tenant: TENANT,
+        endpoint: PUBLIC_ENDPOINT,
+        wallet: PAYOUT_WALLET,
+      }),
+    );
+    let calledWith: string | null = null;
+    const fakeFetch: any = async (target: string) => {
+      calledWith = target;
+      return new Response(JSON.stringify({ temperature: 72 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const res = await handlePathBasedGatewayRequest(
+      makePathContext({
+        tenant: 'acme',
+        service: 'weather',
+        remainder: '/today',
+        search: '?units=metric',
+        paymentHeader: 'eyOK',
+      }),
+      {
+        callFacilitator: async () => ({
+          ok: true,
+          txHash: '0xdeadbeef',
+          extensionResponses: 'processing',
+        }),
+        fetchBackend: fakeFetch,
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(calledWith).toBe('https://backend.acme.test/today?units=metric');
+  });
+});

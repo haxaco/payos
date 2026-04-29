@@ -27,6 +27,7 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createClient } from '../db/client.js';
+import { getCdpCredentials } from '../services/coinbase/cdp-client.js';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Config
@@ -390,17 +391,17 @@ async function callCdpVerifyAndSettle(input: {
   resourceUrl: string;
 }): Promise<SettleResult> {
   const facilitatorUrl = process.env.CDP_FACILITATOR_URL || 'https://api.cdp.coinbase.com/platform/v2/x402';
-  const apiKeyId = process.env.CDP_API_KEY_ID;
-  const apiKeySecret = process.env.CDP_API_KEY_SECRET;
+  const creds = getCdpCredentials();
 
   // In test/dev without CDP creds, short-circuit so the gateway can be smoke-tested.
-  if (!apiKeyId || !apiKeySecret) {
+  if (!creds) {
     return {
       ok: false,
       error: 'CDP facilitator not configured',
       status: 500,
     };
   }
+  const { apiKeyId, apiKeySecret } = creds;
 
   // CDP exposes /verify and /settle; we call settle which performs verify
   // implicitly, returning the EXTENSION-RESPONSES header on the response.
@@ -570,18 +571,12 @@ export async function handleGatewayRequest(
   c: Context,
   deps: HandleGatewayDeps = {},
 ): Promise<Response> {
-  const callFacilitator = deps.callFacilitator || callCdpVerifyAndSettle;
-  const fetchImpl: typeof fetch = deps.fetchBackend || ((globalThis as any).fetch as typeof fetch);
-
   const hostHeader = c.req.header('host');
   const parsed = parseGatewayHost(hostHeader);
   if (!parsed) {
     return jsonResponse(404, { error: 'gateway_not_found' });
   }
 
-  // Application-layer reserved-slug guard — block BEFORE any DB lookup so
-  // a tenant can never claim `api`, `app`, etc. even if one slipped past
-  // slug provisioning.
   if (parsed.slug === '__INVALID_MULTILEVEL__') {
     return jsonResponse(404, {
       error: 'invalid_gateway_host',
@@ -591,16 +586,7 @@ export async function handleGatewayRequest(
   if (parsed.slug === '__INVALID_SHAPE__') {
     return jsonResponse(404, { error: 'invalid_tenant_slug' });
   }
-  if (isReservedSlug(parsed.slug)) {
-    return jsonResponse(404, { error: 'reserved_slug' });
-  }
 
-  const tenant = await lookupTenantBySlug(parsed.slug);
-  if (!tenant) {
-    return jsonResponse(404, { error: 'tenant_not_found' });
-  }
-
-  // Path → service slug. First segment after the leading slash.
   const url = new URL(c.req.url);
   const pathParts = url.pathname.split('/').filter(Boolean);
   const serviceSlug = pathParts[0];
@@ -608,10 +594,83 @@ export async function handleGatewayRequest(
     return jsonResponse(404, { error: 'service_not_specified' });
   }
 
-  const endpoint = await lookupEndpoint(tenant.id, serviceSlug);
+  return dispatchGatewayRequest(c, deps, {
+    tenantSlug: parsed.slug,
+    serviceSlug,
+    pathPrefix: `/${serviceSlug}`,
+  });
+}
+
+/**
+ * Path-based gateway handler used while wildcard DNS (`*.x402.getsly.ai`) is
+ * being provisioned. URL shape: `https://api.getsly.ai/x402/{tenant}/{service}/...`.
+ * Mount under `/x402/:tenant/:service` and `/x402/:tenant/:service/*`.
+ *
+ * Once DNS is live, host-routed `gatewayMiddleware()` is the canonical entry
+ * point and this handler can be retired. Both share `dispatchGatewayRequest()`.
+ */
+export async function handlePathBasedGatewayRequest(
+  c: Context,
+  deps: HandleGatewayDeps = {},
+): Promise<Response> {
+  const tenantSlug = (c.req.param('tenant') || '').toLowerCase();
+  const serviceSlug = (c.req.param('service') || '').toLowerCase();
+
+  if (!tenantSlug || !serviceSlug) {
+    return jsonResponse(404, { error: 'gateway_not_found' });
+  }
+  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(tenantSlug)) {
+    return jsonResponse(404, { error: 'invalid_tenant_slug' });
+  }
+  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(serviceSlug)) {
+    return jsonResponse(404, { error: 'invalid_service_slug' });
+  }
+
+  return dispatchGatewayRequest(c, deps, {
+    tenantSlug,
+    serviceSlug,
+    pathPrefix: `/x402/${tenantSlug}/${serviceSlug}`,
+  });
+}
+
+interface DispatchContext {
+  tenantSlug: string;
+  serviceSlug: string;
+  /**
+   * URL prefix to strip when forming the backend URL.
+   * Host-based: `/{serviceSlug}` (path is just service + remainder).
+   * Path-based: `/x402/{tenantSlug}/{serviceSlug}`.
+   */
+  pathPrefix: string;
+}
+
+async function dispatchGatewayRequest(
+  c: Context,
+  deps: HandleGatewayDeps,
+  ctx: DispatchContext,
+): Promise<Response> {
+  const callFacilitator = deps.callFacilitator || callCdpVerifyAndSettle;
+  const fetchImpl: typeof fetch = deps.fetchBackend || ((globalThis as any).fetch as typeof fetch);
+
+  // Application-layer reserved-slug guard — block BEFORE any DB lookup so
+  // a tenant can never claim `api`, `app`, etc. even if one slipped past
+  // slug provisioning.
+  if (isReservedSlug(ctx.tenantSlug)) {
+    return jsonResponse(404, { error: 'reserved_slug' });
+  }
+
+  const tenant = await lookupTenantBySlug(ctx.tenantSlug);
+  if (!tenant) {
+    return jsonResponse(404, { error: 'tenant_not_found' });
+  }
+
+  const endpoint = await lookupEndpoint(tenant.id, ctx.serviceSlug);
   if (!endpoint) {
     return jsonResponse(404, { error: 'endpoint_not_found' });
   }
+
+  const hostHeader = c.req.header('host') || '';
+  const url = new URL(c.req.url);
 
   // Visibility check — gateway only serves public endpoints.
   if (endpoint.visibility !== 'public') {
@@ -700,10 +759,11 @@ export async function handleGatewayRequest(
 
   // ── Proxy to backend ─────────────────────────────────────────────────
   const buyerMethod = c.req.method;
-  // The path the tenant's backend sees — drops the service_slug prefix so
+  // The path the tenant's backend sees — drops the gateway prefix so
   // `acme.x402.getsly.ai/weather/today?units=metric` proxies to
-  // `{backend_url}/today?units=metric`.
-  const remainder = url.pathname.slice(`/${serviceSlug}`.length) || '/';
+  // `{backend_url}/today?units=metric`. For path-based routing, the prefix
+  // is `/x402/{tenant}/{service}` instead of just `/{service}`.
+  const remainder = url.pathname.slice(ctx.pathPrefix.length) || '/';
   const backendBase = endpoint.backend_url.replace(/\/+$/, '');
   const backendTarget = `${backendBase}${remainder}${url.search}`;
 

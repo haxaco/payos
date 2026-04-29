@@ -11,6 +11,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { WalletRequiredError } from '../middleware/error.js';
+import { getCdpCredentials } from './coinbase/cdp-client.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Network mapping
@@ -221,20 +222,20 @@ export async function bind(
 
 /**
  * Mint a CDP smart wallet and return its address. Called only when the
- * tenant has opted into auto-provisioning. CDP creds (`CDP_API_KEY_ID`,
- * `CDP_API_KEY_SECRET`) must be present.
+ * tenant has opted into auto-provisioning. CDP credentials (under any
+ * supported env-var name pair) must be present — see getCdpCredentials().
  *
  * Implementation is best-effort behind a lazy require of `@coinbase/cdp-sdk`
  * so the service keeps building/testing in environments without CDP set up.
  */
 async function provisionCdpSmartWallet(caip2Network: string): Promise<string> {
-  const apiKeyId = process.env.CDP_API_KEY_ID;
-  const apiKeySecret = process.env.CDP_API_KEY_SECRET;
-  if (!apiKeyId || !apiKeySecret) {
+  const creds = getCdpCredentials();
+  if (!creds) {
     throw new Error(
-      'CDP credentials missing (CDP_API_KEY_ID / CDP_API_KEY_SECRET). Cannot auto-provision wallet.'
+      'CDP credentials missing (set CDP_API_KEY_ID/CDP_API_KEY_NAME and CDP_API_KEY_SECRET/CDP_API_KEY_PRIVATE_KEY). Cannot auto-provision wallet.'
     );
   }
+  const { apiKeyId, apiKeySecret } = creds;
 
   let CdpClient: any;
   try {
