@@ -223,7 +223,7 @@ describe('buildAcceptsArray', () => {
     expect(a.scheme).toBe('exact');
     expect(a.network).toBe('base'); // CAIP-2/short normalized
     expect(a.payTo).toBe('0xPayoutWallet');
-    expect(a.maxAmountRequired).toBe('10000'); // 0.01 USDC at 6 decimals
+    expect(a.amount).toBe('10000'); // 0.01 USDC at 6 decimals
     expect(a.asset).toBe('0xUSDC');
     expect(a.extra.name).toBe('USDC');
   });
@@ -422,8 +422,56 @@ describe('handleGatewayRequest — end-to-end branches', () => {
     expect(body.x402Version).toBe(2);
     expect(body.accepts).toHaveLength(1);
     expect(body.accepts[0].payTo).toBe(PAYOUT_WALLET.address);
-    expect(body.accepts[0].resource).toContain('acme.x402.getsly.ai');
+    // resource lives at top level on PaymentRequired (not per-accept)
+    expect(body.resource.url).toContain('acme.x402.getsly.ai');
     expect(body.extensions.bazaar).toEqual(PUBLIC_ENDPOINT.discovery_metadata);
+  });
+
+  it('emits a 402 body matching @x402/core PaymentRequired shape exactly', async () => {
+    // Regression: x402-fetch parses the 402 body with Zod and rejects
+    // anything off-shape. This locks the structure so future drift is
+    // caught at unit-test time, not in production.
+    (mockedCreateClient as any).mockReturnValue(
+      buildSupabaseMock({
+        tenant: TENANT,
+        // asset_address null forces the canonical USDC fallback so the
+        // production-grade 0x40-hex shape assertion below holds.
+        endpoint: { ...PUBLIC_ENDPOINT, asset_address: null },
+        wallet: PAYOUT_WALLET,
+      }),
+    );
+    const res = await handleGatewayRequest(
+      makeContext({ host: 'acme.x402.getsly.ai', pathname: '/weather' }),
+    );
+    expect(res.status).toBe(402);
+    const body = await res.json();
+
+    // Top-level PaymentRequired shape
+    expect(typeof body.x402Version).toBe('number');
+    expect(body.x402Version).toBe(2);
+    expect(typeof body.error).toBe('string');
+    expect(body.resource).toBeDefined();
+    expect(typeof body.resource.url).toBe('string');
+    expect(typeof body.resource.description).toBe('string');
+    expect(typeof body.resource.mimeType).toBe('string');
+    expect(Array.isArray(body.accepts)).toBe(true);
+
+    // PaymentRequirements shape on each accepts entry
+    const a = body.accepts[0];
+    expect(typeof a.scheme).toBe('string');
+    expect(typeof a.network).toBe('string');
+    expect(typeof a.asset).toBe('string');
+    expect(a.asset).toMatch(/^0x[0-9a-fA-F]{40}$/); // canonical USDC address
+    expect(typeof a.amount).toBe('string'); // atomic units, NOT maxAmountRequired
+    expect(typeof a.payTo).toBe('string');
+    expect(typeof a.maxTimeoutSeconds).toBe('number');
+    expect(a.extra).toBeDefined();
+
+    // Forbidden fields (old shape that we drifted from)
+    expect(a.maxAmountRequired).toBeUndefined();
+    expect(a.resource).toBeUndefined();
+    expect(a.description).toBeUndefined();
+    expect(a.mimeType).toBeUndefined();
   });
 
   it('returns 404 when discovery_metadata is null (not ready to publish)', async () => {
@@ -649,10 +697,9 @@ describe('handlePathBasedGatewayRequest — DNS-fallback shape', () => {
     const body = await res.json();
     expect(body.x402Version).toBe(2);
     expect(body.extensions?.bazaar?.description).toBe('Daily forecast');
-    // The resource URL should reflect the path-based shape.
-    expect(body.accepts[0].resource).toBe(
-      'https://api.getsly.ai/x402/acme/weather',
-    );
+    // The resource URL lives on the top-level PaymentRequired, not on
+    // each accept entry — and it reflects the path-based shape.
+    expect(body.resource.url).toBe('https://api.getsly.ai/x402/acme/weather');
   });
 
   it('proxies to backend with correct remainder after stripping `/x402/{tenant}/{service}`', async () => {
