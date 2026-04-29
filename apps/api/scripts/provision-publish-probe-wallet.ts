@@ -122,14 +122,17 @@ async function main() {
   console.log('Next steps:');
   console.log('');
   console.log(
-    '  1. Fund this wallet from your master EOA. CDP smart accounts are gasless ' +
-      'when CDP\'s paymaster is available, so on Base you typically only need USDC.'
+    '  1. Fund this wallet from your master EOA. This is a CDP server EOA, ' +
+      'so it needs both gas (ETH on Base) and USDC for the probe transfer.'
   );
   console.log(
-    `     - Send a small float in USDC (e.g. $10–$25) to ${provisioned.address} on ${network}.`
+    `     - Send a tiny ETH float (e.g. 0.001 ETH on Base mainnet, or use a faucet on sepolia) to ${provisioned.address}.`
   );
   console.log(
-    '     - Per-publish probe spend = the endpoint\'s basePrice (typically <$0.01 USDC).'
+    `     - Send a small USDC float (e.g. $10–$25) to ${provisioned.address} on ${network}.`
+  );
+  console.log(
+    '     - Per-publish probe spend = the endpoint\'s basePrice (typically <$0.01 USDC) plus the on-chain settle gas.'
   );
   console.log('');
   console.log(
