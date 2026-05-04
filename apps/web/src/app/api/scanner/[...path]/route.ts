@@ -33,10 +33,18 @@ const STRIP_REQUEST_HEADERS = new Set([
 
 // Headers we drop from the upstream response before sending back to the client
 // (let Next.js set its own; CORS isn't needed since we're same-origin now).
+//
+// content-encoding + content-length are critical: undici's fetch auto-
+// decompresses gzip/brotli responses but keeps the Content-Encoding header
+// on the Response object. If we forward that header, the browser tries to
+// decompress an already-plain-text body and fails with
+// ERR_CONTENT_DECODING_FAILED. Same bug pattern as PR #37 in the x402 proxy.
 const STRIP_RESPONSE_HEADERS = new Set([
   'transfer-encoding',
   'connection',
   'keep-alive',
+  'content-encoding',
+  'content-length',
   'access-control-allow-origin',
   'access-control-allow-credentials',
   'access-control-allow-methods',
