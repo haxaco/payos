@@ -1,11 +1,18 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
+import { grant } from '../billing/ledger.js';
 import {
   generateScannerKey,
   hashScannerKey,
   getScannerKeyPrefix,
 } from '../utils/crypto.js';
+
+// New tenants get this many free credits the first time they create a scanner
+// key. Lets a partner self-serve sign-up → first scan with zero ops touch.
+// Larger grants (5K+ for design partners) stay manual via grant-credits.ts so
+// they're tied to a relationship.
+const FREE_TRIAL_CREDITS = 100;
 
 /**
  * Scanner key management from the Sly dashboard. Auth middleware populates
@@ -72,10 +79,38 @@ keysRouter.post('/keys', async (c) => {
     return c.json({ error: `Failed to create key: ${error.message}` }, 500);
   }
 
+  // Auto-grant free-trial credits if this tenant has no ledger history yet.
+  // First-key creation is the right trigger: tenants that already have credits
+  // (manual grant, refunded charge, anything) won't double-dip; brand-new
+  // tenants self-serve from sign-up to first scan without ops involvement.
+  let autoGrantedCredits = 0;
+  try {
+    const { count } = await (supabase.from('scanner_credit_ledger') as any)
+      .select('*', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId);
+    if (count === 0) {
+      await grant(ctx.tenantId, FREE_TRIAL_CREDITS, 'free_trial:first_key', {
+        key_id: row.id,
+        key_name: row.name,
+        triggered_by: ctx.actorType === 'user' ? ctx.userId : 'api_key',
+      });
+      autoGrantedCredits = FREE_TRIAL_CREDITS;
+      console.log(
+        `[scanner-keys] Auto-granted ${FREE_TRIAL_CREDITS} free-trial credits to new tenant ${ctx.tenantId}`,
+      );
+    }
+  } catch (err: any) {
+    // Don't fail key creation if the grant fails — surface in logs and let
+    // the partner curl /credits/balance to confirm. Worst case ops grants
+    // manually after the fact.
+    console.error('[scanner-keys] Free-trial grant failed (key still created):', err?.message);
+  }
+
   return c.json(
     {
       ...row,
       key: plaintext, // returned ONCE — UI must surface the "save now" banner
+      auto_granted_credits: autoGrantedCredits, // 100 on first key, 0 thereafter
     },
     201,
   );

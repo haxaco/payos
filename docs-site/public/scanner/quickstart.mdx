@@ -7,12 +7,16 @@ The fastest path is the **TypeScript SDK** — six lines from install to first r
 
 ## 1. Get an API key
 
-Scanner keys are issued by Sly to partner tenants. Two ways to get one:
+Scanner keys are self-serve from the dashboard:
 
-- **Self-serve** (recommended) — log in to **app.getsly.ai → Developers → API Keys → Scanner API Keys** and click "Create key". Tina/test keys can be created by any user; live keys require `owner` or `admin` role.
-- **Email** — contact [partners@getsly.ai](mailto:partners@getsly.ai) with your tenant ID, the scopes you need (`scan`, `batch`, `read`, `tests`), and expected request volume.
+1. Sign up at [app.getsly.ai](https://app.getsly.ai) (creates your tenant)
+2. Go to **Developers → API Keys → Scanner API Keys → Create Scanner Key**
+3. Pick scopes (`scan`, `batch`, `read`, `tests` — all four by default), copy the `psk_live_…` shown once
+4. **You instantly get 100 free trial credits** — no email, no ops touch
 
-You'll get a key of the form `psk_live_…` (or `psk_test_…` for sandbox) and an initial credit grant.
+Test keys can be created by any user; live keys require `owner` or `admin` role on your tenant. Beyond the trial, top up via [credit packs](/scanner/credits-and-billing#credit-packs) or apply for the [design-partner program](/scanner/credits-and-billing#design-partner-program-free-beta) (5,000 free credits + Scale pricing locked).
+
+Need help? [partners@getsly.ai](mailto:partners@getsly.ai).
 
 ## 2. Install + scan (TypeScript / JavaScript)
 
