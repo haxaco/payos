@@ -62,8 +62,14 @@ export function isSuspensionError(err: unknown): boolean {
   if (!msg) return false;
   const is403 = /Sly API 403\b/.test(msg);
   const isRpc32004 = /code=-32004\b/.test(msg);
-  const mentionsSuspended = /suspended/i.test(msg);
-  return (is403 && mentionsSuspended) || isRpc32004;
+  // "suspended" / "frozen" / "closed" are the canonical KYA states. The API
+  // also returns "Agent is not active" when an agent's status is anything
+  // other than 'active' (covers all three plus future states), and that
+  // message is what the platform actually emits — we have to match it too,
+  // otherwise the in-round handler treats it as a generic crash and the
+  // loop keeps picking the same dead agent every cycle.
+  const mentionsInactive = /\b(suspended|frozen|closed|is not active|inactive)\b/i.test(msg);
+  return (is403 && mentionsInactive) || isRpc32004;
 }
 
 /**
@@ -580,6 +586,21 @@ export class SlyClient {
        * governance blocks so operators see the mandate was refused, not lost.
        */
       edgeState?: 'rejected';
+      /**
+       * Optional 0-100 rating attached to this milestone. Used when the
+       * counterparty isn't a Sly agent and the standard rate-task flow
+       * isn't available (e.g. agentforce_marketplace scoring an external
+       * Salesforce agent's reply). Viewer aggregates into state.ratings[toId].
+       */
+      score?: number;
+      /** Short rationale for the score, shown in inspectors. */
+      scoreComment?: string;
+      /**
+       * Optional A2A task id — when present, the live viewer renders an
+       * inline "↗ session" link to /dashboard/agents/a2a/tasks/<taskId>
+       * so operators can drill from a 🤝 milestone into the conversation.
+       */
+      taskId?: string;
     } = {},
   ): Promise<void> {
     await this.request(
@@ -662,6 +683,45 @@ export class SlyClient {
    * auth doesn't set ctx.tenantId, which the /v1 handler requires for its
    * per-tenant filter. The proxy is sim-tenant-scoped via SIM_TENANT_ID.
    */
+  /**
+   * Idempotently provision x402 endpoints owned by sim-seller agents for
+   * the a2a_x402_marketplace block. Each (seller × skill) gets one
+   * endpoint owned by the seller's parent_account_id; re-runs reuse
+   * existing rows. Returns the full per-endpoint listing the block uses
+   * to drive cycles.
+   */
+  async setupX402SellerEndpoints(params: {
+    sellers: Array<{ agentId: string; parentAccountId: string }>;
+    catalog: Array<{
+      skill_id: string;
+      name: string;
+      path: string;
+      basePrice: number;
+      description?: string;
+    }>;
+    tenantId: string;
+    environment?: 'test' | 'live';
+  }): Promise<{
+    endpoints: Array<{
+      sellerAgentId: string;
+      sellerAgentName: string;
+      endpointId: string;
+      endpointName: string;
+      path: string;
+      method: 'POST';
+      basePrice: number;
+      currency: 'USDC';
+      skillId: string;
+    }>;
+    count: number;
+  }> {
+    return await this.request(
+      '/admin/round/sim/x402-seller-setup',
+      { method: 'POST', body: JSON.stringify(params) },
+      'admin',
+    );
+  }
+
   async listMerchants(
     filters: { type?: string; country?: string; search?: string; limit?: number } = {},
   ): Promise<Array<{

@@ -1278,6 +1278,55 @@ Agents discover priced x402 endpoints in the marketplace, pick one, and pay for 
 one-shot /v1/x402/pay flow. Shows agents consuming metered API services without a full HTTP 402 dance.
 `;
 
+const CONCIERGE_X402 = `---
+id: concierge_x402
+name: Agent Concierge (x402 — paid-API broker pattern)
+buildingBlock: concierge
+requires: [whale, honest, quality-reviewer]
+pool: { whale: 1, quality: 1, honest: 2, mm: 1 }
+params:
+  - { key: cycleSleepMs, type: int, label: Sleep between cycles (ms), default: 3000, min: 500, max: 8000, step: 100 }
+analyzerHints: |
+  Buyer agents send paid-API requests via A2A to a concierge agent; the concierge picks an x402 endpoint
+  (research, image, transcript, etc.) and pays it on the buyer's behalf, charging a small fee on top.
+  Buyer never holds the x402 wallet directly — the concierge does.
+
+  EXPECTED:
+    - Each cycle creates ONE A2A task (buyer → concierge) AND ONE x402 transfer (concierge → endpoint).
+    - The viewer graph shows a 3-tier topology: buyers → concierges → x402 endpoints. Concierges that
+      pick cheaper endpoints retain more margin; concierges that pick higher-quality endpoints get
+      better acceptance ratings.
+    - merchantPurchases counts the x402 hits; mandateVolume is empty (concierge x402 doesn't escrow).
+    - This is the agent-mediated counterpart to compute_x402 (which is direct buyer→endpoint, no broker).
+
+  WORTH FLAGGING: concierges that 403 on /v1/x402/pay (treasury pool depleted — reseed), concierges that
+  never claim assigned tasks (KYA tier mismatch), buyers that refuse delivery (low concierge rating).
+blockConfig:
+  protocol: x402
+  conciergeFeeUsdc: 0.05
+  defaults:
+    cycleSleepMs: 3000
+    buyerStyles: [whale, honest]
+    conciergeStyles: [quality-reviewer, mm]
+---
+
+# Agent Concierge (x402)
+
+The agent-mediated counterpart to \`compute_x402\`. Instead of buyer agents calling x402 endpoints
+directly, they delegate to a concierge agent via A2A. The concierge holds the wallet, picks an endpoint,
+signs the x402 payment, retrieves the result, and completes the A2A task back to the buyer with the
+artifact + a small fee on top.
+
+This pattern is useful for:
+- Buyers without their own funded wallet (concierge fronts the x402 cost)
+- Buyers without x402 quota / treasury grants (concierge has them)
+- Specialization: a concierge that has built a reputation for picking the best research API
+
+Three-tier graph topology lights up: buyer agents (left), concierge agents (middle), x402 endpoints
+(right). The same x402 endpoints from \`compute_x402\` are reused — that scenario shows the direct
+flow and this one shows the brokered flow side-by-side.
+`;
+
 const CONCIERGE_TRAVEL = `---
 id: concierge_travel
 name: Agent Concierge (UCP — travel agent pattern)
@@ -1335,6 +1384,156 @@ Reseller agent discovers merchants via UCP, buys a product via ACP, then offers 
 markup to peer agents via A2A. The peer funds the purchase via AP2 mandate, reseller delivers with the
 merchant's receipt as proof-of-fulfillment. Shows agents running micro-supply-chains: they're both customers
 (to merchants) and sellers (to peers) in the same cycle.
+`;
+
+const A2A_X402_MARKETPLACE = `---
+id: a2a_x402_marketplace
+name: A2A x402 Marketplace (REAL — A2A tasks settled via x402)
+buildingBlock: a2a_x402_marketplace
+requires: [honest, whale, mm, quality-reviewer]
+pool: { honest: 3, whale: 2, mm: 2, quality: 2, budget: 2, opportunist: 1 }
+params:
+  - { key: cycleSleepMs, type: int, label: Sleep between cycles (ms), default: 2500, min: 500, max: 8000, step: 100 }
+analyzerHints: |
+  Real peer-to-peer agent marketplace where the SETTLEMENT RAIL is x402 (not
+  AP2 mandates). Mixed inventory: most sellers are agents who own a small
+  random subset of the skill catalog as x402 endpoints; some inventory is
+  merchant-only — cross-tenant public x402 endpoints with no seller agent
+  (e.g. Tina Demo Services / dummyjson-backed APIs).
+
+  Two flow paths, mixed per-cycle (a2aMix=0.6 default):
+    A2A path (60%): buyer createTask → seller claimTask → seller completeTask
+                    with deliverable → buyer payX402 → buyer respond. Real
+                    a2a_tasks rows, A2A sessions visible in live feed, ratings
+                    accumulate. Settles via x402 on completion (no escrow).
+    Direct path (40%): buyer payX402 directly, no A2A task. Mirrors
+                       compute_x402 for drive-by purchases of merchant-only
+                       endpoints.
+
+  EXPECTED:
+    - uniqueAgents > 0 in the report (A2A path creates real a2a_tasks).
+    - A2A session activity in the live feed via createTask SSE events.
+    - Per-endpoint heatmap fills from BOTH paths.
+    - Per-seller volume in the right rail accumulates.
+    - mandateVolume stays $0 — correct for x402 settlement.
+    - Catalog stays tight (~10–15 endpoints) thanks to per-seller subsetting.
+
+  WORTH FLAGGING: cycles that crash mid-claim (KYA tier on seller),
+  stale_token kills, A2A path collapses to direct because pool has no
+  qualifying sellers for the rolled skill, x402/pay 403s (treasury pool
+  depleted — reseed).
+blockConfig:
+  a2aMix: 0.6
+  endpointsPerSeller: { min: 1, max: 3 }
+  includeMerchantEndpoints: true
+  catalog:
+    - { skill_id: code_review,    name: Code Review,     path: /sim/code-review,    basePrice: 0.10, description: Async security + style review of a code snippet }
+    - { skill_id: data_summary,   name: Data Summary,    path: /sim/data-summary,   basePrice: 0.05, description: Compress a JSON blob into a 3-bullet summary }
+    - { skill_id: research_brief, name: Research Brief,  path: /sim/research-brief, basePrice: 0.25, description: Topic deep-dive with citations }
+    - { skill_id: image_caption,  name: Image Caption,   path: /sim/image-caption,  basePrice: 0.02, description: Caption an image URL in <30 words }
+    - { skill_id: translation,    name: Translation,     path: /sim/translation,    basePrice: 0.03, description: Translate input to a requested language }
+  maxRoundSpendUsdc: 5.0
+  defaults:
+    cycleSleepMs: 2500
+    buyerStyles: [honest, whale, mm, budget, opportunist, newcomer]
+    sellerStyles: [quality-reviewer, mm, whale, specialist, conservative]
+---
+
+# A2A x402 Marketplace
+
+Peer-to-peer agent marketplace where every seller's skill is a real x402
+endpoint. Buyers sign + pay directly via the x402 protocol — no AP2 mandate
+and no merchant in the middle. The first round provisions one endpoint per
+(seller × skill) pair; subsequent rounds reuse them.
+
+## What you'll see
+
+Each cycle: \`⚡ <buyer> bought "<skill>" from <seller> ($price)\`. The
+merchant inspector (right rail → click an endpoint) shows accumulated
+hit count + revenue + which buyers participated. Better-rated sellers
+get more hits from quality-seeking personas; cheaper-priced sellers
+win mm/budget personas. Watch divergence build over 30+ cycles.
+
+## Persona strategies
+
+| Persona group | Strategy | Picks |
+|---|---|---|
+| whale, quality-reviewer, researcher, conservative | highest_rating | seller with the best static rating for that skill |
+| mm, budget, opportunist, newcomer, rogue-spam | lowest_price | seller with the lowest \`basePrice\` |
+| honest, default | weighted | 50/50 normalized blend of price + rating |
+
+Endpoints carry a stable per-(seller, skill) rating in the [3.5, 5.0]
+range so the highest_rating dynamic has signal from cycle 1.
+
+## Prerequisites
+
+- Sim agents must have x402 treasury one_shot grants in pool. The
+  default seed-personas flow auto-issues 50 per agent (Epic 82).
+  If x402 cycles 403 with \`Scope 'treasury' required\`, just rerun
+  \`pnpm seed-personas\` to refill.
+- Seed pool needs both seller and buyer styles. Default plan covers
+  it: \`pnpm seed-personas --honest 3 --quality 2 --whale 2 --mm 2
+  --budget 2 --opportunist 1\` works out of the box.
+`;
+
+const AGENTFORCE_MARKETPLACE = `---
+id: agentforce_marketplace
+name: Agentforce Federation (REAL — Salesforce custom agent)
+buildingBlock: agentforce_marketplace
+requires: [honest, whale, mm]
+pool: { honest: 2, whale: 1, mm: 1 }
+params:
+  - { key: cycleSleepMs, type: int, label: Sleep between cycles (ms), default: 5000, min: 1000, max: 20000, step: 500 }
+analyzerHints: |
+  Sim buyers transact with a LIVE Salesforce Agentforce custom agent in a real org. Each cycle: pick a buyer,
+  open an Agentforce session via the bootstrap flow, send a brief, capture the reply, emit a milestone with
+  per-call cost as observability volume.
+
+  EXPECTED:
+  - Every cycle produces ONE buyer→ext: edge in the viewer (Salesforce-blue dot for *.salesforce.com hosts).
+  - reply text appears as a 'finding' comment so operators can sanity-check what the agent is saying.
+  - No on-chain settlement — Agentforce agents don't advertise crypto payout addresses. \`amount\` is for
+    observability/totals, not actual movement.
+  - A single 'agentforce inbound stub' comment at round start prints /a2a/{agentId} URLs for the operator to
+    wire as Named Credentials on the Salesforce side. Reverse direction is operator-config, not driven here.
+
+  Things WORTH flagging: bootstrap 401s (CLI session expired — sf org login web), agent-not-found errors
+  (developerName must be a Custom Agent in BotDefinition, NOT a Service Agent template).
+blockConfig:
+  orgAlias: agentforce-org
+  agents:
+    - developerName: SlyTestAgent
+      label: Sly Test Agent
+      pricePerCallUsdc: 0.10
+  briefs:
+    - "I'm shopping for headphones. What do you recommend?"
+    - "Help me discover new products that match my preferences."
+    - "What's the best way to compare merchants on the same item?"
+    - "Recommend a personalized purchase strategy for someone on a budget."
+  maxRoundSpendUsdc: 5.0
+  defaults:
+    cycleSleepMs: 5000
+    buyerStyles: [honest, whale, mm]
+---
+
+# Agentforce Federation
+
+Sim buyers send briefs to a real Salesforce Agentforce **custom agent** (not a Service Agent template) in
+an authed org and receive real LLM-generated replies. Each interaction shows up in the viewer as a
+buyer→ext: edge, with the Agentforce agent rendered as a Salesforce-blue node distinct from Moltbook /
+other federation peers.
+
+## Prerequisites
+
+- \`sf org login web --alias agentforce-org\` against the target org.
+- A **custom** agent created via \`sf agent create --spec <yaml>\` (Service Agent templates are not
+  callable via the Agent API runtime — see docs/investigations/agentforce-org-probe.md for why).
+- The agent's BotDefinition.DeveloperName configured as \`agents[].developerName\`.
+
+## What you'll see
+
+Each cycle: \`☁ <buyer> → <SF agent>: "<brief>"\` milestone, followed by the agent's reply truncated to
+~140 chars as a finding comment. Hit the maxRoundSpendUsdc cap and the round ends gracefully.
 `;
 
 const MERCHANT_COMPARISON = `---
@@ -1527,6 +1726,12 @@ export const BUILT_INS: BuiltInTemplate[] = [
     markdown: CONCIERGE_TRAVEL,
   },
   {
+    template_id: 'concierge_x402',
+    name: 'Agent Concierge (x402 — paid-API broker pattern)',
+    building_block: 'concierge',
+    markdown: CONCIERGE_X402,
+  },
+  {
     template_id: 'resale_chain_acp',
     name: 'Resale Arbitrage (ACP → A2A peer)',
     building_block: 'resale_chain',
@@ -1537,6 +1742,18 @@ export const BUILT_INS: BuiltInTemplate[] = [
     name: 'Merchant Comparison (agents shop competing SKUs)',
     building_block: 'merchant_comparison',
     markdown: MERCHANT_COMPARISON,
+  },
+  {
+    template_id: 'agentforce_marketplace',
+    name: 'Agentforce Federation (REAL — Salesforce custom agent)',
+    building_block: 'agentforce_marketplace',
+    markdown: AGENTFORCE_MARKETPLACE,
+  },
+  {
+    template_id: 'a2a_x402_marketplace',
+    name: 'A2A x402 Marketplace (REAL — agents sell, agents pay)',
+    building_block: 'a2a_x402_marketplace',
+    markdown: A2A_X402_MARKETPLACE,
   },
 ];
 

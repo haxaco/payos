@@ -36,10 +36,12 @@ import { runOneToOne, type OneToOneConfig } from './blocks/one_to_one.js';
 import { runRingTrade, type RingTradeConfig } from './blocks/ring_trade.js';
 import { runMultiHop, type MultiHopConfig } from './blocks/multi_hop.js';
 import { runDoubleAuction, type DoubleAuctionConfig } from './blocks/double_auction.js';
+import { runAgentforceMarketplace, type AgentforceMarketplaceConfig } from './blocks/agentforce_marketplace.js';
+import { runA2aX402Marketplace, type A2aX402MarketplaceConfig } from './blocks/a2a_x402_marketplace.js';
 import type { TemplateRow } from '../templates/store.js';
 
 /** Building blocks the engine knows how to dispatch. */
-export const KNOWN_BLOCKS = ['bake_off', 'one_to_one', 'ring_trade', 'multi_hop', 'double_auction', 'merchant_buy', 'concierge', 'resale_chain', 'merchant_comparison'] as const;
+export const KNOWN_BLOCKS = ['bake_off', 'one_to_one', 'ring_trade', 'multi_hop', 'double_auction', 'merchant_buy', 'concierge', 'resale_chain', 'merchant_comparison', 'agentforce_marketplace', 'a2a_x402_marketplace'] as const;
 export type KnownBlock = typeof KNOWN_BLOCKS[number];
 
 export function isKnownBlock(s: string | null | undefined): s is KnownBlock {
@@ -88,21 +90,14 @@ export function buildScenarioFromTemplate(template: TemplateRow): ScenarioDefini
   // user edits directly. Compiled hints are a stale copy from compile-time.
   const analyzerHints = (frontmatter.analyzerHints as string) || (compiled.analyzerHints as string) || undefined;
   const pool = (compiled.pool as PoolConfig) || (frontmatter.pool as PoolConfig) || undefined;
-  // Merge blockConfig: use compiled as base, but override briefs from frontmatter
-  // if they contain structured objects (e.g. SkillBrief with skill_id).
-  // The LLM compiler flattens YAML objects into plain strings, losing structure.
+  // Merge blockConfig: compiled (LLM-generated) is the base, frontmatter
+  // (explicit YAML the author wrote) overrides any keys it specifies. The LLM
+  // compiler often invents fields that don't match the block's config type,
+  // and it flattens structured objects into prose; the author-written YAML
+  // is always the source of truth when present.
   const compiledBC = (compiled.blockConfig as Record<string, unknown>) || {};
   const frontmatterBC = (frontmatter.blockConfig as Record<string, unknown>) || {};
-  const blockConfig = Object.keys(compiledBC).length > 0
-    ? { ...compiledBC }
-    : { ...frontmatterBC };
-  // Prefer frontmatter briefs when they contain objects (skill-aware format)
-  const fmBriefs = frontmatterBC.briefs as unknown[];
-  if (Array.isArray(fmBriefs) && fmBriefs.length > 0 && typeof fmBriefs[0] === 'object') {
-    blockConfig.briefs = fmBriefs;
-  } else if (!blockConfig.briefs && Array.isArray(fmBriefs)) {
-    blockConfig.briefs = fmBriefs;
-  }
+  const blockConfig: Record<string, unknown> = { ...compiledBC, ...frontmatterBC };
 
   if (!buildingBlock) {
     throw new Error(
@@ -157,6 +152,16 @@ export function buildScenarioFromTemplate(template: TemplateRow): ScenarioDefini
         return runMerchantComparison(ctx, {
           scenarioId: template.template_id,
           config: blockConfig as unknown as MerchantComparisonConfig,
+        });
+      case 'agentforce_marketplace':
+        return runAgentforceMarketplace(ctx, {
+          scenarioId: template.template_id,
+          config: blockConfig as unknown as AgentforceMarketplaceConfig,
+        });
+      case 'a2a_x402_marketplace':
+        return runA2aX402Marketplace(ctx, {
+          scenarioId: template.template_id,
+          config: blockConfig as unknown as A2aX402MarketplaceConfig,
         });
       default:
         throw new Error(
@@ -268,6 +273,20 @@ export async function dryRunTemplate(template: TemplateRow, ctx: ScenarioContext
       await runMerchantComparison(ctx, {
         scenarioId: template.template_id,
         config: blockConfig as unknown as MerchantComparisonConfig,
+        dryRun: true,
+      });
+      return;
+    case 'agentforce_marketplace':
+      await runAgentforceMarketplace(ctx, {
+        scenarioId: template.template_id,
+        config: blockConfig as unknown as AgentforceMarketplaceConfig,
+        dryRun: true,
+      });
+      return;
+    case 'a2a_x402_marketplace':
+      await runA2aX402Marketplace(ctx, {
+        scenarioId: template.template_id,
+        config: blockConfig as unknown as A2aX402MarketplaceConfig,
         dryRun: true,
       });
       return;
