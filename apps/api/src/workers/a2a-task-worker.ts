@@ -213,15 +213,13 @@ export class A2ATaskWorker {
     // Filter out externally-managed tasks in JS — Supabase's .not() with JSON
      // path is unreliable across versions. The metadata column is small enough
     // that pulling 10 candidates and filtering in memory is cheap.
-    // simManualA2A is the same idea as externallyManaged but used by the
-    // marketplace-sim's a2a_x402_marketplace block. Filtering at claim time
-    // (instead of in dispatchTask) ensures the worker never holds a brief
-    // claim that races with the sim's completeTask.
+    // simManualA2A tasks are NOT excluded here on purpose — the sim's
+    // poll-for-working logic depends on the worker flipping state to 'working'
+    // before completeTask runs. The dispatchTask bypass below ensures the
+    // worker doesn't actually process them.
     const candidates = (rawCandidates || []).filter((row: any) => {
       const meta = row.metadata as Record<string, unknown> | null;
-      if (meta?.externallyManaged === true) return false;
-      if (meta?.simManualA2A === true) return false;
-      return true;
+      return meta?.externallyManaged !== true;
     }).slice(0, 5);
 
     if (!candidates?.length) return null;
