@@ -2327,6 +2327,26 @@ a2aRouter.post('/tasks/:taskId/process', async (c) => {
   }
 
   const supabase: any = createClient();
+
+  // Refuse to reprocess tasks that aren't fresh. Re-running on an
+  // input-required task would clobber its existing reason_code; terminal
+  // states have nothing to do.
+  const { data: existing } = await supabase
+    .from('a2a_tasks')
+    .select('state, tenant_id')
+    .eq('id', taskId)
+    .eq('tenant_id', ctx.tenantId)
+    .single();
+  if (!existing) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+  if (!['submitted', 'working'].includes((existing as any).state)) {
+    return c.json(
+      { error: `Cannot process task in '${(existing as any).state}' state` },
+      400,
+    );
+  }
+
   const { A2ATaskProcessor } = await import('../services/a2a/task-processor.js');
   const processor = new A2ATaskProcessor(supabase, ctx.tenantId);
 

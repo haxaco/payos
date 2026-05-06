@@ -87,9 +87,13 @@ export class A2ATaskService {
     // so the worker can create settlement mandates for priced skills.
     // Also propagate externallyManaged so the worker knows to skip auto-processing
     // when an external harness (e.g. marketplace-sim) drives the lifecycle.
+    // simManualA2A is the same idea but specifically for the A2A worker bypass —
+    // marketplace-sim sets it on createTask metadata so the worker leaves the
+    // task in 'working' state instead of racing with the sim's completeTask.
     const taskMetadata: Record<string, unknown> = {};
     if (message.metadata?.skillId) taskMetadata.skillId = message.metadata.skillId;
     if (message.metadata?.externallyManaged === true) taskMetadata.externallyManaged = true;
+    if (message.metadata?.simManualA2A === true) taskMetadata.simManualA2A = true;
 
     // Insert task
     const { data: taskRow, error: taskError } = await this.supabase
@@ -399,12 +403,37 @@ export class A2ATaskService {
   /**
    * Set a task to input-required with structured context.
    * Provides machine-readable guidance so callers know how to resolve.
+   *
+   * First-writer-wins: if the task is ALREADY in input-required state with a
+   * DIFFERENT reason_code, preserve the existing context. This prevents the
+   * race where (a) the worker's task-processor parks a task as
+   * input-required(no_handler) at the same time (b) completeTask sets it to
+   * input-required(result_review). Without this guard, whichever write lands
+   * second clobbers the other, and the user sees a "no_handler" message
+   * appended to a task that successfully completed with a real deliverable.
    */
   async setInputRequired(
     taskId: string,
     statusMessage: string,
     context: InputRequiredContext,
   ): Promise<A2ATask | null> {
+    const { data: cur } = await this.supabase
+      .from('a2a_tasks')
+      .select('state, metadata')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .eq('environment', this.environment)
+      .single();
+    if (cur?.state === 'input-required') {
+      const existingReason = (cur.metadata as any)?.input_required_context?.reason_code;
+      if (existingReason && existingReason !== context.reason_code) {
+        // Already parked for a different reason — don't clobber. Return the
+        // current task so callers see a non-null result and don't treat this
+        // as an error. The task is still input-required, just for the
+        // earlier reason.
+        return this.getTask(taskId);
+      }
+    }
     return this.updateTaskState(taskId, 'input-required', statusMessage, {
       input_required_context: context,
     });

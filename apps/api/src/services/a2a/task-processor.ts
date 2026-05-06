@@ -197,6 +197,36 @@ export class A2ATaskProcessor {
       return await this.handleHumanApproval(taskId, originalIntent, agentCtx);
     }
 
+    // Don't reprocess tasks already parked for buyer/human review. The two
+    // resumption branches above cover the only legal case for re-running on
+    // an input-required task; anything else is a stray /process call that
+    // would clobber the existing input_required_context.reason_code (e.g.
+    // overwriting a `result_review` parking with `no_handler`).
+    //
+    // Re-read state from the DB just before the guard — between line 155
+    // (initial getTask) and here we may have awaited `buildAgentContext`
+    // for several hundred ms, during which an external completeTask call
+    // can race in and flip state to input-required. The stale `task` object
+    // would still report 'working', so we'd miss the guard and clobber.
+    const { data: stateRow } = await this.supabase
+      .from('a2a_tasks')
+      .select('state, metadata')
+      .eq('id', taskId)
+      .eq('tenant_id', this.tenantId)
+      .single();
+    const liveState = (stateRow as any)?.state || task.status.state;
+    if (liveState === 'input-required') {
+      const reason = (stateRow as any)?.metadata?.input_required_context?.reason_code
+        || (task.metadata as any)?.input_required_context?.reason_code
+        || 'unknown';
+      this.log(taskId, 'info', `Skipping — already 'input-required' (reason: ${reason})`);
+      return this.taskService.getTask(taskId);
+    }
+    if (liveState === 'completed' || liveState === 'failed' || liveState === 'canceled' || liveState === 'rejected') {
+      this.log(taskId, 'info', `Skipping — already in terminal state '${liveState}'`);
+      return this.taskService.getTask(taskId);
+    }
+
     // Transition to working
     await this.taskService.updateTaskState(taskId, 'working', 'Processing task');
 

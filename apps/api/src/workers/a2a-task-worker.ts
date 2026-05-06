@@ -213,9 +213,15 @@ export class A2ATaskWorker {
     // Filter out externally-managed tasks in JS — Supabase's .not() with JSON
      // path is unreliable across versions. The metadata column is small enough
     // that pulling 10 candidates and filtering in memory is cheap.
+    // simManualA2A is the same idea as externallyManaged but used by the
+    // marketplace-sim's a2a_x402_marketplace block. Filtering at claim time
+    // (instead of in dispatchTask) ensures the worker never holds a brief
+    // claim that races with the sim's completeTask.
     const candidates = (rawCandidates || []).filter((row: any) => {
       const meta = row.metadata as Record<string, unknown> | null;
-      return meta?.externallyManaged !== true;
+      if (meta?.externallyManaged === true) return false;
+      if (meta?.simManualA2A === true) return false;
+      return true;
     }).slice(0, 5);
 
     if (!candidates?.length) return null;
@@ -291,6 +297,17 @@ export class A2ATaskWorker {
 
       const mode = (agent as any).processing_mode || 'manual';
       const config = (agent as any).processing_config || {};
+
+      // Sim bypass: if the task carries `simManualA2A: true` in metadata, the
+      // marketplace-sim block will drive completeTask manually. Leave the task
+      // in 'working' (already set by claim) so the sim's /complete call lands
+      // on a valid state. Without this hook every sim A2A task would race
+      // with the auto-routing logic and end up in input-required(no_handler).
+      const taskMeta = (task.metadata || {}) as Record<string, unknown>;
+      if (taskMeta.simManualA2A === true) {
+        this.log(task.id, 'info', 'Sim manual A2A — leaving in working state for sim-driven completion');
+        return;
+      }
 
       this.log(task.id, 'info', `Dispatching via '${mode}' handler`);
 
