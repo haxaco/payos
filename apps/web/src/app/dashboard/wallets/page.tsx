@@ -1082,12 +1082,10 @@ export default function WalletsPage() {
 
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Tenant Circle master — always shown first, bypasses filters. */}
-        <CircleMasterWalletCard
-          authToken={authToken}
-          apiUrl={apiUrl}
-          apiEnvironment={apiEnvironment}
-        />
+        {/* CircleMasterWalletCard hidden — backing endpoint is platform-wide,
+            not tenant-scoped. Restoring requires the fix tracked in the
+            high-priority follow-up task (Option B): relabel + restrict to
+            platform staff + per-tenant sub-accounts. */}
 
         {loading ? (
           <div className="col-span-full">

@@ -179,9 +179,9 @@ export function WalletTab({ agentId }: WalletTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Tenant master balance strip — preflight visibility before users
-          enable auto-refill or trigger a fund-eoa call. */}
-      <CircleMasterBalanceStrip />
+      {/* CircleMasterBalanceStrip hidden — backing endpoint is platform-wide,
+          not tenant-scoped. Same leak as the wallets-page card. See task #32
+          (Option B) for the real fix. */}
 
       {/* Unified wallet list — every wallet this agent manages renders
           through the same card component, regardless of type. Cards link
