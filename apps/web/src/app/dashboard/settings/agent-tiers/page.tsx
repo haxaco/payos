@@ -51,9 +51,18 @@ export default function AgentTiersSettingsPage() {
   const { data: tiersData } = useQuery<TierLimitsResponse>({
     queryKey: ['kya-tier-limits'],
     queryFn: async () => {
+      const empty: TierLimitsResponse = {
+        kya: { platform: [], tenant: [] },
+        verification: { platform: [], tenant: [] },
+      };
       const res = await apiFetch(`${apiUrl}/v1/tier-limits`);
-      if (!res.ok) return { kya: { platform: [], tenant: [] }, verification: { platform: [], tenant: [] } };
-      return res.json();
+      if (!res.ok) return empty;
+      // API returns { success, data: { kya, verification }, meta } — unwrap to
+      // the inner payload. Earlier this returned the wrapper directly, which
+      // exploded on `tiersData.kya.platform` because `tiersData.kya` was
+      // undefined.
+      const json = await res.json();
+      return (json?.data as TierLimitsResponse | undefined) ?? empty;
     },
     staleTime: 60 * 1000,
   });
@@ -112,8 +121,8 @@ export default function AgentTiersSettingsPage() {
     },
   });
 
-  const platform = tiersData?.kya.platform ?? [];
-  const tenantOverrides = tiersData?.kya.tenant ?? [];
+  const platform = tiersData?.kya?.platform ?? [];
+  const tenantOverrides = tiersData?.kya?.tenant ?? [];
   const byTier = (tier: number) => ({
     ceiling: platform.find(r => r.tier === tier),
     override: tenantOverrides.find(r => r.tier === tier),
