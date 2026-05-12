@@ -58,6 +58,14 @@ export default function SetupWizard() {
   // Account ID for wallet/agent creation
   const [accountId, setAccountId] = useState<string | null>(null);
 
+  // Track signed-in provider + whether the user arrived without an invite
+  // code. Used to tailor copy in the org-form branch: OAuth users with no code
+  // get a "you're in closed beta, here's how to get a code" explanation
+  // instead of a bare form, because they have no idea what "beta_..." means
+  // when they're dropped here straight from a Google/GitHub redirect.
+  const [authProvider, setAuthProvider] = useState<string | null>(null);
+  const [arrivedWithoutCode, setArrivedWithoutCode] = useState(false);
+
   // ---------- Provision tenant ----------
   const provision = useCallback(
     async (orgNameVal: string, inviteCodeVal?: string) => {
@@ -157,12 +165,16 @@ export default function SetupWizard() {
       }
 
       setAuthToken(session.access_token);
+      // Capture provider so we can tailor copy below ('email' / 'google' / 'github').
+      setAuthProvider(session.user.app_metadata?.provider ?? 'email');
       const orgNameMeta = session.user.user_metadata?.organization_name;
       const betaInviteCode =
         new URLSearchParams(window.location.search).get('invite_code') ||
         localStorage.getItem('sly_beta_invite_code') ||
         '';
       const betaOrgName = localStorage.getItem('sly_beta_org_name') || '';
+      const inviteFromMeta = session.user.user_metadata?.invite_code;
+      setArrivedWithoutCode(!betaInviteCode && !inviteFromMeta);
 
       if (orgNameMeta) {
         const metaInviteCode = session.user.user_metadata?.invite_code || betaInviteCode;
@@ -308,16 +320,23 @@ export default function SetupWizard() {
               <span className="text-2xl font-bold text-foreground">Sly</span>
             </motion.div>
 
-            {/* Title */}
+            {/* Title — copy tailored to OAuth-without-code, which is the
+                #1 reason users get stuck on this page. */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
               className="text-center space-y-2"
             >
-              <h1 className="text-3xl font-bold text-foreground">Welcome to Sly</h1>
+              <h1 className="text-3xl font-bold text-foreground">
+                {arrivedWithoutCode && authProvider !== 'email'
+                  ? 'One more step'
+                  : 'Welcome to Sly'}
+              </h1>
               <p className="text-muted-foreground text-sm">
-                Set up your organization to get started
+                {arrivedWithoutCode && authProvider !== 'email'
+                  ? `You're signed in with ${authProvider === 'google' ? 'Google' : authProvider === 'github' ? 'GitHub' : 'SSO'}. Sly is in closed beta — enter your invite code to finish setting up your organization.`
+                  : 'Set up your organization to get started'}
               </p>
             </motion.div>
 
@@ -352,9 +371,17 @@ export default function SetupWizard() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="inviteCode" className="text-muted-foreground text-sm">
-                  Invite Code
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="inviteCode" className="text-muted-foreground text-sm">
+                    Invite Code
+                  </Label>
+                  <a
+                    href="/auth/signup"
+                    className="text-xs text-muted-foreground underline hover:text-foreground"
+                  >
+                    Don&rsquo;t have one? Request access
+                  </a>
+                </div>
                 <Input
                   id="inviteCode"
                   placeholder="beta_..."
@@ -383,6 +410,23 @@ export default function SetupWizard() {
               <GlowButton type="submit" className="w-full" loading={provisioning}>
                 Get Started
               </GlowButton>
+
+              {/* Escape hatch: until they have a valid code they're stuck on
+                  this page. Without an exit they close the tab — leaving an
+                  auth.users row with no tenant (an "orphan"). */}
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const supabase = createSupabaseBrowserClient();
+                    await supabase.auth.signOut();
+                    router.push('/auth/login');
+                  }}
+                  className="text-xs text-muted-foreground underline hover:text-foreground"
+                >
+                  Sign out
+                </button>
+              </div>
             </motion.form>
           </motion.div>
         </div>
