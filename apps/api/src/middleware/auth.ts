@@ -14,6 +14,9 @@ export interface RequestContext {
   userId?: string;
   userRole?: 'owner' | 'admin' | 'member' | 'viewer';
   userName?: string;
+  // Verified email from the Supabase JWT. Read by endpoints that need to gate
+  // on platform-staff (@getsly.ai) — see /v1/agents/circle/master-balance.
+  userEmail?: string;
   // For API key auth
   apiKeyId?: string;
   apiKeyEnvironment?: 'test' | 'live';
@@ -522,6 +525,7 @@ export async function authMiddleware(c: Context, next: Next) {
         userId: userId,
         userRole: profile.role,
         userName: profile.name || userData.user.email?.split('@')[0] || 'Unknown',
+        userEmail: userData.user.email ?? undefined,
         environment: requestEnv,
         apiKeyEnvironment: requestEnv,
       };

@@ -5133,13 +5133,29 @@ agents.delete('/:id/avatar', async (c) => {
 
 // ============================================
 // GET /v1/organization/circle/master-balance
-// Returns the tenant's Circle master wallet balance. Used as preflight
-// before auto-refilling agent EOAs. Tenant-admin scoped (any caller in
-// tenant can read since the balance is a shared tenant resource).
-// Mounted here for proximity to the fund-eoa route; logically it's an
-// org-level resource — in Phase 2 move to /v1/organization/circle/*.
+// Returns the PLATFORM Circle master wallet balance (NOT tenant-scoped —
+// there's one Circle account behind the platform's API key, shared across
+// every tenant for agent EOA top-ups). Restricted to platform staff
+// (@getsly.ai emails) because the balance leaks aggregate platform info
+// that partners shouldn't see. The Phase 2 fix is per-tenant Circle sub-
+// accounts; until then this endpoint is staff-only and the dashboard
+// hides the matching wallet card for everyone else.
 // ============================================
 agents.get('/circle/master-balance', async (c) => {
+  const ctx = c.get('ctx');
+  const PLATFORM_DOMAIN = '@getsly.ai';
+  const isPlatformStaff =
+    ctx.actorType === 'user' && (ctx.userEmail?.endsWith(PLATFORM_DOMAIN) ?? false);
+  if (!isPlatformStaff) {
+    return c.json(
+      {
+        error: 'Platform staff only — this endpoint exposes the shared platform Circle balance',
+        code: 'PLATFORM_STAFF_REQUIRED',
+      },
+      403,
+    );
+  }
+
   try {
     const { getCirclePayoutsClient } = await import('../services/circle/payouts.js');
     const circle = getCirclePayoutsClient();

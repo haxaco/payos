@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useQuery as useTanstackQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiFetch, useApiConfig } from '@/lib/api-client';
 import { usePagination } from '@/hooks/usePagination';
+import { usePlatformStaff } from '@/hooks/usePlatformStaff';
 import { toast } from 'sonner';
 import {
   Copy,
@@ -70,6 +71,9 @@ function decisionBadge(decision: string) {
 export function WalletTab({ agentId }: WalletTabProps) {
   const api = useApiClient();
   const { apiEnvironment } = useApiConfig();
+  // CircleMasterBalanceStrip is platform-staff-only (same gate as the card on
+  // /dashboard/wallets) — partners shouldn't see the shared platform balance.
+  const isPlatformStaff = usePlatformStaff() === true;
 
   // ── Wallet data ──
   // Fetches the full wallet envelope for this agent. We render every entry
@@ -179,9 +183,11 @@ export function WalletTab({ agentId }: WalletTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* CircleMasterBalanceStrip hidden — backing endpoint is platform-wide,
-          not tenant-scoped. Same leak as the wallets-page card. See task #32
-          (Option B) for the real fix. */}
+      {/* Platform Circle master balance strip — staff-only preflight before
+          enabling auto-refill or triggering fund-eoa. Partners don't see it
+          because the balance is the shared platform Circle account, not
+          their own tenant's. */}
+      {isPlatformStaff && <CircleMasterBalanceStrip />}
 
       {/* Unified wallet list — every wallet this agent manages renders
           through the same card component, regardless of type. Cards link

@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import type { Wallet, SpendingPolicy } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
+import { usePlatformStaff } from '@/hooks/usePlatformStaff';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { formatDistanceToNow } from 'date-fns';
 import { SpendingProgressCompact } from '@/components/wallets/spending-progress';
@@ -559,7 +560,7 @@ function CircleMasterWalletCard({
             <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">{statusLabel}</span>
           </div>
           <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
-            Tenant master
+            Platform
           </span>
           <button
             onClick={() => refetch()}
@@ -574,7 +575,7 @@ function CircleMasterWalletCard({
 
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Circle master wallet</h3>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        Tenant-scoped · funds all agent EOA top-ups (manual &amp; auto-refill) · {network} · {chain}
+        Platform integration · funds agent EOA top-ups across all tenants · {network} · {chain}
       </p>
 
       <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
@@ -647,6 +648,10 @@ export default function WalletsPage() {
   const api = useApiClient();
   const { isConfigured, isLoading: isAuthLoading, authToken, apiEnvironment, apiUrl } = useApiConfig();
   const queryClient = useQueryClient();
+  // Gates the CircleMasterWalletCard render — staff-only (@getsly.ai). The
+  // hook returns `null` until Supabase resolves the user, then true/false.
+  // We treat `null` like false so partners never see a flash.
+  const isPlatformStaff = usePlatformStaff() === true;
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -1082,10 +1087,16 @@ export default function WalletsPage() {
 
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* CircleMasterWalletCard hidden — backing endpoint is platform-wide,
-            not tenant-scoped. Restoring requires the fix tracked in the
-            high-priority follow-up task (Option B): relabel + restrict to
-            platform staff + per-tenant sub-accounts. */}
+        {/* Platform Circle master — staff-only because the balance is
+            platform-wide, not tenant-scoped. usePlatformStaff returns null
+            while resolving, so we only render once the answer is known. */}
+        {isPlatformStaff && (
+          <CircleMasterWalletCard
+            authToken={authToken}
+            apiUrl={apiUrl}
+            apiEnvironment={apiEnvironment}
+          />
+        )}
 
         {loading ? (
           <div className="col-span-full">

@@ -10,6 +10,7 @@ import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
+import { RegisterAgentDialog } from '@/components/agents/register-agent-dialog';
 
 const TIER_COLORS: Record<string, string> = {
   A: 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400',
@@ -57,6 +58,7 @@ export default function AgentsPage() {
   const [tierFilter, setTierFilter] = useState<number | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [onlyWithRatings, setOnlyWithRatings] = useState(false);
+  const [showRegisterDialog, setShowRegisterDialog] = useState(false);
 
   const { data: countData } = useQuery({
     queryKey: ['agents', 'count', apiEnvironment],
@@ -202,10 +204,15 @@ export default function AgentsPage() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Agents</h1>
           <p className="text-gray-600 dark:text-gray-400">Manage AI agents and their permissions</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+        <button
+          type="button"
+          onClick={() => setShowRegisterDialog(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus className="h-4 w-4" />
           Create Agent
         </button>
+        <RegisterAgentDialog open={showRegisterDialog} onOpenChange={setShowRegisterDialog} />
       </div>
 
       <div className="flex flex-col gap-3 mb-6">
