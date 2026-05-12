@@ -44,18 +44,9 @@ function formatLimit(value: number): string {
 }
 
 export default function AgentTiersSettingsPage() {
-  const { apiUrl } = useApiConfig();
+  const { apiUrl, authToken } = useApiConfig();
   const apiFetch = useApiFetch();
   const queryClient = useQueryClient();
-
-  // KYA/Verification tier ceilings are PLATFORM config, not per-environment.
-  // We pin these calls to the production API (api.getsly.ai) regardless of
-  // the dashboard's SANDBOX/LIVE toggle, because:
-  //   1) The data is identical across environments (platform ceilings).
-  //   2) sandbox.getsly.ai is a separate Railway deployment with a different
-  //      Supabase Auth project, so it rejects the user's prod JWT with 401.
-  // Resolves the empty-state crash in SANDBOX mode reported in task #37.
-  const platformApiUrl = process.env.NEXT_PUBLIC_API_URL || apiUrl;
 
   const { data: tiersData } = useQuery<TierLimitsResponse>({
     queryKey: ['kya-tier-limits'],
@@ -64,7 +55,7 @@ export default function AgentTiersSettingsPage() {
         kya: { platform: [], tenant: [] },
         verification: { platform: [], tenant: [] },
       };
-      const res = await apiFetch(`${platformApiUrl}/v1/tier-limits`);
+      const res = await apiFetch(`${apiUrl}/v1/tier-limits`);
       if (!res.ok) return empty;
       // API returns { success, data: { kya, verification }, meta } — unwrap to
       // the inner payload. Earlier this returned the wrapper directly, which
@@ -73,6 +64,13 @@ export default function AgentTiersSettingsPage() {
       const json = await res.json();
       return (json?.data as TierLimitsResponse | undefined) ?? empty;
     },
+    // Gate on authToken to avoid the auth-hydration race: useApiFetch only
+    // injects Authorization once the Supabase session has been read into the
+    // ApiClientContext. Firing before that gives a 401 with no auth header,
+    // which we'd silently swallow into the empty-state. The earlier sandbox-
+    // 401 + tier-limits-page-crash story turned out to be exactly this race
+    // — sandbox is fine, it's just our race.
+    enabled: !!authToken,
     staleTime: 60 * 1000,
   });
 
@@ -90,13 +88,13 @@ export default function AgentTiersSettingsPage() {
       }
       return { counts, total: agents.length };
     },
-    enabled: !!apiUrl,
+    enabled: !!authToken,
     staleTime: 30 * 1000,
   });
 
   const updateTier = useMutation({
     mutationFn: async (payload: { tier: number; per_transaction: number; daily: number; monthly: number }) => {
-      const res = await apiFetch(`${platformApiUrl}/v1/tier-limits/kya/${payload.tier}`, {
+      const res = await apiFetch(`${apiUrl}/v1/tier-limits/kya/${payload.tier}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -118,7 +116,7 @@ export default function AgentTiersSettingsPage() {
 
   const resetTier = useMutation({
     mutationFn: async (tier: number) => {
-      const res = await apiFetch(`${platformApiUrl}/v1/tier-limits/kya/${tier}`, { method: 'DELETE' });
+      const res = await apiFetch(`${apiUrl}/v1/tier-limits/kya/${tier}`, { method: 'DELETE' });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Reset failed' }));
         throw new Error(err.error || 'Reset failed');
