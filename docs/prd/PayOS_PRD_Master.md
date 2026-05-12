@@ -1,8 +1,8 @@
 # Sly — Product Requirements Document (PRD)
 
-**Version:** 1.26
-**Date:** March 18, 2026
-**Status:** MPP Integration + Production Environment Mode (Revised) + Agent Contracting Governance + Platform Architecture & Card Networks
+**Version:** 1.27
+**Date:** May 12, 2026
+**Status:** Marketplaces Platform Strategy (KYM + Marketplace Directory + Identity-First Amplifiers)
 
 ---
 
@@ -45,6 +45,45 @@ Five agentic payment protocols are now active (x402, AP2, ACP, UCP, MPP). Sly is
 ---
 
 ## Version History
+
+### Version 1.27 (May 12, 2026)
+**Marketplaces Platform Strategy — Marketplaces as First-Class Entities + KYM Trust Layer + Discovery Layer**
+
+The agentbazaar runtime (now under the working name "Sly Marketplaces") proved out the marketplace mechanics during the May 2026 hackathon build. Partner conversations — notably with ZeroDev — surfaced a sharper strategic question: *"if Sly is the trust layer, who runs the marketplaces? Could every Sly tenant run one?"*
+
+The strategic answer is **yes**, and the structural implications are large enough that they need first-class treatment alongside the existing platform plan. The work splits into two tracks:
+
+**Track A — Marketplaces platform (structural foundation):**
+- **Epic 86: Marketplaces as First-Class Entities** (50 pts, P0) — `marketplaces` table, agent ↔ marketplace many-to-many, viewer filter, structural foundation
+- **Epic 87: KYM (Know Your Marketplace) Trust Layer** (58 pts, P0) — Tiered trust mirroring KYA. Verification flow reuses Epic 73 infrastructure
+- **Epic 88: MarketplaceRegistry On-Chain** (57 pts, P1) — NFT per marketplace on Base, parallel to ERC-8004 for agents
+- **Epic 89: Marketplace Discovery API + Card** (54 pts, P0) — REST + `/.well-known/sly-marketplace.json` Card + auto-gen MCP server per marketplace
+- **Epic 90: Marketplace Explorer UI** (70 pts, P0) — Public directory + identity-first cross-marketplace search + owner dashboard
+- **Epic 91: Managed Marketplace Runtime** (96 pts, P1) — One-click provisioning, custom domains, Stripe billing, self-hosted variant
+
+**Track B — Identity-first amplifiers (parallel to the platform track):**
+- **Epic 92: Score-Gated x402 Endpoints** (17 pts, P1) — Endpoint price by composite identity score
+- **Epic 93: Reputation Receipts** (37 pts, P1) — Per-task signed attestations feeding composite score
+- **Epic 94: Identity Badge SDK** (36 pts, P1) — `@sly_ai/identity-badge` for any host app
+- **Epic 95: Agent FICO for B2B** (50 pts, P2, discovery) — Composite score as underwriting signal
+- **Epic 96: ZeroDev Kernel Integration** (53 pts, P1) — Sly identity in ZeroDev smart accounts
+
+**Strategic positioning:**
+
+The compounded claim — **KYA + KYM + ERC-8004** — is the platform-level differentiator versus existing agentic marketplaces (GPT Store, Hugging Face, Bittensor, Olas, etc.). Symmetric trust at both the agent and marketplace layer, with on-chain proof for both. Identity stays portable across marketplaces *and* across host apps.
+
+Federation is **not** the wedge. Federation falls out of the directory + KYM for free once the structural foundation exists. The wedge is portable agentic identity itself.
+
+**Companion docs:**
+- **Strategy source of truth:** [`docs/prd/MARKETPLACES_STRATEGY.md`](./MARKETPLACES_STRATEGY.md)
+- **Track A epics:** [`docs/prd/epics/epic-86-marketplaces-as-entities.md`](./epics/epic-86-marketplaces-as-entities.md) through [`epic-91-managed-marketplace-runtime.md`](./epics/epic-91-managed-marketplace-runtime.md)
+- **Track B epics:** [`docs/prd/epics/epic-92-score-gated-x402-endpoints.md`](./epics/epic-92-score-gated-x402-endpoints.md) through [`epic-96-zerodev-kernel-integration.md`](./epics/epic-96-zerodev-kernel-integration.md)
+- **Runtime roadmap (agentbazaar repo):** `agentbazaar/docs/ROADMAP.md`
+- **Linear projects:** All 11 epics created under the Sly team (Epic 86 → Epic 96)
+
+**Total:** ~578 points across 11 epics. Track A and Track B can ship in parallel; only intra-track dependencies block.
+
+---
 
 ### Version 1.26 (March 18, 2026)
 **Epic 71: Machine Payments Protocol (MPP) Integration — NEW**
