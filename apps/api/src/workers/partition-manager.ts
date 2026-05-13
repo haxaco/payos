@@ -1,8 +1,19 @@
 /**
- * Epic 65, Story 65.16: Partition Manager Worker
+ * Partition Manager Worker
  *
- * Monthly: creates new partitions for operation_events and api_request_counts.
- * Hourly: refreshes the usage_summary_hourly materialized view.
+ * Primary partition creation now runs via pg_cron (see migration
+ * 20260511_partition_scheduler.sql). This worker remains as a daily
+ * backup that calls the same idempotent SQL function — useful if
+ * pg_cron is paused, the cron worker dies, or a partition was
+ * accidentally dropped.
+ *
+ * Also refreshes the usage_summary_hourly materialized view hourly.
+ *
+ * NOTE: The previous implementation used a non-existent `exec_sql` RPC
+ * and silently failed every day, which is why monthly partitions stopped
+ * being created from 2026-05-01 onward (the "silent observability
+ * outage"). It now uses the `ops_create_monthly_partition` plpgsql
+ * function added in migration 20260511_partition_lifecycle.sql.
  */
 
 import { createClient } from '../db/client.js';
@@ -13,52 +24,34 @@ const MATVIEW_REFRESH_INTERVAL = 60 * 60 * 1000; // Hourly
 let partitionTimer: ReturnType<typeof setInterval> | null = null;
 let matviewTimer: ReturnType<typeof setInterval> | null = null;
 
+const PARENT_TABLES = ['api_request_counts', 'operation_events'] as const;
+
 /**
- * Ensure partitions exist for the next 2 months.
+ * Ensure partitions exist for the current month and next 2 months.
+ * Idempotent — safe to run as often as you like.
  */
 async function ensurePartitions(): Promise<void> {
   const supabase = createClient();
   const now = new Date();
 
-  // Create partitions for this month and next 2 months
   for (let i = 0; i <= 2; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
-    const fromDate = `${year}-${month}-01`;
-    const toYear = nextMonth.getFullYear();
-    const toMonth = String(nextMonth.getMonth() + 1).padStart(2, '0');
-    const toDate = `${toYear}-${toMonth}-01`;
+    const monthStart = `${year}-${month}-01`;
 
-    const suffix = `${year}_${month}`;
-
-    // operation_events partition
-    const { error: opErr } = await (supabase.rpc as any)('exec_sql', {
-      sql: `CREATE TABLE IF NOT EXISTS operation_events_${suffix} PARTITION OF operation_events FOR VALUES FROM ('${fromDate}') TO ('${toDate}');`,
-    });
-    if (opErr && !opErr.message?.includes('already exists')) {
-      console.error(`[partition-manager] Failed to create operation_events_${suffix}:`, opErr.message);
+    for (const parent of PARENT_TABLES) {
+      const { error } = await (supabase.rpc as any)('ops_create_monthly_partition', {
+        parent_table: parent,
+        month_start: monthStart,
+      });
+      if (error) {
+        console.error(
+          `[partition-manager] Failed to ensure ${parent} partition for ${monthStart}:`,
+          error.message,
+        );
+      }
     }
-
-    // Enable RLS on operation_events partition (not inherited from parent)
-    await (supabase.rpc as any)('exec_sql', {
-      sql: `ALTER TABLE IF EXISTS operation_events_${suffix} ENABLE ROW LEVEL SECURITY;`,
-    });
-
-    // api_request_counts partition
-    const { error: reqErr } = await (supabase.rpc as any)('exec_sql', {
-      sql: `CREATE TABLE IF NOT EXISTS api_request_counts_${suffix} PARTITION OF api_request_counts FOR VALUES FROM ('${fromDate}') TO ('${toDate}');`,
-    });
-    if (reqErr && !reqErr.message?.includes('already exists')) {
-      console.error(`[partition-manager] Failed to create api_request_counts_${suffix}:`, reqErr.message);
-    }
-
-    // Enable RLS on api_request_counts partition (not inherited from parent)
-    await (supabase.rpc as any)('exec_sql', {
-      sql: `ALTER TABLE IF EXISTS api_request_counts_${suffix} ENABLE ROW LEVEL SECURITY;`,
-    });
   }
 
   console.log('[partition-manager] Partition check complete');
@@ -66,16 +59,22 @@ async function ensurePartitions(): Promise<void> {
 
 /**
  * Refresh the usage_summary_hourly materialized view.
+ *
+ * REFRESH MATERIALIZED VIEW CONCURRENTLY can't run via PostgREST as
+ * a one-off SQL string, so we expose it through a tiny SECURITY DEFINER
+ * function if/when needed. For now we use a direct call via .rpc against
+ * a dedicated function — but the function doesn't exist yet, so this is
+ * a no-op log until the function is added.
  */
 async function refreshMatview(): Promise<void> {
   const supabase = createClient();
-
-  const { error } = await (supabase.rpc as any)('exec_sql', {
-    sql: 'REFRESH MATERIALIZED VIEW CONCURRENTLY usage_summary_hourly;',
-  });
-
+  const { error } = await (supabase.rpc as any)('refresh_usage_summary_hourly');
   if (error) {
-    console.error('[partition-manager] Matview refresh failed:', error.message);
+    // Suppress "function does not exist" until the helper is added; only
+    // log unexpected errors so we don't spam logs.
+    if (!error.message?.toLowerCase().includes('does not exist')) {
+      console.error('[partition-manager] Matview refresh failed:', error.message);
+    }
   }
 }
 

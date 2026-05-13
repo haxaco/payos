@@ -14,6 +14,7 @@ import type { GatewayAuthContext } from './gateway-handler.js';
 import { generateAgentToken, hashApiKey, getKeyPrefix } from '../../utils/crypto.js';
 import { computeEffectiveLimits, DEFAULT_PERMISSIONS } from '../../routes/agents.js';
 import { submitApplication } from '../beta-access.js';
+import { logAudit } from '../../utils/helpers.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -858,14 +859,14 @@ async function handleWalletFund(
           .eq('tenant_id', tenantId);
       }
 
-      await supabase.from('audit_log').insert({
-        tenant_id: tenantId,
-        entity_type: 'wallet',
-        entity_id: wallet.id,
+      await logAudit(supabase as any, {
+        tenantId,
+        entityType: 'wallet',
+        entityId: wallet.id,
         action: 'faucet_fund',
-        actor_type: 'agent',
-        actor_id: agentId,
-        actor_name: `agent:${agentId}`,
+        actorType: 'agent',
+        actorId: agentId,
+        actorName: `agent:${agentId}`,
         changes: {
           previous_balance: previousBalance,
           new_balance: newBalance,
@@ -925,14 +926,14 @@ async function handleWalletFund(
     return buildErrorResponse(requestId, JSON_RPC_ERRORS.INTERNAL_ERROR, 'Failed to update wallet balance');
   }
 
-  await supabase.from('audit_log').insert({
-    tenant_id: tenantId,
-    entity_type: 'wallet',
-    entity_id: wallet.id,
+  await logAudit(supabase as any, {
+    tenantId,
+    entityType: 'wallet',
+    entityId: wallet.id,
     action: 'test_fund',
-    actor_type: 'agent',
-    actor_id: agentId,
-    actor_name: `agent:${agentId}`,
+    actorType: 'agent',
+    actorId: agentId,
+    actorName: `agent:${agentId}`,
     changes: {
       previous_balance: previousBalance,
       funded_amount: amount,
@@ -1192,14 +1193,14 @@ export async function handleVerifyAgent(
   }
 
   // Audit log
-  await supabase.from('audit_log').insert({
-    tenant_id: tenantId,
-    entity_type: 'agent',
-    entity_id: agentId,
+  await logAudit(supabase as any, {
+    tenantId,
+    entityType: 'agent',
+    entityId: agentId,
     action: 'kya_verification',
-    actor_type: authContext.authType === 'agent' ? 'agent' : 'api_key',
-    actor_id: authContext.authType === 'agent' ? agentId : authContext.apiKeyId || 'unknown',
-    actor_name: authContext.authType === 'agent' ? `agent:${agentId}` : 'api_key',
+    actorType: authContext.authType === 'agent' ? 'agent' : 'api_key',
+    actorId: authContext.authType === 'agent' ? agentId : authContext.apiKeyId || 'unknown',
+    actorName: authContext.authType === 'agent' ? `agent:${agentId}` : 'api_key',
     changes: {
       previous_tier: agent.kya_tier,
       new_tier: requestedTier,

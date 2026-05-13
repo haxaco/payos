@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { hashApiKey, getKeyPrefix, verifyApiKey } from '../utils/crypto.js';
 import { logSecurityEvent } from '../utils/auth.js';
 import { trackFirstEvent } from '../services/beta-access.js';
+import { pushAuditLogRow } from '../services/ops/audit-log-buffer.js';
 
 export interface RequestContext {
   tenantId: string;
@@ -236,27 +237,22 @@ async function logAuthAttempt(
     return;
   }
 
-  try {
-    const supabase = createClient();
-    await (supabase.from('audit_log') as any).insert({
-      tenant_id: tenantId || '00000000-0000-0000-0000-000000000000',
-      entity_type: 'auth',
-      entity_id: actorId || '00000000-0000-0000-0000-000000000000',
-      action: success ? 'login_success' : 'login_failure',
-      actor_type: tokenType === 'agent' ? 'agent' : 'user',
-      actor_id: actorId,
-      actor_name: null,
-      metadata: {
-        ip_address: ip,
-        user_agent: userAgent,
-        token_type: tokenType,
-        error_reason: errorReason,
-      },
-    });
-  } catch (error) {
-    // Don't fail the request if logging fails
-    console.error('Failed to log auth attempt:', error);
-  }
+  pushAuditLogRow({
+    tenant_id: tenantId || '00000000-0000-0000-0000-000000000000',
+    entity_type: 'auth',
+    entity_id: actorId || '00000000-0000-0000-0000-000000000000',
+    action: success ? 'login_success' : 'login_failure',
+    actor_type: tokenType === 'agent' ? 'agent' : 'user',
+    actor_id: actorId,
+    actor_name: null,
+    changes: null,
+    metadata: {
+      ip_address: ip,
+      user_agent: userAgent,
+      token_type: tokenType,
+      error_reason: errorReason,
+    },
+  });
 }
 
 function getClientInfo(c: Context): { ip: string; userAgent: string } {

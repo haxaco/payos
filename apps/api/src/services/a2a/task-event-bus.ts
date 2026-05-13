@@ -13,6 +13,7 @@ import { EventEmitter } from 'events';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { trackOp } from '../ops/track-op.js';
 import { OpType } from '../ops/operation-types.js';
+import { pushA2AAuditRow } from '../ops/a2a-audit-buffer.js';
 
 export type TaskStreamEventType = 'status' | 'message' | 'artifact' | 'error' | 'payment' | 'timeout' | 'webhook' | 'acceptance' | 'feedback' | 'auto_accept';
 
@@ -102,8 +103,9 @@ class TaskEventBus extends EventEmitter {
    * Used by the worker for timeout sweeps and mandate cleanup.
    */
   async persistAuditEvent(event: TaskStreamEvent, ctx: AuditContext): Promise<void> {
-    if (!this.supabase) return;
-    await this.supabase.from('a2a_audit_events').insert({
+    // Buffered insert — safe to batch because no route reads a2a_audit_events
+    // synchronously after writing. See event-buffer.ts safety note.
+    pushA2AAuditRow({
       tenant_id: ctx.tenantId,
       task_id: event.taskId,
       agent_id: ctx.agentId,

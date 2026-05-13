@@ -27,6 +27,7 @@ import { getCurrentNetwork, toUsdcUnits, fromUsdcUnits } from '../x402/facilitat
 import { getChainConfig } from '../../config/blockchain.js';
 import { LimitService } from '../limits.js';
 import { agentCircuitBreaker } from './circuit-breaker.js';
+import { pushA2AAuditRow } from '../ops/a2a-audit-buffer.js';
 
 interface ProcessorConfig {
   /** Poll interval in ms (default: 5000) */
@@ -648,13 +649,16 @@ export class A2ATaskProcessor {
       return { charged: false, fee, currency };
     }
 
-    // Emit payment audit event for timeline visibility
-    await this.supabase.from('a2a_audit_events').insert({
+    // Emit payment audit event for timeline visibility (buffered insert)
+    pushA2AAuditRow({
       tenant_id: this.tenantId,
       task_id: taskId,
       agent_id: agentCtx.agentId,
       event_type: 'payment',
+      from_state: null,
+      to_state: null,
       actor_type: 'system',
+      actor_id: null,
       data: {
         type: 'service_fee_charged',
         skill_id: skillId,
@@ -663,6 +667,7 @@ export class A2ATaskProcessor {
         transfer_id: transferRecord?.id,
         wallet_id: agentCtx.walletId,
       },
+      duration_ms: null,
     });
 
     // Increment usage stats on the skill row (best-effort)

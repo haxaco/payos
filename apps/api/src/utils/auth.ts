@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { createClient } from '../db/client.js';
+import { pushSecurityEventRow } from '../services/ops/security-events-buffer.js';
 
 /**
  * Common passwords list (top 10k from SecLists)
@@ -237,28 +238,23 @@ export type SecurityEventType =
 export type SecurityEventSeverity = 'info' | 'warning' | 'critical' | 'error';
 
 /**
- * Log security event
+ * Log security event — pushes to in-memory buffer (flush every 5s).
+ * Safe to batch: no route reads security_events synchronously after writing.
  */
 export async function logSecurityEvent(
   eventType: SecurityEventType,
   severity: SecurityEventSeverity,
   details: Record<string, any>
 ): Promise<void> {
-  try {
-    const supabase = createClient();
-    await (supabase.from('security_events') as any).insert({
-      event_type: eventType,
-      severity,
-      tenant_id: details.tenantId || null,
-      user_id: details.userId || null,
-      ip_address: details.ip,
-      user_agent: details.userAgent,
-      details: details,
-    });
-  } catch (error) {
-    // Don't fail the request if logging fails
-    console.error('Failed to log security event:', error);
-  }
+  pushSecurityEventRow({
+    event_type: eventType,
+    severity,
+    tenant_id: details.tenantId || null,
+    user_id: details.userId || null,
+    ip_address: details.ip ?? null,
+    user_agent: details.userAgent ?? null,
+    details: details,
+  });
 }
 
 /**

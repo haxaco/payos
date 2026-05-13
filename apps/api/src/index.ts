@@ -20,6 +20,9 @@ import { loadHandlersFromDB } from './services/ucp/payment-handlers/index.js';
 import { createClient } from './db/client.js';
 import { startOpTracker, stopOpTracker } from './services/ops/track-op.js';
 import { startRequestCounter, stopRequestCounter } from './services/ops/request-counter.js';
+import { startAuditLogBuffer, stopAuditLogBuffer } from './services/ops/audit-log-buffer.js';
+import { startA2AAuditBuffer, stopA2AAuditBuffer } from './services/ops/a2a-audit-buffer.js';
+import { startSecurityEventsBuffer, stopSecurityEventsBuffer } from './services/ops/security-events-buffer.js';
 import { startPartitionManager, stopPartitionManager } from './workers/partition-manager.js';
 import { taskEventBus } from './services/a2a/task-event-bus.js';
 import { startSmartWalletSyncWorker, stopSmartWalletSyncWorker } from './workers/smart-wallet-sync.js';
@@ -73,6 +76,11 @@ environmentManager.logStartupInfo();
 startOpTracker();
 startRequestCounter();
 startPartitionManager();
+
+// Start log/event write buffers (P1 — reduces audit/security/a2a-audit I/O)
+startAuditLogBuffer();
+startA2AAuditBuffer();
+startSecurityEventsBuffer();
 
 // Initialize A2A audit persistence (Story 58.17)
 taskEventBus.initAuditPersistence(createClient());
@@ -234,9 +242,12 @@ const shutdown = async (signal: string) => {
   if (x402PublishPoller) {
     x402PublishPoller.stop();
   }
-  // Drain ops buffers before exit (Epic 65)
+  // Drain ops buffers before exit (Epic 65 + P1)
   await stopOpTracker();
   await stopRequestCounter();
+  await stopAuditLogBuffer();
+  await stopA2AAuditBuffer();
+  await stopSecurityEventsBuffer();
   stopPartitionManager();
   stopSmartWalletSyncWorker();
   stopAgentEoaSyncWorker();

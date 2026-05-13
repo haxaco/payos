@@ -350,31 +350,33 @@ export class TreasuryService {
     snapshotType: 'hourly' | 'daily' | 'manual' = 'manual'
   ): Promise<number> {
     const accounts = await this.getAccounts(tenantId);
-    let snapshotCount = 0;
+    if (accounts.length === 0) return 0;
 
-    for (const account of accounts) {
-      // Get 24h volume
-      const volumeStats = await this.get24hVolume(account.id);
+    // Parallelize the per-account volume lookups, then batch-insert all
+    // snapshot rows in a single statement. Reduces N inserts → 1 insert.
+    const volumes = await Promise.all(accounts.map((a) => this.get24hVolume(a.id)));
 
-      const { error } = await this.supabase
-        .from('treasury_balance_history')
-        .insert({
-          treasury_account_id: account.id,
-          balance_total: account.balanceTotal,
-          balance_available: account.balanceAvailable,
-          balance_pending: account.balancePending,
-          balance_reserved: account.balanceReserved,
-          volume_inbound_24h: volumeStats.inbound,
-          volume_outbound_24h: volumeStats.outbound,
-          snapshot_type: snapshotType,
-        });
+    const rows = accounts.map((account, i) => ({
+      treasury_account_id: account.id,
+      balance_total: account.balanceTotal,
+      balance_available: account.balanceAvailable,
+      balance_pending: account.balancePending,
+      balance_reserved: account.balanceReserved,
+      volume_inbound_24h: volumes[i].inbound,
+      volume_outbound_24h: volumes[i].outbound,
+      snapshot_type: snapshotType,
+    }));
 
-      if (!error) {
-        snapshotCount++;
-      }
+    const { error } = await this.supabase
+      .from('treasury_balance_history')
+      .insert(rows);
+
+    if (error) {
+      console.error('[treasury] takeSnapshot batch insert failed:', error.message);
+      return 0;
     }
 
-    return snapshotCount;
+    return rows.length;
   }
 
   /**

@@ -20,7 +20,7 @@ import { getCircleService, USDC_CONTRACTS, EURC_CONTRACTS } from '../services/ci
 import { getCircleServiceForTenant } from '../services/circle/index.js';
 import { settleWalletTransfer, isOnChainCapable } from '../services/wallet-settlement.js';
 import { getWalletVerificationService } from '../services/wallet/index.js';
-import { normalizeFields, buildDeprecationHeader, getEnv } from '../utils/helpers.js';
+import { normalizeFields, buildDeprecationHeader, getEnv, logAudit } from '../utils/helpers.js';
 import { triggerWorkflows } from '../services/workflow-trigger.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
@@ -1860,14 +1860,14 @@ app.post('/:id/test-fund', async (c) => {
     }
 
     // Create audit log entry
-    await supabase.from('audit_log').insert({
-      tenant_id: ctx.tenantId,
-      entity_type: 'wallet',
-      entity_id: id,
+    await logAudit(supabase, {
+      tenantId: ctx.tenantId,
+      entityType: 'wallet',
+      entityId: id,
       action: 'test_fund',
-      actor_type: ctx.actorType || 'user',
-      actor_id: ctx.userId || ctx.actorId || 'system',
-      actor_name: ctx.userName || ctx.actorName || 'System',
+      actorType: ctx.actorType || 'user',
+      actorId: ctx.userId || ctx.actorId || 'system',
+      actorName: ctx.userName || ctx.actorName || 'System',
       changes: {
         previous_balance: previousBalance,
         funded_amount: validated.amount,
@@ -2010,14 +2010,14 @@ app.post('/:id/fund', async (c) => {
     }
 
     // Audit log
-    await supabase.from('audit_log').insert({
-      tenant_id: ctx.tenantId,
-      entity_type: 'wallet',
-      entity_id: id,
+    await logAudit(supabase, {
+      tenantId: ctx.tenantId,
+      entityType: 'wallet',
+      entityId: id,
       action: 'faucet_fund',
-      actor_type: ctx.actorType || 'user',
-      actor_id: ctx.userId || ctx.actorId || 'system',
-      actor_name: ctx.userName || ctx.actorName || 'System',
+      actorType: ctx.actorType || 'user',
+      actorId: ctx.userId || ctx.actorId || 'system',
+      actorName: ctx.userName || ctx.actorName || 'System',
       changes: {
         previous_balance: previousBalance,
         new_balance: newBalance,

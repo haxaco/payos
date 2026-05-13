@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Account, Agent, Transfer, Stream } from '@sly/types';
+import { pushAuditLogRow } from '../services/ops/audit-log-buffer.js';
 
 // ============================================
 // DATABASE ROW MAPPERS
@@ -303,25 +304,26 @@ export interface AuditLogEntry {
 }
 
 export async function logAudit(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   entry: AuditLogEntry
 ): Promise<void> {
-  try {
-    await supabase.from('audit_log').insert({
-      tenant_id: entry.tenantId,
-      entity_type: entry.entityType,
-      entity_id: entry.entityId,
-      action: entry.action,
-      actor_type: entry.actorType,
-      actor_id: entry.actorId,
-      actor_name: entry.actorName,
-      changes: entry.changes,
-      metadata: entry.metadata,
-    });
-  } catch (error) {
-    // Don't fail the request if audit logging fails
-    console.error('Failed to log audit entry:', error);
-  }
+  // Pushes into the in-memory audit_log buffer (flush every 5s) — callers
+  // get the same fire-and-forget shape they had before. The supabase arg
+  // is retained for backwards compatibility with the ~80 call-sites and
+  // is ignored (the buffer manages its own client). Safe to batch because
+  // no route reads audit_log in the same request as a write — see the
+  // safety note in event-buffer.ts.
+  pushAuditLogRow({
+    tenant_id: entry.tenantId,
+    entity_type: entry.entityType,
+    entity_id: entry.entityId,
+    action: entry.action,
+    actor_type: entry.actorType,
+    actor_id: entry.actorId ?? null,
+    actor_name: entry.actorName ?? null,
+    changes: entry.changes ?? null,
+    metadata: entry.metadata ?? null,
+  });
 }
 
 // ============================================
