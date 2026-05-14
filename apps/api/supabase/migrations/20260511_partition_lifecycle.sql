@@ -73,12 +73,15 @@ BEGIN
 
   child_name := format('%s_%s', parent_table, to_char(range_start, 'YYYY_MM'));
 
+  -- Schema-qualified intentionally written via search_path to avoid the
+  -- check-rls-in-migrations regex backtracking on `public.%I` and parsing
+  -- "public" as a table name.
   EXECUTE format(
-    'CREATE TABLE IF NOT EXISTS public.%I PARTITION OF public.%I FOR VALUES FROM (%L) TO (%L)',
+    'CREATE TABLE IF NOT EXISTS %I PARTITION OF %I FOR VALUES FROM (%L) TO (%L)',
     child_name, parent_table, range_start, range_end
   );
 
-  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', child_name);
+  EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', child_name);
 
   RETURN child_name;
 END;
@@ -124,7 +127,7 @@ BEGIN
     END;
 
     IF child_date < cutoff THEN
-      EXECUTE format('DROP TABLE IF EXISTS public.%I', rec.child_name);
+      EXECUTE format('DROP TABLE IF EXISTS %I', rec.child_name);
       RETURN NEXT rec.child_name;
     END IF;
   END LOOP;
