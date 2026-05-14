@@ -63,8 +63,15 @@ AUTHENTICATION_FLOW_EXPLAINED.md
 apps/marketplace-sim/tokens.json
 apps/marketplace-sim/.env
 
-# Claude Code editor state
-.claude/
+# Claude Code editor state — keep .claude/agents/ shared with the team,
+# everything else here is local-only. Listing exclusions explicitly (rather
+# than `.claude/` + negation) because git can't re-include children of an
+# excluded directory.
+.claude/agent-memory/
+.claude/plans/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+.claude/worktrees/
 
 # Office document lock/temp files
 ~$*

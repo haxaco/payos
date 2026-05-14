@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_doc": "Project-shared Claude Code settings for the Sly repo. Everyone who clones the repo and opens Claude Code gets these. Personal overrides live in .claude/settings.local.json (gitignored). Keep this file minimal — broad allowlists belong in personal settings; project-shared rules should reflect things everyone on the team should have.",
+
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm test:unit)",
+      "Bash(pnpm --filter @sly/api typecheck)",
+      "Bash(pnpm --filter @sly/api test)",
+      "Bash(pnpm --filter @sly/api check:rls)",
+      "Bash(pnpm --filter @sly/web typecheck)",
+      "Bash(pnpm --filter @sly/web build)",
+      "Bash(pnpm --filter @sly/scanner typecheck)",
+      "Bash(pnpm --filter @sly_ai/sdk test)",
+      "Bash(pnpm --filter @sly_ai/sdk build)",
+      "Bash(pnpm install)",
+      "Bash(pnpm build)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(rm -rf*)",
+      "Bash(pnpm publish*)",
+      "Bash(vercel --prod*)",
+      "Edit(payos-ui/**)",
+      "Write(payos-ui/**)"
+    ]
+  },
+
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "if [ -f docs/prd/MARKETPLACES_STRATEGY.md ]; then echo '[sly] MARKETPLACES_STRATEGY.md is the canonical source for Epic 86-96 (marketplaces platform + identity-first amplifiers). Project-local agents available: epic-implementer, test-validator, frontend-designer — see .claude/agents/README.md.'; fi"
+      }
+    ]
+  },
+
+  "_agentNotes": "Project-local agents live in .claude/agents/. Invoke a top-level session with `claude --agent <name>` or use the agent type as a subagent_type in the Agent tool. The agents view (`claude agents`) lists background sessions started with `/bg`. See .claude/agents/README.md for invocation patterns and suggested fan-out."
+}
