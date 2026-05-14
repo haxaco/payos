@@ -117,8 +117,11 @@ export class TreasuryWorker {
 
       console.log(`[TreasuryWorker] Snapshot completed: ${totalSnapshots} snapshots (${snapshotType})`);
 
+      // tenant_id has NOT NULL on audit_log; use the zero-UUID sentinel
+      // (same convention as middleware/auth.ts:logAuthAttempt) for
+      // tenant-agnostic system actions.
       await logAudit(this.supabase, {
-        tenantId: null,
+        tenantId: '00000000-0000-0000-0000-000000000000',
         actorType: 'system',
         actorId: null,
         actorName: 'TreasuryWorker',

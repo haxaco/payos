@@ -51,6 +51,13 @@ export function createEventBuffer<T>(
   let flushTimer: ReturnType<typeof setInterval> | null = null;
   let flushing = false;
 
+  // PostgreSQL integrity-constraint-violation error codes (class 23).
+  // These will not succeed on retry, so we drop the chunk instead of
+  // recycling it back into the buffer (which would create a retry loop).
+  function isPermanentError(err: { code?: string } | null | undefined): boolean {
+    return !!err?.code && err.code.startsWith('23');
+  }
+
   async function flush(): Promise<number> {
     if (buffer.length === 0 || flushing) return 0;
     flushing = true;
@@ -61,14 +68,25 @@ export function createEventBuffer<T>(
       for (let i = 0; i < batch.length; i += chunkSize) {
         const chunk = batch.slice(i, i + chunkSize);
         const { error } = await ((supabase as any).from(opts.table) as any).insert(chunk);
-        if (error) {
+        if (!error) continue;
+
+        // Permanent constraint violation: log + drop the chunk. Without this,
+        // a single malformed row poisons every subsequent flush forever.
+        if (isPermanentError(error)) {
           console.error(
-            `[event-buffer:${opts.table}] flush failed for ${chunk.length} rows:`,
+            `[event-buffer:${opts.table}] dropping ${chunk.length} rows on permanent error (${error.code}):`,
             error.message,
           );
-          if (buffer.length + chunk.length <= maxBufferSize) {
-            buffer.unshift(...chunk);
-          }
+          continue;
+        }
+
+        // Transient error (network, timeout, deadlock) — re-buffer for retry.
+        console.error(
+          `[event-buffer:${opts.table}] flush failed for ${chunk.length} rows, will retry:`,
+          error.message,
+        );
+        if (buffer.length + chunk.length <= maxBufferSize) {
+          buffer.unshift(...chunk);
         }
       }
       return batch.length;
