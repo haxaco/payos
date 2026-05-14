@@ -12,6 +12,19 @@
 
 ---
 
+## Post-Merge Follow-ups in Flight (as of 2026-05-14)
+
+This epic is complete (✅), but the dashboard continues to evolve. Working-tree changes not yet committed:
+
+- `apps/web/src/components/dashboard/protocol-activity-feed.tsx` (+138 lines) — activity feed gains marketplace-aware filtering (overlap with Epic 86)
+- `apps/web/src/components/layout/header.tsx` (+51 lines) — header updates
+- `apps/web/src/app/dashboard/agents/[id]/page.tsx` — agent detail page updates (also touches Epic 88's buyer-wallet flow)
+- `apps/api/src/services/analytics/dashboard.ts` — per-marketplace metrics roll-up (overlap with Epic 91)
+
+These are follow-up enhancements that don't reopen Epic 52. They are tracked here for traceability; reviewers should expect future commits to touch these files under different epic banners.
+
+---
+
 ## Executive Summary
 
 Redesign the main dashboard to focus on agentic payment protocols. Replace generic widgets with protocol-specific metrics. Show real data instead of mocks.

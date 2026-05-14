@@ -120,7 +120,7 @@ Every story must meet these criteria before completion:
 - [Epic 38: High-Frequency Microtransaction Optimization](./epic-38-payment-optimized-chains.md) ✅ - Async settlement, multi-chain (Solana+Base), gasless txs, deferred batch settlement
 
 ### Operations & Observability
-- [Epic 65: Operations Observability](./epic-65-operations-observability.md) ✅ - Per-request event correlation, usage API, portal tokens, partition management
+- **Epic 65: Operations Observability** ✅ — Per-request event correlation, usage API, portal tokens, partition management. *Note: no standalone epic doc file exists; this work shipped without a per-epic markdown. Referenced in the Recent Changes timeline (March 11, 2026). Tracked in [`PRD_STATUS_MATRIX.md`](../PRD_STATUS_MATRIX.md) row 65.*
 
 ### Notifications
 - [Epic 66: Email Notification System](./epic-66-email-notification-system.md) 🚧 - 10 email types (Tier 1 done), notification preferences, unsubscribe
@@ -148,13 +148,64 @@ Every story must meet these criteria before completion:
 - [Epic 45: Webhook Infrastructure](./epic-45-webhook-infrastructure.md) 🔔 - Guaranteed delivery, DLQ
 - [Epic 46: Multi-Region & Disaster Recovery](./epic-46-disaster-recovery.md) 🌍 - Scale & resilience
 
+### Marketplaces Platform (Track A — Structural Foundation) ⭐ NEW
+> **Strategy doc:** [`MARKETPLACES_STRATEGY.md`](../MARKETPLACES_STRATEGY.md) · **Identity story:** [`IDENTITY_AND_GOVERNANCE_STRATEGY.md`](../IDENTITY_AND_GOVERNANCE_STRATEGY.md)
+
+- [Epic 86: Marketplaces as First-Class Entities](./epic-86-marketplaces-as-entities.md) 🏛️ 📋 - `marketplaces` table, agent ↔ marketplace many-to-many, viewer filter, structural foundation (50 pts, P0)
+- [Epic 87: KYM (Know Your Marketplace) Trust Layer](./epic-87-kym-trust-layer.md) 🛡️ 📋 - Tiered trust mirroring KYA. Reuses Epic 73 infrastructure (58 pts, P0)
+- [Epic 88: MarketplaceRegistry On-Chain](./epic-88-marketplace-registry-onchain.md) ⛓️ 🚧 - NFT per marketplace on Base, parallel to ERC-8004 (57 pts, P1). **Open PR #13 — `epic-88-invu-demo`**
+- [Epic 89: Marketplace Discovery API + Card](./epic-89-marketplace-discovery-api.md) 🔍 📋 - REST + `/.well-known/sly-marketplace.json` Card + auto-gen MCP server per marketplace (54 pts, P0)
+- [Epic 90: Marketplace Explorer UI](./epic-90-marketplace-explorer-ui.md) 🗺️ 📋 - Public directory + identity-first cross-marketplace search + owner dashboard (70 pts, P0)
+- [Epic 91: Managed Marketplace Runtime](./epic-91-managed-marketplace-runtime.md) ⚙️ 📋 - One-click provisioning, custom domains, Stripe billing, self-hosted variant (96 pts, P1)
+
+### Identity-First Amplifiers (Track B — Parallel to Marketplaces) ⭐ NEW
+- [Epic 92: Score-Gated x402 Endpoints](./epic-92-score-gated-x402-endpoints.md) 🎯 📋 - Endpoint price by composite identity score (17 pts, P1)
+- [Epic 93: Reputation Receipts](./epic-93-reputation-receipts.md) 🧾 📋 - Per-task signed attestations feeding composite score (37→**20** pts after Epic 97 scope cut, P1)
+- [Epic 94: Identity Badge SDK](./epic-94-identity-badge-sdk.md) 🪪 📋 - `@sly_ai/identity-badge` for any host app (36 pts, P1)
+- [Epic 95: Agent FICO for B2B](./epic-95-agent-fico-for-b2b.md) 💳 🎨 - Composite score as underwriting signal (50 pts, P2, discovery)
+- [Epic 96: ZeroDev Kernel Integration](./epic-96-zerodev-kernel-integration.md) 🧠 🎨 - Sly identity in ZeroDev smart accounts (53 pts, P1, discovery)
+
+### Trust & Verification Layer (Phase 5.5) ⭐ NEW — Added v1.28
+> **Roadmap:** [`APOW_RELEASE_ROADMAP.md`](../APOW_RELEASE_ROADMAP.md) · **Strategy:** [`IDENTITY_AND_GOVERNANCE_STRATEGY.md`](../IDENTITY_AND_GOVERNANCE_STRATEGY.md)
+
+- [Epic 97: Proof of Work Foundation](./epic-97-proof-of-work-foundation.md) 🧾 📋 - **APoW R2 committed.** Bilateral EIP-712 signed receipts replace HMAC-signed Sly proofs. Four primitives: `Mandate`, `PolicyDecision`, `Receipt`, `Dispute`. Public verification endpoint (no auth). Substrate for Epics 92, 93, 95. (76 pts, P0)
+- [Epic 98: On-Chain Anchoring](./epic-98-onchain-anchoring.md) ⛓️ 📋 - **APoW R3 committed.** Merkle batches → Sly Anchor Contract on Base → EAS attestations. Receipt proofs survive Sly being offline. (~50 pts, P1)
+- [Epic 99: Trace — Intent-to-Action Audit](./epic-99-trace.md) 🧬 🎨 - **Design only.** Meta-structure for intent → plan → discovery → selection → mandate → settlement → delivery → verification → close. Buyer signal required. (~150 pts)
+- [Epic 100: Oracle / Verifier Network](./epic-100-oracle-verifier-network.md) ⚖️ 🎨 - **Design only.** Multi-party verifier panels with sealed assessment, calibration bonus, collusion resistance, tiered arbitration. Buyer signal required. (~200 pts)
+
+---
+
+## Implementation Conventions (added v1.28)
+
+Three project-local Claude Code subagents drive epic implementation. They are defined under [`.claude/agents/`](../../../.claude/agents/) and invoked via slash commands.
+
+| Agent | Purpose | Tools |
+|-------|---------|-------|
+| **epic-implementer** | Autonomously implements a marketplaces-platform epic (86–96) end-to-end. Plans by dependency order, branches per epic, opens PR when done. | Read, Edit, Write, Bash, Grep, Glob, Agent, Task tools |
+| **test-validator** | Validates a branch / commit range / PR by running typecheck + unit + integration + RLS audit. Read-mostly. | Read, Grep, Glob, Bash, Agent, Task tools |
+| **frontend-designer** | UI work in `apps/web/` only (Next.js App Router + Tailwind + shadcn). Never touches `payos-ui/` or `apps/api/`. Can spot-check via Claude in Chrome MCP. | Read, Edit, Write, Bash, Grep, Glob, Agent, Task tools, WebFetch |
+
+**Slash commands** (project-local skills):
+- `/start-epic <NN>` — spawns epic-implementer in background for the given epic.
+- `/marketplace-status` — prints one-line status per Epic 86–96.
+
+**Dependency-driven sequencing for Marketplaces (Tracks A + B):**
+1. Epic 86 is the dependency root (entities table).
+2. Epics 87, 89, 92 can run in parallel after 86.
+3. Epics 88, 90, 93, 94, 96 fan out next.
+4. Epic 91 lands last (depends on 86–90).
+5. Epic 95 stays in discovery until a buyer signal fires.
+
+This convention is referenced from [`PRD_STATUS_MATRIX.md`](../PRD_STATUS_MATRIX.md).
+
 ---
 
 ## Investigation Documents
 
 Strategic explorations before committing to implementation:
 
-- [UCP Integration](../investigations/ucp-integration.md) 🔴 **URGENT** - New protocol from Google+Shopify (Jan 11, 2026)
+- [UCP Integration](../investigations/ucp-integration.md) 🔴 - New protocol from Google+Shopify (Jan 11, 2026) — *epic shipped (Epic 43)*
+- [Agentforce Org Probe](../investigations/agentforce-org-probe.md) 🆕 - Salesforce Agentforce identity probe (May 2026). Flagged as future epic candidate; referenced from [`IDENTITY_AND_GOVERNANCE_STRATEGY.md`](../IDENTITY_AND_GOVERNANCE_STRATEGY.md).
 - [Chargeback-Free Value Proposition](../investigations/chargeback-free-value-prop.md) - Settlement finality positioning
 - [Ground Station Narrative](../investigations/ground-station-narrative.md) - "Starlink for money" marketing
 
@@ -538,7 +589,18 @@ Sly supports **FIVE** agentic payment and communication protocols:
 | `payos.cards.mastercard` | Mastercard Agent Pay | `registerAgent()`, `createToken()`, `getDTVC()` |
 | `payos.a2a` | A2A protocol operations | `discover()`, `sendTask()`, `getTask()`, `getAgentCard()` |
 | `payos.registry` | Agent discovery & search | `search()`, `getAgent()` |
+| `sly.mandates` | Mandate creation + revocation (Epic 97) | `create()`, `get()`, `list()`, `revoke()` |
+| `sly.receipts` | Receipt retrieval + counter-sign (Epic 97) | `get()`, `list()`, `counterSign()` |
+| `sly.disputes` | Dispute file/respond/resolve (Epic 97) | `file()`, `respond()`, `resolve()` |
+| `sly.verify` | Public verification client — no auth (Epic 97 + Epic 98 extension) | `get(receiptId)` returns full inclusion proof + on-chain check |
+| `sly.signing` | EIP-712 typed-data signers (Epic 97) | `signMandate()`, `signReceipt()`, `signDispute()` |
+| `sly.anchors` | On-chain anchor batch lookup (Epic 98) | `getBatch()`, `getProof()`, `verifyOnChain()` |
+| `sly.policy` | Dry-run policy evaluation (Epic 97 Story 97.4) | `evaluate()` |
+
+> **Note:** The `payos.*` module names listed above are the legacy SDK surface. The `sly.*` modules (and `@sly/sdk` / `@sly_ai/sdk` packages) are the active surface; older `payos.*` names are aliased for backwards compatibility.
 
 ---
 
-*Last updated: April 22, 2026*
+*Last updated: May 14, 2026 (v1.28)*
+
+**Status snapshot:** see [`PRD_STATUS_MATRIX.md`](../PRD_STATUS_MATRIX.md) for the authoritative single-page status board across all 97 epics.

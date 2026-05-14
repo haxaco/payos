@@ -9,6 +9,17 @@
 
 ---
 
+## Implementation in Flight (as of 2026-05-14)
+
+Working-tree changes not yet committed, seeded against this epic:
+
+- `packages/types/src/index.ts` (+9 lines) — new exports for marketplace entity types. Pre-emptive type additions that the `marketplaces` table will land against once Story 86.1 starts.
+- `apps/web/src/components/dashboard/protocol-activity-feed.tsx` (+138 lines) — protocol activity feed extended with marketplace-aware filtering. Cross-epic dependency: also touches Epic 52 (Dashboard Redesign) surface.
+
+Status: pre-merge. No story status changes from this note. The types additions are forward-compatible (additive only) and won't conflict with the formal Story 86.1 schema work.
+
+---
+
 ## Summary
 
 Make `marketplace` a first-class platform entity in Sly — a `marketplaces` table with ownership, branding, vertical, slug, and lifecycle — so the rest of the marketplaces platform (KYM, on-chain registry, discovery API, Explorer UI) has a stable structural foundation to build on. Tag agents and x402 endpoints with the marketplace(s) they participate in. Make this visible in the agentbazaar runtime so the "same agent active in multiple marketplaces" story has visible proof.

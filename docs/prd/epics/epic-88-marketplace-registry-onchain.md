@@ -9,6 +9,20 @@
 
 ---
 
+## Implementation in Flight (as of 2026-05-14)
+
+**Open PR #13** — `epic-88-invu-demo` — *"feat(epic-88): buyer-side wallet + B2C agentic checkout"*. Branch is local + remote at `epic-88-invu-demo`.
+
+Scope per PR description: buyer-side wallet primitives and B2C agentic checkout flow. This work pre-empts the on-chain registry by validating the end-to-end buyer journey first; the registry itself (NFT mint, KYM tier on-chain) follows in subsequent stories.
+
+Related uncommitted changes in working tree:
+- `apps/marketplace-sim/src/scenarios/blocks/concierge.ts` (+301 lines), `apps/marketplace-sim/src/scenarios/blocks/a2a_x402_marketplace.ts` (+137 lines) — sim scenarios exercising the buyer-side wallet path
+- `apps/web/src/app/dashboard/agents/[id]/page.tsx` — agent detail page updates that surface the new buyer-side wallet state
+
+Status: under review. No story status changes from this note until PR #13 lands.
+
+---
+
 ## Summary
 
 A `MarketplaceRegistry` smart contract on Base (Sepolia → mainnet), parallel to ERC-8004 for agents. Each marketplace mints an NFT carrying its identity, KYM tier, discovery URL, and reputation hash. The on-chain registry is what makes the marketplace identity portable, verifiable by external agents, and resistant to centralized takedown — the same way ERC-8004 makes agent identity portable.

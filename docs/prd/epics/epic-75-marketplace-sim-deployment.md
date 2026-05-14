@@ -4,6 +4,22 @@
 **Added**: 2026-04-19 during pitch post-mortem
 **Priority**: Medium — unblocks remote demos, customer pilots, continuous validation
 
+## Implementation in Flight (as of 2026-05-14)
+
+Working-tree changes not yet committed, accumulating against this epic:
+
+- `apps/api/src/routes/round-viewer.ts` — major refactor (**+495 lines**). Live round-viewer endpoint extended with structured event streams, per-scenario filtering, and richer narration metadata. Powers the live viewer in `docs/demos/LIVE_ROUND_VIEWER.html` (also modified).
+- `apps/marketplace-sim/src/runner.ts` — orchestration overhaul to support remote sim deployment patterns.
+- `apps/marketplace-sim/src/sly-client.ts` — client refactor for `SIM_URL`-driven remote calls (matches the deployment plan below).
+- `apps/marketplace-sim/src/scenarios/blocks/a2a_x402_marketplace.ts` (+137 lines), `apps/marketplace-sim/src/scenarios/blocks/concierge.ts` (+301 lines), `apps/marketplace-sim/src/scenarios/blocks/resale_chain.ts` — new and expanded scenarios that exercise the cloud deployment.
+- `apps/marketplace-sim/src/scenarios/markdown-engine.ts` — scenario-as-markdown DSL improvements.
+- `apps/marketplace-sim/src/server.ts` — server-side endpoints for remote-mode operation.
+- `apps/marketplace-sim/src/seeder.ts`, `apps/marketplace-sim/src/personas/index.ts`, `apps/marketplace-sim/scripts/seed-personas.ts`, `apps/marketplace-sim/src/templates/seed-builtins.ts` — seed data updates.
+- `apps/marketplace-sim/src/processors/types.ts` — processor type additions.
+- `docs/demos/LIVE_ROUND_VIEWER.html` — visual viewer updates to consume new round-viewer payload shape.
+
+Status: pre-merge. Cross-epic dependency: the new `concierge.ts` and `a2a_x402_marketplace.ts` blocks also exercise the buyer-side wallet flow from **Epic 88** (which has an open PR #13 — `epic-88-invu-demo`). Will be folded into the epic story plan when the owner picks up Epic 75 work.
+
 ## Context
 
 The marketplace simulation sidecar (`apps/marketplace-sim/`) currently runs on localhost only. Every demo and every validation round requires the pitcher to have the local stack running. To unblock remote pitches, customer pilots, and nightly validation rounds we need the sim running as a managed service behind the Sly API.

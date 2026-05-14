@@ -1,8 +1,8 @@
 # Sly — Product Requirements Document (PRD)
 
-**Version:** 1.27
-**Date:** May 12, 2026
-**Status:** Marketplaces Platform Strategy (KYM + Marketplace Directory + Identity-First Amplifiers)
+**Version:** 1.28
+**Date:** May 14, 2026
+**Status:** Proof-of-Work Foundation + APoW Roadmap + Implementation Catch-Up
 
 ---
 
@@ -36,6 +36,7 @@ Five agentic payment protocols are now active (x402, AP2, ACP, UCP, MPP). Sly is
 | **Phase 3.5** | External sandbox integrations | + Circle, Coinbase, Google, Stripe | Current |
 | **Phase 4** | Customer validation (parallel tracks) | + First customers | Next |
 | **Phase 5** | Production hardening & scale | Settlement infrastructure | Concurrent |
+| **Phase 5.5** | Trust & Verification Layer (PoW + Anchoring) | EIP-712 + Base anchor contract + EAS | Committed (R2+R3) |
 | **Phase 6** | AI-Native infrastructure | Simulation, Workflows, Context API | Future |
 
 **Phases 1-2 complete.** Phase 3 integrates real sandbox APIs. Phase 4-5 run in parallel: B2B customer acquisition + agentic protocol demos for YC/accelerator positioning.
@@ -45,6 +46,50 @@ Five agentic payment protocols are now active (x402, AP2, ACP, UCP, MPP). Sly is
 ---
 
 ## Version History
+
+### Version 1.28 (May 14, 2026)
+**Proof-of-Work Foundation + APoW Roadmap + Implementation Catch-Up**
+
+The v1.27 Marketplaces Platform Strategy positioned Sly as the trust layer for the agentic economy. v1.28 makes that claim true at the cryptographic layer. Until now every "proof" Sly emits is HMAC-SHA256 signed by Sly itself — "Sly says this happened." The pitch deck says bilateral, non-repudiable, replayable proof of work; the shipped code did not deliver that. v1.28 closes the gap.
+
+**New epics — Phase 5.5 (Trust & Verification Layer):**
+
+- **Epic 97: Proof of Work Foundation (76 pts, P0)** — Bilateral EIP-712 signed receipts produced by parties' Circle Programmable Wallets replace HMAC-signed Sly proofs. Introduces four signed primitives — `Mandate`, `PolicyDecision`, `Receipt`, `Dispute` — and a public off-chain verification endpoint that anyone can call without trusting Sly's API. Off-chain layer only; on-chain anchoring deferred to Epic 98. Substrate for Epics 92, 93, 95.
+
+- **Epic 98: On-Chain Anchoring (~50 pts, P1)** — Merkle accumulator batches receipts every ~60s, posts the root to a Sly-owned anchor contract on Base, registers EAS attestations for `sly.receipt.v1`, `sly.dispute.v1`, `sly.policy_decision.v1`. Verification endpoint extends to include on-chain inclusion check. Receipts produced by Epic 97 are forward-compatible with no schema changes.
+
+- **Epic 99: Trace (Intent-to-Action Audit) — Design Only (~150 pts)** — Meta-structure linking intent, plan, discovery, selection, mandate, settlement, delivery, verification, dispute, close into a replayable trace. Drafted but not committed. Buyer signal required: underwriting partner MOU.
+
+- **Epic 100: Oracle / Verifier Network — Design Only (~200 pts)** — Multi-party verifier panels with sealed assessment, calibration bonus, collusion resistance, tiered arbitration. Drafted but not committed. Buyer signal required: marketplace volume exceeds fraud threshold or regulator requires independent verification.
+
+**APoW Release Roadmap committed:** [`docs/prd/APOW_RELEASE_ROADMAP.md`](./APOW_RELEASE_ROADMAP.md) is now the canonical sequencing doc for proof-of-work releases R1 through R7. Hard commits: R2 (Epic 97), R3 (Epic 98). R4 (Session + Reputation), R5 (SVA), R6 (Epic 100 — CVN+SAP), R7 (Epic 99 + ORE) are demand-gated and stay in design until buyer signals fire.
+
+**Companion strategy doc — Identity & Governance:** New file [`docs/prd/IDENTITY_AND_GOVERNANCE_STRATEGY.md`](./IDENTITY_AND_GOVERNANCE_STRATEGY.md) consolidates the identity, governance, policy, and proof-of-work story across Epics 18, 62–64, 73, 80, 87, 92–100. Parallels [`docs/prd/MARKETPLACES_STRATEGY.md`](./MARKETPLACES_STRATEGY.md) at the same level of strategic specificity. The compounded claim — KYA × KYM × ERC-8004 × bilateral signed receipts × on-chain anchoring — is the moat versus existing agentic marketplaces (GPT Store, Hugging Face, Bittensor, Olas, Skyfire, Kite, Crossmint).
+
+**Implementation catch-up — completion docs backfilled** for Epics 40, 42, 43, 48–53, 57, 58, 59, 67, 71, 85. Authoritative status board now lives at [`docs/prd/PRD_STATUS_MATRIX.md`](./PRD_STATUS_MATRIX.md). The matrix and per-epic doc headers are kept in sync as a hard rule going forward.
+
+**Epic 93 scope cut (recommendation, pending user confirmation):** Epic 97 absorbs the receipt primitive Epic 93 originally owned. Epic 93 should narrow from 37 pts → ~20 pts, becoming the *score-feeder* role only (consumes receipts, emits per-task signed attestations into the composite identity score). Flagged in [Epic 97's Implementation Review](./epics/epic-97-proof-of-work-foundation.md#implementation-review-2026-05-14).
+
+**Implementation in flight (uncommitted working tree):** ~29 modified files spanning marketplace simulator overhaul (Epic 75 + Epic 88 driven), `round-viewer.ts` refactor (Epic 75), new `settlement-batcher.ts` (Epic 91), dashboard improvements (Epics 52 + 86), and the `agentforce-org-probe` investigation doc. Each is attributed to its target epic via inline "Implementation in Flight" sections; see the relevant epic doc.
+
+**Linear reconciliation:** Phase I of the v1.28 rollout reconciles Linear projects against this PRD's status matrix. Closed/archived states will land after the docs settle; running log lives in [`PRD_STATUS_MATRIX.md`](./PRD_STATUS_MATRIX.md#linear-reconciliation-log-2026-05-14).
+
+**Strategic positioning after R2+R3 ship (~12 weeks):**
+
+> "Sly produces bilateral, non-repudiable, replayable proof of work for every governed transaction. Both parties sign; anyone can verify; receipts are anchored on Base. Identity stays portable across marketplaces and host apps. No single point of failure — if Sly disappears, the receipts still verify."
+
+**Total new scope:** 126 committed points (Epic 97 + Epic 98). 350 design-only points (Epic 99 + Epic 100) drafted but parked.
+
+**Documentation:**
+- Master PRD: this version (v1.28)
+- New epic docs: [Epic 97](./epics/epic-97-proof-of-work-foundation.md), [Epic 98](./epics/epic-98-onchain-anchoring.md), [Epic 99](./epics/epic-99-trace.md), [Epic 100](./epics/epic-100-oracle-verifier-network.md)
+- New strategy doc: [Identity & Governance Strategy](./IDENTITY_AND_GOVERNANCE_STRATEGY.md)
+- New status board: [PRD Status Matrix](./PRD_STATUS_MATRIX.md)
+- Roadmap: [APoW Release Roadmap](./APOW_RELEASE_ROADMAP.md)
+- Backfilled `docs/completed/epics/EPIC_*_COMPLETE.md` for 9 shipped epics
+- Refreshed [epic index](./epics/README.md) with Phase 5.5 section and updated status markers
+
+---
 
 ### Version 1.27 (May 12, 2026)
 **Marketplaces Platform Strategy — Marketplaces as First-Class Entities + KYM Trust Layer + Discovery Layer**

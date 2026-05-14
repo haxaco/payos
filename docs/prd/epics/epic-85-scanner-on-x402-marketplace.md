@@ -1,6 +1,17 @@
 # Epic 85 — Sly Scanner on the x402 marketplace
 
-**Status:** Ready for engineering · **Owner:** TBA · **Target:** sprint after Epic 84 lands · **Related PRs:** [#53 docs](https://github.com/Sly-devs/sly/pull/53), [#50 SDK](https://github.com/Sly-devs/sly/pull/50), [#46 audit trail](https://github.com/Sly-devs/sly/pull/46)
+**Status:** ✅ Shipped (May 4, 2026) · **Related PRs:** [#53 docs](https://github.com/Sly-devs/sly/pull/53), [#50 SDK](https://github.com/Sly-devs/sly/pull/50), [#46 audit trail](https://github.com/Sly-devs/sly/pull/46), plus #43–#57 scanner sprint
+
+## Post-Merge Follow-ups in Flight (as of 2026-05-14)
+
+Scanner x402 work shipped through PR #57. A handful of polish items remain in the working tree:
+
+- `apps/api/src/routes/x402-endpoints.ts` — endpoint route updates (consistency fixes post-merge)
+- `apps/web/src/app/dashboard/agentic-payments/x402/endpoints/[id]/page.tsx` (+44 lines) — endpoint detail page additions
+
+These do not reopen Epic 85. Logged here so reviewers can trace the changes. Active maintenance branches include `harden/x402-publish-feature`, `harden/x402-rate-limit-webhooks`, `fix/x402-bazaar-output-schema-coerce`, `fix/x402-publish-poller-domain-lookup`, `fix/x402-proxy-content-encoding`.
+
+---
 
 ## Summary
 

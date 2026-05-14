@@ -9,6 +9,17 @@
 
 ---
 
+## Implementation in Flight (as of 2026-05-14)
+
+Working-tree changes not yet committed, but seeded against this epic:
+
+- `apps/api/src/services/settlement-batcher.ts` — **NEW** (+138 lines). Settlement batching service. Pre-emptive infrastructure for the managed runtime: batches settlement transactions across a marketplace's agents so high-frequency micropayments don't write to chain per-tx. Likely lands as part of an early story in this epic (provisional 91.X).
+- `apps/api/src/services/analytics/dashboard.ts` — refactored to support per-marketplace metrics roll-up. Needed by Epic 91's marketplace-owner dashboard.
+
+Status: pre-merge. Will be folded into the epic story plan when the owner picks up Epic 91 work. No story status changes from this note alone — these files exist in the local working tree.
+
+---
+
 ## Summary
 
 Productize the agentbazaar runtime so any Sly tenant can spin up their own marketplace from the Sly Console — no DevOps required. Sly handles provisioning, custom domains, branded viewer hosting, settlements dashboard, and on-chain mint. Self-hosted variant remains available for customers who want infrastructure control.
