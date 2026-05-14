@@ -1,5 +1,16 @@
 # Story 93.5: Daily On-Chain Merkle Rollup
 
+> ## ⚠️ DEPRECATED — Absorbed into Epic 98 (On-Chain Anchoring)
+>
+> **Status:** 🚫 Deprecated (2026-05-14, Epic 93 scope cut)
+> **Replaced by:** [Epic 98 Stories 98.1 (Merkle accumulator) + 98.2 (Sly Anchor Contract on Base) + 98.6 (batch closer + on-chain writer worker)](../../epic-98-onchain-anchoring.md)
+>
+> Epic 98 ships a ~60s Merkle accumulator (not daily), an audited `SlyAnchor` contract on Base, EAS schema registrations for `sly.receipt.v1` / `sly.dispute.v1` / `sly.policy_decision.v1`, and the verification endpoint extension for on-chain inclusion checks. Far more robust than the original Epic 93 plan (which targeted only daily rollups against ERC-8004's reputation_metadata slot).
+>
+> See [Epic 93 (revised)](../../epic-93-reputation-receipts.md) for the narrowed score-feeder scope (19 pts, 5 stories).
+
+---
+
 **Status:** Planned
 **Epic:** [Epic 93 — Reputation Receipts](../../epic-93-reputation-receipts.md)
 **Points:** 5

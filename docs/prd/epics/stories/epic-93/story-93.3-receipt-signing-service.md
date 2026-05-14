@@ -1,5 +1,16 @@
 # Story 93.3: Receipt Signing Service
 
+> ## ⚠️ DEPRECATED — Absorbed into Epic 97 (Proof of Work Foundation)
+>
+> **Status:** 🚫 Deprecated (2026-05-14, Epic 93 scope cut)
+> **Replaced by:** [Epic 97 Stories 97.5 (SDK EIP-712 helpers) + 97.6 (Sly KMS signing key)](../../epic-97-proof-of-work-foundation.md)
+>
+> Epic 97 introduces full bilateral EIP-712 signing: parties sign with their Circle Programmable Wallet secp256k1 keys; Sly signs PolicyDecision records and bundle assembly via a KMS-managed key under the same EIP-712 domain. The original Epic 93 plan to have Sly's platform key sign single-party receipts is obsolete — Epic 97's bilateral model is the correct trust shape.
+>
+> See [Epic 93 (revised)](../../epic-93-reputation-receipts.md) for the narrowed score-feeder scope (19 pts, 5 stories).
+
+---
+
 **Status:** Planned
 **Epic:** [Epic 93 — Reputation Receipts](../../epic-93-reputation-receipts.md)
 **Points:** 5

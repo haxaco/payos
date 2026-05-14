@@ -609,7 +609,7 @@ Provision and integrate Sly's own EIP-712 signing key for use in `PolicyDecision
 **Files to Create:**
 - `apps/api/src/services/signing/sly-signer.ts`
 - `apps/api/src/services/signing/kms-client.ts`
-- `infra/terraform/kms-signing-keys.tf`
+- `apps/api/infra/terraform/kms-signing-keys.tf` — IaC co-located with the API app per project convention. If `apps/api/infra/` doesn't yet exist, this story creates it; document the location in `apps/api/README.md`.
 
 **Files to Modify:**
 - `apps/api/src/services/policy/decision-logger.ts` (use SlySigner)
@@ -939,31 +939,39 @@ Same refactor as Story 97.14 applied to AP2, ACP, and UCP protocol flows.
 
 ---
 
-### Story 97.16: MPP Integration Hook (Epic 71 Coordination)
+### Story 97.16: MPP Adapter Emits Receipts
 
 **Points:** 3
 **Priority:** P0
-**Dependencies:** Story 97.8, Epic 71 (planned)
+**Dependencies:** Story 97.8, ✅ Epic 71 (shipped 2026-03-20)
 
 **Description:**
-Coordinate with Epic 71 (MPP Integration) so MPP credential signing emits a receipt. Since Epic 71 is still planned, this story delivers the integration spec rather than the integration itself; the actual hook lands when Epic 71's Phase 1 ships.
+Wire `ReceiptAssembler.create()` into the live MPP middleware so every governed MPP credential-signing event produces a receipt in the same shape as x402/AP2/ACP/UCP adapters (Stories 97.14/97.15). Epic 71 shipped Q1 2026; the `mppx` governance middleware (`apps/api/src/services/mpp/governance-middleware.ts`) is the natural integration point — it already wraps the credential-signing path with the policy engine, so adding receipt emission is one hook call.
 
 **Acceptance Criteria:**
-- [ ] Spec document `docs/integrations/mpp-receipt-integration.md` defines the touch point
-- [ ] MPP middleware in Epic 71 calls `ReceiptAssembler.create(transferId, mppResult)` post-credential-signing
-- [ ] `settlement_rail` field is `mpp_tempo` or `mpp_stripe` depending on payment method
-- [ ] Epic 71 Phase 1 stories (Story 71.X — TBD) updated to reference Story 97.16
-- [ ] No backward-compat concern (Epic 71 not yet shipped)
+- [ ] MPP governance middleware calls `ReceiptAssembler.create(transferId, mppResult)` after the policy check passes and the credential is signed
+- [ ] `settlement_rail` field set to `mpp_tempo` or `mpp_stripe` depending on the configured payment method
+- [ ] Receipt links to the MPP `transfers` row via `transfer_id` (matches the pattern from Stories 71.3 + 71.6)
+- [ ] Receipt links to the mandate produced by Story 71.5 / 71.7 (governed session manager) via `mandate_hash`
+- [ ] MPP session-level receipts produced for streamed payments (SSE) per Story 71.10 — one receipt per voucher OR one session-receipt at session close, configurable via `MPP_RECEIPT_GRANULARITY` env var (default: session close, to keep receipt volume sane)
+- [ ] PolicyDecision (Story 97.4) emitted in parallel with the receipt
+- [ ] `proof.receipt_id` added to the MPP middleware response shape (additive, no breaking change for existing MPP partners)
+- [ ] Existing Epic 71 integration tests (`apps/api/tests/integration/mpp-*.test.ts`) continue to pass; new test verifies receipt row exists after MPP payment
+- [ ] No change to `mppx` SDK itself — receipt emission is a Sly-side concern inside the governance middleware wrapper
 
 **SDK Exposure:**
-- **Needs SDK exposure?** No (spec only)
-- **Reason:** Integration spec; SDK exposure flows from Epic 71 implementation
-
-**Files to Create:**
-- `docs/integrations/mpp-receipt-integration.md`
+- **Needs SDK exposure?** Types only
+- **Reason:** Existing `sly.mpp` SDK module shape unchanged; receipt_id added to response types matches the pattern from Stories 97.14/97.15
 
 **Files to Modify:**
-- `docs/prd/epics/epic-71-mpp-integration.md` (cross-reference)
+- `apps/api/src/services/mpp/governance-middleware.ts` (add receipt emission hook)
+- `apps/api/src/services/mpp/session-manager.ts` (session-close receipt for streamed payments)
+- `apps/api/src/routes/mpp-sessions.ts` (response shape — additive `receipt_id` field)
+- `packages/types/src/protocols/mpp.ts` (add `receipt_id` to response types)
+- `apps/api/tests/integration/mpp-receipts.test.ts` (new test)
+
+**Files to Create:**
+- None (integration into existing Epic 71 surface)
 
 ---
 
@@ -1020,7 +1028,7 @@ Single unauthenticated endpoint that, given a receipt_id, runs all checks runnab
 **Dependencies:** Story 97.2, Story 97.17
 
 **Description:**
-Tenant dashboard surface showing the receipts produced for their agents. List view + detail view with verification report inline.
+Tenant dashboard surface showing the receipts produced for their agents. List view + detail view with verification report inline. **Implemented in `apps/web/` (Next.js App Router) per CLAUDE.md; `payos-ui/` is deprecated.**
 
 **Acceptance Criteria:**
 - [ ] Route `/receipts` lists tenant receipts with filters (agent, counterparty, terminal_state, date range)
@@ -1034,13 +1042,13 @@ Tenant dashboard surface showing the receipts produced for their agents. List vi
 - **Needs SDK exposure?** No (frontend only)
 
 **Files to Create:**
-- `apps/dashboard/src/pages/receipts/index.tsx`
-- `apps/dashboard/src/pages/receipts/[id].tsx`
-- `apps/dashboard/src/components/receipts/ReceiptDetailCard.tsx`
-- `apps/dashboard/src/components/receipts/VerificationReportPanel.tsx`
+- `apps/web/src/app/dashboard/receipts/page.tsx`
+- `apps/web/src/app/dashboard/receipts/[id]/page.tsx`
+- `apps/web/src/components/receipts/ReceiptDetailCard.tsx`
+- `apps/web/src/components/receipts/VerificationReportPanel.tsx`
 
 **Files to Modify:**
-- `apps/dashboard/src/app/sidebar.tsx` (add nav entry)
+- `apps/web/src/components/layout/sidebar.tsx` (add nav entry) — `payos-ui/` is DEPRECATED per CLAUDE.md; all UI work goes in `apps/web/` (Next.js App Router)
 
 ---
 
@@ -1401,14 +1409,13 @@ Per-story review against the [PRD Status Matrix](../PRD_STATUS_MATRIX.md) (v1.28
 - **Spec gaps:** None.
 - **Verdict:** **Ready to implement.**
 
-### Story 97.16 — MPP Integration Spec (Epic 71 Coordination)
+### Story 97.16 — MPP Adapter Emits Receipts
 
-- **Dependency status:** ⚠️ **Epic 71 is 📋 Planned, not shipped.** This story produces a spec doc; the actual integration hook lands when Epic 71 Phase 1 ships.
-- **Acceptance criteria:** ✅ spec-only deliverable.
-- **Data model:** N/A (spec).
-- **Spec gaps:** None for the spec deliverable.
-- **Verdict:** **Ready to implement (spec only)** — but cross-reference into Epic 71 must be added so Epic 71's Phase 1 doesn't proceed without consuming this story.
-- **Blocker note:** Epic 71's commit decision interacts with this spec. If Epic 71 stalls indefinitely, Story 97.16 is wasted effort.
+- **Dependency status:** ✅ Epic 71 (MPP Integration) shipped 2026-03-20. Linear reconciliation (v1.28) confirmed all 16 stories closed.
+- **Acceptance criteria:** ✅ rewritten as a real integration story (not a spec-only deliverable). Matches the pattern from Stories 97.14 / 97.15.
+- **Data model:** ✅ reuses existing `transfers` + `mandates` rows from Epic 71.
+- **Spec gaps:** None.
+- **Verdict:** **Ready to implement.** Story was rewritten 2026-05-14 once Epic 71's shipping status was confirmed via Linear; the original "spec-only" framing has been replaced with concrete file paths into the live MPP middleware.
 
 ### Story 97.17 — Public Verification Endpoint (Off-Chain)
 
@@ -1445,7 +1452,7 @@ Per-story review against the [PRD Status Matrix](../PRD_STATUS_MATRIX.md) (v1.28
 | 97.3 | ✅ Ready | Document nonce derivation (16 random bytes) |
 | 97.4 | ✅ Ready | Enumerate wrap-sites in `contract-policy-engine.ts` |
 | 97.5 | ✅ Ready | — |
-| 97.6 | ⚠️ Revise | Pin IaC location (`infra/` is new top-level dir) |
+| 97.6 | ✅ Ready | IaC location pinned: `apps/api/infra/terraform/` (co-located with API app per project convention) |
 | 97.7 | ✅ Ready | — |
 | 97.8 | ✅ Ready | Sequence 97.14 → 97.15 → 97.16 |
 | 97.9 | ✅ Ready | — |
@@ -1455,32 +1462,31 @@ Per-story review against the [PRD Status Matrix](../PRD_STATUS_MATRIX.md) (v1.28
 | 97.13 | ✅ Ready | — |
 | 97.14 | ✅ Ready | — |
 | 97.15 | ✅ Ready | — |
-| 97.16 | ⚠️ Coordinate | Blocked on Epic 71 shipping |
+| 97.16 | ✅ Ready | Rewritten 2026-05-14 — Epic 71 confirmed shipped, story now integrates against live MPP middleware |
 | 97.17 | ✅ Ready | Pin verify-endpoint rate limit (30 req/min) |
-| 97.18 | ⚠️ Revise | Path correction: `apps/dashboard/` → `apps/web/` |
+| 97.18 | ✅ Ready | Path corrected: `apps/web/src/app/dashboard/receipts/*` (Next.js App Router per CLAUDE.md) |
 | 97.19 | ✅ Ready | — |
 
-**Summary:** 16 of 19 stories Ready to implement. 3 need minor revision before implementation:
-- 97.6 (IaC location)
-- 97.18 (dashboard path)
-- 97.16 (Epic 71 coordination)
+**Summary (updated 2026-05-14 PM-review pass):** **19 of 19 stories Ready to implement.** All three flagged revisions applied:
+- 97.6 — IaC location pinned to `apps/api/infra/terraform/` (Diego's call)
+- 97.18 — dashboard path corrected to `apps/web/`
+- 97.16 — rewritten as live MPP integration after Linear confirmed Epic 71 shipped Mar 20, 2026
 
-None of these are structural — all are one-line spec fixes. The epic is ready to enter the implementation queue with these notes folded back into the story specs.
+The epic is fully ready to enter the implementation queue.
 
 ---
 
-### Cross-Epic Recommendation: Reduce Epic 93 Scope
+### Cross-Epic Recommendation: Reduce Epic 93 Scope ✅ Applied 2026-05-14
 
-**Recommendation (flagged for explicit user confirmation before editing Epic 93):** Epic 97 absorbs the receipt primitive that Epic 93 originally owned. Epic 93's current scope (37 pts) overlaps with Stories 97.2 (receipt schema), 97.8 + 97.9 (receipt assembly), 97.17 (verification endpoint).
+Epic 97 absorbs the receipt primitive that Epic 93 originally owned. Epic 93's scope was 37 pts / 9 stories with real overlap against Stories 97.2 (receipt schema), 97.8 + 97.9 (receipt assembly), 97.17 (verification endpoint), and 98.1/98.2/98.6 (Merkle anchoring).
 
-Proposed Epic 93 narrowing:
-- **Keep in Epic 93:** Composite identity score computation, scoring weights, per-task signed attestation that feeds the score (a reputation-feeder layer on top of Epic 97 receipts), Sly Score query API, Sly Score dashboard panel.
-- **Move to Epic 97:** Receipt primitive itself, dispute primitive, verification endpoint, state machine.
-- **New point estimate:** ~20 pts (was 37).
+**Cut applied** in the PM-review pass (2026-05-14):
+- **Kept in Epic 93:** Composite Score Reader (93.4), agent-scoped REST surface (93.6), agentbazaar inspector (93.7), SDK + MCP score-feeder accessors (93.8), tests (93.9) — the *score-feeder* role.
+- **Moved to Epic 97:** Receipts table (was 93.1), receipt generation hooks (was 93.2), receipt signing service (was 93.3).
+- **Moved to Epic 98:** Daily on-chain rollup (was 93.5).
+- **New Epic 93 size:** **19 pts / 5 stories** (was 37 / 9).
 
-This narrowing reflects the natural primitive hierarchy: Epic 97 produces the artifact, Epic 93 derives a score from it. Without the narrowing, the two epics partially re-implement the same data structures with subtly different semantics — a real risk.
-
-**Action item:** Confirm with @haxaco. If accepted, edit Epic 93 status header (`Total Points: 20`, `Stories: TBD/X`) and add a cross-reference note.
+Deprecated story files (93.1, 93.2, 93.3, 93.5) carry redirect headers pointing at the absorbing Epic 97/98 stories. See [Epic 93 (revised)](./epic-93-reputation-receipts.md) for the narrowed scope.
 
 ---
 

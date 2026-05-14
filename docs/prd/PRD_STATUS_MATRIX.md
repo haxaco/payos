@@ -113,7 +113,7 @@ This is the single-page truth board for all 97 epics. Status is derived from (in
 | 90 | Marketplace Explorer UI | 📋 | 70 | Marketplaces | May 2026 | — | [epic](./epics/epic-90-marketplace-explorer-ui.md) |
 | 91 | Managed Marketplace Runtime | 📋 | 96 | Marketplaces | May 2026 | — | [epic](./epics/epic-91-managed-marketplace-runtime.md) |
 | 92 | Score-Gated x402 Endpoints | 📋 | 17 | Identity Amplifiers | May 2026 | — | [epic](./epics/epic-92-score-gated-x402-endpoints.md) |
-| 93 | Reputation Receipts | 📋 (scope cut pending) | 37→20? | Identity Amplifiers | May 2026 | — | [epic](./epics/epic-93-reputation-receipts.md) |
+| 93 | Reputation Receipts (Score-Feeder) | 📋 | **19** (was 37 — scope cut 2026-05-14) | Identity Amplifiers | May 14, 2026 | — | [epic](./epics/epic-93-reputation-receipts.md). Stories 93.1/93.2/93.3/93.5 absorbed into Epic 97/98 |
 | 94 | Identity Badge SDK | 📋 | 36 | Identity Amplifiers | May 2026 | — | [epic](./epics/epic-94-identity-badge-sdk.md) |
 | 95 | Agent FICO for B2B | 🎨 Discovery | 50 | Identity Amplifiers | May 2026 | — | [epic](./epics/epic-95-agent-fico-for-b2b.md) |
 | 96 | ZeroDev Kernel Integration | 🎨 Discovery | 53 | Identity Amplifiers | May 2026 | — | [epic](./epics/epic-96-zerodev-kernel-integration.md) |

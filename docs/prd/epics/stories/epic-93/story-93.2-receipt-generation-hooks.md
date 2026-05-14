@@ -1,5 +1,16 @@
 # Story 93.2: Receipt Generation Hooks
 
+> ## ⚠️ DEPRECATED — Absorbed into Epic 97 (Proof of Work Foundation)
+>
+> **Status:** 🚫 Deprecated (2026-05-14, Epic 93 scope cut)
+> **Replaced by:** [Epic 97 Stories 97.8 (half-sign) + 97.9 (counter-sign) + 97.14 (x402 adapter) + 97.15 (AP2/ACP/UCP adapters) + 97.16 (MPP adapter)](../../epic-97-proof-of-work-foundation.md)
+>
+> Epic 97's receipt assembler emits a bilateral EIP-712 signed receipt at every terminal-state transition across all five protocol rails. Epic 93's original "hooks" approach (subscribe to A2A acceptance + x402 settle + dispute resolution) is superseded by Epic 97's first-class assembler service.
+>
+> See [Epic 93 (revised)](../../epic-93-reputation-receipts.md) for the narrowed score-feeder scope (19 pts, 5 stories).
+
+---
+
 **Status:** Planned
 **Epic:** [Epic 93 — Reputation Receipts](../../epic-93-reputation-receipts.md)
 **Points:** 5

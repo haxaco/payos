@@ -1,70 +1,71 @@
-# Epic 93: Reputation Receipts
+# Epic 93: Reputation Receipts (Score-Feeder)
 
 **Status:** Planned
 **Phase:** TBD (Identity-First Demos)
 **Priority:** P1
-**Dependencies:** Epic 63 (External Reputation Bridge), Epic 69 (A2A Result Acceptance), Epic 88 (MarketplaceRegistry — for hash refresh pattern)
-**Companion:** [`docs/prd/MARKETPLACES_STRATEGY.md`](../MARKETPLACES_STRATEGY.md)
-**Created:** May 2026
+**Estimated Points:** 19 (narrowed from 37, scope cut 2026-05-14 — Epic 97 absorbs receipt primitive)
+**Stories:** 5 (was 9)
+**Dependencies:** Epic 97 (Proof of Work Foundation — receipt primitive, dispute primitive, verification endpoint), Epic 98 (On-Chain Anchoring — Merkle batches), Epic 63 (External Reputation Bridge), Epic 69 (A2A Result Acceptance — quality feedback ✅)
+**Companion:** [`docs/prd/IDENTITY_AND_GOVERNANCE_STRATEGY.md`](../IDENTITY_AND_GOVERNANCE_STRATEGY.md) (four-primitive bet: score-feeder consumes proof-of-work receipts)
+**Created:** May 2026 · **Scope cut:** May 14, 2026 (PM-review pass)
 
 ---
 
 ## Summary
 
-Every successful A2A task completion, x402 settlement, and dispute resolution generates an attestation (a "reputation receipt") that compounds into the agent's composite identity score. Receipts are individually inspectable on-chain (or off-chain with cryptographic proof) and feed directly into Epic 63's composite score. Demo punchline: an agent's history is provably 100 successful code reviews, the buyer can verify it before hiring.
+Epic 97 produces the bilateral signed receipt primitive (and Epic 98 anchors it on-chain). **Epic 93's job is now exclusively to feed those receipts into a composite identity score** — the *score-feeder* role.
+
+Demo punchline unchanged: a buyer can see "score: 850" AND drill down to the receipts (Epic 97) that derived it. The drill-down primitive lives in Epic 97; the scoring math and the agent-scoped surfacing live here.
 
 ## Motivation
 
-Composite identity score (Epic 63) today aggregates from coarse signals — KYA tier, ERC-8004 NFT base, age, activity. There's no fine-grained, per-task evidence. Two problems:
+After Epic 97 + 98 ship, agents have provable per-task non-repudiable receipts. Composite identity score (Epic 63) needs a deterministic way to consume those receipts into a single 0–1000 number that:
 
-1. **Reputation is a black box.** A buyer can see "score: 850" but can't drill down to "why" — what tasks, what counterparties, what outcomes.
-2. **Reputation can't be exported with cryptographic proof.** When an agent moves to a non-Sly host, they can claim "I've done 100 successful reviews" but can't prove it.
+- Reproduces mechanically (any external verifier with the receipt list can recompute the score)
+- Weights receipts by type, age decay, counterparty KYA tier, dispute resolution outcome, partial-settlement signal (Epic 69)
+- Surfaces via REST + SDK + MCP at *agent-scope* (different from Epic 97's `GET /v1/receipts/:id`, which is receipt-scope)
 
-Reputation receipts solve both. Each successful interaction produces a signed attestation. The composite score is mechanically derived from the receipts. Anyone — Sly or external — can audit the receipt list and reproduce the score.
+## What this epic does NOT do (after the scope cut)
+
+These now live in Epic 97 / Epic 98:
+
+- ❌ `receipts` table — owned by Epic 97 (Story 97.2)
+- ❌ Receipt generation hooks — owned by Epic 97 (Stories 97.8, 97.9, 97.14, 97.15, 97.16)
+- ❌ Receipt signing service — owned by Epic 97 (Stories 97.5, 97.6)
+- ❌ Daily on-chain Merkle rollup — owned by Epic 98 (Stories 98.1, 98.2, 98.6)
+- ❌ Dispute primitive — owned by Epic 97 (Stories 97.12, 97.13)
+- ❌ Public verification endpoint — owned by Epic 97 (Story 97.17)
+
+Without this cut, Epic 93 would partially re-implement the Epic 97 primitives with subtly different semantics — a real risk for cryptographic divergence and audit confusion.
 
 ## SDK Impact Assessment
 
-| Feature/Endpoint | Needs SDK? | Module | Priority |
-|---|---|---|---|
-| `GET /v1/agents/:id/receipts` | ✅ Yes | `sly.agents` | P1 |
-| `GET /v1/agents/:id/receipts/:receiptId` | ✅ Yes | `sly.agents` | P1 |
-| Receipt inclusion in agent inspector | ❌ No | UI only | - |
-| MCP tool `sly_agent_receipts` | ✅ Yes | `mcp-server` | P2 |
+| Feature/Endpoint | Needs SDK? | Module | Priority | Notes |
+|---|---|---|---|---|
+| `GET /v1/agents/:id/receipts` (agent-scope rollup) | ✅ Yes | `sly.agents` | P1 | Different from Epic 97's `sly.receipts.get()` — agent-scope, score-relevant filtering |
+| `GET /v1/agents/:id/score` | ✅ Yes | `sly.agents` | P1 | Returns the composite score + per-component breakdown |
+| MCP tool `sly_agent_receipts` | ✅ Yes | `mcp-server` | P2 | LLM agents query peer reputation |
+| MCP tool `sly_agent_score` | ✅ Yes | `mcp-server` | P2 | |
+| Inspector UI (agentbazaar viewer) | ❌ No | UI only | — | |
 
-## Scope
+## Scope (after cut)
 
-**In scope (v1):**
+1. **Composite Score Reader — Receipt Component (Story 93.4).** Epic 63's composite score gets a new mechanical input: a weighted sum over Epic 97 receipts. Weights encode:
+   - **Receipt type:** `delivered` > `auto_accepted` > `refunded` > `resolved_for_payee` > `resolved_for_payer` > `disputed_unresolved` > `abandoned`
+   - **Age decay:** exponential half-life (default 90 days, configurable)
+   - **Counterparty KYA tier:** higher-tier counterparties contribute more weight
+   - **Partial-settlement signal:** from Epic 69's `a2a_task_feedback.satisfaction` field
+   - **Anchored vs unanchored:** receipts anchored via Epic 98 weighted slightly higher (marginal nudge toward audit-grade evidence)
 
-1. **`reputation_receipts` table**:
+2. **Agent-scoped receipts REST surface (Story 93.6).** `GET /v1/agents/:id/receipts` — paginated, score-weighted, public-readable for agents with `discovery.public=true`. Distinct from Epic 97's `GET /v1/receipts/:id` (receipt-scope detail).
 
-   ```sql
-   CREATE TABLE reputation_receipts (
-     id UUID PRIMARY KEY,
-     agent_id UUID NOT NULL REFERENCES agents(id),
-     counterparty_id UUID,           -- agent or merchant
-     marketplace_id UUID,             -- Epic 86
-     event_type TEXT NOT NULL,        -- 'a2a_completion' | 'x402_settle' | 'dispute_resolved'
-     payload JSONB NOT NULL,          -- task id, score, comment, satisfaction, amount
-     signature TEXT,                  -- signed by Sly platform key
-     onchain_hash TEXT,               -- if rolled up on-chain
-     created_at TIMESTAMPTZ DEFAULT NOW()
-   );
-   ```
+3. **Inspector — Receipt list in agentbazaar viewer (Story 93.7).** UI that surfaces the last N receipts with link-throughs to Epic 97's verify endpoint and Epic 98's on-chain inclusion proof. Implemented in `apps/web/` per CLAUDE.md.
 
-2. **Hooks** at receipt-generating events:
-   - A2A task completion (Epic 69 acceptance flow already captures score + comment) → generate receipt
-   - x402 settlement → generate receipt with amount + counterparty
-   - Dispute resolution (Epic 14 / Epic 15) → generate receipt with outcome
+4. **SDK + MCP score-feeder accessors (Story 93.8).** `sly.agents.getReceipts()`, `sly.agents.getScore()`, MCP tool `sly_agent_receipts`. Distinct from Epic 97's `sly.receipts.get()` — these are agent-scope, score-relevant filters.
 
-3. **Composite score recomputation**: Epic 63's reader gets a new input — sum / weight receipts. Replace static "activity" component with receipt-based one.
+5. **Tests — score-feeder layer only (Story 93.9).** Receipt-weighting math, age-decay function, score reproducibility (given the same receipt list, same score).
 
-4. **Periodic on-chain rollup** (optional, gas-bounded): a daily merkle root of new receipts is written to ERC-8004's `reputation_metadata` slot, so external readers can verify any individual receipt against the on-chain root.
-
-5. **Public receipt list per agent**: `GET /v1/agents/:id/receipts?since=&limit=` — paginated, public-readable for agents with `discovery.public=true`.
-
-6. **Inspector**: agent inspector in agentbazaar viewer shows last N receipts with link-throughs.
-
-**Out of scope:**
+**Out of scope (unchanged from original):**
 
 - Receipts for skills outside Sly (federated reputation)
 - Receipts as transferable NFTs (each task as an NFT) — interesting future direction, not v1
@@ -72,39 +73,41 @@ Reputation receipts solve both. Each successful interaction produces a signed at
 
 ## Stories
 
-Each story spec lives in its own file at [`./stories/epic-93/`](./stories/epic-93/). See [`./stories/README.md`](./stories/README.md) for the convention.
-
-### Phase 1: Receipt Generation & Storage — 18 points
-
 | Story | Title | Points | Priority | Status |
 |---|---|---|---|---|
-| [93.1](./stories/epic-93/story-93.1-receipts-table.md) | `reputation_receipts` Table Migration | 3 | P0 | Planned |
-| [93.2](./stories/epic-93/story-93.2-receipt-generation-hooks.md) | Receipt Generation Hooks | 5 | P0 | Planned |
-| [93.3](./stories/epic-93/story-93.3-receipt-signing-service.md) | Receipt Signing Service | 5 | P0 | Planned |
 | [93.4](./stories/epic-93/story-93.4-composite-score-reader.md) | Composite Score Reader — Receipt Component | 5 | P0 | Planned |
+| [93.6](./stories/epic-93/story-93.6-rest-receipts-endpoint.md) | REST — `GET /v1/agents/:id/receipts` (agent-scope) | 3 | P0 | Planned |
+| [93.7](./stories/epic-93/story-93.7-inspector-receipt-list.md) | Inspector — Receipt list in agentbazaar viewer | 5 | P1 | Planned |
+| [93.8](./stories/epic-93/story-93.8-sdk-mcp-accessors.md) | SDK + MCP agent-scoped receipt accessors | 3 | P1 | Planned |
+| [93.9](./stories/epic-93/story-93.9-tests-hooks-signatures-rollup.md) | Tests — score math + reproducibility + age decay | 3 | P0 | Planned |
 
-### Phase 2: On-Chain Anchoring & Surfaces — 19 points
+**Total:** 19 points across 5 stories (was 37 / 9).
 
-| Story | Title | Points | Priority | Status |
-|---|---|---|---|---|
-| [93.5](./stories/epic-93/story-93.5-daily-merkle-rollup.md) | Daily On-Chain Merkle Rollup | 5 | P1 | Planned |
-| [93.6](./stories/epic-93/story-93.6-rest-receipts-endpoint.md) | REST — `GET /v1/agents/:id/receipts` | 3 | P0 | Planned |
-| [93.7](./stories/epic-93/story-93.7-inspector-receipt-list.md) | Inspector — Receipt List in agentbazaar Viewer | 5 | P1 | Planned |
-| [93.8](./stories/epic-93/story-93.8-sdk-mcp-accessors.md) | SDK + MCP Receipt Accessors | 3 | P1 | Planned |
-| [93.9](./stories/epic-93/story-93.9-tests-hooks-signatures-rollup.md) | Tests — Hooks, Signatures, Rollup | 3 | P0 | Planned |
+### Stories removed in the scope cut (absorbed by Epic 97 / 98)
 
-**Total:** ~37 points across 9 stories.
+| Removed | Original title | Now owned by |
+|---|---|---|
+| 93.1 | `reputation_receipts` Table Migration | [Epic 97 Story 97.2](./epic-97-proof-of-work-foundation.md) (`receipts` table) |
+| 93.2 | Receipt Generation Hooks | [Epic 97 Stories 97.8/97.9/97.14/97.15/97.16](./epic-97-proof-of-work-foundation.md) (receipt assembler + protocol adapters) |
+| 93.3 | Receipt Signing Service | [Epic 97 Stories 97.5/97.6](./epic-97-proof-of-work-foundation.md) (EIP-712 signing + KMS) |
+| 93.5 | Daily On-Chain Merkle Rollup | [Epic 98 Stories 98.1/98.2/98.6](./epic-98-onchain-anchoring.md) (Merkle accumulator + anchor contract + batch worker) |
+
+Each removed story's file at `./stories/epic-93/` is marked DEPRECATED with a redirect pointer.
 
 ## Definition of Done
 
-- [ ] Receipts generated for every completed A2A task + every x402 settle + every dispute resolution
-- [ ] Composite score derives mechanically from receipts (reproducible by an external verifier)
-- [ ] Daily on-chain rollup live on Base Sepolia
-- [ ] Agent inspector shows receipt history
-- [ ] Documentation: receipt schema, signature verification, rollup spec
+- [ ] Composite score recomputes deterministically from a receipt list
+- [ ] Agent-scoped REST endpoint serves score-weighted receipt rollups (different surface from Epic 97's `GET /v1/receipts/:id`)
+- [ ] Agentbazaar inspector surfaces receipt history with link-throughs to Epic 97 verify + Epic 98 on-chain proof
+- [ ] SDK + MCP expose agent-scoped accessors
+- [ ] External verifier with the receipt list reproduces the same score (cryptographic + business-logic correctness)
+- [ ] Original 93.1 / 93.2 / 93.3 / 93.5 story files marked DEPRECATED with redirect pointers
+- [ ] Status updated to ✅ Complete in [`PRD_STATUS_MATRIX.md`](../PRD_STATUS_MATRIX.md)
 
 ## References
 
-- Epic 63 — External Reputation Bridge
-- Epic 69 — A2A Result Acceptance & Quality Feedback
-- Epic 73 — KYA Tiers (effective limits already use behavior signals)
+- **Epic 97 — Proof of Work Foundation** — receipt + dispute primitives (the substrate this epic consumes)
+- **Epic 98 — On-Chain Anchoring** — Merkle batches (so score-feeder can include "anchored" as a weighting input)
+- **Epic 63 — External Reputation Bridge** — the composite score this epic feeds into
+- **Epic 69 — A2A Result Acceptance & Quality Feedback** ✅ — quality feedback signal (already used in Story 63.8 at 15% weight)
+- **Epic 73 — KYA Tiers** ✅ — counterparty tier as a weighting input

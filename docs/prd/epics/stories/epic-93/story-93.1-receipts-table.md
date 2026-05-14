@@ -1,5 +1,16 @@
 # Story 93.1: `reputation_receipts` Table Migration
 
+> ## ⚠️ DEPRECATED — Absorbed into Epic 97 (Proof of Work Foundation)
+>
+> **Status:** 🚫 Deprecated (2026-05-14, Epic 93 scope cut)
+> **Replaced by:** [Epic 97 Story 97.2 — Receipts Table + `sly.receipt.v1` Schema](../../epic-97-proof-of-work-foundation.md)
+>
+> Epic 97 owns the receipt primitive (bilateral EIP-712 signed, tenant-scoped RLS, trigger-enforced append-only, with FK to `transfers`). Epic 93 no longer maintains its own `reputation_receipts` table — the score-feeder layer reads from Epic 97's `receipts` table directly.
+>
+> See [Epic 93 (revised)](../../epic-93-reputation-receipts.md) for the narrowed score-feeder scope (19 pts, 5 stories).
+
+---
+
 **Status:** Planned
 **Epic:** [Epic 93 — Reputation Receipts](../../epic-93-reputation-receipts.md)
 **Points:** 3
