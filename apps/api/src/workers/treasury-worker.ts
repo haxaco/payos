@@ -127,7 +127,7 @@ export class TreasuryWorker {
         actorName: 'TreasuryWorker',
         action: 'treasury.snapshot.batch',
         entityType: 'treasury_balance_history',
-        entityId: null,
+        entityId: '00000000-0000-0000-0000-000000000000',
         description: `Created ${totalSnapshots} ${snapshotType} snapshots`,
         metadata: { totalSnapshots, snapshotType, tenantCount: tenantIds.length },
       });

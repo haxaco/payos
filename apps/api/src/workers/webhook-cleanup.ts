@@ -103,7 +103,7 @@ export class WebhookCleanupWorker {
         actorId: null,
         actorName: 'WebhookCleanup',
         entityType: 'webhook_cleanup',
-        entityId: null,
+        entityId: '00000000-0000-0000-0000-000000000000',
         action: 'cleanup',
         changes: {
           deliveries_deleted: deliveriesDeleted,

@@ -166,7 +166,8 @@ app.post('/sync', async (c) => {
       actorName: ctx.actorName || 'Unknown',
       action: 'treasury.sync',
       entityType: 'treasury_accounts',
-      entityId: null,
+      // audit_log.entity_id is NOT NULL; sentinel for tenant-wide actions.
+      entityId: '00000000-0000-0000-0000-000000000000',
       description: `Synced ${result.synced} treasury accounts`,
       metadata: result,
     } as any);
@@ -194,7 +195,7 @@ app.post('/snapshot', async (c) => {
       actorName: ctx.actorName || 'Unknown',
       action: 'treasury.snapshot',
       entityType: 'treasury_balance_history',
-      entityId: null,
+      entityId: '00000000-0000-0000-0000-000000000000',
       description: `Created ${snapshotCount} balance snapshots`,
       metadata: { snapshotCount },
     } as any);
@@ -447,7 +448,7 @@ app.post('/recommendations/generate', async (c) => {
       actorName: ctx.actorName || 'Unknown',
       action: 'treasury.recommendations.generated',
       entityType: 'treasury_rebalance_recommendations',
-      entityId: null,
+      entityId: '00000000-0000-0000-0000-000000000000',
       description: `Generated ${recommendations.length} rebalancing recommendations`,
       metadata: { count: recommendations.length },
     } as any);

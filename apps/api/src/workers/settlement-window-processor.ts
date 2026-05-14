@@ -271,7 +271,9 @@ export class SettlementWindowProcessor {
       actorId: null,
       actorName: 'SettlementWindowProcessor',
       entityType: 'settlement_batch',
-      entityId: null,
+      // audit_log.entity_id is NOT NULL; use zero-UUID sentinel for batch
+      // actions with no specific entity (matches middleware/auth.ts convention).
+      entityId: '00000000-0000-0000-0000-000000000000',
       action: 'process',
       changes: {
         tenant_id: tenantId,
