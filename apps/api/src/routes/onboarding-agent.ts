@@ -30,6 +30,7 @@ import { checkRateLimit, logSecurityEvent } from '../utils/auth.js';
 import { isFeatureEnabled } from '../config/environment.js';
 import { getCircleServiceForTenant } from '../services/circle/index.js';
 import { screenSignup } from '../services/kyc/screening.js';
+import { sendAgentClaimEmail } from '../services/email.js';
 
 function getClientInfo(c: any): { ip: string; userAgent: string } {
   const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
@@ -245,6 +246,10 @@ router.post('/one-click', async (c) => {
         description: description || null,
         status: 'active',
         type: 'custom',
+        // Self-registered agents are ALWAYS KYA tier 0 until a human owner
+        // claims them — do NOT apply sandbox auto-T1 here (that is owner-
+        // created agents only, see routes/agents.ts). Regressing this would
+        // let an unclaimed self-signed agent transact at elevated limits.
         kya_tier: 0,
         kya_status: 'unverified',
         auth_type: 'api_key',
@@ -677,6 +682,19 @@ router.post('/one-click', async (c) => {
             expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           });
       } catch { /* non-fatal */ }
+    }
+
+    // Self-registered agents stay at KYA tier 0 until a human owner claims
+    // them. If a contact email was supplied, send claim instructions
+    // (fire-and-forget — never block or fail registration on email delivery).
+    if (email) {
+      sendAgentClaimEmail({
+        to: email,
+        agentName: agent.name,
+        agentId: agent.id,
+      }).catch((err) => {
+        console.error('[agent-onboard] Claim email failed (non-fatal):', err);
+      });
     }
 
     return c.json(response, 201);

@@ -1058,16 +1058,22 @@ curl -X POST ${baseUrl}/v1/onboarding/agent/one-click \\
   -H "Content-Type: application/json" \\
   -d '{
     "name": "Your Agent Name",
-    "email": "you@example.com"
+    "email": "owner@example.com"
   }'
 \`\`\`
+
+> **If you have a human owner, set \`email\` to their address.** Self-registered
+> agents stay at KYA tier 0 (sandbox-only, lowest limits) until that owner
+> claims you. Providing their email sends them a "claim your agent" notice so
+> they can move you into their organization and raise your tier/limits. Omit
+> it only if you genuinely have no human owner.
 
 ### Request Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | name | Yes | Your agent's display name |
-| email | No | Contact email (used for beta approval if needed) |
+| email | No | Human owner's contact email — sends them a "claim your agent" notice (also used for beta approval). Provide it if you have an owner. |
 | description | No | What your agent does |
 | model | No | Your model (e.g. "claude-4", "gpt-4") |
 | inviteCode | No | Beta invite code for instant access |
@@ -1259,8 +1265,8 @@ New to Sly? These 5 skills are all you need to get started:
 
 ### 1. register
 - Endpoint: POST /v1/auth/agent-signup (no auth required)
-- Input: { "name": "My Agent", "email": "agent@example.com" }
-- Description: Register your agent and receive API key + agent token + wallet in one call
+- Input: { "name": "My Agent", "ownerEmail": "owner@example.com" }
+- Description: Register your agent and receive API key + agent token + wallet in one call. If you have a human owner, include \`ownerEmail\` — you stay at KYA tier 0 until they claim you, and this emails them claim instructions.
 - Returns: { apiKey, agentToken, walletId, walletAddress }
 
 ### 2. list_agents

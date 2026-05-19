@@ -18,7 +18,7 @@ import {
 import { provisionTenant, TenantProvisioningError } from '../services/tenant-provisioning.js';
 import { generateAgentToken, verifyApiKey } from '../utils/crypto.js';
 import { logAudit } from '../utils/helpers.js';
-import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail, sendBetaApplicationReceivedEmail, sendBetaNewApplicationNotification } from '../services/email.js';
+import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail, sendBetaApplicationReceivedEmail, sendBetaNewApplicationNotification, sendAgentClaimEmail } from '../services/email.js';
 import { isFeatureEnabled } from '../config/environment.js';
 import { validateBetaCode, redeemBetaCode, submitApplication, trackFunnelEvent } from '../services/beta-access.js';
 
@@ -1313,6 +1313,9 @@ const agentSignupSchema = z.object({
   model: z.string().max(255).optional(),
   callbackUrl: z.string().url().max(1024).optional(),
   inviteCode: z.string().optional(),
+  // Optional human owner contact. When provided, we email them a "claim your
+  // agent" notice — the agent stays at KYA tier 0 until claimed.
+  ownerEmail: z.string().email().max(320).optional(),
 });
 
 auth.post('/agent-signup', async (c) => {
@@ -1441,6 +1444,10 @@ auth.post('/agent-signup', async (c) => {
         description: purpose || null,
         status: 'active',
         type: 'custom',
+        // Self-registered agents are ALWAYS KYA tier 0 until a human owner
+        // claims them — do NOT apply sandbox auto-T1 here (that is owner-
+        // created agents only, see routes/agents.ts). Regressing this would
+        // let an unclaimed self-signed agent transact at elevated limits.
         kya_tier: 0,
         kya_status: 'unverified',
         auth_type: 'api_key',
@@ -1528,6 +1535,20 @@ auth.post('/agent-signup', async (c) => {
       } catch (err) {
         console.error('[agent-signup] Beta code redemption failed (non-fatal):', err);
       }
+    }
+
+    // Self-registered agents stay at KYA tier 0 until a human owner claims
+    // them. If an owner email was supplied, send the claim instructions
+    // (fire-and-forget — never block or fail signup on email delivery).
+    const ownerEmail = parsed.data.ownerEmail;
+    if (ownerEmail) {
+      sendAgentClaimEmail({
+        to: ownerEmail,
+        agentName: agent.name,
+        agentId: agent.id,
+      }).catch((err) => {
+        console.error('[agent-signup] Claim email failed (non-fatal):', err);
+      });
     }
 
     return c.json({
