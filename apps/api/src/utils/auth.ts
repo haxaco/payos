@@ -228,6 +228,7 @@ export type SecurityEventType =
   | 'agent_signup_failure'
   | 'agent_signup_success'
   | 'agent_claimed'
+  | 'agent_claim_email_throttled'
   // Agent onboarding (Epic onboarding-agent)
   | 'agent_onboard_rate_limited'
   | 'agent_onboard_screened'
