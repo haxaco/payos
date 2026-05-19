@@ -25,6 +25,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
+import { createNotification } from '../services/notifications.js';
 import { ValidationError } from '../middleware/error.js';
 import {
   type Scope,
@@ -84,6 +85,18 @@ router.post('/request', async (c) => {
       intentPayload: parsed.data.intent,
       durationMinutes: parsed.data.duration_minutes,
     });
+
+    // In-app notification (fire-and-forget, tenant-wide).
+    const agentLabel = ctx.actorName || 'An agent';
+    createNotification({
+      tenantId: ctx.tenantId,
+      type: 'compliance',
+      title: 'Scope request',
+      message: `${agentLabel} requested the '${parsed.data.scope}' scope${parsed.data.purpose ? `: ${parsed.data.purpose}` : ''}`,
+      href: '/dashboard/security/scopes',
+      metadata: { requestId, scope: parsed.data.scope, agentId: ctx.actorId },
+    }).catch(err => console.error('[notifications] scope request notify error:', err));
+
     return c.json(
       {
         request_id: requestId,
