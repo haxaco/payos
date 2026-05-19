@@ -10,6 +10,7 @@ import { startAutoRefillWorker } from './workers/agent-auto-refill.js';
 import { startAgentEoaSyncWorker, stopAgentEoaSyncWorker } from './workers/agent-eoa-sync.js';
 import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
 import { webhookProcessorWorker } from './workers/webhook-processor.js';
+import { startComplianceEvaluator } from './workers/compliance-evaluator.js';
 import { SettlementWindowProcessor } from './workers/settlement-window-processor.js';
 import { TreasuryWorker } from './workers/treasury-worker.js';
 import { getA2ATaskWorker } from './workers/a2a-task-worker.js';
@@ -124,6 +125,12 @@ const stopScopeExpirationSweeper = startScopeExpirationSweeper(5 * 60 * 1000);
 // subsequent ones every ~24h.
 const stopScopeHeartbeatWorker = startScopeHeartbeatWorker(60 * 60 * 1000);
 
+// Compliance flag engine — scans the last few minutes of completed
+// transfers + new screenings and idempotently writes case-management
+// flags into compliance_flags. Worker-only architecture (no in-line
+// hooks in the money paths). 60s tick in dev, 30s in production.
+const stopComplianceEvaluator = startComplianceEvaluator();
+
 // Start smart wallet balance sync worker (syncs on-chain balances every 5 min)
 startSmartWalletSyncWorker();
 
@@ -228,6 +235,7 @@ const shutdown = async (signal: string) => {
   stopX402ExpiredCleanup();
   stopScopeExpirationSweeper();
   stopScopeHeartbeatWorker();
+  stopComplianceEvaluator();
   if (enableWebhookCleanup) {
     webhookCleanupWorker.stop();
   }
