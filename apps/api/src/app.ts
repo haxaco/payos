@@ -388,6 +388,19 @@ v1.use('/wallets/*', requireTenantScope({
     { method: 'POST', path: '/v1/wallets/:id/test-fund', scope: 'treasury' },
   ],
 }));
+// Treasury is a financially sensitive surface — it was previously NOT in the
+// Epic 82 scope-gating block at all, so a bare agent token could call every
+// treasury mutation (sync/snapshot/record-transaction/account create) with no
+// scope enforcement, while comparable money-moving wallet/x402 routes were
+// gated. Default: tenant_read for GETs, tenant_write for mutations; the
+// balance-moving paths require the treasury scope (mirrors wallets/x402).
+v1.use('/treasury/*', requireTenantScope({
+  overrides: [
+    { method: 'POST', path: '/v1/treasury/transactions', scope: 'treasury' },
+    { method: 'POST', path: '/v1/treasury/sync', scope: 'treasury' },
+    { method: 'POST', path: '/v1/treasury/recommendations/:id/approve', scope: 'treasury' },
+  ],
+}));
 v1.use('/x402/*', requireTenantScope({
   overrides: [
     // POST /pay moves USDC; treasury required.
