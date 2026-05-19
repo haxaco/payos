@@ -1319,7 +1319,11 @@ export class SlyClient {
      * Get a session's full conversation (tasks, messages, artifacts)
      */
     getSession: (contextId: string) =>
-      this.get<{ data: any }>(`/a2a/sessions/${contextId}`).then(r => r.data),
+      // The route returns the session as a flat multi-key object; the global
+      // response wrapper default-wraps it as { success, data: <session>, meta }.
+      // Be robust to both shapes (wrapped or, if the wrapper is ever bypassed,
+      // flat) so the session-detail page can't silently render "not found".
+      this.get<any>(`/a2a/sessions/${contextId}`).then(r => r?.data ?? r),
 
     /**
      * Get agent processing configuration

@@ -110,7 +110,11 @@ export const WIZARD_TEMPLATES: Record<TemplateId, WizardTemplateConfig> = {
         title: 'Register Your API Endpoint',
         description: 'Which API do you want to monetize?',
         shortLabel: 'Register API',
-        isRequired: true,
+        // Step UI is currently a placeholder (no wired form). Keep it
+        // skippable so the API-Monetization wizard isn't a hard dead-end —
+        // a required step with placeholder UI showed no Skip and blocked
+        // completion entirely. Flip back to true once the form is wired.
+        isRequired: false,
         estimatedMinutes: 3,
         helpText: 'Enter your API base URL and we\'ll generate the x402 payment gateway URL.',
       },
@@ -157,7 +161,10 @@ export const WIZARD_TEMPLATES: Record<TemplateId, WizardTemplateConfig> = {
         title: 'Create Hosted Checkout',
         description: 'Configure your customer payment page',
         shortLabel: 'Create checkout',
-        isRequired: true,
+        // Placeholder step UI (no wired form). Keep skippable so the
+        // E-Commerce wizard isn't a hard dead-end. Flip back to true once
+        // the checkout form is wired.
+        isRequired: false,
         estimatedMinutes: 4,
         helpText: 'Set your store name, currency, and checkout style (modal/redirect/embedded).',
       },
