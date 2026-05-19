@@ -94,11 +94,14 @@ export default function VendorDetailPage() {
   const [noteDraft, setNoteDraft] = useState('');
   const [pendingThumb, setPendingThumb] = useState<'up' | 'down' | null>(null);
 
-  const { data: vendorData, isLoading } = useQuery({
+  const { data: vendorData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['x402-vendor-detail', host, apiEnvironment],
     queryFn: async () => {
       const res = await apiFetch(`${apiUrl}/v1/analytics/x402-vendors/${encodeURIComponent(host)}?window=30d`);
-      if (!res.ok) return { data: null };
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `Failed to load vendor (HTTP ${res.status})`);
+      }
       return res.json() as Promise<{ data: VendorRow }>;
     },
     enabled: !!authToken && !!apiUrl && !!host,
@@ -135,6 +138,7 @@ export default function VendorDetailPage() {
       setNoteDraft('');
       setPendingThumb(null);
       queryClient.invalidateQueries({ queryKey: ['x402-vendor-ratings', host] });
+      queryClient.invalidateQueries({ queryKey: ['x402-vendor-detail', host] });
     },
     onError: (err: any) => toast.error(err.message || 'Failed to rate vendor'),
   });
@@ -160,7 +164,21 @@ export default function VendorDetailPage() {
         {v && recPill(v.recommendation)}
       </div>
 
-      {isLoading || !v ? (
+      {isError ? (
+        <div className="bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded-2xl p-5 flex gap-3 mb-6">
+          <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-red-900 dark:text-red-200 mb-1">Couldn’t load this vendor</div>
+            <p className="text-sm text-red-800 dark:text-red-300 mb-3">{(error as Error)?.message || 'The server returned an error.'}</p>
+            <button
+              onClick={() => refetch()}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      ) : isLoading || !v ? (
         <div className="h-40 bg-gray-100 dark:bg-gray-900 rounded-2xl animate-pulse" />
       ) : (
         <>

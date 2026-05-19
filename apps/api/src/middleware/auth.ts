@@ -5,6 +5,8 @@ import { hashApiKey, getKeyPrefix, verifyApiKey } from '../utils/crypto.js';
 import { logSecurityEvent } from '../utils/auth.js';
 import { trackFirstEvent } from '../services/beta-access.js';
 import { pushAuditLogRow } from '../services/ops/audit-log-buffer.js';
+import { isProductionApproved } from '../services/tenant-production-access.js';
+import { getProductionEpoch } from '../services/production-access-epoch.js';
 
 export interface RequestContext {
   tenantId: string;
@@ -44,12 +46,43 @@ export interface RequestContext {
   // Set when the elevated scope came from a one_shot grant — the
   // service layer consumes the grant atomically on first use.
   elevatedGrantId?: string;
+  // Open beta production gating. `productionApproved` mirrors the tenant's
+  // production_access_status so cache-hit paths can re-derive the effective
+  // environment without a DB round-trip. `liveBlocked` is true when the
+  // caller asked for `live` but was downgraded to `test` server-side — the
+  // dashboard reads this to show the "request production access" banner.
+  productionApproved?: boolean;
+  liveBlocked?: boolean;
+  // Production-access epoch this ctx was resolved against. Cache-hit paths
+  // discard the cached ctx when the tenant's epoch has advanced (admin
+  // suspend/deny/approve/ceiling change) so changes take effect immediately.
+  prodEpoch?: number;
 }
 
 declare module 'hono' {
   interface ContextVariableMap {
     ctx: RequestContext;
   }
+}
+
+/**
+ * Open beta: resolve the effective environment for a JWT session.
+ *
+ * We do NOT 403 a JWT request that asks for `live` while the tenant is not
+ * production-approved — that would break the dashboard's Production tab
+ * entirely (it couldn't even render an empty state). Instead we downgrade the
+ * write-capable environment to `test` server-side, so no live data / keys /
+ * transfers are ever reachable, and stamp `liveBlocked` so the UI can show the
+ * gating banner.
+ */
+function resolveJwtEnvironment(
+  requestEnv: 'test' | 'live',
+  productionApproved: boolean
+): { environment: 'test' | 'live'; liveBlocked: boolean } {
+  if (requestEnv === 'live' && !productionApproved) {
+    return { environment: 'test', liveBlocked: true };
+  }
+  return { environment: requestEnv, liveBlocked: false };
 }
 
 // =============================================================================
@@ -339,7 +372,7 @@ export async function authMiddleware(c: Context, next: Next) {
       // Get tenant info
       const { data: tenant, error: tenantError } = await (supabase
         .from('tenants') as any)
-        .select('id, name, status')
+        .select('id, name, status, production_access_status')
         .eq('id', apiKey.tenant_id)
         .single();
 
@@ -351,6 +384,24 @@ export async function authMiddleware(c: Context, next: Next) {
       if (tenant.status !== 'active') {
         await logAuthAttempt(false, 'api_key', tenant.id, null, ip, userAgent, `Tenant status: ${tenant.status}`);
         return c.json({ error: 'Organization is not active', status: tenant.status }, 403);
+      }
+
+      // Open beta: a live key only works once the tenant is production-approved.
+      // Closes the path where a grandfather-missed / pre-existing live key
+      // could move real money without review.
+      if (apiKey.environment === 'live' && !isProductionApproved(tenant.production_access_status)) {
+        await logAuthAttempt(false, 'api_key', tenant.id, apiKey.id, ip, userAgent, 'Live key without production access');
+        await logSecurityEvent('live_key_blocked', 'warning', {
+          tenantId: tenant.id,
+          keyPrefix,
+          status: tenant.production_access_status,
+          ip,
+          userAgent,
+        });
+        return c.json(
+          { error: 'Live access is not enabled for this organization', code: 'FORBIDDEN' },
+          403
+        );
       }
 
       // Update last_used_at and last_used_ip (async, don't wait)
@@ -384,7 +435,7 @@ export async function authMiddleware(c: Context, next: Next) {
     // Fallback to legacy tenants.api_key for backwards compatibility
     let { data: tenant, error } = await (supabase
       .from('tenants') as any)
-      .select('id, name, status, api_key_hash')
+      .select('id, name, status, api_key_hash, production_access_status')
       .eq('api_key_prefix', keyPrefix)
       .single();
 
@@ -398,7 +449,7 @@ export async function authMiddleware(c: Context, next: Next) {
       // Fallback to legacy plaintext lookup — DEPRECATED, schedule removal
       const legacyResult = await (supabase
         .from('tenants') as any)
-        .select('id, name, status')
+        .select('id, name, status, production_access_status')
         .eq('api_key', token)
         .single();
 
@@ -425,9 +476,25 @@ export async function authMiddleware(c: Context, next: Next) {
       return c.json({ error: 'Organization is not active', status: tenant.status }, 403);
     }
 
-    await logAuthAttempt(true, 'api_key', tenant.id, 'legacy_api_key', ip, userAgent);
-
     const legacyEnv: 'test' | 'live' = token.startsWith('pk_live_') ? 'live' : 'test';
+
+    // Open beta: same live-access gate on the deprecated legacy-key path.
+    if (legacyEnv === 'live' && !isProductionApproved(tenant.production_access_status)) {
+      await logAuthAttempt(false, 'api_key', tenant.id, 'legacy_api_key', ip, userAgent, 'Live legacy key without production access');
+      await logSecurityEvent('live_key_blocked', 'warning', {
+        tenantId: tenant.id,
+        keyPrefix,
+        status: tenant.production_access_status,
+        ip,
+        userAgent,
+      });
+      return c.json(
+        { error: 'Live access is not enabled for this organization', code: 'FORBIDDEN' },
+        403
+      );
+    }
+
+    await logAuthAttempt(true, 'api_key', tenant.id, 'legacy_api_key', ip, userAgent);
     c.set('ctx', {
       tenantId: tenant.id,
       actorType: 'api_key',
@@ -454,9 +521,22 @@ export async function authMiddleware(c: Context, next: Next) {
 
     // Check cache first for performance
     const cachedCtx = getCachedJWT(token);
-    if (cachedCtx) {
-      // Override environment from header (it can change per request)
-      c.set('ctx', { ...cachedCtx, environment: requestEnv, apiKeyEnvironment: requestEnv });
+    // Discard the cached ctx if the tenant's production-access epoch advanced
+    // (admin suspend/deny/approve/ceiling change) — forces a full re-resolve
+    // so the change takes effect immediately, not at the ~60s cache TTL.
+    if (
+      cachedCtx &&
+      cachedCtx.prodEpoch === getProductionEpoch(cachedCtx.tenantId)
+    ) {
+      // Re-derive the effective env from the (possibly changed) header AND the
+      // cached production-approval state. Never blind-trust the header — this
+      // keeps a suspended/denied tenant from retaining live access for the
+      // remainder of the cache TTL.
+      const { environment, liveBlocked } = resolveJwtEnvironment(
+        requestEnv,
+        cachedCtx.productionApproved === true
+      );
+      c.set('ctx', { ...cachedCtx, environment, apiKeyEnvironment: environment, liveBlocked });
       // Track first API call for beta funnel (fire-and-forget)
       trackFirstEvent(cachedCtx.tenantId, 'first_api_call').catch(() => {});
       return next();
@@ -499,7 +579,7 @@ export async function authMiddleware(c: Context, next: Next) {
       // Get tenant info
       const { data: tenant, error: tenantError } = await (supabase
         .from('tenants') as any)
-        .select('id, name, status')
+        .select('id, name, status, production_access_status')
         .eq('id', profile.tenant_id)
         .single();
 
@@ -515,6 +595,12 @@ export async function authMiddleware(c: Context, next: Next) {
 
       await logAuthAttempt(true, 'jwt', tenant.id, userId, ip, userAgent);
 
+      const productionApproved = isProductionApproved(tenant.production_access_status);
+      const { environment, liveBlocked } = resolveJwtEnvironment(
+        requestEnv,
+        productionApproved
+      );
+
       const ctx: RequestContext = {
         tenantId: tenant.id,
         actorType: 'user',
@@ -522,8 +608,11 @@ export async function authMiddleware(c: Context, next: Next) {
         userRole: profile.role,
         userName: profile.name || userData.user.email?.split('@')[0] || 'Unknown',
         userEmail: userData.user.email ?? undefined,
-        environment: requestEnv,
-        apiKeyEnvironment: requestEnv,
+        environment,
+        apiKeyEnvironment: environment,
+        productionApproved,
+        liveBlocked,
+        prodEpoch: getProductionEpoch(tenant.id),
       };
 
       // Cache the result for subsequent requests
@@ -548,9 +637,14 @@ export async function authMiddleware(c: Context, next: Next) {
     const tokenPrefix = getKeyPrefix(token);
     const tokenHash = hashApiKey(token);
 
-    // Check agent token cache first (avoids DB round-trip on repeat requests)
+    // Check agent token cache first (avoids DB round-trip on repeat requests).
+    // Bypass the cache when the tenant's production-access epoch advanced so
+    // an admin suspend/deny revokes the agent's live access immediately.
     const cached = getCachedAgent(tokenPrefix, tokenHash);
-    if (cached) {
+    if (
+      cached &&
+      cached.ctx.prodEpoch === getProductionEpoch(cached.ctx.tenantId)
+    ) {
       // Epic 82 — scope state must be FRESH on every request. The
       // grant lifecycle (consume / revoke / kill-switch cascade) flips
       // rows in auth_scope_grants and we cannot let a 60s ctx cache
@@ -612,6 +706,18 @@ export async function authMiddleware(c: Context, next: Next) {
 
     logAuthAttempt(true, 'agent', agent.tenant_id, agent.id, ip, userAgent).catch(() => {});
 
+    // Open beta: an agent operating under a tenant that is NOT
+    // production-approved is confined to sandbox. Self-registered agent
+    // tenants only reach live by being claimed into an approved human tenant.
+    const { data: agentTenant } = await (supabase.from('tenants') as any)
+      .select('production_access_status')
+      .eq('id', agent.tenant_id)
+      .single();
+    const productionApproved = isProductionApproved(agentTenant?.production_access_status);
+    const requestedAgentEnv: 'test' | 'live' = agent.environment === 'live' ? 'live' : 'test';
+    const { environment: agentEnv, liveBlocked: agentLiveBlocked } =
+      resolveJwtEnvironment(requestedAgentEnv, productionApproved);
+
     // Epic 82 — pick up any active elevated-scope grant for this agent.
     const elevated = await lookupElevatedScope(
       supabase,
@@ -623,12 +729,15 @@ export async function authMiddleware(c: Context, next: Next) {
     const ctx: RequestContext = {
       tenantId: agent.tenant_id,
       actorType: 'agent',
-      environment: agent.environment || 'test',
+      environment: agentEnv,
       actorId: agent.id,
       actorName: agent.name,
       kyaTier: agent.kya_tier,
       parentAccountId: agent.parent_account_id,
-      apiKeyEnvironment: agent.environment || 'test',
+      apiKeyEnvironment: agentEnv,
+      productionApproved,
+      liveBlocked: agentLiveBlocked,
+      prodEpoch: getProductionEpoch(agent.tenant_id),
       elevatedScope: elevated.scope,
       elevatedGrantId: elevated.grantId,
     };

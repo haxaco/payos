@@ -9,11 +9,14 @@ import { toast } from 'sonner';
 import { TreasuryStats } from './components/treasury-stats';
 import { AccountsTable } from './components/accounts-table';
 import { AlertsList } from './components/alerts-list';
+import { RebalanceDialog } from '@/components/treasury/rebalance-dialog';
+import { TransactionsTable } from '@/components/treasury/transactions-table';
 
 export default function TreasuryPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('accounts');
+  const [rebalanceOpen, setRebalanceOpen] = useState(false);
 
   // Fetch Dashboard Stats
   const { data: dashboardData, isLoading: statsLoading } = useQuery({
@@ -99,11 +102,13 @@ export default function TreasuryPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
             Sync Balances
           </Button>
-          <Button>
+          <Button onClick={() => setRebalanceOpen(true)}>
             Rebalance
           </Button>
         </div>
       </div>
+
+      <RebalanceDialog open={rebalanceOpen} onOpenChange={setRebalanceOpen} />
 
       {/* Overview Stats */}
       <TreasuryStats stats={stats} isLoading={statsLoading} />
@@ -126,10 +131,7 @@ export default function TreasuryPage() {
             </TabsContent>
 
             <TabsContent value="transactions" className="mt-0">
-              {/* Placeholder for future implementation */}
-              <div className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-8 text-center text-gray-500">
-                Transaction history view coming soon.
-              </div>
+              <TransactionsTable />
             </TabsContent>
           </Tabs>
         </div>

@@ -117,6 +117,10 @@ const TEMPLATE_ICONS: Record<string, typeof Rocket> = {
 };
 
 // API functions
+//
+// `authToken` here is the active credential — the Supabase JWT when a dashboard
+// user is logged in, or the stored API key when authenticated programmatically.
+// Callers MUST pass `authToken ?? apiKey` so API-key-only users work too.
 async function fetchOnboardingState(authToken: string, apiUrl: string): Promise<TenantOnboardingState> {
   const response = await fetch(`${apiUrl}/v1/onboarding`, {
     headers: {
@@ -243,7 +247,7 @@ async function enableProtocol(
   authToken: string,
   apiUrl: string,
   protocolId: ProtocolId
-): Promise<{ success: boolean; error?: string; missing_prerequisites?: string[] }> {
+): Promise<{ success: boolean; error?: string; missing_prerequisites?: string[]; message?: string }> {
   const response = await fetch(
     `${apiUrl}/v1/organization/protocols/${protocolId}/enable`,
     {
@@ -255,8 +259,20 @@ async function enableProtocol(
     }
   );
   const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
+  if (response.ok) {
+    // Wrapped success: { success: true, data: {...} }
+    const data = json.data || json;
+    return { success: true, ...data };
+  }
+  // Error: API returns { error, details: { missing: [...], message } }
+  // (the prerequisite list + a human message live UNDER `details`, not at
+  // the top level — reading them flat left the helpful message dead code).
+  return {
+    success: false,
+    error: json.error,
+    missing_prerequisites: json.details?.missing,
+    message: json.details?.message,
+  };
 }
 
 // Progress ring component
@@ -746,28 +762,35 @@ function ResumeSetupCard() {
 
 // Main page component
 export default function OnboardingPage() {
-  const { isConfigured, isLoading: isAuthLoading, authToken, apiUrl } = useApiConfig();
+  const { isConfigured, isLoading: isAuthLoading, authToken, apiKey, apiUrl } = useApiConfig();
   const queryClient = useQueryClient();
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  // The active credential: Supabase JWT for logged-in dashboard users, or the
+  // stored API key for programmatic access. Mirrors how the shared api-client
+  // picks its token (`authToken || apiKey`) and the `isConfigured` semantics.
+  // Without this, API-key-only users pass the `!isConfigured` shell guard but
+  // every query stayed `enabled: !!authToken` (false) → permanent skeleton.
+  const credential = authToken ?? apiKey;
 
   // Fetch onboarding state
   const { data: onboardingState, isLoading: isLoadingState } = useQuery({
     queryKey: ['onboarding-state'],
-    queryFn: () => fetchOnboardingState(authToken!, apiUrl),
-    enabled: !!authToken,
+    queryFn: () => fetchOnboardingState(credential!, apiUrl),
+    enabled: !!credential,
   });
 
   // Fetch templates
   const { data: templatesData } = useQuery({
     queryKey: ['onboarding-templates'],
-    queryFn: () => fetchTemplates(authToken!, apiUrl),
-    enabled: !!authToken,
+    queryFn: () => fetchTemplates(credential!, apiUrl),
+    enabled: !!credential,
   });
 
   // Complete step mutation
   const completeStepMutation = useMutation({
     mutationFn: ({ protocolId, stepId }: { protocolId: ProtocolId; stepId: string }) =>
-      completeStep(authToken!, apiUrl, protocolId, stepId),
+      completeStep(credential!, apiUrl, protocolId, stepId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
       toast.success('Step completed');
@@ -782,7 +805,7 @@ export default function OnboardingPage() {
   // Skip step mutation
   const skipStepMutation = useMutation({
     mutationFn: ({ protocolId, stepId }: { protocolId: ProtocolId; stepId: string }) =>
-      skipStep(authToken!, apiUrl, protocolId, stepId),
+      skipStep(credential!, apiUrl, protocolId, stepId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
       toast.success('Step skipped');
@@ -796,7 +819,7 @@ export default function OnboardingPage() {
 
   // Reset mutation
   const resetMutation = useMutation({
-    mutationFn: (protocolId: ProtocolId) => resetOnboarding(authToken!, apiUrl, protocolId),
+    mutationFn: (protocolId: ProtocolId) => resetOnboarding(credential!, apiUrl, protocolId),
     onSuccess: (_, protocolId) => {
       queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
       toast.success(`${protocolId.toUpperCase()} onboarding reset`);
@@ -810,7 +833,7 @@ export default function OnboardingPage() {
 
   // Sandbox toggle mutation
   const sandboxMutation = useMutation({
-    mutationFn: (enabled: boolean) => toggleSandboxMode(authToken!, apiUrl, enabled),
+    mutationFn: (enabled: boolean) => toggleSandboxMode(credential!, apiUrl, enabled),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
       toast.success(result.sandbox_mode ? 'Sandbox mode enabled' : 'Sandbox mode disabled');
@@ -822,16 +845,19 @@ export default function OnboardingPage() {
 
   // Enable protocol mutation
   const enableProtocolMutation = useMutation({
-    mutationFn: (protocolId: ProtocolId) => enableProtocol(authToken!, apiUrl, protocolId),
+    mutationFn: (protocolId: ProtocolId) => enableProtocol(credential!, apiUrl, protocolId),
     onSuccess: (result, protocolId) => {
       if (result.success) {
         queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
         queryClient.invalidateQueries({ queryKey: ['protocol-status'] });
         toast.success(`${protocolId.toUpperCase()} protocol enabled`);
       } else {
-        if (result.missing_prerequisites) {
+        if (result.missing_prerequisites?.length || result.message) {
           toast.error('Prerequisites not met', {
-            description: result.missing_prerequisites.join(', '),
+            description:
+              result.message ||
+              result.missing_prerequisites?.join(', ') ||
+              result.error,
           });
         } else {
           toast.error('Failed to enable protocol', { description: result.error });

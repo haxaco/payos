@@ -8,6 +8,7 @@ import { Copy, Play, Calendar, ArrowRight, Link2, CreditCard, Route } from "luci
 import { useApiClient } from "@/lib/api-client";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
+import { getApiErrorMessage } from "@/lib/api-error";
 import {
     Button,
     Card,
@@ -60,8 +61,8 @@ export default function MandateDetailPage() {
             queryClient.invalidateQueries({ queryKey: ["mandate", id] });
             refetch(); // Refetch to update status
         },
-        onError: () => {
-            toast.error("Failed to cancel mandate");
+        onError: (error) => {
+            toast.error(getApiErrorMessage(error, 'Failed to cancel mandate'));
         }
     });
 

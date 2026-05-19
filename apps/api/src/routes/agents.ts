@@ -27,6 +27,7 @@ import { checkT2Eligibility, processEnterpriseOverride } from '../services/kya/v
 import { recordObservation } from '../services/kya/observation.js';
 import { cascadeRevokeForAgent } from '../services/auth/scopes/index.js';
 import { guardSiblingScope } from '../services/auth/scopes/guard.js';
+import { checkFaucetDailyCap } from '../services/faucet-cap.js';
 
 const agents = new Hono();
 
@@ -394,6 +395,35 @@ agents.post('/', async (c) => {
     treasury: { ...DEFAULT_PERMISSIONS.treasury, ...permissions?.treasury },
   };
 
+  // Open beta: in sandbox/test a new agent is auto-declared at KYA T1 so it
+  // can transact immediately — no separate declare-dsd step. Live agents
+  // still start unverified (T0) and must complete the real declaration.
+  const sandboxAutoT1 = getEnv(ctx) === 'test';
+  let initialKyaTier = 0;
+  let initialKyaStatus = 'unverified';
+  let sandboxLimits: Record<string, any> = {};
+  if (sandboxAutoT1) {
+    // Frictionless sandbox: do NOT cap by the parent account's verification
+    // tier. A freshly onboarded account is verification_tier 0, whose
+    // verification_tier_limits are $0 — capping by it would give the
+    // auto-T1 agent effective limits of 0 and it could not transact at all
+    // (the exact first-payment blocker). Pass null = uncapped T1 limits.
+    // Live still goes through the real declaration with the parent cap.
+    const { limits, capped } = await computeEffectiveLimits(supabase, 1, null);
+    initialKyaTier = 1;
+    initialKyaStatus = 'verified';
+    sandboxLimits = {
+      kya_verified_at: new Date().toISOString(),
+      limit_per_transaction: limits.per_transaction,
+      limit_daily: limits.daily,
+      limit_monthly: limits.monthly,
+      effective_limit_per_tx: limits.per_transaction,
+      effective_limit_daily: limits.daily,
+      effective_limit_monthly: limits.monthly,
+      effective_limits_capped: capped,
+    };
+  }
+
   // Create agent - store ONLY the hash, never the plaintext token
   // Story 59.15: parent_account_id is nullable for standalone agents
   const insertData: Record<string, any> = {
@@ -403,8 +433,9 @@ agents.post('/', async (c) => {
     name,
     description: description || null,
     status: 'active',
-    kya_tier: 0, // Start unverified
-    kya_status: 'unverified',
+    kya_tier: initialKyaTier,
+    kya_status: initialKyaStatus,
+    ...sandboxLimits,
     auth_type: 'api_key',
     auth_client_id: authTokenPrefix, // Only store prefix for display
     auth_token_hash: authTokenHash,  // Secure hash for verification
@@ -459,6 +490,9 @@ agents.post('/', async (c) => {
     // Story 51.6: Auto-create a wallet for the agent (requires parent account as owner)
     // Phase 2: Try Circle sandbox wallet first, fall back to internal
     const isSandboxEnv = process.env.PAYOS_ENVIRONMENT === 'sandbox' && !!process.env.CIRCLE_API_KEY;
+    // Open beta: auto-seed a sandbox balance so a freshly onboarded agent can
+    // make its first payment with zero manual funding. Live starts at 0.
+    const autoWalletSeedBalance = getEnv(ctx) === 'test' ? 1000 : 0;
 
     if (isSandboxEnv) {
       try {
@@ -482,7 +516,7 @@ agents.post('/', async (c) => {
               environment: getEnv(ctx),
               owner_account_id: accountId,
               managed_by_agent_id: data.id,
-              balance: 0,
+              balance: autoWalletSeedBalance,
               currency: 'USDC',
               wallet_address: circleWallet.address,
               network: 'base-sepolia',
@@ -536,7 +570,7 @@ agents.post('/', async (c) => {
           environment: getEnv(ctx),
           owner_account_id: accountId,
           managed_by_agent_id: data.id,
-          balance: 0,
+          balance: autoWalletSeedBalance,
           currency: 'USDC',
           wallet_address: walletAddress,
           network: 'internal',
@@ -586,7 +620,7 @@ agents.post('/', async (c) => {
 
   // Fire workflow auto-triggers (fire-and-forget)
   triggerWorkflows(supabase, ctx.tenantId, 'agent', 'insert', {
-    id: data.id, name, account_id: accountId, kya_tier: 0, status: 'active',
+    id: data.id, name, account_id: accountId, kya_tier: initialKyaTier, status: 'active',
   }).catch(console.error);
 
   // ERC-8004: Auto-register agent on-chain (fire-and-forget)
@@ -3629,6 +3663,18 @@ agents.post('/:id/wallet/refill-faucet', async (c) => {
       error: 'Agent has no Circle custodial wallet',
       code: 'NO_CIRCLE_WALLET',
     }, 400);
+  }
+
+  // Open beta: per-tenant daily faucet cap. Circle drips ~20 USDC/call; meter
+  // it against the same tenant bucket as wallet test-fund so a tenant can't
+  // mint unlimited sandbox value across either path.
+  const FAUCET_DRIP_USDC = 20;
+  const faucetCap = checkFaucetDailyCap(ctx.tenantId, FAUCET_DRIP_USDC);
+  if (!faucetCap.allowed) {
+    return c.json({
+      error: 'Daily sandbox faucet cap reached for this organization.',
+      code: 'FAUCET_DAILY_CAP',
+    }, 429);
   }
 
   try {

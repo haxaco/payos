@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
     Card,
@@ -38,16 +38,26 @@ export default function CheckoutsPage() {
     const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
 
+    // Debounce the search input so we don't fetch per keystroke.
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearch(search), 300);
+        return () => clearTimeout(t);
+    }, [search]);
+
     const { data, isLoading } = useQuery({
-        queryKey: ['acp-checkouts', page, search, startDate, endDate],
+        queryKey: ['acp-checkouts', page, debouncedSearch, startDate, endDate],
         queryFn: () => {
             if (!api) return Promise.resolve({ data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } });
             return api.acp.list({
                 page,
                 limit: 10,
+                search: debouncedSearch || undefined,
+                startDate: startDate || undefined,
+                endDate: endDate || undefined,
             });
         },
         enabled: !!api

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, Filter, FileText, CheckCircle, DollarSign, BarChart3 } from "lucide-react";
@@ -36,17 +36,26 @@ export default function MandatesPage() {
     const [page, setPage] = useState(1);
     const [status, setStatus] = useState<string>("all");
     const [search, setSearch] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
     const [startDate, setStartDate] = useState<string>("");
     const [endDate, setEndDate] = useState<string>("");
 
+    // Debounce the search input so we don't fetch per keystroke.
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearch(search), 300);
+        return () => clearTimeout(t);
+    }, [search]);
+
     const { data: rawData, isLoading } = useQuery({
-        queryKey: ["ap2-mandates", page, status, search, startDate, endDate],
+        queryKey: ["ap2-mandates", page, status, debouncedSearch, startDate, endDate],
         queryFn: () =>
             api!.ap2.list({
                 page,
                 limit: 20,
                 status: status === "all" ? undefined : (status as MandateStatus),
-                search: search || undefined,
+                search: debouncedSearch || undefined,
+                startDate: startDate || undefined,
+                endDate: endDate || undefined,
             }),
         enabled: !!api,
     });

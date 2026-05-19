@@ -104,11 +104,14 @@ export default function X402VendorsPage() {
   const [sortBy, setSortBy] = useState<SortKey>('volume');
   const [filter, setFilter] = useState<'all' | Recommendation>('all');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['x402-vendors', windowParam, apiEnvironment],
     queryFn: async () => {
       const res = await apiFetch(`${apiUrl}/v1/analytics/x402-vendors?window=${windowParam}`);
-      if (!res.ok) return { data: [] as VendorRow[] };
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `Failed to load vendors (HTTP ${res.status})`);
+      }
       return res.json() as Promise<{ data: VendorRow[] }>;
     },
     enabled: !!authToken && !!apiUrl,
@@ -244,7 +247,23 @@ export default function X402VendorsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-900">
-            {isLoading ? (
+            {isError ? (
+              <tr><td colSpan={9} className="px-6 py-10">
+                <div className="max-w-md mx-auto bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded-2xl p-5 flex gap-3">
+                  <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-red-900 dark:text-red-200 mb-1">Couldn’t load vendors</div>
+                    <p className="text-sm text-red-800 dark:text-red-300 mb-3">{(error as Error)?.message || 'The server returned an error.'}</p>
+                    <button
+                      onClick={() => refetch()}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              </td></tr>
+            ) : isLoading ? (
               <tr><td colSpan={9} className="px-6 py-10 text-center text-gray-500">Loading…</td></tr>
             ) : filteredSorted.length === 0 ? (
               <tr><td colSpan={9} className="px-6 py-10 text-center text-gray-500">No vendors match the filter.</td></tr>

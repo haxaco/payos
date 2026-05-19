@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { getApiErrorMessage } from "@/lib/api-error";
 import Link from "next/link";
 import { useApiClient } from "@/lib/api-client";
 import { useQuery } from "@tanstack/react-query";
@@ -130,12 +131,7 @@ export default function CreateMandatePage() {
             router.push(`/dashboard/agentic-payments/ap2/mandates/${mandate.id}`);
         } catch (error: any) {
             console.error("Failed to create mandate:", error);
-            if (error?.details) {
-                console.error("Validation Details:", error.details);
-                toast.error(`Failed to create mandate: ${JSON.stringify(error.details)}`);
-            } else {
-                toast.error("Failed to create mandate");
-            }
+            toast.error(getApiErrorMessage(error, 'Failed to create mandate'));
         } finally {
             setIsSubmitting(false);
         }

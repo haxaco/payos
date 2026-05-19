@@ -30,7 +30,9 @@ import {
     Tag
 } from 'lucide-react';
 import { useApiClient } from '@/lib/api-client';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
 
 const checkoutSchema = z.object({
@@ -62,6 +64,17 @@ export default function CreateCheckoutPage() {
     const router = useRouter();
     const api = useApiClient();
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Real accounts (was hardcoded mock IDs acc_demo_123/acc_business_456,
+    // which produced orphaned/failing checkouts in any non-seeded tenant).
+    const { data: accounts } = useQuery({
+        queryKey: ['accounts'],
+        queryFn: async () => {
+            if (!api) throw new Error('API client not initialized');
+            return api.accounts.list({ limit: 100 });
+        },
+        enabled: !!api,
+    });
 
     const form = useForm<CheckoutFormValues>({
         resolver: zodResolver(checkoutSchema),
@@ -119,7 +132,7 @@ export default function CreateCheckoutPage() {
             toast.success('Checkout created successfully');
             router.push('/dashboard/agentic-payments/acp/checkouts');
         } catch (error: any) {
-            toast.error(error.message || 'Failed to create checkout');
+            toast.error(getApiErrorMessage(error, 'Failed to create checkout'));
         } finally {
             setIsSubmitting(false);
         }
@@ -167,8 +180,11 @@ export default function CreateCheckoutPage() {
                                     <SelectValue placeholder="Select account" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="acc_demo_123">Demo Account</SelectItem>
-                                    <SelectItem value="acc_business_456">Business Account</SelectItem>
+                                    {(accounts?.data ?? []).map((account: any) => (
+                                        <SelectItem key={account.id} value={account.id}>
+                                            {account.name || account.id}
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                             {form.formState.errors.account_id && (

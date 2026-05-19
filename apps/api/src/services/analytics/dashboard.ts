@@ -62,6 +62,24 @@ export interface RecentActivity {
     name: string;
   };
   timestamp: string;
+
+  /** 'incoming' = inbound from another tenant; 'outgoing' = initiated by us; undefined = same-tenant. */
+  direction?: 'incoming' | 'outgoing';
+  /** Source tenant for cross-tenant calls — present when this activity originated outside our tenant. */
+  sourceTenant?: {
+    id: string;
+    name: string;
+    slug?: string | null;
+    country?: string | null;
+  };
+  /** KYA tier of the initiating agent (if known). */
+  kyaTier?: number | null;
+  /** Reputation score of the initiating agent (if known). */
+  reputation?: number | null;
+  /** Provenance label — `verified_tenant` for in-network calls, `public_internet_no_tenant` for blocked unverified. */
+  provenance?: 'verified_tenant' | 'public_internet_no_tenant' | 'external_unverified';
+  /** Status — used to render blocked/failed rows distinctly. */
+  status?: 'pending' | 'completed' | 'failed' | 'blocked';
 }
 
 /**
@@ -375,9 +393,13 @@ export async function getProtocolStats(
 
   // enabled_protocols is stored as an object: { x402: { enabled_at: '...' }, ... }
   const enabledProtocols = tenant?.settings?.enabled_protocols || {};
-  // Auto-detect: protocol is enabled if explicitly set OR has volume activity
+  // Open beta: in sandbox/test every agentic-payments protocol is ON by
+  // default (frictionless onboarding — no enable step), matching the
+  // protocol-registry sandbox behaviour. The enable gate only applies to
+  // live. Otherwise: enabled if explicitly set OR has volume activity.
+  const sandbox = environment === 'test';
   const isProtocolEnabled = (protocol: string, volume30d: number = 0): boolean => {
-    return !!enabledProtocols[protocol] || volume30d > 0;
+    return sandbox || !!enabledProtocols[protocol] || volume30d > 0;
   };
 
   const stats: ProtocolStats[] = [];
@@ -631,16 +653,17 @@ export async function getRecentActivity(
   const activities: RecentActivity[] = [];
 
   // Query recent x402 payments (stored as transfers with type = 'x402')
-  const { data: x402 } = await supabase
+  // Outgoing — caller paid from this tenant.
+  const { data: x402Out } = await supabase
     .from('transfers')
-    .select('id, amount, currency, description, created_at')
+    .select('id, amount, currency, description, created_at, status, protocol_metadata, destination_tenant_id, initiated_by_name')
     .eq('tenant_id', tenantId)
     .eq('type', 'x402')
     .eq('environment', environment)
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  x402?.forEach((p: any) => {
+  x402Out?.forEach((p: any) => {
     activities.push({
       id: p.id,
       protocol: 'x402',
@@ -649,6 +672,61 @@ export async function getRecentActivity(
       currency: p.currency || 'USDC',
       description: p.description || 'x402 API payment',
       timestamp: p.created_at,
+      direction: 'outgoing',
+      status: p.status || undefined,
+      provenance: 'verified_tenant',
+    });
+  });
+
+  // Incoming — another tenant called one of OUR endpoints. The transfer row
+  // lives in the caller's tenant_id; we cross-pivot on destination_tenant_id.
+  // Service-role client bypasses RLS so the cross-tenant join is fine.
+  const { data: x402In } = await supabase
+    .from('transfers')
+    .select(`
+      id, amount, currency, description, created_at, status, protocol_metadata, tenant_id, initiated_by_name,
+      source_tenant:tenants!transfers_tenant_id_fkey(id, name, slug, settings)
+    `)
+    .eq('destination_tenant_id', tenantId)
+    .eq('type', 'x402')
+    .eq('environment', environment)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  x402In?.forEach((p: any) => {
+    const meta = (p.protocol_metadata || {}) as any;
+    const src = (p.source_tenant || {}) as any;
+    // The sentinel tenant marks calls from "public internet, no Sly tenant".
+    const isPublicInternet =
+      meta.provenance === 'public_internet_no_tenant' ||
+      src?.settings?.public_internet === true;
+    const isBlocked = p.status === 'failed' || isPublicInternet;
+    activities.push({
+      id: p.id,
+      protocol: 'x402',
+      type: 'payment',
+      amount: Number(p.amount),
+      currency: p.currency || 'USDC',
+      description: p.description || 'x402 API payment',
+      timestamp: p.created_at,
+      direction: 'incoming',
+      status: isBlocked ? 'blocked' : (p.status || undefined),
+      provenance: isPublicInternet
+        ? 'public_internet_no_tenant'
+        : src?.id
+          ? 'verified_tenant'
+          : 'external_unverified',
+      sourceTenant: src?.id && !isPublicInternet
+        ? {
+            id: src.id,
+            name: src.name,
+            slug: src.slug,
+            country: src.settings?.country ?? meta.source_country ?? null,
+          }
+        : undefined,
+      kyaTier: meta.source_kya_tier ?? meta.kya_tier ?? null,
+      reputation: meta.source_reputation ?? meta.reputation ?? null,
+      agent: p.initiated_by_name ? { id: meta.source_agent_id ?? '', name: p.initiated_by_name } : undefined,
     });
   });
 
@@ -692,6 +770,59 @@ export async function getRecentActivity(
       currency: c.currency || 'USD',
       description: 'Agent checkout',
       timestamp: c.created_at,
+    });
+  });
+
+  // Recent ACP-typed transfers (Plumex YC demo seeds direct merchant payments
+  // here — Spotify, Netflix, Zalando etc. — instead of acp_checkouts).
+  const { data: acpTransfers } = await supabase
+    .from('transfers')
+    .select('id, amount, currency, description, created_at, status, protocol_metadata, initiated_by_name')
+    .eq('tenant_id', tenantId)
+    .eq('type', 'acp')
+    .eq('environment', environment)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  acpTransfers?.forEach((p: any) => {
+    activities.push({
+      id: p.id,
+      protocol: 'acp',
+      type: 'payment',
+      amount: Number(p.amount),
+      currency: p.currency || 'EURC',
+      description: p.description || 'Agent merchant payment',
+      timestamp: p.created_at,
+      direction: 'outgoing',
+      status: p.status === 'failed' ? 'blocked' : (p.status || undefined),
+      provenance: 'verified_tenant',
+      agent: p.initiated_by_name ? { id: '', name: p.initiated_by_name } : undefined,
+    });
+  });
+
+  // Recent cross-border transfers (Plumex YC demo seeds these for Marek/Lukáš/Jonas).
+  const { data: crossBorder } = await supabase
+    .from('transfers')
+    .select('id, amount, currency, description, created_at, status, protocol_metadata, initiated_by_name')
+    .eq('tenant_id', tenantId)
+    .eq('type', 'cross_border')
+    .eq('environment', environment)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  crossBorder?.forEach((p: any) => {
+    activities.push({
+      id: p.id,
+      protocol: 'ucp',
+      type: 'cross_border',
+      amount: Number(p.amount),
+      currency: p.currency || 'EURC',
+      description: p.description || 'Cross-border payment',
+      timestamp: p.created_at,
+      direction: 'outgoing',
+      status: p.status || undefined,
+      provenance: 'verified_tenant',
+      agent: p.initiated_by_name ? { id: '', name: p.initiated_by_name } : undefined,
     });
   });
 

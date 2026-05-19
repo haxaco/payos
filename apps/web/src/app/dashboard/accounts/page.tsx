@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { Users, Plus, Search, Filter } from 'lucide-react';
+import { Users, Plus, Search, Filter, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
 import type { Account } from '@sly/api-client';
 import { TableSkeleton } from '@/components/ui/skeletons';
@@ -17,6 +19,33 @@ export default function AccountsPage() {
   const { isConfigured, isLoading: isAuthLoading, apiEnvironment } = useApiConfig();
   const [search, setSearch] = useState('');
   const { formatCurrency } = useLocale();
+  const queryClient = useQueryClient();
+
+  // Create-account modal state
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState<'business' | 'person'>('business');
+  const [newEmail, setNewEmail] = useState('');
+
+  const createAccount = useMutation({
+    mutationFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.accounts.create({
+        type: newType,
+        name: newName.trim(),
+        email: newEmail.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast.success(`Account "${newName.trim()}" created`);
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      setShowCreate(false);
+      setNewName('');
+      setNewEmail('');
+      setNewType('business');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to create account')),
+  });
 
   // Use React Query for data fetching with caching
   const { data: accountsData, isLoading: loading } = useQuery({
@@ -109,7 +138,10 @@ export default function AccountsPage() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Accounts</h1>
           <p className="text-gray-600 dark:text-gray-400">Manage all account holders</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus className="h-4 w-4" />
           Add Account
         </button>
@@ -221,6 +253,93 @@ export default function AccountsPage() {
           pagination={pagination}
           className="mt-6"
         />
+      )}
+
+      {/* Create Account modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-950 p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Add Account</h2>
+              <button
+                onClick={() => setShowCreate(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+              Create an account holder that owns wallets and agents.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newName.trim()) {
+                  toast.error('Account name is required');
+                  return;
+                }
+                createAccount.mutate();
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Acme Inc"
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Type
+                </label>
+                <select
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value as 'business' | 'person')}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="business">Business</option>
+                  <option value="person">Person</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Email <span className="text-gray-400">(optional)</span>
+                </label>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="finance@acme.com"
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createAccount.isPending || !newName.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {createAccount.isPending ? 'Creating…' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

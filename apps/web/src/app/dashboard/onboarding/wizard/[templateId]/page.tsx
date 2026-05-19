@@ -18,6 +18,9 @@ import {
   CreateMandateStep,
   TestPaymentStep,
   FundWalletStep,
+  RegisterEndpointStep,
+  CreateCheckoutStep,
+  InformationalStep,
 } from '@/components/onboarding/steps';
 import { WIZARD_TEMPLATES, type TemplateId } from '@/types/wizard';
 
@@ -174,40 +177,11 @@ export default function WizardPage() {
             />
           );
         case 'register-endpoint':
-          // For now, show a placeholder - this would be a full endpoint registration form
           return (
-            <div className="max-w-xl mx-auto">
-              <div className="p-6 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                <h3 className="font-medium text-gray-900 dark:text-white mb-4">
-                  Register Your API Endpoint
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      API Name
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Weather API"
-                      className="w-full px-4 py-3 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Base URL
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://api.example.com"
-                      className="w-full px-4 py-3 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-                  Your x402 endpoint will be: <code className="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">payos.dev/x402/your-endpoint-slug</code>
-                </p>
-              </div>
-            </div>
+            <RegisterEndpointStep
+              helpText={currentStepDef.helpText}
+              onEndpointRegistered={(endpointId) => handleStepComplete({ endpointId })}
+            />
           );
         case 'configure-pricing':
           return (
@@ -236,84 +210,22 @@ export default function WizardPage() {
             />
           );
         case 'create-checkout':
-          // Placeholder for checkout configuration
           return (
-            <div className="max-w-xl mx-auto">
-              <div className="p-6 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                <h3 className="font-medium text-gray-900 dark:text-white mb-4">
-                  Configure Your Checkout
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Store Name
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g., My Awesome Store"
-                      className="w-full px-4 py-3 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Default Currency
-                    </label>
-                    <select className="w-full px-4 py-3 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option>USD</option>
-                      <option>EUR</option>
-                      <option>GBP</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Checkout Style
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {['Modal', 'Redirect', 'Embedded'].map((style) => (
-                        <button
-                          key={style}
-                          type="button"
-                          className="p-3 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 text-sm font-medium"
-                        >
-                          {style}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CreateCheckoutStep
+              helpText={currentStepDef.helpText}
+              onCheckoutCreated={(checkoutId) => handleStepComplete({ checkoutId })}
+            />
           );
         case 'customize-branding':
-          // Placeholder for branding
           return (
-            <div className="max-w-xl mx-auto">
-              <div className="p-6 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                <h3 className="font-medium text-gray-900 dark:text-white mb-4">
-                  Customize Branding
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Logo
-                    </label>
-                    <div className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center">
-                      <p className="text-sm text-gray-500">Drag & drop or click to upload</p>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Primary Color
-                    </label>
-                    <input
-                      type="color"
-                      defaultValue="#3B82F6"
-                      className="w-full h-12 rounded-lg cursor-pointer"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
+            <InformationalStep
+              title="Brand Your Checkout"
+              body={[
+                'Checkout branding — your logo, primary color, and support email — is managed per checkout from the dashboard. It does not need to be set up now to start accepting payments.',
+                'Until you customize it, your hosted checkout uses the default Sly branding. You can update branding any time from Dashboard → Agentic Payments → Checkouts.',
+              ]}
+              onContinue={() => handleStepComplete()}
+            />
           );
         case 'test-purchase':
           return (
@@ -414,11 +326,20 @@ export default function WizardPage() {
       }
     }
 
-    // Fallback placeholder
+    // Fallback: honest informational step. This only renders if a template
+    // step id has no dedicated component yet — it explains the step and lets
+    // the user advance rather than dead-ending or faking a form.
     return (
-      <div className="text-center text-gray-500 py-12">
-        Step content coming soon...
-      </div>
+      <InformationalStep
+        title={currentStepDef.title}
+        body={[
+          currentStepDef.description,
+          currentStepDef.helpText
+            ? currentStepDef.helpText
+            : 'You can complete this configuration later from the dashboard. Continue to proceed with setup.',
+        ]}
+        onContinue={() => handleStepComplete()}
+      />
     );
   };
 

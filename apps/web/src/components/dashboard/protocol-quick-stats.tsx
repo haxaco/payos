@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   Zap,
   Shield,
@@ -14,12 +13,10 @@ import {
   Check,
   Wallet,
   CreditCard,
-  Loader2,
 } from 'lucide-react';
 import { useApiConfig, useApiFetch, type ApiFetchFn } from '@/lib/api-client';
 import { cn } from '@sly/ui';
 import Link from 'next/link';
-import { toast } from 'sonner';
 
 type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
 
@@ -122,22 +119,6 @@ async function fetchProtocolStatus(apiFetch: ApiFetchFn, apiUrl: string): Promis
   return json.data || json;
 }
 
-async function toggleProtocol(
-  apiFetch: ApiFetchFn,
-  apiUrl: string,
-  protocolId: ProtocolId,
-  enable: boolean
-): Promise<void> {
-  const action = enable ? 'enable' : 'disable';
-  const response = await apiFetch(`${apiUrl}/v1/organization/protocols/${protocolId}/${action}`, {
-    method: 'POST',
-  });
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.details?.message || data.error || `Failed to ${action} protocol`);
-  }
-}
-
 function formatValue(value: number | string): string {
   if (typeof value === 'string') return value;
   if (value >= 1000000) {
@@ -190,11 +171,9 @@ function getPrerequisiteInfo(missing: string[]): { icon: typeof Wallet; label: s
 interface ProtocolCardProps {
   stats: ProtocolStats;
   status?: ProtocolEnablementStatus;
-  onToggle: (enable: boolean) => void;
-  isToggling: boolean;
 }
 
-function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps) {
+function ProtocolCard({ stats, status }: ProtocolCardProps) {
   const ui = PROTOCOL_UI[stats.protocol];
   if (!ui) return null;
   const Icon = ui.icon;
@@ -240,35 +219,14 @@ function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps
               {ui.setupLabel}
             </Link>
           ) : (
-            /* iOS-style toggle switch */
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                onToggle(!isEnabled);
-              }}
-              disabled={isToggling}
-              aria-label={isEnabled ? 'Disable protocol' : 'Enable protocol'}
-              className={cn(
-                'relative w-11 h-6 rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2',
-                isEnabled
-                  ? 'bg-emerald-500 focus:ring-emerald-500'
-                  : 'bg-gray-300 dark:bg-gray-600 focus:ring-gray-400'
-              )}
+            /* Protocols are enabled by default — show status, not a toggle.
+               The misleading on/off switch has been removed. */
+            <span
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/50 rounded-lg"
             >
-              {/* Toggle knob */}
-              <span
-                className={cn(
-                  'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ease-in-out flex items-center justify-center',
-                  isEnabled ? 'translate-x-5' : 'translate-x-0.5'
-                )}
-              >
-                {isToggling ? (
-                  <Loader2 className="w-3 h-3 text-gray-400 animate-spin" />
-                ) : isEnabled ? (
-                  <Check className="w-3 h-3 text-emerald-500" />
-                ) : null}
-              </span>
-            </button>
+              <Check className="w-3 h-3" />
+              Enabled
+            </span>
           )}
         </div>
       </div>
@@ -308,8 +266,6 @@ function ProtocolCard({ stats, status, onToggle, isToggling }: ProtocolCardProps
 export function ProtocolQuickStats() {
   const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
   const apiFetch = useApiFetch();
-  const queryClient = useQueryClient();
-  const [togglingProtocol, setTogglingProtocol] = useState<ProtocolId | null>(null);
 
   // Fetch protocol stats
   const { data: statsData, isLoading: statsLoading } = useQuery({
@@ -325,29 +281,6 @@ export function ProtocolQuickStats() {
     queryFn: () => fetchProtocolStatus(apiFetch, apiUrl),
     enabled: !!authToken && isConfigured,
     staleTime: 30 * 1000,
-  });
-
-  // Toggle mutation
-  const toggleMutation = useMutation({
-    mutationFn: ({ protocolId, enable }: { protocolId: ProtocolId; enable: boolean }) =>
-      toggleProtocol(apiFetch, apiUrl, protocolId, enable),
-    onMutate: ({ protocolId }) => {
-      setTogglingProtocol(protocolId);
-    },
-    onSuccess: (_, { protocolId, enable }) => {
-      queryClient.invalidateQueries({ queryKey: ['protocol-status'] });
-      queryClient.invalidateQueries({ queryKey: ['protocol-stats'] });
-      const protocolName = PROTOCOL_UI[protocolId].icon === Zap ? 'x402' : protocolId.toUpperCase();
-      toast.success(`${protocolName} ${enable ? 'enabled' : 'disabled'}`);
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to update protocol', {
-        description: error.message,
-      });
-    },
-    onSettled: () => {
-      setTogglingProtocol(null);
-    },
   });
 
   const stats = statsData || [];
@@ -390,8 +323,6 @@ export function ProtocolQuickStats() {
           key={stat.protocol}
           stats={stat}
           status={protocols?.[stat.protocol]}
-          onToggle={(enable) => toggleMutation.mutate({ protocolId: stat.protocol, enable })}
-          isToggling={togglingProtocol === stat.protocol}
         />
       ))}
     </div>

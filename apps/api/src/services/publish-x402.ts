@@ -403,9 +403,31 @@ export async function publishEndpoint(
   await appendEvent(supabase, ctx, ep, 'validated', { metadataDescription: metadata!.description });
 
   // 4. Resolve payout wallet (auto-provision if tenant opted in).
-  const wallet = await getOrProvision(supabase, ep.tenant_id, ep.account_id, ep.network, {
-    autoProvision: true,
-  });
+  // getOrProvision is typed non-null, but provisioning can fail at runtime
+  // (e.g. no CDP creds in sandbox, network unsupported) — either throwing or
+  // yielding a row without an address. Without this guard the later
+  // `wallet.address` dereference threw a raw 500 TypeError and stranded the
+  // endpoint in 'validated' with no terminal state/audit. Route any such
+  // failure through the normal failWith path so publish_status becomes
+  // 'failed', a 'failed' audit event is written, and the caller gets a
+  // proper PublishResult instead of an unhandled exception.
+  let wallet: Awaited<ReturnType<typeof getOrProvision>>;
+  try {
+    wallet = await getOrProvision(supabase, ep.tenant_id, ep.account_id, ep.network, {
+      autoProvision: true,
+    });
+  } catch (err) {
+    const reason = `payout_wallet_unavailable: ${err instanceof Error ? err.message : String(err)}`;
+    return await failWith(supabase, ctx, ep, reason, [
+      { field: 'payout_wallet', reason },
+    ]);
+  }
+  if (!wallet?.address) {
+    const reason = 'payout_wallet_unavailable: no payout wallet address could be resolved or provisioned';
+    return await failWith(supabase, ctx, ep, reason, [
+      { field: 'payout_wallet', reason },
+    ]);
+  }
 
   // 5. Switch facilitator + persist metadata. Status moves to 'publishing'.
   await markStatus(supabase, ep, 'publishing', null, {

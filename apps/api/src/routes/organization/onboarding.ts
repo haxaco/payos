@@ -45,7 +45,8 @@ app.get('/', async (c) => {
 
   try {
     const supabase: any = createClient();
-    const state = await getTenantOnboardingState(supabase, ctx.tenantId);
+    const env = ctx.environment === 'live' ? 'live' : 'test';
+    const state = await getTenantOnboardingState(supabase, ctx.tenantId, env);
 
     // Build response in the format specified by Story 51.7
     const response = {

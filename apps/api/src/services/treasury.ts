@@ -9,6 +9,7 @@
 import { createClient, SupabaseClient } from '../db/client.js';
 import { getAdapter, getAllAdapters, RailId } from './rail-adapters/index.js';
 import { logAudit } from '../utils/helpers.js';
+import { NotFoundError } from '../middleware/error.js';
 
 // ============================================
 // Types
@@ -210,7 +211,7 @@ export class TreasuryService {
       targetBalance?: number;
       maxBalance?: number;
     }
-  ): Promise<TreasuryAccount> {
+  ): Promise<{ account: TreasuryAccount; created: boolean }> {
     // Try to get existing account
     const { data: existing } = await this.supabase
       .from('treasury_accounts')
@@ -219,10 +220,10 @@ export class TreasuryService {
       .eq('environment', this.environment)
       .eq('rail', rail)
       .eq('currency', currency)
-      .single();
+      .maybeSingle();
 
     if (existing) {
-      return this.mapAccount(existing);
+      return { account: this.mapAccount(existing), created: false };
     }
 
     // Create new account
@@ -246,7 +247,7 @@ export class TreasuryService {
       throw new Error(`Failed to create treasury account: ${error.message}`);
     }
 
-    return this.mapAccount(created);
+    return { account: this.mapAccount(created), created: true };
   }
 
   /**
@@ -1184,6 +1185,10 @@ export class TreasuryService {
   async getFloatAllocationByPartner(tenantId: string): Promise<FloatAllocation[]> {
     // This would typically query a partner-specific float allocation table
     // For now, we'll aggregate from accounts table
+    // Scope to the caller's tenant. Without this filter every authenticated
+    // tenant could read every other tenant's business name and aggregated
+    // treasury balance (cross-tenant data exposure). A platform/parent-tenant
+    // cross-tenant view, if ever needed, must be a separately authorized path.
     const { data: accounts } = await (this.supabase as any)
       .from('accounts')
       .select(`
@@ -1192,7 +1197,8 @@ export class TreasuryService {
         currency,
         tenant:tenants!inner(id, business_name)
       `)
-      .eq('type', 'treasury');
+      .eq('type', 'treasury')
+      .eq('tenant_id', tenantId);
 
     // Group by tenant (partner)
     const partnerMap = new Map<string, {
@@ -1249,12 +1255,20 @@ export class TreasuryService {
       description?: string;
     }
   ): Promise<TreasuryTransaction> {
-    // Get current balance
-    const { data: account } = await this.supabase
+    // Get current balance. MUST be scoped to the tenant: accountId is
+    // caller-supplied and only Zod-validated as a UUID, so without the
+    // tenant_id filter a caller in tenant A could record a transaction
+    // against (and corrupt the balance of) tenant B's treasury account.
+    const { data: account, error: acctErr } = await this.supabase
       .from('treasury_accounts')
       .select('balance_total')
       .eq('id', accountId)
-      .single();
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (acctErr || !account) {
+      throw new NotFoundError('Treasury account not found');
+    }
 
     const balanceAfter = (parseFloat(String(account?.balance_total ?? 0)) || 0) +
       (['inbound', 'rebalance_in', 'adjustment'].includes(data.type) ? data.amount : -data.amount);
@@ -1294,7 +1308,8 @@ export class TreasuryService {
     await this.supabase
       .from('treasury_accounts')
       .update(balanceUpdate)
-      .eq('id', accountId);
+      .eq('id', accountId)
+      .eq('tenant_id', tenantId);
 
     return this.mapTransaction(tx);
   }

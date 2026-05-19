@@ -397,3 +397,39 @@ export async function sendBetaNewApplicationNotification(params: {
     'beta-new-application',
   );
 }
+
+/**
+ * Sent to the owner when an AI agent self-registers (agent-signup / one-click).
+ * The agent stays at KYA tier 0 until the owner claims it into their own tenant.
+ * Claiming is an API-only operation (no dashboard UI yet): the owner POSTs to
+ * /v1/auth/agent-claim/:agentId authenticated with their own tenant API key.
+ */
+export async function sendAgentClaimEmail(params: {
+  to: string;
+  agentName: string;
+  agentId: string;
+  ownerName?: string;
+}): Promise<SendResult> {
+  const docsUrl = `${dashboardUrl()}/docs/agents/claiming`;
+  const html = emailLayout(`
+  <h2 style="font-size: 20px; font-weight: 600;">Claim your agent</h2>
+  <p>${params.ownerName ? `Hi ${params.ownerName},` : 'Hi,'}</p>
+  <p>An AI agent registered itself on Sly and listed you as its owner:</p>
+  <ul style="font-size: 14px; color: #333; padding-left: 20px;">
+    <li><strong>Agent:</strong> ${params.agentName}</li>
+    <li><strong>Agent ID:</strong> <code>${params.agentId}</code></li>
+  </ul>
+  <p>Until you claim it, this agent stays at <strong>KYA tier 0</strong> (sandbox only, with the lowest spending limits). Claiming it moves the agent into your organization so you control its verification tier, limits, and permissions.</p>
+  <p style="font-size: 14px; color: #333;">To claim it, send an authenticated request with your tenant API key:</p>
+  <pre style="font-size: 13px; background-color: #f4f4f5; padding: 12px 16px; border-radius: 6px; overflow-x: auto;"><code>curl -X POST ${dashboardUrl().replace(/:3000$/, ':4000')}/v1/auth/agent-claim/${params.agentId} \\
+  -H "Authorization: Bearer YOUR_TENANT_API_KEY"</code></pre>
+  <p style="font-size: 14px; color: #666;">An agent can only be claimed once. If you didn't expect this, you can safely ignore this email — the agent remains sandbox-only at tier 0 and cannot move real funds.</p>
+  ${ctaButton(docsUrl, 'Claiming docs')}`);
+
+  return sendEmail(
+    params.to,
+    `Claim your Sly agent: ${params.agentName}`,
+    html,
+    'agent-claim',
+  );
+}

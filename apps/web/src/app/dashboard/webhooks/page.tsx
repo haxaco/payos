@@ -53,10 +53,10 @@ export default function WebhooksPage() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Webhooks</h1>
           <p className="text-gray-600 dark:text-gray-400">Configure webhook endpoints for real-time events</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
-          <Plus className="h-4 w-4" />
-          Add Endpoint
-        </button>
+        {/* "Add Endpoint" removed: this page is an intentional "Coming Soon"
+            placeholder with no api-client surface — a dead create button
+            contradicted the body copy. Restore once the webhooks API +
+            client land (tracked alongside the templates WIP story). */}
       </div>
 
       {/* Coming Soon */}

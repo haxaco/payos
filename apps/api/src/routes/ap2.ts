@@ -304,7 +304,32 @@ ap2.get('/mandates/:id', async (c) => {
     }
   }
 
-  return c.json({ data: { ...mandate, executions: executions || [], funding_source } });
+  // Join the funding account + authorized agent so the UI can render their
+  // names directly (without a racy secondary fetch that flashes "Unknown").
+  let account = null;
+  if (mandate.account_id) {
+    const { data: acct } = await supabase
+      .from('accounts')
+      .select('id, name')
+      .eq('id', mandate.account_id)
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
+      .maybeSingle();
+    if (acct) account = acct;
+  }
+  let agent = null;
+  if (mandate.agent_id && UUID_RE.test(mandate.agent_id)) {
+    const { data: ag } = await supabase
+      .from('agents')
+      .select('id, name')
+      .eq('id', mandate.agent_id)
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
+      .maybeSingle();
+    if (ag) agent = ag;
+  }
+
+  return c.json({ data: { ...mandate, executions: executions || [], funding_source, account, agent } });
 });
 
 /**
@@ -497,6 +522,8 @@ ap2.get('/mandates', async (c) => {
   const agentId = c.req.query('agent_id');
   const accountId = c.req.query('account_id');
   const search = c.req.query('search');
+  const startDate = c.req.query('startDate');
+  const endDate = c.req.query('endDate');
   const offset = (page - 1) * limit;
 
   // Build query
@@ -520,6 +547,17 @@ ap2.get('/mandates', async (c) => {
   if (search) {
     const safe = sanitizeSearchInput(search);
     query = query.or(`mandate_id.ilike.%${safe}%,agent_name.ilike.%${safe}%`);
+  }
+
+  // Inclusive created_at window. Ignore absent/invalid dates (no 400).
+  if (startDate && !Number.isNaN(Date.parse(startDate))) {
+    query = query.gte('created_at', new Date(startDate).toISOString());
+  }
+  if (endDate && !Number.isNaN(Date.parse(endDate))) {
+    const end = /T/.test(endDate)
+      ? new Date(endDate)
+      : new Date(`${endDate}T23:59:59.999Z`);
+    query = query.lte('created_at', end.toISOString());
   }
 
   const { data: mandates, error, count } = await query;
@@ -631,9 +669,11 @@ ap2.post('/mandates/:id/execute', async (c) => {
     return c.json({ error: 'Amount exceeds remaining mandate budget' }, 400);
   }
 
-  // KYA limit enforcement — prevent mandate bypass of per-transaction limits
+  // KYA limit enforcement — prevent mandate bypass of per-transaction limits.
+  // Must pass the request environment so the per-tenant beta ceiling (LIVE
+  // only) is actually enforced on AP2 mandate execution.
   try {
-    const limitService = new LimitService(supabase);
+    const limitService = new LimitService(supabase, getEnv(ctx));
     const limitCheck = await limitService.checkTransactionLimit(mandate.agent_id, execAmount);
     if (!limitCheck.allowed) {
       return c.json({ error: `Limit check failed: ${limitCheck.reason}`, code: 'LIMIT_EXCEEDED', details: limitCheck }, 403);
@@ -1522,6 +1562,18 @@ ap2.get('/analytics', async (c) => {
           active: activeMandates,
           revoked: revokedMandates,
           pending: mandateList.filter((m: any) => m.status === 'pending').length,
+          // The analytics UI also renders completed/cancelled/expired; without
+          // these keys those cards were permanently stuck at 0 on real data.
+          completed: mandateList.filter((m: any) => m.status === 'completed').length,
+          cancelled: mandateList.filter((m: any) => m.status === 'cancelled' || m.status === 'revoked').length,
+          expired: mandateList.filter((m: any) => m.status === 'expired').length,
+        },
+        // UI reads mandatesByType.{payment,cart,intent}; the route never
+        // returned this key, so the "Mandates by Type" card always showed 0/0/0.
+        mandatesByType: {
+          payment: mandateList.filter((m: any) => (m.mandate_type || m.type) === 'payment').length,
+          cart: mandateList.filter((m: any) => (m.mandate_type || m.type) === 'cart').length,
+          intent: mandateList.filter((m: any) => (m.mandate_type || m.type) === 'intent').length,
         },
         paymentsByStatus: {
           completed: transfers?.length || 0,

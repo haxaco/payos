@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { LimitExceededError } from '../middleware/error.js';
 import { trackOp } from './ops/track-op.js';
 import { OpType } from './ops/operation-types.js';
+import { resolveBetaCeiling } from '../config/beta-ceilings.js';
 
 export interface LimitCheckResult {
   allowed: boolean;
@@ -124,6 +125,34 @@ export class LimitService {
 
     const total = (data || []).reduce((sum, row) => sum + (parseFloat(row.daily_amount) || 0), 0);
     return total;
+  }
+
+  /**
+   * Open beta: aggregate live spend across ALL of a tenant's agents for the
+   * strict per-tenant beta ceiling. Tenant-wide (not env-scoped) is the
+   * conservative read; the ceiling only ever runs in the `live` environment.
+   */
+  private async getTenantDailyAggregate(tenantId: string): Promise<number> {
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await this.supabase
+      .from('agent_usage')
+      .select('daily_amount')
+      .eq('tenant_id', tenantId)
+      .eq('date', today);
+    return (data || []).reduce((s, r) => s + (parseFloat(r.daily_amount) || 0), 0);
+  }
+
+  private async getTenantMonthlyAggregate(tenantId: string): Promise<number> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      .toISOString()
+      .split('T')[0];
+    const { data } = await this.supabase
+      .from('agent_usage')
+      .select('daily_amount')
+      .eq('tenant_id', tenantId)
+      .gte('date', startOfMonth);
+    return (data || []).reduce((s, r) => s + (parseFloat(r.daily_amount) || 0), 0);
   }
 
   /**
@@ -332,6 +361,75 @@ export class LimitService {
         data: { amount, reason: result.reason, limitType: result.limitType, limit: effectiveLimits.monthly, used: monthlyUsage },
       });
       return result;
+    }
+
+    // ── Strict per-tenant beta ceiling (LIVE only) ──────────────────────────
+    // Even a production-approved tenant is capped at a conservative
+    // platform-wide aggregate (≈ T1) across ALL its agents, independent of
+    // per-agent KYA tier, to bound blast radius during the open beta.
+    // Sandbox/test (and the marketplace simulation) run unthrottled.
+    if (this.environment === 'live') {
+      const { data: tenantRow } = await this.supabase
+        .from('tenants')
+        .select(
+          'beta_ceiling_per_tx, beta_ceiling_daily, beta_ceiling_monthly, beta_ceiling_disabled'
+        )
+        .eq('id', agent.tenant_id)
+        .single();
+
+      const ceiling = resolveBetaCeiling(tenantRow as any);
+      if (!ceiling.disabled) {
+        const fail = (
+          reason: string,
+          limitType: string,
+          limit: number,
+          used?: number
+        ): LimitCheckResult => {
+          const result: LimitCheckResult = {
+            allowed: false,
+            reason,
+            limitType,
+            limit,
+            used,
+            requested: amount,
+          };
+          trackOp({
+            tenantId: agent.tenant_id,
+            operation: OpType.GOVERNANCE_LIMIT_CHECK,
+            subject: `tenant/${agent.tenant_id}`,
+            correlationId,
+            success: false,
+            data: { amount, reason, limitType, limit, used },
+          });
+          return result;
+        };
+
+        if (amount > ceiling.perTx) {
+          return fail(
+            'exceeds_tenant_beta_ceiling_per_tx',
+            'tenant_ceiling_per_tx',
+            ceiling.perTx
+          );
+        }
+        const tenantDaily = await this.getTenantDailyAggregate(agent.tenant_id);
+        if (tenantDaily + amount > ceiling.daily) {
+          return fail(
+            'exceeds_tenant_beta_ceiling_daily',
+            'tenant_ceiling_daily',
+            ceiling.daily,
+            tenantDaily
+          );
+        }
+        const tenantMonthly = await this.getTenantMonthlyAggregate(agent.tenant_id);
+        if (tenantMonthly + amount > ceiling.monthly) {
+          return fail(
+            'exceeds_tenant_beta_ceiling_monthly',
+            'tenant_ceiling_monthly',
+            ceiling.monthly,
+            tenantMonthly
+          );
+        }
+      }
     }
 
     trackOp({

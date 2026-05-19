@@ -19,6 +19,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import type { Stream, StreamEvent } from '@sly/api-client';
+import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 
 export default function StreamDetailPage() {
   const params = useParams();
@@ -65,6 +67,7 @@ export default function StreamDetailPage() {
       setStream(updated);
     } catch (error) {
       console.error('Failed to pause stream:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to pause stream'));
     } finally {
       setActionLoading(false);
     }
@@ -78,6 +81,7 @@ export default function StreamDetailPage() {
       setStream(updated);
     } catch (error) {
       console.error('Failed to resume stream:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to resume stream'));
     } finally {
       setActionLoading(false);
     }
@@ -93,6 +97,7 @@ export default function StreamDetailPage() {
       router.push('/dashboard/streams');
     } catch (error) {
       console.error('Failed to cancel stream:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to cancel stream'));
     } finally {
       setActionLoading(false);
     }
@@ -108,6 +113,7 @@ export default function StreamDetailPage() {
       setShowTopUp(false);
     } catch (error) {
       console.error('Failed to top up stream:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to top up stream'));
     } finally {
       setActionLoading(false);
     }
@@ -123,6 +129,7 @@ export default function StreamDetailPage() {
       setShowWithdraw(false);
     } catch (error) {
       console.error('Failed to withdraw from stream:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to withdraw from stream'));
     } finally {
       setActionLoading(false);
     }

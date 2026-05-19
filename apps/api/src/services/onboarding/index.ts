@@ -24,10 +24,13 @@ export * from './types';
  */
 export async function getTenantOnboardingState(
   supabase: SupabaseClient,
-  tenantId: string
+  tenantId: string,
+  // Sandbox shows protocols pre-enabled so the onboarding checklist reflects
+  // the frictionless first-run. Defaults to 'live' (strict) for safety.
+  environment: 'test' | 'live' = 'live'
 ): Promise<TenantOnboardingState> {
   // Get protocol status
-  const protocolStatus = await getOrganizationProtocolStatus(supabase, tenantId);
+  const protocolStatus = await getOrganizationProtocolStatus(supabase, tenantId, environment);
 
   // Check for payment handlers
   const { data: handlers } = await supabase

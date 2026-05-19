@@ -31,6 +31,7 @@ function createMockSupabase(overrides: Record<string, any> = {}) {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               single: vi.fn(() => Promise.resolve(cfg.user_profiles_select)),
+              maybeSingle: vi.fn(() => Promise.resolve(cfg.user_profiles_select)),
             })),
           })),
           insert: vi.fn(() => Promise.resolve(cfg.user_profiles_insert)),
@@ -41,6 +42,7 @@ function createMockSupabase(overrides: Record<string, any> = {}) {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               single: vi.fn(() => Promise.resolve(cfg.tenants_select)),
+              maybeSingle: vi.fn(() => Promise.resolve(cfg.tenants_select)),
             })),
           })),
           insert: vi.fn(() => ({
@@ -64,7 +66,7 @@ function createMockSupabase(overrides: Record<string, any> = {}) {
         };
       }
       return {
-        select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(() => Promise.resolve({ data: null, error: null })) })) })),
+        select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(() => Promise.resolve({ data: null, error: null })), maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })) })) })),
         insert: vi.fn(() => Promise.resolve({ error: null })),
       };
     }),
@@ -94,7 +96,8 @@ describe('Tenant Provisioning Service', () => {
       expect(result.user.email).toBe('test@example.com');
       expect(result.user.name).toBe('Test User');
       expect(result.apiKeys.test.key).toContain('pk_test_');
-      expect(result.apiKeys.live.key).toContain('pk_live_');
+      // Open beta: NO live key is issued at signup — production-gated.
+      expect((result.apiKeys as { live?: unknown }).live).toBeUndefined();
     });
 
     it('uses email prefix as userName when userName not provided', async () => {
@@ -132,7 +135,7 @@ describe('Tenant Provisioning Service', () => {
       expect(result.tenant.name).toBe('Existing Org');
       // API keys should be empty for already-provisioned
       expect(result.apiKeys.test.key).toBe('');
-      expect(result.apiKeys.live.key).toBe('');
+      expect((result.apiKeys as { live?: unknown }).live).toBeUndefined();
     });
 
     it('throws TenantProvisioningError when tenant creation fails', async () => {
