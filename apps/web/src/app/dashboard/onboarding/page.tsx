@@ -1,891 +1,453 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
+  Bot,
   Zap,
-  Shield,
   ShoppingCart,
-  Globe,
-  CheckCircle,
+  CheckCircle2,
   Circle,
-  SkipForward,
-  RotateCcw,
-  ChevronRight,
   Loader2,
   Play,
-  Rocket,
-  ShoppingBag,
-  Bot,
-  Repeat,
-  FlaskConical,
-  AlertCircle,
-  Power,
+  Sparkles,
   ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  Rocket,
+  XCircle,
 } from 'lucide-react';
 import { useApiConfig } from '@/lib/api-client';
-import { toast } from 'sonner';
 import { cn } from '@sly/ui';
+import { Card, CardContent, Button, Badge } from '@sly/ui';
 import Link from 'next/link';
-import {
-  hasInProgressWizard,
-  getWizardProgressPercent,
-  useAllWizardProgress,
-} from '@/hooks/useWizardProgress';
-import { WIZARD_TEMPLATES, LEGACY_TEMPLATE_MAP, type TemplateId } from '@/types/wizard';
 
+// ---------------------------------------------------------------------------
 // Types
-type ProtocolId = 'x402' | 'ap2' | 'acp' | 'ucp';
-type OnboardingStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
+// ---------------------------------------------------------------------------
 
-interface OnboardingStep {
-  id: string;
-  title: string;
-  description: string;
-  status: OnboardingStepStatus;
-  action_url?: string;
-  action_label?: string;
+type Outcome = 'agent_spend' | 'api_monetization' | 'agent_checkout';
+
+interface SmokeStep {
+  name: string;
+  ok: boolean;
+  detail: string;
+  reference?: string;
 }
 
-interface ProtocolOnboardingState {
-  protocol_id: ProtocolId;
-  protocol_name: string;
+interface SmokeResult {
+  ok: boolean;
+  outcome: Outcome;
+  durationMs: number;
+  steps: SmokeStep[];
+  reference?: string;
+  error?: string;
+  nextAction?: { label: string; href: string };
+}
+
+interface ProtocolState {
   enabled: boolean;
   prerequisites_met: boolean;
-  steps: OnboardingStep[];
-  current_step: number;
-  total_steps: number;
-  completed_steps: number;
   progress_percentage: number;
-  is_complete: boolean;
 }
 
-interface QuickStartTemplate {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  protocols: ProtocolId[];
-  steps: { title: string; description: string; action_url: string }[];
-  estimated_time: string;
-}
-
-interface TenantOnboardingState {
-  tenant_id: string;
-  overall_progress: number;
-  has_any_protocol_enabled: boolean;
-  has_payment_handler: boolean;
+interface OnboardingState {
   has_wallet: boolean;
-  protocols: Record<ProtocolId, ProtocolOnboardingState>;
-  recommended_template?: QuickStartTemplate;
+  has_payment_handler: boolean;
+  has_any_protocol_enabled: boolean;
   sandbox_mode: boolean;
+  protocols: Record<'x402' | 'ap2' | 'acp' | 'ucp', ProtocolState>;
 }
 
-// Protocol UI metadata
-const PROTOCOL_UI: Record<ProtocolId, { icon: typeof Zap; color: string; gradient: string; bgColor: string }> = {
-  x402: {
-    icon: Zap,
-    color: 'text-yellow-600 dark:text-yellow-400',
-    gradient: 'from-yellow-500/10 to-orange-500/10',
-    bgColor: 'bg-yellow-100 dark:bg-yellow-950',
-  },
-  ap2: {
-    icon: Shield,
-    color: 'text-blue-600 dark:text-blue-400',
-    gradient: 'from-blue-500/10 to-indigo-500/10',
-    bgColor: 'bg-blue-100 dark:bg-blue-950',
-  },
-  acp: {
-    icon: ShoppingCart,
-    color: 'text-purple-600 dark:text-purple-400',
-    gradient: 'from-purple-500/10 to-pink-500/10',
-    bgColor: 'bg-purple-100 dark:bg-purple-950',
-  },
-  ucp: {
-    icon: Globe,
-    color: 'text-green-600 dark:text-green-400',
-    gradient: 'from-green-500/10 to-emerald-500/10',
-    bgColor: 'bg-green-100 dark:bg-green-950',
-  },
-};
-
-const TEMPLATE_ICONS: Record<string, typeof Rocket> = {
-  'zap': Rocket,
-  'shopping-cart': ShoppingBag,
-  'bot': Bot,
-  'repeat': Repeat,
-};
-
-// API functions
+// ---------------------------------------------------------------------------
+// Data fetching
 //
-// `authToken` here is the active credential — the Supabase JWT when a dashboard
-// user is logged in, or the stored API key when authenticated programmatically.
-// Callers MUST pass `authToken ?? apiKey` so API-key-only users work too.
-async function fetchOnboardingState(authToken: string, apiUrl: string): Promise<TenantOnboardingState> {
-  const response = await fetch(`${apiUrl}/v1/onboarding`, {
+// `credential` is the active auth token — the Supabase JWT for a logged-in
+// dashboard user, or the stored API key for programmatic access. This mirrors
+// the exact pattern the previous page used (and how the shared api-client
+// resolves its token: `authToken ?? apiKey`). Both endpoints may return either
+// a bare object or a `{ data: {...} }` envelope, so unwrap defensively.
+// ---------------------------------------------------------------------------
+
+async function fetchOnboardingState(
+  credential: string,
+  apiUrl: string,
+): Promise<OnboardingState> {
+  const res = await fetch(`${apiUrl}/v1/onboarding`, {
     headers: {
-      'Authorization': `Bearer ${authToken}`,
+      Authorization: `Bearer ${credential}`,
       'Content-Type': 'application/json',
     },
   });
-  if (!response.ok) {
+  if (!res.ok) {
     throw new Error('Failed to fetch onboarding state');
   }
-  const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
+  const json = await res.json();
+  return json.data ?? json;
 }
 
-async function fetchTemplates(authToken: string, apiUrl: string): Promise<{ data: QuickStartTemplate[] }> {
-  const response = await fetch(`${apiUrl}/v1/onboarding/templates`, {
-    headers: {
-      'Authorization': `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!response.ok) {
-    throw new Error('Failed to fetch templates');
-  }
-  const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
-}
-
-async function completeStep(
-  authToken: string,
+async function runSmokeTest(
+  credential: string,
   apiUrl: string,
-  protocolId: ProtocolId,
-  stepId: string
-): Promise<ProtocolOnboardingState> {
-  const response = await fetch(
-    `${apiUrl}/v1/onboarding/protocols/${protocolId}/steps/${stepId}/complete`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-  if (!response.ok) {
-    throw new Error('Failed to complete step');
-  }
-  const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
-}
-
-async function skipStep(
-  authToken: string,
-  apiUrl: string,
-  protocolId: ProtocolId,
-  stepId: string
-): Promise<ProtocolOnboardingState> {
-  const response = await fetch(
-    `${apiUrl}/v1/onboarding/protocols/${protocolId}/steps/${stepId}/skip`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-  if (!response.ok) {
-    throw new Error('Failed to skip step');
-  }
-  const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
-}
-
-async function resetOnboarding(
-  authToken: string,
-  apiUrl: string,
-  protocolId: ProtocolId
-): Promise<ProtocolOnboardingState> {
-  const response = await fetch(
-    `${apiUrl}/v1/onboarding/protocols/${protocolId}/reset`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-  if (!response.ok) {
-    throw new Error('Failed to reset onboarding');
-  }
-  const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
-}
-
-async function toggleSandboxMode(
-  authToken: string,
-  apiUrl: string,
-  enabled: boolean
-): Promise<{ success: boolean; sandbox_mode: boolean }> {
-  const response = await fetch(`${apiUrl}/v1/onboarding/sandbox`, {
+  outcome: Outcome,
+): Promise<SmokeResult> {
+  const res = await fetch(`${apiUrl}/v1/onboarding/smoke-test`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${authToken}`,
+      Authorization: `Bearer ${credential}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ outcome }),
   });
-  if (!response.ok) {
-    throw new Error('Failed to toggle sandbox mode');
-  }
-  const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
+  // The SmokeResult body is present on BOTH 200 (ok) and 422 (not ok), so we
+  // read the JSON regardless of res.ok and drive the UI purely off `ok` flags.
+  const json = await res.json();
+  return json.data ?? json;
 }
 
-async function enableProtocol(
-  authToken: string,
-  apiUrl: string,
-  protocolId: ProtocolId
-): Promise<{ success: boolean; error?: string; missing_prerequisites?: string[]; message?: string }> {
-  const response = await fetch(
-    `${apiUrl}/v1/organization/protocols/${protocolId}/enable`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-  const json = await response.json();
-  if (response.ok) {
-    // Wrapped success: { success: true, data: {...} }
-    const data = json.data || json;
-    return { success: true, ...data };
+// ---------------------------------------------------------------------------
+// Outcome catalog — all three shown with equal visual weight, no recommended
+// or default bias.
+// ---------------------------------------------------------------------------
+
+const OUTCOMES: {
+  key: Outcome;
+  title: string;
+  blurb: string;
+  icon: typeof Bot;
+  // Which protocol flag means "the rail behind this outcome is enabled".
+  protocolEnabled: (p: OnboardingState['protocols']) => boolean;
+}[] = [
+  {
+    key: 'agent_spend',
+    title: 'Let an AI agent buy & spend',
+    blurb: 'An autonomous agent makes purchases on your behalf, within limits you set.',
+    icon: Bot,
+    protocolEnabled: (p) => p.x402?.enabled || p.ap2?.enabled,
+  },
+  {
+    key: 'api_monetization',
+    title: 'Get paid per API call',
+    blurb: 'Charge AI agents a micro-payment every time they hit your API.',
+    icon: Zap,
+    protocolEnabled: (p) => p.x402?.enabled,
+  },
+  {
+    key: 'agent_checkout',
+    title: 'Accept agent checkouts',
+    blurb: 'Let shopping agents discover your products and check out on your store.',
+    icon: ShoppingCart,
+    protocolEnabled: (p) => p.acp?.enabled || p.ucp?.enabled,
+  },
+];
+
+const ADVANCED_LINKS: { href: string; label: string }[] = [
+  { href: '/dashboard/agentic-payments/x402/integration', label: 'x402 integration guide' },
+  { href: '/dashboard/agentic-payments/ap2/integration', label: 'AP2 integration guide' },
+  { href: '/dashboard/agentic-payments/acp/integration', label: 'ACP integration guide' },
+  { href: '/dashboard/agentic-payments/ucp/integration', label: 'UCP integration guide' },
+  { href: '/dashboard/agentic-payments/x402/endpoints', label: 'Manage x402 endpoints' },
+  { href: '/dashboard/agents', label: 'Manage agents' },
+];
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function ProvisionedRow({ label, done }: { label: string; done: boolean }) {
+  if (done) {
+    return (
+      <li className="flex items-center gap-2.5 text-sm">
+        <CheckCircle2
+          className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+          aria-hidden="true"
+        />
+        <span className="text-foreground">{label}</span>
+      </li>
+    );
   }
-  // Error: API returns { error, details: { missing: [...], message } }
-  // (the prerequisite list + a human message live UNDER `details`, not at
-  // the top level — reading them flat left the helpful message dead code).
-  return {
-    success: false,
-    error: json.error,
-    missing_prerequisites: json.details?.missing,
-    message: json.details?.message,
-  };
-}
-
-// Progress ring component
-function ProgressRing({ progress, size = 120, strokeWidth = 8 }: { progress: number; size?: number; strokeWidth?: number }) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (progress / 100) * circumference;
-
+  // Not a gate — show as one subtle muted line, never blocking.
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-gray-200 dark:text-gray-800"
+    <li className="flex items-center gap-2.5 text-sm">
+      <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+      <span className="text-muted-foreground">{label}</span>
+    </li>
+  );
+}
+
+function SmokeStepRow({ step }: { step: SmokeStep }) {
+  return (
+    <li className="flex items-start gap-3 rounded-md px-3 py-2.5">
+      {step.ok ? (
+        <CheckCircle2
+          className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+          aria-hidden="true"
         />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className="text-green-500 dark:text-green-400 transition-all duration-500"
+      ) : (
+        <XCircle
+          className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+          aria-hidden="true"
         />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-2xl font-bold text-gray-900 dark:text-white">{progress}%</span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{step.name}</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">{step.detail}</p>
+        {step.reference && (
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground/80">
+            {step.reference}
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function RunningStepper() {
+  return (
+    <div
+      className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-4"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" aria-hidden="true" />
+      <div>
+        <p className="text-sm font-medium text-foreground">Running a real transaction…</p>
+        <p className="text-sm text-muted-foreground">
+          This runs live on the Sly sandbox and can take up to ~15 seconds.
+        </p>
       </div>
     </div>
   );
 }
 
-// Step item component
-function StepItem({
-  step,
-  index,
-  isCurrent,
-  onComplete,
-  onSkip,
-  isLoading,
+function SmokeResultPanel({ result }: { result: SmokeResult }) {
+  return (
+    <div className="space-y-4">
+      {result.ok ? (
+        <div className="rounded-lg border border-emerald-300/60 bg-emerald-50 px-5 py-4 dark:border-emerald-800/60 dark:bg-emerald-950/40">
+          <div className="flex items-start gap-3">
+            <Sparkles
+              className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="font-semibold text-emerald-900 dark:text-emerald-100">
+                It works — you just ran real agentic commerce on Sly
+              </p>
+              <p className="mt-0.5 text-sm text-emerald-800/90 dark:text-emerald-200/80">
+                Completed in {(result.durationMs / 1000).toFixed(1)}s
+                {result.reference ? (
+                  <>
+                    {' · '}
+                    <span className="break-all font-mono text-xs">{result.reference}</span>
+                  </>
+                ) : null}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              className="mt-0.5 h-5 w-5 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="font-semibold text-foreground">The test didn&apos;t complete</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {result.error ?? 'One of the steps failed. See the breakdown below.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {result.steps.length > 0 && (
+        <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+          {result.steps.map((step, i) => (
+            <SmokeStepRow key={`${step.name}-${i}`} step={step} />
+          ))}
+        </ul>
+      )}
+
+      {result.nextAction && (
+        <Button asChild>
+          <Link href={result.nextAction.href}>
+            {result.nextAction.label}
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function OutcomePanel({
+  outcome,
+  state,
+  credential,
+  apiUrl,
 }: {
-  step: OnboardingStep;
-  index: number;
-  isCurrent: boolean;
-  onComplete: () => void;
-  onSkip: () => void;
-  isLoading: boolean;
+  outcome: (typeof OUTCOMES)[number];
+  state: OnboardingState | undefined;
+  credential: string;
+  apiUrl: string;
 }) {
-  const isCompleted = step.status === 'completed';
-  const isSkipped = step.status === 'skipped';
+  const smokeMutation = useMutation({
+    mutationFn: () => runSmokeTest(credential, apiUrl, outcome.key),
+  });
+
+  const protocolEnabled = state ? outcome.protocolEnabled(state.protocols) : false;
+
+  const provisioned = [
+    { label: 'Sandbox wallet ready', done: !!state?.has_wallet },
+    { label: 'Test funds loaded', done: !!state?.has_wallet },
+    { label: 'Protocol enabled', done: protocolEnabled },
+    { label: 'Agent ready', done: !!state?.has_any_protocol_enabled },
+  ];
+
+  const allProvisioned = provisioned.every((p) => p.done);
 
   return (
-    <div
-      className={cn(
-        'flex items-start gap-4 p-4 rounded-xl transition-colors',
-        isCurrent && 'bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800',
-        !isCurrent && 'hover:bg-gray-50 dark:hover:bg-gray-900/50'
-      )}
-    >
-      {/* Step number/icon */}
-      <div className="flex-shrink-0">
-        {isCompleted ? (
-          <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-950 flex items-center justify-center">
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+    <div className="mt-5 space-y-6 border-t border-border pt-6">
+      {/* Already set up for you */}
+      <section aria-label="What Sly provisioned automatically">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-foreground">Already set up for you</h3>
+          {allProvisioned && (
+            <Badge variant="secondary" className="gap-1">
+              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+              Ready
+            </Badge>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Sly provisioned this automatically — there&apos;s nothing for you to do.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {provisioned.map((p) => (
+            <ProvisionedRow key={p.label} label={p.label} done={p.done} />
+          ))}
+        </ul>
+      </section>
+
+      {/* Live test */}
+      <section aria-label="Run a live test">
+        {smokeMutation.isPending ? (
+          <RunningStepper />
+        ) : smokeMutation.data ? (
+          <div className="space-y-4">
+            <SmokeResultPanel result={smokeMutation.data} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => smokeMutation.mutate()}
+              disabled={smokeMutation.isPending}
+            >
+              Run it again
+            </Button>
           </div>
-        ) : isSkipped ? (
-          <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-            <SkipForward className="w-4 h-4 text-gray-400" />
+        ) : smokeMutation.isError ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-muted-foreground">
+              Couldn&apos;t reach the test runner. Check your connection and try again.
+            </div>
+            <Button onClick={() => smokeMutation.mutate()}>
+              <Play className="h-4 w-4" aria-hidden="true" />
+              Run a live test
+            </Button>
           </div>
         ) : (
-          <div
-            className={cn(
-              'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
-              isCurrent
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
-            )}
-          >
-            {index + 1}
+          <div>
+            <Button onClick={() => smokeMutation.mutate()}>
+              <Play className="h-4 w-4" aria-hidden="true" />
+              Run a live test
+            </Button>
+            <p className="mt-2 text-sm text-muted-foreground">
+              We&apos;ll run one real transaction end-to-end so you can see it work.
+            </p>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Step content */}
-      <div className="flex-1 min-w-0">
-        <h4
-          className={cn(
-            'font-medium',
-            isCompleted || isSkipped
-              ? 'text-gray-500 dark:text-gray-400'
-              : 'text-gray-900 dark:text-white'
-          )}
-        >
-          {step.title}
-        </h4>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-          {step.description}
-        </p>
-
-        {/* Action buttons */}
-        {isCurrent && !isCompleted && !isSkipped && (
-          <div className="flex items-center gap-2 mt-3">
-            {step.action_url && (
-              <Link
-                href={step.action_url}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                <Play className="w-3.5 h-3.5" />
-                {step.action_label || 'Start'}
-              </Link>
-            )}
-            <button
-              onClick={onComplete}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-            >
-              {isLoading ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <CheckCircle className="w-3.5 h-3.5" />
-              )}
-              Mark Complete
-            </button>
-            <button
-              onClick={onSkip}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1 px-2 py-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 text-sm transition-colors disabled:opacity-50"
-            >
-              Skip
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Advanced disclosure */}
+      <AdvancedDisclosure />
     </div>
   );
 }
 
-// Protocol onboarding card component
-function ProtocolOnboardingCard({
-  state,
-  onCompleteStep,
-  onSkipStep,
-  onReset,
-  onEnable,
-  isLoading,
-  isEnabling,
-}: {
-  state: ProtocolOnboardingState;
-  onCompleteStep: (stepId: string) => void;
-  onSkipStep: (stepId: string) => void;
-  onReset: () => void;
-  onEnable: () => void;
-  isLoading: boolean;
-  isEnabling: boolean;
-}) {
-  const ui = PROTOCOL_UI[state.protocol_id];
-  const Icon = ui.icon;
-  const [expanded, setExpanded] = useState(state.enabled && !state.is_complete);
-
+function AdvancedDisclosure() {
+  const [open, setOpen] = useState(false);
   return (
-    <div
-      className={cn(
-        'bg-white dark:bg-gray-950 rounded-2xl border overflow-hidden',
-        'border-gray-200 dark:border-gray-800'
-      )}
-    >
-      {/* Header */}
-      <div
-        className={cn(
-          'p-6 transition-colors',
-          state.enabled ? 'cursor-pointer' : '',
-          state.enabled && !expanded ? 'hover:bg-gray-50 dark:hover:bg-gray-900/50' : ''
-        )}
-        onClick={() => state.enabled && setExpanded(!expanded)}
+    <section className="border-t border-border pt-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', ui.bgColor)}>
-              <Icon className={cn('w-6 h-6', ui.color)} />
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">
-                {state.protocol_name}
-              </h3>
-              <div className="flex items-center gap-2 mt-0.5">
-                {state.enabled ? (
-                  <span className="text-xs text-green-600 dark:text-green-400 font-medium">
-                    Enabled
-                  </span>
-                ) : state.prerequisites_met ? (
-                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                    Ready to enable
-                  </span>
-                ) : (
-                  <span className="text-xs text-amber-600 dark:text-amber-400">
-                    Prerequisites required
-                  </span>
-                )}
-                {state.is_complete && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 dark:bg-green-950 text-green-600 dark:text-green-400 text-xs font-medium rounded-full">
-                    <CheckCircle className="w-3 h-3" />
-                    Complete
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            {state.enabled ? (
-              <>
-                {/* Progress bar - only show when enabled */}
-                <div className="hidden sm:flex items-center gap-3">
-                  <div className="w-32 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className={cn('h-full rounded-full transition-all duration-500', ui.bgColor.replace('bg-', 'bg-').replace('100', '500').replace('950', '500'))}
-                      style={{ width: `${state.progress_percentage}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    {state.completed_steps}/{state.total_steps}
-                  </span>
-                </div>
-
-                <ChevronRight
-                  className={cn(
-                    'w-5 h-5 text-gray-400 transition-transform',
-                    expanded && 'rotate-90'
-                  )}
-                />
-              </>
-            ) : (
-              /* Enable button - show when not enabled */
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEnable();
-                }}
-                disabled={isEnabling || !state.prerequisites_met}
-                className={cn(
-                  'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                  state.prerequisites_met
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
-                )}
+        {open ? (
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        )}
+        Advanced: manual setup &amp; docs
+      </button>
+      {open && (
+        <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+          {ADVANCED_LINKS.map((link) => (
+            <li key={link.href}>
+              <Link
+                href={link.href}
+                className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
               >
-                {isEnabling ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Power className="w-4 h-4" />
-                )}
-                {isEnabling ? 'Enabling...' : 'Enable Protocol'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Steps - only show when enabled and expanded */}
-      {state.enabled && expanded && (
-        <div className="px-6 pb-6 space-y-2">
-          <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
-            {state.steps.map((step, index) => (
-              <StepItem
-                key={step.id}
-                step={step}
-                index={index}
-                isCurrent={index === state.current_step && !state.is_complete}
-                onComplete={() => onCompleteStep(step.id)}
-                onSkip={() => onSkipStep(step.id)}
-                isLoading={isLoading}
-              />
-            ))}
-          </div>
-
-          {/* Reset button */}
-          {state.completed_steps > 0 && (
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onReset();
-                }}
-                disabled={isLoading}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 text-sm transition-colors disabled:opacity-50"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset Progress
-              </button>
-            </div>
-          )}
-        </div>
+                {link.label}
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
-
-      {/* Prerequisites hint - show when not enabled and prerequisites not met */}
-      {!state.enabled && !state.prerequisites_met && (
-        <div className="px-6 pb-6 border-t border-gray-100 dark:border-gray-800">
-          <div className="pt-4 text-sm text-gray-500 dark:text-gray-400">
-            <span className="font-medium text-gray-700 dark:text-gray-300">Required:</span>{' '}
-            {state.protocol_id === 'x402' || state.protocol_id === 'ap2'
-              ? 'Create a USDC wallet to enable this protocol'
-              : 'Connect a payment handler to enable this protocol'}
-          </div>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
-// Quick start template card
-function TemplateCard({
-  template,
-  isRecommended,
-}: {
-  template: QuickStartTemplate;
-  isRecommended: boolean;
-}) {
-  const IconComponent = TEMPLATE_ICONS[template.icon] || Rocket;
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
-  // Map template ID to wizard template ID
-  const wizardTemplateId = LEGACY_TEMPLATE_MAP[template.id] || template.id as TemplateId;
-  const hasProgress = hasInProgressWizard(wizardTemplateId);
-  const progressPercent = getWizardProgressPercent(wizardTemplateId);
-  const wizardConfig = WIZARD_TEMPLATES[wizardTemplateId];
-
-  return (
-    <div
-      className={cn(
-        'relative bg-white dark:bg-gray-950 rounded-2xl border p-6 transition-colors',
-        hasProgress
-          ? 'border-green-300 dark:border-green-700 ring-2 ring-green-100 dark:ring-green-900'
-          : isRecommended
-          ? 'border-blue-300 dark:border-blue-700 ring-2 ring-blue-100 dark:ring-blue-900'
-          : 'border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700'
-      )}
-    >
-      {/* Progress badge - takes priority over recommended */}
-      {hasProgress && (
-        <div className="absolute -top-3 left-4 px-2 py-0.5 bg-green-600 text-white text-xs font-medium rounded-full">
-          {progressPercent}% Complete
-        </div>
-      )}
-      {!hasProgress && isRecommended && (
-        <div className="absolute -top-3 left-4 px-2 py-0.5 bg-blue-600 text-white text-xs font-medium rounded-full">
-          Recommended
-        </div>
-      )}
-
-      <div className="flex items-start gap-4">
-        <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
-          <IconComponent className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-gray-900 dark:text-white">{template.name}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{template.description}</p>
-
-          <div className="flex items-center gap-2 mt-3">
-            {template.protocols.map((protocolId) => {
-              const ui = PROTOCOL_UI[protocolId];
-              const ProtocolIcon = ui.icon;
-              return (
-                <div
-                  key={protocolId}
-                  className={cn('w-6 h-6 rounded flex items-center justify-center', ui.bgColor)}
-                  title={protocolId.toUpperCase()}
-                >
-                  <ProtocolIcon className={cn('w-3.5 h-3.5', ui.color)} />
-                </div>
-              );
-            })}
-            <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">
-              {template.estimated_time}
-            </span>
-          </div>
-
-          {/* Progress bar for in-progress wizards */}
-          {hasProgress && (
-            <div className="mt-3">
-              <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-green-500 rounded-full transition-all duration-500"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4">
-            <Link
-              href={wizardConfig ? `/dashboard/onboarding/wizard/${wizardTemplateId}` : (template.steps[0]?.action_url || '/dashboard')}
-              className={cn(
-                'inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-                hasProgress
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                  : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100'
-              )}
-            >
-              {hasProgress ? (
-                <>
-                  <ArrowRight className="w-4 h-4" />
-                  Resume Setup
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  Start Setup
-                </>
-              )}
-            </Link>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Resume Setup Card - Shows when there are in-progress wizards
-function ResumeSetupCard() {
-  const { wizards, refresh } = useAllWizardProgress();
-
-  // Refresh on mount
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  if (wizards.length === 0) return null;
-
-  // Get the most recent in-progress wizard
-  const mostRecent = wizards.sort(
-    (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
-  )[0];
-
-  const templateConfig = WIZARD_TEMPLATES[mostRecent.templateId];
-  if (!templateConfig) return null;
-
-  const IconComponent = TEMPLATE_ICONS[templateConfig.icon] || Rocket;
-  const progressPercent = Math.round(
-    ((mostRecent.completedSteps.length + mostRecent.skippedSteps.length) /
-      templateConfig.steps.length) *
-      100
-  );
-
-  return (
-    <div className="mb-8">
-      <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center">
-              <IconComponent className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <div className="text-sm text-green-100 mb-1">Continue where you left off</div>
-              <h3 className="text-xl font-semibold">{templateConfig.name} Setup</h3>
-              <div className="flex items-center gap-3 mt-2">
-                <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden max-w-[200px]">
-                  <div
-                    className="h-full bg-white rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-                <span className="text-sm text-green-100">
-                  {mostRecent.completedSteps.length + mostRecent.skippedSteps.length}/{templateConfig.steps.length} steps
-                </span>
-              </div>
-            </div>
-          </div>
-          <Link
-            href={`/dashboard/onboarding/wizard/${mostRecent.templateId}`}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-green-700 font-medium rounded-lg hover:bg-green-50 transition-colors"
-          >
-            Resume
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Main page component
 export default function OnboardingPage() {
-  const { isConfigured, isLoading: isAuthLoading, authToken, apiKey, apiUrl } = useApiConfig();
-  const queryClient = useQueryClient();
-  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const {
+    isConfigured,
+    isLoading: isAuthLoading,
+    authToken,
+    apiKey,
+    apiUrl,
+  } = useApiConfig();
 
-  // The active credential: Supabase JWT for logged-in dashboard users, or the
-  // stored API key for programmatic access. Mirrors how the shared api-client
-  // picks its token (`authToken || apiKey`) and the `isConfigured` semantics.
-  // Without this, API-key-only users pass the `!isConfigured` shell guard but
-  // every query stayed `enabled: !!authToken` (false) → permanent skeleton.
+  // Active credential: Supabase JWT for logged-in users, or the stored API key
+  // for programmatic access — same resolution the shared api-client uses.
   const credential = authToken ?? apiKey;
 
-  // Fetch onboarding state
+  const [selected, setSelected] = useState<Outcome | null>(null);
+
   const { data: onboardingState, isLoading: isLoadingState } = useQuery({
     queryKey: ['onboarding-state'],
     queryFn: () => fetchOnboardingState(credential!, apiUrl),
     enabled: !!credential,
   });
 
-  // Fetch templates
-  const { data: templatesData } = useQuery({
-    queryKey: ['onboarding-templates'],
-    queryFn: () => fetchTemplates(credential!, apiUrl),
-    enabled: !!credential,
-  });
-
-  // Complete step mutation
-  const completeStepMutation = useMutation({
-    mutationFn: ({ protocolId, stepId }: { protocolId: ProtocolId; stepId: string }) =>
-      completeStep(credential!, apiUrl, protocolId, stepId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
-      toast.success('Step completed');
-      setLoadingAction(null);
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to complete step', { description: error.message });
-      setLoadingAction(null);
-    },
-  });
-
-  // Skip step mutation
-  const skipStepMutation = useMutation({
-    mutationFn: ({ protocolId, stepId }: { protocolId: ProtocolId; stepId: string }) =>
-      skipStep(credential!, apiUrl, protocolId, stepId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
-      toast.success('Step skipped');
-      setLoadingAction(null);
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to skip step', { description: error.message });
-      setLoadingAction(null);
-    },
-  });
-
-  // Reset mutation
-  const resetMutation = useMutation({
-    mutationFn: (protocolId: ProtocolId) => resetOnboarding(credential!, apiUrl, protocolId),
-    onSuccess: (_, protocolId) => {
-      queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
-      toast.success(`${protocolId.toUpperCase()} onboarding reset`);
-      setLoadingAction(null);
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to reset onboarding', { description: error.message });
-      setLoadingAction(null);
-    },
-  });
-
-  // Sandbox toggle mutation
-  const sandboxMutation = useMutation({
-    mutationFn: (enabled: boolean) => toggleSandboxMode(credential!, apiUrl, enabled),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
-      toast.success(result.sandbox_mode ? 'Sandbox mode enabled' : 'Sandbox mode disabled');
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to toggle sandbox mode', { description: error.message });
-    },
-  });
-
-  // Enable protocol mutation
-  const enableProtocolMutation = useMutation({
-    mutationFn: (protocolId: ProtocolId) => enableProtocol(credential!, apiUrl, protocolId),
-    onSuccess: (result, protocolId) => {
-      if (result.success) {
-        queryClient.invalidateQueries({ queryKey: ['onboarding-state'] });
-        queryClient.invalidateQueries({ queryKey: ['protocol-status'] });
-        toast.success(`${protocolId.toUpperCase()} protocol enabled`);
-      } else {
-        if (result.missing_prerequisites?.length || result.message) {
-          toast.error('Prerequisites not met', {
-            description:
-              result.message ||
-              result.missing_prerequisites?.join(', ') ||
-              result.error,
-          });
-        } else {
-          toast.error('Failed to enable protocol', { description: result.error });
-        }
-      }
-      setLoadingAction(null);
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to enable protocol', { description: error.message });
-      setLoadingAction(null);
-    },
-  });
-
-  // Handle both wrapped and unwrapped data formats
-  const templates = Array.isArray(templatesData) ? templatesData : (templatesData?.data || []);
-  const protocols = onboardingState?.protocols
-    ? (Object.values(onboardingState.protocols) as ProtocolOnboardingState[])
-    : [];
-
-  if (isAuthLoading || isLoadingState) {
+  if (isAuthLoading || (isLoadingState && !!credential)) {
     return (
-      <div className="p-8 max-w-[1400px] mx-auto">
-        <div className="animate-pulse space-y-8">
-          <div className="h-8 w-48 bg-gray-200 dark:bg-gray-800 rounded" />
-          <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl" />
-          <div className="space-y-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-2xl" />
+      <div className="mx-auto max-w-4xl p-8">
+        <div className="animate-pulse space-y-6">
+          <div className="h-9 w-72 rounded bg-muted" />
+          <div className="h-5 w-96 rounded bg-muted" />
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-44 rounded-lg bg-muted" />
             ))}
           </div>
         </div>
@@ -896,13 +458,11 @@ export default function OnboardingPage() {
   if (!isConfigured) {
     return (
       <div className="p-8">
-        <div className="text-center py-12">
-          <Rocket className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Authentication Required
-          </h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">
-            Please log in to access the onboarding guide.
+        <div className="py-12 text-center">
+          <Rocket className="mx-auto mb-4 h-12 w-12 text-muted-foreground" aria-hidden="true" />
+          <h1 className="text-lg font-semibold text-foreground">Authentication required</h1>
+          <p className="mt-2 text-muted-foreground">
+            Please log in to set up agentic payments.
           </p>
         </div>
       </div>
@@ -910,198 +470,83 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Platform Setup
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Follow these steps to get started with Sly payment protocols
-          </p>
-        </div>
-
-        {/* Sandbox Mode Toggle */}
-        <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-900 rounded-xl px-4 py-2">
-          <FlaskConical className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Sandbox Mode
-          </span>
-          <button
-            onClick={() => sandboxMutation.mutate(!onboardingState?.sandbox_mode)}
-            disabled={sandboxMutation.isPending}
-            className={cn(
-              'relative w-11 h-6 rounded-full transition-colors',
-              onboardingState?.sandbox_mode
-                ? 'bg-green-500'
-                : 'bg-gray-300 dark:bg-gray-700'
-            )}
-          >
-            <span
-              className={cn(
-                'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform',
-                onboardingState?.sandbox_mode ? 'left-5' : 'left-0.5'
-              )}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* Overall Progress */}
-      <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-8 mb-8 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold mb-2">Overall Progress</h2>
-            <p className="text-blue-100 mb-4">
-              {onboardingState?.has_any_protocol_enabled
-                ? 'Keep going! Complete the remaining steps to unlock all features.'
-                : 'Get started by enabling a protocol and completing the setup steps.'}
-            </p>
-            <div className="flex items-center gap-4">
-              {onboardingState?.has_wallet && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 rounded-full text-sm">
-                  <CheckCircle className="w-4 h-4" />
-                  Wallet Created
-                </span>
-              )}
-              {onboardingState?.has_payment_handler && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 rounded-full text-sm">
-                  <CheckCircle className="w-4 h-4" />
-                  Payment Handler Connected
-                </span>
-              )}
-              {!onboardingState?.has_wallet && !onboardingState?.has_payment_handler && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 rounded-full text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  No prerequisites completed yet
-                </span>
-              )}
-            </div>
-          </div>
-          <ProgressRing progress={onboardingState?.overall_progress || 0} />
-        </div>
-      </div>
-
-      {/* Resume Setup Card - Show when there are in-progress wizards */}
-      <ResumeSetupCard />
-
-      {/* Quick Start Templates - Always visible for easy access */}
-      <div className="mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-          Quick Start Templates
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {templates.map((template) => (
-            <TemplateCard
-              key={template.id}
-              template={template}
-              isRecommended={template.id === onboardingState?.recommended_template?.id}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Protocol Onboarding */}
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-          Protocol Setup
-        </h2>
-        <div className="space-y-4">
-          {protocols.map((protocolState) => (
-            <ProtocolOnboardingCard
-              key={protocolState.protocol_id}
-              state={protocolState}
-              onCompleteStep={(stepId) => {
-                setLoadingAction(`${protocolState.protocol_id}-${stepId}-complete`);
-                completeStepMutation.mutate({
-                  protocolId: protocolState.protocol_id,
-                  stepId,
-                });
-              }}
-              onSkipStep={(stepId) => {
-                setLoadingAction(`${protocolState.protocol_id}-${stepId}-skip`);
-                skipStepMutation.mutate({
-                  protocolId: protocolState.protocol_id,
-                  stepId,
-                });
-              }}
-              onReset={() => {
-                setLoadingAction(`${protocolState.protocol_id}-reset`);
-                resetMutation.mutate(protocolState.protocol_id);
-              }}
-              onEnable={() => {
-                setLoadingAction(`${protocolState.protocol_id}-enable`);
-                enableProtocolMutation.mutate(protocolState.protocol_id);
-              }}
-              isLoading={loadingAction?.startsWith(protocolState.protocol_id) && !loadingAction?.endsWith('-enable') || false}
-              isEnabling={loadingAction === `${protocolState.protocol_id}-enable`}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Help Section */}
-      <div className="mt-8 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
-        <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Need help?</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Not sure which protocol to start with? Here's a quick guide:
+    <div className="mx-auto max-w-4xl p-8">
+      {/* Hero */}
+      <header className="mb-10">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          Start accepting agentic payments
+        </h1>
+        <p className="mt-2 text-base text-muted-foreground">
+          Sly already provisioned everything you need. Pick what you want to do
+          and run one real test to see it work.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-yellow-100 dark:bg-yellow-950 flex items-center justify-center flex-shrink-0">
-              <Zap className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
-            </div>
-            <div>
-              <div className="font-medium text-gray-900 dark:text-white">
-                x402 Micropayments
-              </div>
-              <div className="text-gray-500 dark:text-gray-400">
-                Best for API monetization with pay-per-call pricing
-              </div>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950 flex items-center justify-center flex-shrink-0">
-              <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <div className="font-medium text-gray-900 dark:text-white">
-                AP2 Mandates
-              </div>
-              <div className="text-gray-500 dark:text-gray-400">
-                Best for recurring agent payments with spending limits
-              </div>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-950 flex items-center justify-center flex-shrink-0">
-              <ShoppingCart className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            </div>
-            <div>
-              <div className="font-medium text-gray-900 dark:text-white">
-                ACP Agent Commerce
-              </div>
-              <div className="text-gray-500 dark:text-gray-400">
-                Best for AI agents making purchases (Stripe/OpenAI compatible)
-              </div>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-950 flex items-center justify-center flex-shrink-0">
-              <Globe className="w-4 h-4 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <div className="font-medium text-gray-900 dark:text-white">
-                UCP Universal Commerce
-              </div>
-              <div className="text-gray-500 dark:text-gray-400">
-                Best for e-commerce with hosted checkout and identity linking
-              </div>
-            </div>
-          </div>
-        </div>
+      </header>
+
+      {/* Outcome cards — equal weight, no recommended bias */}
+      <div
+        className="grid gap-4 md:grid-cols-3"
+        role="radiogroup"
+        aria-label="Choose what you want to do"
+      >
+        {OUTCOMES.map((o) => {
+          const Icon = o.icon;
+          const isActive = selected === o.key;
+          return (
+            <Card
+              key={o.key}
+              className={cn(
+                'cursor-pointer transition-colors',
+                isActive
+                  ? 'border-primary ring-1 ring-primary'
+                  : 'hover:border-foreground/20',
+              )}
+            >
+              <CardContent className="p-5">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  onClick={() => setSelected(o.key)}
+                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-md"
+                >
+                  <span
+                    className={cn(
+                      'flex h-10 w-10 items-center justify-center rounded-lg',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-foreground',
+                    )}
+                  >
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <h2 className="mt-3 font-semibold text-foreground">{o.title}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">{o.blurb}</p>
+                </button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
+
+      {/* Selected outcome panel */}
+      {selected && (
+        <Card className="mt-6">
+          <CardContent className="p-6">
+            {(() => {
+              const o = OUTCOMES.find((x) => x.key === selected)!;
+              return (
+                <OutcomePanel
+                  key={o.key}
+                  outcome={o}
+                  state={onboardingState}
+                  credential={credential!}
+                  apiUrl={apiUrl}
+                />
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
