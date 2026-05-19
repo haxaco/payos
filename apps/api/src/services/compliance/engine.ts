@@ -19,6 +19,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { createNotification } from '../notifications.js';
+import { webhookService } from '../webhooks.js';
 
 export interface FlagInsert {
   tenant_id: string;
@@ -79,22 +81,79 @@ async function emitFlag(supabase: SupabaseClient<any>, flag: FlagInsert): Promis
   const { count } = await q;
   if ((count ?? 0) > 0) return false;
 
-  const { error } = await supabase.from('compliance_flags').insert({
-    tenant_id: flag.tenant_id,
-    flag_type: flag.flag_type,
-    reason_code: flag.reason_code,
-    risk_level: flag.risk_level,
-    reasons: flag.reasons,
-    description: flag.description,
-    status: 'open',
-    account_id: flag.account_id ?? null,
-    transfer_id: flag.transfer_id ?? null,
-    ai_analysis: flag.ai_analysis ?? {},
-  });
-  if (error) {
-    console.warn('[compliance-engine] flag insert failed:', error.message, flag.reason_code);
+  const { data: inserted, error } = await supabase
+    .from('compliance_flags')
+    .insert({
+      tenant_id: flag.tenant_id,
+      flag_type: flag.flag_type,
+      reason_code: flag.reason_code,
+      risk_level: flag.risk_level,
+      reasons: flag.reasons,
+      description: flag.description,
+      status: 'open',
+      account_id: flag.account_id ?? null,
+      transfer_id: flag.transfer_id ?? null,
+      ai_analysis: flag.ai_analysis ?? {},
+    })
+    .select('id, created_at')
+    .single();
+  if (error || !inserted) {
+    console.warn(
+      '[compliance-engine] flag insert failed:',
+      error?.message ?? 'no row returned',
+      flag.reason_code
+    );
     return false;
   }
+
+  // Fan out to notifications + webhooks. Both producers are fire-and-
+  // forget — a compliance flag is advisory; their failure must not
+  // un-raise it. Errors are logged but never propagate. The webhook
+  // dedupe key is the flag id itself, so even if the engine somehow
+  // re-emits the same flag the delivery layer won't double-fire.
+  const severityLabel =
+    flag.risk_level === 'critical'
+      ? 'Critical'
+      : flag.risk_level === 'high'
+        ? 'High-risk'
+        : flag.risk_level === 'medium'
+          ? 'New'
+          : 'Low-risk';
+  const message =
+    flag.reasons[0] || flag.description || `${flag.reason_code} (${flag.flag_type})`;
+  createNotification({
+    tenantId: flag.tenant_id,
+    type: 'compliance',
+    title: `${severityLabel} compliance flag: ${flag.reason_code}`,
+    message,
+    href: '/dashboard/compliance',
+    metadata: {
+      flag_id: (inserted as any).id,
+      flag_type: flag.flag_type,
+      reason_code: flag.reason_code,
+      risk_level: flag.risk_level,
+      account_id: flag.account_id ?? null,
+      transfer_id: flag.transfer_id ?? null,
+    },
+  }).catch((e: any) =>
+    console.warn('[compliance-engine] notification dispatch failed:', e?.message ?? e)
+  );
+  webhookService
+    .emitComplianceFlagRaised(flag.tenant_id, {
+      id: (inserted as any).id,
+      flag_type: flag.flag_type,
+      reason_code: flag.reason_code,
+      risk_level: flag.risk_level,
+      reasons: flag.reasons,
+      description: flag.description,
+      account_id: flag.account_id ?? null,
+      transfer_id: flag.transfer_id ?? null,
+      created_at: (inserted as any).created_at,
+    })
+    .catch((e: any) =>
+      console.warn('[compliance-engine] webhook dispatch failed:', e?.message ?? e)
+    );
+
   return true;
 }
 
