@@ -43,7 +43,7 @@ import {
 } from 'lucide-react';
 import { useSidebar } from './sidebar-context';
 import { useSidebarData } from './use-sidebar-data';
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 
 // --- Nav data ---
 
@@ -112,6 +112,8 @@ interface NavItemDef {
   icon: any;
   badge?: number;
   exact?: boolean;
+  /** Optional anchor for the product tour overlay (data-tour attribute). */
+  tourAnchor?: string;
 }
 
 // --- Reusable components ---
@@ -125,6 +127,7 @@ function CollapsibleSection({
   collapsed,
   href,
   children,
+  tourAnchor,
 }: {
   label: string;
   icon: any;
@@ -134,11 +137,13 @@ function CollapsibleSection({
   collapsed: boolean;
   href: string;
   children: ReactNode;
+  tourAnchor?: string;
 }) {
   if (collapsed) {
     return (
       <Link
         href={href}
+        data-tour={tourAnchor}
         className={cn(
           'w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
           isActive
@@ -156,6 +161,7 @@ function CollapsibleSection({
     <div className="space-y-1">
       <button
         onClick={onToggle}
+        data-tour={tourAnchor}
         className={cn(
           'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
           isActive
@@ -213,6 +219,28 @@ export function Sidebar() {
   // Collapsible state — auto-expand if pathname matches
   const [agentsExpanded, setAgentsExpanded] = useState(() => pathname.startsWith('/dashboard/agents'));
   const [agenticExpanded, setAgenticExpanded] = useState(() => pathname.startsWith('/dashboard/agentic-payments'));
+  // Expand the agentic-payments / agents sections when navigating INTO them
+  // from outside (e.g. via the product tour or any other deep link). We only
+  // act on the boundary transition so the user can still collapse the section
+  // manually while staying inside the route. We track the previous pathname
+  // via a ref to detect that boundary.
+  const prevPathRef = useRef(pathname);
+  useEffect(() => {
+    const prev = prevPathRef.current;
+    if (
+      pathname.startsWith('/dashboard/agentic-payments') &&
+      !prev.startsWith('/dashboard/agentic-payments')
+    ) {
+      setAgenticExpanded(true);
+    }
+    if (
+      pathname.startsWith('/dashboard/agents') &&
+      !prev.startsWith('/dashboard/agents')
+    ) {
+      setAgentsExpanded(true);
+    }
+    prevPathRef.current = pathname;
+  }, [pathname]);
   // Ops + Dev subgroup state. Default: COLLAPSED unless the current
   // path is inside the group (then auto-expand). localStorage preference
   // is applied *after* mount via useEffect so SSR and first client
@@ -269,11 +297,11 @@ export function Sidebar() {
 
   const coreNav: NavItemDef[] = [
     { href: '/dashboard', label: 'Home', icon: Home, exact: true },
-    { href: '/dashboard/onboarding', label: 'Setup Guide', icon: Rocket },
+    { href: '/dashboard/onboarding', label: 'Setup Guide', icon: Rocket, tourAnchor: 'nav-setup-guide' },
   ];
 
   const coreNavAfterAgentic: NavItemDef[] = [
-    { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet },
+    { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet, tourAnchor: 'nav-wallets' },
     { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
     { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
     { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
@@ -308,7 +336,7 @@ export function Sidebar() {
 
   const settingsNav: NavItemDef[] = [
     { href: '/dashboard/security/scopes', label: 'Scope Grants', icon: Shield },
-    { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+    { href: '/dashboard/settings', label: 'Settings', icon: Settings, tourAnchor: 'nav-settings' },
   ];
 
   // Filter agentic payments children by protocol status + role
@@ -340,6 +368,7 @@ export function Sidebar() {
     return (
       <Link
         href={item.href}
+        data-tour={item.tourAnchor}
         className={cn(
           'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
           active
@@ -430,6 +459,7 @@ export function Sidebar() {
           isActive={isAgentsActive}
           collapsed={collapsed}
           href="/dashboard/agents"
+          tourAnchor="nav-agents"
         >
           <NavItem
             item={{ href: '/dashboard/agents', label: 'Overview', icon: Bot, exact: true }}
@@ -465,9 +495,20 @@ export function Sidebar() {
         >
           {visibleAgenticChildren.map((item: any) => {
             if (item.children) {
+              // Map the protocol label to a `data-tour` anchor so the product
+              // tour can spotlight each protocol's group header.
+              const protocolAnchor =
+                item.label === 'UCP' ? 'nav-agentic-ucp'
+                : item.label === 'ACP' ? 'nav-agentic-acp'
+                : item.label === 'AP2' ? 'nav-agentic-ap2'
+                : item.label === 'x402' ? 'nav-agentic-x402'
+                : undefined;
               return (
                 <div key={item.label} className="space-y-1 mb-1">
-                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2 uppercase">
+                  <div
+                    data-tour={protocolAnchor}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2 uppercase"
+                  >
                     <item.icon className="w-3.5 h-3.5" />
                     <span>{item.label}</span>
                   </div>

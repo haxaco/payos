@@ -5,14 +5,17 @@ import { useQueryClient } from '@tanstack/react-query';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { LogOut, Settings, User, Search, ChevronDown, Check, Play, Square, AlertTriangle } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { ThemeToggleSimple } from '@/components/theme-toggle';
 import { GlobalSearch, useGlobalSearch } from '@/components/search/global-search';
 import { NotificationsCenter } from '@/components/notifications/notifications-center';
 import { useDemoMode } from '@/components/demo/demo-mode-context';
 import { ScenarioSelector } from '@/components/demo/scenario-selector';
+import { useTour } from '@/components/tour';
 import { useEnvironment, type Environment } from '@/lib/environment-context';
+import { useApiConfig, useApiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { Sparkles, Compass, Database } from 'lucide-react';
 
 interface HeaderProps {
   user: SupabaseUser | null;
@@ -25,9 +28,60 @@ export function Header({ user }: HeaderProps) {
   const [showProdConfirm, setShowProdConfirm] = useState(false);
   const [showProdGate, setShowProdGate] = useState(false);
   const [showScenarioSelector, setShowScenarioSelector] = useState(false);
+  // Sandbox-only "Demo" entry now opens a dropdown with two choices:
+  //   1. Take the tour     → opens the product-tour overlay (works on empty tenants)
+  //   2. Sales scenarios   → enters the existing demo-mode flow
+  // The two affordances live on the same trigger to keep the header lean.
+  const [showDemoMenu, setShowDemoMenu] = useState(false);
+  const [seedingSample, setSeedingSample] = useState(false);
+  const demoButtonRef = useRef<HTMLButtonElement>(null);
+  const apiFetch = useApiFetch();
+  const { apiUrl } = useApiConfig();
+
+  const handlePopulateSample = async () => {
+    setShowDemoMenu(false);
+    if (seedingSample) return;
+    setSeedingSample(true);
+    const toastId = toast.loading('Seeding sample data…');
+    try {
+      const res = await apiFetch(`${apiUrl}/v1/onboarding/sample-seed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json();
+      const r = body?.data ?? body;
+      if (!r?.ok) {
+        toast.error(r?.error || 'Could not populate sample data', { id: toastId });
+        return;
+      }
+      const counts = r.created || {};
+      const totalNew =
+        (counts.accounts || 0) +
+        (counts.agents || 0) +
+        (counts.x402_endpoints || 0) +
+        (counts.acp_checkouts || 0);
+      if (r.alreadySeeded || totalNew === 0) {
+        toast.success('Sample data already in place', {
+          id: toastId,
+          description: 'Your sandbox already has the demo agent, endpoint and checkout.',
+        });
+      } else {
+        toast.success(`Seeded ${totalNew} sample ${totalNew === 1 ? 'item' : 'items'}`, {
+          id: toastId,
+          description: 'Explore Agents, x402 Endpoints and ACP Checkouts to see them.',
+        });
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Sample seed failed', { id: toastId });
+    } finally {
+      setSeedingSample(false);
+    }
+  };
   const { environment, setEnvironment, productionApproved, productionStatus } = useEnvironment();
   const globalSearch = useGlobalSearch();
   const demoMode = useDemoMode();
+  const tour = useTour();
   const queryClient = useQueryClient();
 
   const handleSignOut = async () => {
@@ -95,6 +149,8 @@ export function Header({ user }: HeaderProps) {
           <div className="relative">
             <button
               onClick={() => setShowEnvMenu(!showEnvMenu)}
+              data-tour="header-env-switch"
+              aria-label={`Switch environment, currently ${environment}`}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${environment === 'sandbox'
                 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
                 : 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800'
@@ -140,18 +196,18 @@ export function Header({ user }: HeaderProps) {
             )}
           </div>
 
-          {/* Demo Mode Toggle — sandbox only */}
+          {/* Demo button — sandbox only.
+              Click opens a small menu with two affordances:
+                • Take the tour (always available) — opens the product tour overlay
+                • Sales scenarios (active state when running) — enters demo mode
+              We keep `demo-mode` semantics intact for the existing scenario flow. */}
           {environment === 'sandbox' && (
             <div className="relative">
               <button
-                onClick={() => {
-                  if (demoMode.active) {
-                    setShowScenarioSelector(!showScenarioSelector);
-                  } else {
-                    demoMode.setActive(true);
-                    setShowScenarioSelector(true);
-                  }
-                }}
+                ref={demoButtonRef}
+                onClick={() => setShowDemoMenu((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={showDemoMenu}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   demoMode.active
                     ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800'
@@ -164,7 +220,80 @@ export function Header({ user }: HeaderProps) {
                   <Play className="w-3.5 h-3.5" />
                 )}
                 Demo
+                <ChevronDown className="w-3.5 h-3.5" />
               </button>
+              {showDemoMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowDemoMenu(false)}
+                  />
+                  <div
+                    role="menu"
+                    aria-label="Demo options"
+                    className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-lg z-20 overflow-hidden"
+                  >
+                    <div className="p-1">
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDemoMenu(false);
+                          tour.triggerRef.current = demoButtonRef.current;
+                          tour.open(0);
+                        }}
+                        className="w-full flex items-start gap-3 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      >
+                        <div className="flex-shrink-0 mt-0.5 p-1.5 bg-blue-100 dark:bg-blue-950 rounded-md">
+                          <Compass className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">Take the tour</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            1-minute walkthrough of every Sly primitive.
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        role="menuitem"
+                        onClick={handlePopulateSample}
+                        disabled={seedingSample}
+                        className="w-full flex items-start gap-3 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-progress"
+                      >
+                        <div className="flex-shrink-0 mt-0.5 p-1.5 bg-emerald-100 dark:bg-emerald-950 rounded-md">
+                          <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {seedingSample ? 'Populating…' : 'Populate sample data'}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Seed your sandbox with a demo agent, x402 endpoint and ACP checkout.
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDemoMenu(false);
+                          if (!demoMode.active) demoMode.setActive(true);
+                          setShowScenarioSelector(true);
+                        }}
+                        className="w-full flex items-start gap-3 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      >
+                        <div className="flex-shrink-0 mt-0.5 p-1.5 bg-purple-100 dark:bg-purple-950 rounded-md">
+                          <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">Sales scenarios</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Run a scripted demo against seeded data.
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
               {showScenarioSelector && (
                 <ScenarioSelector onClose={() => setShowScenarioSelector(false)} />
               )}

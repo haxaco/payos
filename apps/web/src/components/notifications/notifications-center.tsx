@@ -81,6 +81,8 @@ export function NotificationsCenter() {
       {/* Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        data-tour="header-notifications"
+        aria-label="Notifications"
         className="relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
       >
         <Bell className="w-5 h-5" />

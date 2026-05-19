@@ -168,6 +168,10 @@ export async function runSampleSeed(c: Context): Promise<SampleSeedResult> {
     }
 
     // ── 2. agent (auto-creates a wallet in sandbox) ───────────────────────
+    // Prefer the named demo agent; otherwise reuse ANY active agent the
+    // tenant already has (avoids the per-tenant `max_agents` quota when a
+    // mature sandbox tenant runs the seeder — the demo experience only
+    // needs *an* agent to point ACP checkouts at, not strictly a new one).
     {
       const { data } = await supabase
         .from('agents')
@@ -175,6 +179,16 @@ export async function runSampleSeed(c: Context): Promise<SampleSeedResult> {
         .eq('tenant_id', ctx.tenantId)
         .eq('environment', env)
         .eq('name', DEMO_AGENT_NAME)
+        .limit(1);
+      if (data?.[0]) references.agentId = data[0].id;
+    }
+    if (!references.agentId) {
+      const { data } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('tenant_id', ctx.tenantId)
+        .eq('environment', env)
+        .order('created_at', { ascending: true })
         .limit(1);
       if (data?.[0]) references.agentId = data[0].id;
     }
@@ -189,6 +203,10 @@ export async function runSampleSeed(c: Context): Promise<SampleSeedResult> {
       });
       references.agentId = pickId(r.json);
       if (!references.agentId) {
+        // Agent creation failed (e.g. quota, validation). Don't abort the
+        // whole seed — the x402 endpoint + ACP checkout steps below are
+        // independent of agent creation and still useful. Just surface
+        // the reason and continue.
         return {
           ...finish(),
           ok: false,
