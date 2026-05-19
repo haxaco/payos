@@ -1549,6 +1549,18 @@ ap2.get('/analytics', async (c) => {
           active: activeMandates,
           revoked: revokedMandates,
           pending: mandateList.filter((m: any) => m.status === 'pending').length,
+          // The analytics UI also renders completed/cancelled/expired; without
+          // these keys those cards were permanently stuck at 0 on real data.
+          completed: mandateList.filter((m: any) => m.status === 'completed').length,
+          cancelled: mandateList.filter((m: any) => m.status === 'cancelled' || m.status === 'revoked').length,
+          expired: mandateList.filter((m: any) => m.status === 'expired').length,
+        },
+        // UI reads mandatesByType.{payment,cart,intent}; the route never
+        // returned this key, so the "Mandates by Type" card always showed 0/0/0.
+        mandatesByType: {
+          payment: mandateList.filter((m: any) => (m.mandate_type || m.type) === 'payment').length,
+          cart: mandateList.filter((m: any) => (m.mandate_type || m.type) === 'cart').length,
+          intent: mandateList.filter((m: any) => (m.mandate_type || m.type) === 'intent').length,
         },
         paymentsByStatus: {
           completed: transfers?.length || 0,

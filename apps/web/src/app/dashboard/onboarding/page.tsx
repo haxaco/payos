@@ -243,7 +243,7 @@ async function enableProtocol(
   authToken: string,
   apiUrl: string,
   protocolId: ProtocolId
-): Promise<{ success: boolean; error?: string; missing_prerequisites?: string[] }> {
+): Promise<{ success: boolean; error?: string; missing_prerequisites?: string[]; message?: string }> {
   const response = await fetch(
     `${apiUrl}/v1/organization/protocols/${protocolId}/enable`,
     {
@@ -255,8 +255,20 @@ async function enableProtocol(
     }
   );
   const json = await response.json();
-  // Handle wrapped response format: { success: true, data: {...} }
-  return json.data || json;
+  if (response.ok) {
+    // Wrapped success: { success: true, data: {...} }
+    const data = json.data || json;
+    return { success: true, ...data };
+  }
+  // Error: API returns { error, details: { missing: [...], message } }
+  // (the prerequisite list + a human message live UNDER `details`, not at
+  // the top level — reading them flat left the helpful message dead code).
+  return {
+    success: false,
+    error: json.error,
+    missing_prerequisites: json.details?.missing,
+    message: json.details?.message,
+  };
 }
 
 // Progress ring component
@@ -829,9 +841,12 @@ export default function OnboardingPage() {
         queryClient.invalidateQueries({ queryKey: ['protocol-status'] });
         toast.success(`${protocolId.toUpperCase()} protocol enabled`);
       } else {
-        if (result.missing_prerequisites) {
+        if (result.missing_prerequisites?.length || result.message) {
           toast.error('Prerequisites not met', {
-            description: result.missing_prerequisites.join(', '),
+            description:
+              result.message ||
+              result.missing_prerequisites?.join(', ') ||
+              result.error,
           });
         } else {
           toast.error('Failed to enable protocol', { description: result.error });
