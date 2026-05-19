@@ -24,7 +24,13 @@ export function mapAccountFromDb(row: any): Account {
     verificationTier: row.verification_tier || 0,
     verificationStatus: row.verification_status || 'unverified',
     verificationType: row.verification_type || (row.type === 'person' ? 'kyc' : 'kyb'),
-    // Flat balance fields for client compatibility
+    // Flat balance fields for client compatibility.
+    // NOTE: balance_total/balance_available are LEGACY/ADVISORY stored columns.
+    // The authoritative headline balance is the SUM of the account's wallets,
+    // derived by the route handlers (see services/balances.ts
+    // deriveAccountBalance + routes/accounts.ts applyDerivedTotal). This pure
+    // mapper still emits the stored columns so non-async callers keep working;
+    // account read endpoints overwrite total/available with the derived sum.
     balanceTotal: parseFloat(row.balance_total) || 0,
     balanceAvailable: parseFloat(row.balance_available) || 0,
     balanceInStreams: parseFloat(row.balance_in_streams) || 0,
