@@ -23,10 +23,17 @@ interface ApiKeyRecord {
   name: string;
   description: string | null;
   environment: 'test' | 'live';
-  key_prefix: string;
+  prefix: string;
   status: 'active' | 'revoked';
-  created_at: string;
-  last_used_at: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+// The API can return ISO strings; never render "Invalid Date".
+function fmtDate(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
 }
 
 export default function ApiKeysPage() {
@@ -47,8 +54,15 @@ export default function ApiKeysPage() {
     try {
       const res = await apiFetch(`${apiUrl}/v1/api-keys`);
       const json = await res.json();
-      const data = json.data || json;
-      setKeys(Array.isArray(data) ? data : []);
+      // The API returns { apiKeys: [...] }; the response-wrapper nests that
+      // under `data` ({ success, data: { apiKeys: [...] }, meta }). Be robust
+      // to wrapped/flat and to the apiKeys-vs-data key so the list isn't
+      // silently empty.
+      const payload = json?.data ?? json;
+      const list = Array.isArray(payload)
+        ? payload
+        : payload?.apiKeys ?? payload?.data ?? [];
+      setKeys(Array.isArray(list) ? list : []);
     } catch {
       // Non-fatal
     }
@@ -71,12 +85,27 @@ export default function ApiKeysPage() {
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error(json.error || 'Failed to create key');
+        // Structured errors return `error` as an object {code,message,...};
+        // legacy ones as a string. Never toast "[object Object]".
+        const msg =
+          typeof json?.error === 'string'
+            ? json.error
+            : json?.error?.message || json?.message || 'Failed to create key';
+        toast.error(msg);
         setCreating(false);
         return;
       }
-      const data = json.data || json;
-      setNewlyCreatedKey(data.key);
+      // Backend returns { apiKey: { ...fields, key }, warning }; the
+      // response-wrapper nests it under `data`. The one-time secret is at
+      // payload.apiKey.key — reading payload.key left it undefined so the
+      // "save your key" panel never rendered and the secret was lost.
+      const payload = json?.data ?? json;
+      const created = payload?.apiKey ?? payload?.data ?? payload;
+      const secret = created?.key ?? null;
+      if (!secret) {
+        toast.error('Key created but the secret was not returned — check the API keys list and recreate if needed.');
+      }
+      setNewlyCreatedKey(secret);
       setShowCreateForm(false);
       setNewKeyName('');
       toast.success(`${env === 'test' ? 'Sandbox' : 'Production'} API key created`);
@@ -89,12 +118,18 @@ export default function ApiKeysPage() {
 
   const handleRevoke = async (id: string) => {
     try {
-      const res = await apiFetch(`${apiUrl}/v1/api-keys/${id}/revoke`, {
-        method: 'POST',
-        body: JSON.stringify({ reason: 'Revoked from dashboard' }),
+      // Backend route is DELETE /v1/api-keys/:id (there is no POST
+      // /:id/revoke — that 404'd and surfaced as "Failed to revoke key").
+      const res = await apiFetch(`${apiUrl}/v1/api-keys/${id}`, {
+        method: 'DELETE',
       });
       if (!res.ok) {
-        toast.error('Failed to revoke key');
+        let msg = 'Failed to revoke key';
+        try {
+          const j = await res.json();
+          msg = typeof j?.error === 'string' ? j.error : j?.error?.message || msg;
+        } catch { /* keep default */ }
+        toast.error(msg);
         return;
       }
       toast.success('API key revoked');
@@ -250,10 +285,10 @@ export default function ApiKeysPage() {
                         </Badge>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <code className="font-mono">{key.key_prefix}••••</code>
-                        <span>Created {new Date(key.created_at).toLocaleDateString()}</span>
-                        {key.last_used_at && (
-                          <span>Last used {new Date(key.last_used_at).toLocaleDateString()}</span>
+                        <code className="font-mono">{key.prefix}••••</code>
+                        {fmtDate(key.createdAt) && <span>Created {fmtDate(key.createdAt)}</span>}
+                        {fmtDate(key.lastUsedAt) && (
+                          <span>Last used {fmtDate(key.lastUsedAt)}</span>
                         )}
                       </div>
                     </div>
@@ -262,7 +297,7 @@ export default function ApiKeysPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleCopy(key.key_prefix, key.id)}
+                      onClick={() => handleCopy(key.prefix, key.id)}
                       title="Copy prefix"
                     >
                       {copiedId === key.id ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
@@ -302,7 +337,7 @@ export default function ApiKeysPage() {
                       <span className="text-sm font-medium line-through">{key.name}</span>
                       <Badge variant="destructive" className="text-[10px]">Revoked</Badge>
                     </div>
-                    <code className="text-xs font-mono text-muted-foreground">{key.key_prefix}••••</code>
+                    <code className="text-xs font-mono text-muted-foreground">{key.prefix}••••</code>
                   </div>
                 </div>
               ))}
