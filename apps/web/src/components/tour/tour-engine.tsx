@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { useRouter, usePathname } from 'next/navigation';
 import { cn } from '@sly/ui';
 import { useTour } from './use-tour';
-import { TOUR_STEPS, type TourPlacement, type TourStep } from './tour-steps';
+import { SLY_DOCS_URL, TOUR_STEPS, type TourPlacement, type TourStep } from './tour-steps';
 
 // Spotlight padding around the target rect.
 const SPOTLIGHT_PAD = 8;
@@ -384,14 +384,28 @@ export function TourEngine() {
         </p>
 
         <div className="mt-5 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={tour.skip}
-            className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-            aria-label="Skip the product tour"
-          >
-            Skip
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={tour.skip}
+              className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+              aria-label="Skip the product tour"
+            >
+              Skip
+            </button>
+            <span aria-hidden="true" className="text-gray-300 dark:text-gray-700">
+              ·
+            </span>
+            <a
+              href={SLY_DOCS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+              aria-label="Open Sly documentation in a new tab"
+            >
+              Docs ↗
+            </a>
+          </div>
 
           <span
             className="text-xs font-medium text-gray-500 dark:text-gray-400 tabular-nums"

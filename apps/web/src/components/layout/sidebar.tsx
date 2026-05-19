@@ -302,8 +302,8 @@ export function Sidebar() {
 
   const coreNavAfterAgentic: NavItemDef[] = [
     { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet, tourAnchor: 'nav-wallets' },
-    { href: '/dashboard/accounts', label: 'Accounts', icon: Users },
-    { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight },
+    { href: '/dashboard/accounts', label: 'Accounts', icon: Users, tourAnchor: 'nav-accounts' },
+    { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight, tourAnchor: 'nav-transactions' },
     { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
   ];
 
@@ -314,7 +314,7 @@ export function Sidebar() {
     { href: '/dashboard/funding', label: 'Funding', icon: DollarSign },
     { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark },
     { href: '/dashboard/reports', label: 'Reports', icon: FileText },
-    { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: complianceCount || undefined },
+    { href: '/dashboard/compliance', label: 'Compliance', icon: Shield, badge: complianceCount || undefined, tourAnchor: 'nav-compliance' },
     { href: '/dashboard/disputes', label: 'Disputes', icon: Shield },
     { href: '/dashboard/workflows', label: 'Workflows', icon: GitBranch },
     { href: '/dashboard/fx', label: 'FX Rates', icon: TrendingUp },
