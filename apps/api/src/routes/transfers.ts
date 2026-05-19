@@ -25,6 +25,7 @@ import {
   sendTransferFailedEmail,
   getNotificationRecipients,
 } from '../services/email.js';
+import { createNotification } from '../services/notifications.js';
 
 const transfers = new Hono();
 
@@ -428,6 +429,15 @@ transfers.post('/', async (c) => {
         }
       }).catch(() => {});
 
+      // In-app notification (fire-and-forget, tenant-wide).
+      createNotification({
+        tenantId: ctx.tenantId,
+        type: ctx.actorType === 'agent' ? 'agent_action' : 'system',
+        title: 'Transfer failed',
+        message: `${amount} USDC to ${toAccount.name} failed: ${error.message}`,
+        href: `/dashboard/transfers/${transfer.id}`,
+      }).catch(err => console.error('[notifications] transfer failed notify error:', err));
+
       throw error;
     }
 
@@ -443,6 +453,15 @@ transfers.post('/', async (c) => {
         }).catch(err => console.error('[email] Transfer completed email error:', err));
       }
     }).catch(() => {});
+
+    // In-app notification (fire-and-forget, tenant-wide).
+    createNotification({
+      tenantId: ctx.tenantId,
+      type: ctx.actorType === 'agent' ? 'agent_action' : 'system',
+      title: 'Transfer completed',
+      message: `${amount} USDC to ${toAccount.name} completed`,
+      href: `/dashboard/transfers/${transfer.id}`,
+    }).catch(err => console.error('[notifications] transfer completed notify error:', err));
   }
   
   // Mark quote as used

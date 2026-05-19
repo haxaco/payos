@@ -1,67 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Bell, Bot, Activity, Shield, Check, X } from 'lucide-react';
+import { Bell, Bot, Activity, Shield, Check, X, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatRelativeTime } from '@sly/ui';
-
-interface Notification {
-  id: string;
-  type: 'agent_action' | 'stream_alert' | 'compliance' | 'system';
-  title: string;
-  message: string;
-  timestamp: string;
-  read: boolean;
-  href?: string;
-}
-
-// Mock notifications
-const mockNotifications: Notification[] = [
-  {
-    id: 'notif-1',
-    type: 'agent_action',
-    title: 'Payroll Autopilot',
-    message: 'Completed 12 scheduled payments ($24,500 total)',
-    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    read: false,
-    href: '/dashboard/agents/payroll-autopilot',
-  },
-  {
-    id: 'notif-2',
-    type: 'stream_alert',
-    title: 'Stream Health Warning',
-    message: 'Stream to Carlos Martinez has < 48h runway',
-    timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    read: false,
-    href: '/dashboard/streams',
-  },
-  {
-    id: 'notif-3',
-    type: 'compliance',
-    title: 'Review Required',
-    message: 'Transaction #TXN-456 flagged for manual review',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    read: true,
-    href: '/dashboard/compliance',
-  },
-  {
-    id: 'notif-4',
-    type: 'agent_action',
-    title: 'Treasury Manager',
-    message: 'Rebalanced MXN corridor (+$5,000)',
-    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    read: true,
-    href: '/dashboard/agents/treasury-manager',
-  },
-  {
-    id: 'notif-5',
-    type: 'system',
-    title: 'System Update',
-    message: 'New features available: Agent Quick Actions',
-    timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    read: true,
-  },
-];
+import { useApiClient } from '@/lib/api-client';
+import { getApiErrorMessage } from '@/lib/api-error';
+import type { Notification } from '@sly/api-client';
 
 const notificationIcons = {
   agent_action: Bot,
@@ -78,29 +24,62 @@ const notificationColors = {
 };
 
 export function NotificationsCenter() {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState(mockNotifications);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  const markAsRead = (id: string) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
-    );
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
   };
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  };
+  const {
+    data: listData,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api!.notifications.list({ limit: 30 }),
+    enabled: !!api,
+    refetchInterval: 45000,
+    refetchOnWindowFocus: true,
+  });
 
-  const dismissNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
+  const { data: unreadData } = useQuery({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: () => api!.notifications.unreadCount(),
+    enabled: !!api,
+    refetchInterval: 45000,
+    refetchOnWindowFocus: true,
+  });
+
+  const notifications: Notification[] = (listData as any)?.data ?? [];
+  const unreadCount = unreadData?.count ?? 0;
+
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) => api!.notifications.markRead(id),
+    onSuccess: invalidate,
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: () => api!.notifications.markAllRead(),
+    onSuccess: invalidate,
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: (id: string) => api!.notifications.dismiss(id),
+    onSuccess: invalidate,
+  });
+
+  const markAsRead = (id: string) => markReadMutation.mutate(id);
+  const markAllAsRead = () => markAllReadMutation.mutate();
+  const dismissNotification = (id: string) => dismissMutation.mutate(id);
 
   return (
     <div className="relative">
       {/* Bell Button */}
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
       >
@@ -115,7 +94,7 @@ export function NotificationsCenter() {
       {/* Dropdown */}
       {isOpen && (
         <>
-          <div 
+          <div
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
@@ -135,17 +114,29 @@ export function NotificationsCenter() {
 
             {/* Notifications List */}
             <div className="max-h-[400px] overflow-y-auto">
-              {notifications.length === 0 ? (
+              {isLoading ? (
+                <div className="p-8 text-center">
+                  <Loader2 className="w-8 h-8 text-gray-300 dark:text-gray-700 mx-auto mb-3 animate-spin" />
+                  <p className="text-gray-500 dark:text-gray-400">Loading notifications…</p>
+                </div>
+              ) : isError ? (
+                <div className="p-8 text-center">
+                  <AlertCircle className="w-12 h-12 text-red-300 dark:text-red-800 mx-auto mb-3" />
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    {getApiErrorMessage(error, "Couldn't load notifications")}
+                  </p>
+                </div>
+              ) : notifications.length === 0 ? (
                 <div className="p-8 text-center">
                   <Bell className="w-12 h-12 text-gray-300 dark:text-gray-700 mx-auto mb-3" />
-                  <p className="text-gray-500 dark:text-gray-400">No notifications</p>
+                  <p className="text-gray-500 dark:text-gray-400">You&apos;re all caught up</p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-200 dark:divide-gray-800">
                   {notifications.map((notification) => {
                     const Icon = notificationIcons[notification.type];
                     const content = (
-                      <div 
+                      <div
                         className={`px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
                           !notification.read ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
                         }`}
@@ -198,8 +189,8 @@ export function NotificationsCenter() {
 
                     if (notification.href) {
                       return (
-                        <Link 
-                          key={notification.id} 
+                        <Link
+                          key={notification.id}
                           href={notification.href}
                           onClick={() => {
                             markAsRead(notification.id);
@@ -238,4 +229,3 @@ export function NotificationsCenter() {
     </div>
   );
 }
-

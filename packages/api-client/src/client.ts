@@ -5,6 +5,8 @@ import type {
   AccountBalance,
   CreateAccountInput,
   AccountsListParams,
+  Notification,
+  NotificationsListParams,
   Agent,
   AgentLimits,
   CreateAgentInput,
@@ -370,6 +372,43 @@ export class SlyClient {
      */
     activate: (id: string) =>
       this.post<{ data: { accountId: string; status: string } }>(`/accounts/${id}/activate`).then(r => r.data),
+  };
+
+  // ============================================
+  // Notifications API (in-app dashboard drawer)
+  // ============================================
+
+  notifications = {
+    /**
+     * List notifications, newest first. Returns the wrapped paginated
+     * envelope (consistent with `accounts.list`).
+     */
+    list: (params?: NotificationsListParams) =>
+      this.get<PaginatedResponse<Notification>>('/notifications', params),
+
+    /**
+     * Unread notification count for the current recipient.
+     */
+    unreadCount: () =>
+      this.get<{ data: { count: number } }>('/notifications/unread-count').then(r => r.data),
+
+    /**
+     * Mark a single notification read.
+     */
+    markRead: (id: string) =>
+      this.post<{ data: { id: string; read: boolean } }>(`/notifications/${id}/read`).then(r => r.data),
+
+    /**
+     * Mark all unread notifications read for the current recipient.
+     */
+    markAllRead: () =>
+      this.post<{ data: { success: boolean } }>('/notifications/read-all').then(r => r.data),
+
+    /**
+     * Dismiss (delete) a notification.
+     */
+    dismiss: (id: string) =>
+      this.delete<{ data: { id: string; deleted: boolean } }>(`/notifications/${id}`).then(r => r.data),
   };
 
   // ============================================

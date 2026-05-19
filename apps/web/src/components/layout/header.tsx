@@ -23,8 +23,9 @@ export function Header({ user }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvMenu, setShowEnvMenu] = useState(false);
   const [showProdConfirm, setShowProdConfirm] = useState(false);
+  const [showProdGate, setShowProdGate] = useState(false);
   const [showScenarioSelector, setShowScenarioSelector] = useState(false);
-  const { environment, setEnvironment } = useEnvironment();
+  const { environment, setEnvironment, productionApproved, productionStatus } = useEnvironment();
   const globalSearch = useGlobalSearch();
   const demoMode = useDemoMode();
   const queryClient = useQueryClient();
@@ -40,6 +41,13 @@ export function Header({ user }: HeaderProps) {
   const handleEnvironmentChange = (env: Environment) => {
     if (env === 'production' && environment !== 'production') {
       setShowEnvMenu(false);
+      // Open beta: production is gated until the tenant is approved. Show a
+      // clear modal that explains the approval process (and, depending on
+      // status, routes to the declaration form or asks them to wait).
+      if (!productionApproved) {
+        setShowProdGate(true);
+        return;
+      }
       setShowProdConfirm(true);
       return;
     }
@@ -277,6 +285,71 @@ export function Header({ user }: HeaderProps) {
           </div>
         </>
       )}
+
+      {/* Production Access Gate (open beta — approval required) */}
+      {showProdGate && (() => {
+        const underReview =
+          productionStatus === 'declaration_pending' ||
+          productionStatus === 'production_suspended';
+        const denied = productionStatus === 'production_denied';
+        return (
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowProdGate(false)} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-950 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {underReview ? 'Production access — under review' : 'Production access requires approval'}
+                  </h3>
+                </div>
+
+                {underReview ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    Your request to move real funds is <strong>being reviewed</strong>. We approve
+                    accounts manually during this open beta — please hang tight and we&apos;ll email
+                    you as soon as you&apos;re approved. You can keep building in Sandbox meanwhile.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                      Sly is in <strong>open beta</strong>. Production (real funds on Base mainnet)
+                      is gated behind a quick approval so we can keep the rollout safe.
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                      {denied
+                        ? 'Your previous request was declined — you can review the notes and re-submit with more detail.'
+                        : 'Tell us a little about your use case (a few fields). We review each request manually and email you with a decision — then you can switch to Production.'}
+                    </p>
+                  </>
+                )}
+
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setShowProdGate(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    {underReview ? 'Got it' : 'Not now'}
+                  </button>
+                  {!underReview && (
+                    <button
+                      onClick={() => {
+                        setShowProdGate(false);
+                        router.push('/dashboard/settings/production-access');
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
+                    >
+                      {denied ? 'Review & re-apply' : 'Request production access'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </>
   );
 }

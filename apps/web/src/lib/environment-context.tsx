@@ -71,7 +71,12 @@ export function EnvironmentProvider({ children }: { children: ReactNode }) {
       });
       if (!res.ok) return;
       const body = await res.json();
-      setProductionStatus((body?.status as ProductionAccessStatus) || 'unknown');
+      // /v1/tenants/production-status is wrapped by the response middleware:
+      // { success, data: { status, ... }, meta }. Reading body.status (flat)
+      // left productionStatus permanently 'unknown' → the toggle silently
+      // locked for everyone and approved tenants could never switch.
+      const payload = body?.data ?? body;
+      setProductionStatus((payload?.status as ProductionAccessStatus) || 'unknown');
     } catch {
       // Non-fatal — leave status 'unknown' (treated as not approved).
     }
