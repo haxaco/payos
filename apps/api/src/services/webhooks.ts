@@ -95,6 +95,9 @@ export const WEBHOOK_EVENT_TYPES = {
   'payment.approval_decided': 'An agent payment approval was approved or rejected',
   'payment.approval_executed': 'An approved agent payment was executed',
 
+  // Compliance events (emitted by the periodic flag engine)
+  'compliance.flag.raised': 'A compliance flag was raised on a transfer, account or pattern',
+
   // Test event
   'webhook.test': 'Test webhook event',
 } as const;
@@ -647,6 +650,49 @@ export class WebhookService {
         },
       },
       { idempotencyKey: `${task.id}:input_required:${reason}` },
+    );
+  }
+
+  /**
+   * Emit a webhook event when the compliance flag engine raises a flag.
+   * Idempotency key is the flag id itself — the engine already dedupes
+   * flag inserts by (tenant_id, reason_code, scope), so one flag = at
+   * most one webhook event per endpoint.
+   */
+  async emitComplianceFlagRaised(
+    tenantId: string,
+    flag: {
+      id: string;
+      flag_type: 'transaction' | 'pattern' | 'account';
+      reason_code: string;
+      risk_level: 'low' | 'medium' | 'high' | 'critical';
+      reasons: string[];
+      description?: string | null;
+      account_id?: string | null;
+      transfer_id?: string | null;
+      created_at?: string;
+    },
+  ): Promise<string[]> {
+    return this.queueWebhook(
+      tenantId,
+      {
+        type: 'compliance.flag.raised',
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        data: {
+          flag_id: flag.id,
+          flag_type: flag.flag_type,
+          reason_code: flag.reason_code,
+          risk_level: flag.risk_level,
+          reasons: flag.reasons,
+          description: flag.description ?? null,
+          account_id: flag.account_id ?? null,
+          transfer_id: flag.transfer_id ?? null,
+          created_at: flag.created_at ?? new Date().toISOString(),
+          dashboard_url: '/dashboard/compliance',
+        },
+      },
+      { idempotencyKey: `${flag.id}:compliance.flag.raised` },
     );
   }
 
