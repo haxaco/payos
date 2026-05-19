@@ -37,6 +37,7 @@ import { CompleteCheckoutDialog } from '@/components/acp/complete-checkout-dialo
 import { PolicyCheckPanel, deriveCheckoutPolicyRules } from '@/components/policy-check-panel';
 import { PaymentHandlerDisplay } from '@/components/payment/payment-logos';
 import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 import { useState } from 'react';
 
 export default function CheckoutDetailPage() {
@@ -61,7 +62,7 @@ export default function CheckoutDetailPage() {
             toast.success('Checkout cancelled');
             refetch();
         } catch (error) {
-            toast.error('Failed to cancel checkout');
+            toast.error(getApiErrorMessage(error, 'Failed to cancel checkout'));
         }
     };
 
@@ -196,7 +197,7 @@ export default function CheckoutDetailPage() {
                                     <div className="col-span-2">
                                         <div className="text-sm font-medium text-muted-foreground">Transaction</div>
                                         <Link
-                                            href={`/dashboard/transactions/${checkout.transfer_id}`}
+                                            href={`/dashboard/transfers/${checkout.transfer_id}`}
                                             className="mt-1 text-primary hover:underline flex items-center gap-1"
                                         >
                                             {checkout.transfer_id}

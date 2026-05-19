@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { Activity, Plus, Search, Filter, Play, Pause, X } from 'lucide-react';
+import { Activity, Plus, Search, Play, Pause, X } from 'lucide-react';
 import Link from 'next/link';
 import type { Stream } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
@@ -145,10 +145,7 @@ export default function StreamsPage() {
             className="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-          <Filter className="h-4 w-4" />
-          Filter
-        </button>
+        {/* Filter removed: was a dead control with no handler — restore with real status/health filters when wired. */}
       </div>
 
       {/* Streams List */}
@@ -159,7 +156,7 @@ export default function StreamsPage() {
           search ? (
             <SearchEmptyState query={search} />
           ) : (
-            <StreamsEmptyState />
+            <StreamsEmptyState onAction={() => setShowCreate(true)} />
           )
         ) : (
           filteredStreams.map((stream: any) => (

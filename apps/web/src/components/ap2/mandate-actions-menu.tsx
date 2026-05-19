@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useApiClient } from "@/lib/api-client";
 import { toast } from "sonner";
+import { getApiErrorMessage } from "@/lib/api-error";
 import {
     Button,
     DropdownMenu,
@@ -53,8 +54,8 @@ export function MandateActionsMenu({
             queryClient.invalidateQueries({ queryKey: ["mandate", mandate.id] });
             queryClient.invalidateQueries({ queryKey: ["ap2-mandates"] });
         },
-        onError: () => {
-            toast.error("Failed to cancel mandate");
+        onError: (error) => {
+            toast.error(getApiErrorMessage(error, 'Failed to cancel mandate'));
         }
     });
 

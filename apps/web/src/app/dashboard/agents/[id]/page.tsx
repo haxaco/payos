@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { useQuery as useTanstackQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 import type { Agent, Stream, AgentLimits } from '@sly/api-client';
 import { AgentAvatar } from '@/components/agents/agent-avatar';
 import { AvatarUpload } from '@/components/agents/avatar-upload';
@@ -131,6 +132,7 @@ export default function AgentDetailPage() {
       setAgent(updated);
     } catch (error) {
       console.error('Failed to verify agent:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to verify agent'));
     } finally {
       setActionLoading(false);
     }
@@ -144,6 +146,7 @@ export default function AgentDetailPage() {
       setAgent(updated);
     } catch (error) {
       console.error('Failed to suspend agent:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to suspend agent'));
     } finally {
       setActionLoading(false);
     }
@@ -157,6 +160,7 @@ export default function AgentDetailPage() {
       setAgent(updated);
     } catch (error) {
       console.error('Failed to activate agent:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to activate agent'));
     } finally {
       setActionLoading(false);
     }
@@ -172,6 +176,7 @@ export default function AgentDetailPage() {
       setNewToken(result.credentials.token);
     } catch (error) {
       console.error('Failed to rotate token:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to rotate token'));
     } finally {
       setActionLoading(false);
     }
@@ -1951,6 +1956,7 @@ function CheckoutsTab({ agentId }: { agentId: string }) {
       setCheckouts((prev) => prev.filter((c) => `${c._protocol}-${c.id}` !== key));
     } catch (error) {
       console.error('Failed to delete checkout:', error);
+      toast.error(getApiErrorMessage(error, 'Failed to delete checkout'));
     } finally {
       setDeleting(null);
     }
@@ -2355,7 +2361,14 @@ function A2ATab({ agentId }: { agentId: string }) {
             <TableBody>
               {tasks.map((task: any) => (
                 <TableRow key={task.id}>
-                  <TableCell className="font-mono text-xs">{task.id.slice(0, 8)}...</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <Link
+                      href={`/dashboard/agents/a2a/tasks/${task.id}`}
+                      className="text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      {task.id.slice(0, 8)}...
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     <span className="text-xs text-gray-500">
                       {task.direction === 'inbound' ? 'Inbound' : 'Outbound'}
