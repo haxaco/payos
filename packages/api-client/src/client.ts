@@ -1749,7 +1749,7 @@ export class SlyClient {
      * Trigger alert check
      */
     checkAlerts: () =>
-      this.post<{ success: boolean; alertsCount: number }>('/treasury/alerts/check'),
+      this.post<{ data: TreasuryAlert[]; message: string }>('/treasury/alerts/check').then(r => r.data),
 
     /**
      * Acknowledge alert

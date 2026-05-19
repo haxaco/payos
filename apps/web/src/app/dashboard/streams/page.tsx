@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { Activity, Plus, Search, Play, Pause, X } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { Stream } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { StreamsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
@@ -12,6 +13,7 @@ import { getApiErrorMessage } from '@/lib/api-error';
 
 export default function StreamsPage() {
   const api = useApiClient();
+  const router = useRouter();
   const { isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const [streams, setStreams] = useState<Stream[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,7 +164,7 @@ export default function StreamsPage() {
           filteredStreams.map((stream: any) => (
             <div
               key={stream.id}
-              onClick={() => window.location.href = `/dashboard/streams/${stream.id}`}
+              onClick={() => router.push(`/dashboard/streams/${stream.id}`)}
               className="bg-white dark:bg-gray-950 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-lg transition-shadow cursor-pointer"
             >
               <div className="flex items-center justify-between">

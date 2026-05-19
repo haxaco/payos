@@ -211,7 +211,7 @@ export class TreasuryService {
       targetBalance?: number;
       maxBalance?: number;
     }
-  ): Promise<TreasuryAccount> {
+  ): Promise<{ account: TreasuryAccount; created: boolean }> {
     // Try to get existing account
     const { data: existing } = await this.supabase
       .from('treasury_accounts')
@@ -220,10 +220,10 @@ export class TreasuryService {
       .eq('environment', this.environment)
       .eq('rail', rail)
       .eq('currency', currency)
-      .single();
+      .maybeSingle();
 
     if (existing) {
-      return this.mapAccount(existing);
+      return { account: this.mapAccount(existing), created: false };
     }
 
     // Create new account
@@ -247,7 +247,7 @@ export class TreasuryService {
       throw new Error(`Failed to create treasury account: ${error.message}`);
     }
 
-    return this.mapAccount(created);
+    return { account: this.mapAccount(created), created: true };
   }
 
   /**

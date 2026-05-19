@@ -236,7 +236,7 @@ app.post('/accounts', async (c) => {
     const body = await c.req.json();
     const parsed = accountCreateSchema.parse(body);
 
-    const account = await treasuryService.getOrCreateAccount(
+    const { account, created } = await treasuryService.getOrCreateAccount(
       ctx.tenantId,
       parsed.rail,
       parsed.currency,
@@ -261,7 +261,7 @@ app.post('/accounts', async (c) => {
       metadata: { rail: parsed.rail, currency: parsed.currency },
     } as any);
 
-    return c.json({ data: account }, 201);
+    return c.json({ data: account }, created ? 201 : 200);
   } catch (error) {
     if (error instanceof z.ZodError) {
       throw new ValidationError(error.errors[0].message);
@@ -356,7 +356,7 @@ app.post('/alerts/:id/acknowledge', async (c) => {
   try {
     const ctx = c.get('ctx');
     const alertId = c.req.param('id');
-    const userId = ctx.actorId || ctx.apiKeyId || '';
+    const userId = ctx.actorId || ctx.userId || ctx.apiKeyId || 'system';
 
     const alert = await treasuryService.acknowledgeAlert(ctx.tenantId, alertId, userId);
 
@@ -387,7 +387,7 @@ app.post('/alerts/:id/resolve', async (c) => {
   try {
     const ctx = c.get('ctx');
     const alertId = c.req.param('id');
-    const userId = ctx.actorId || ctx.apiKeyId || '';
+    const userId = ctx.actorId || ctx.userId || ctx.apiKeyId || 'system';
 
     const alert = await treasuryService.resolveAlert(ctx.tenantId, alertId, userId);
 
