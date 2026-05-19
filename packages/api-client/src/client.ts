@@ -122,6 +122,14 @@ import type {
   MppSessionsListParams,
   MppTransfersListParams,
   MppProvisionWalletInput,
+  // Webhook types
+  WebhookEndpoint,
+  WebhookEventType,
+  WebhookDelivery,
+  WebhookStats,
+  CreateWebhookInput,
+  UpdateWebhookInput,
+  ReplayWebhooksInput,
 } from './types';
 
 export interface SlyClientConfig {
@@ -409,6 +417,105 @@ export class SlyClient {
      */
     dismiss: (id: string) =>
       this.delete<{ data: { id: string; deleted: boolean } }>(`/notifications/${id}`).then(r => r.data),
+  };
+
+  // ============================================
+  // Webhooks API (Story 27.5 — webhook delivery system)
+  // ============================================
+
+  webhooks = {
+    /**
+     * List webhook endpoints, newest first.
+     * Route returns single-key `{ data: WebhookEndpoint[] }` → unwrapped
+     * by the response wrapper to `{ success, data, meta }`.
+     */
+    list: () =>
+      this.get<{ data: WebhookEndpoint[] }>('/webhooks').then(r => r.data),
+
+    /**
+     * Get a single webhook endpoint by ID.
+     */
+    get: (id: string) =>
+      this.get<{ data: WebhookEndpoint }>(`/webhooks/${id}`).then(r => r.data),
+
+    /**
+     * Create a webhook endpoint. The route returns a TWO-key body
+     * `{ data, message }`, so the response wrapper default-wraps it,
+     * producing a DOUBLE-nested envelope: the created endpoint (including
+     * the one-time plaintext `secret`) is at `response.data.data` and the
+     * "save the secret" note is at `response.data.message`. Returns BOTH
+     * so the UI can surface the secret-once value + message.
+     */
+    create: (input: CreateWebhookInput) =>
+      this.post<{ data: { data: WebhookEndpoint & { secret: string }; message: string } }>(
+        '/webhooks',
+        input
+      ).then(r => ({
+        endpoint: r.data?.data ?? (r.data as unknown as WebhookEndpoint & { secret: string }),
+        message: r.data?.message,
+      })),
+
+    /**
+     * Update a webhook endpoint. Single-key `{ data }` → unwrapped.
+     */
+    update: (id: string, input: UpdateWebhookInput) =>
+      this.patch<{ data: WebhookEndpoint }>(`/webhooks/${id}`, input).then(r => r.data),
+
+    /**
+     * Delete a webhook endpoint. Route returns single-key `{ message }`
+     * (no `data`) → default-wrapped to `{ success, data: { message }, meta }`.
+     */
+    remove: (id: string) =>
+      this.delete<{ data: { message: string } }>(`/webhooks/${id}`).then(r => r.data),
+
+    /**
+     * List all subscribable webhook event types (the catalog).
+     * Route returns single-key `{ data: WebhookEventType[] }` → unwrapped.
+     */
+    events: () =>
+      this.get<{ data: WebhookEventType[] }>('/webhooks/events').then(r => r.data),
+
+    /**
+     * Webhook dashboard statistics. Single-key `{ data }` → unwrapped.
+     */
+    stats: (params?: { hours?: number }) =>
+      this.get<{ data: WebhookStats }>('/webhooks/stats', params).then(r => r.data),
+
+    /**
+     * List deliveries in the Dead Letter Queue. Route returns
+     * `{ data, pagination }` → flattened by the response wrapper to a
+     * top-level paginated envelope.
+     */
+    listDlq: (params?: { page?: number; limit?: number }) =>
+      this.get<PaginatedResponse<WebhookDelivery>>('/webhooks/deliveries/dlq', params),
+
+    /**
+     * Purge old DLQ items (older than 7 days). Route returns a TWO-key
+     * body `{ data: { purged }, message }` → DOUBLE-nested envelope:
+     * `response.data.data.purged` and `response.data.message`.
+     */
+    purgeDlq: () =>
+      this.delete<{ data: { data: { purged: number }; message: string } }>(
+        '/webhooks/deliveries/dlq'
+      ).then(r => ({
+        purged: r.data?.data?.purged ?? 0,
+        message: r.data?.message,
+      })),
+
+    /**
+     * Replay webhook deliveries (for debugging). Route returns a TWO-key
+     * body `{ data: { replayed, deliveryIds }, message }` → DOUBLE-nested
+     * envelope: result at `response.data.data`, note at `response.data.message`.
+     */
+    replay: (input?: ReplayWebhooksInput) =>
+      this.post<{ data: { data: { replayed: number; deliveryIds?: string[] }; message: string } }>(
+        '/webhooks/replay',
+        input ?? {}
+      ).then(r => ({
+        replayed: r.data?.data?.replayed ?? 0,
+        deliveryIds: r.data?.data?.deliveryIds ?? [],
+        message: r.data?.message,
+      })),
   };
 
   // ============================================
