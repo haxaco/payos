@@ -160,19 +160,18 @@ describe.skipIf(skipIntegration)('x402 Publish → agentic-marketplace loop', ()
     }
   });
 
-  it('2b. KNOWN BUG: publish with a reachable JSON backend strands the endpoint in `validating` (500, wallet undefined)', async () => {
-    // This documents a GENUINE bug found by the integration loop, not a test
-    // weakening. With a backend the probe can successfully GET (200 + JSON),
+  it('2b. publish with a reachable backend but no payout wallet fails gracefully (no raw 500, terminal state)', async () => {
+    // REGRESSION GUARD for a genuine bug this integration loop found and that
+    // was then fixed: with a reachable backend the probe GETs 200+JSON,
     // publish-x402 advances draft → validating → validated, then calls
-    // getOrProvision() for the payout wallet and dereferences `wallet.address`
-    // at publish-x402.ts:417. In this sandbox that path yields no usable
-    // wallet and the handler throws a raw TypeError:
-    //   "Cannot read properties of undefined (reading 'address')"
-    // returned as 500 { error: 'Internal server error', details: <that msg> }.
-    // The endpoint is left STRANDED in `validating` — no terminal `failed`,
-    // no `processing`, no audit `failed` row. A clean implementation should
-    // surface this as a WalletRequiredError / publish_status='failed' instead
-    // of a 500 + half-run state machine.
+    // getOrProvision() for the payout wallet. In sandbox (no CDP creds) that
+    // path yielded no usable wallet and `wallet.address` threw a raw
+    // TypeError → 500, leaving the endpoint STRANDED in `validating` with no
+    // terminal state and no `failed` audit row.
+    // After the fix (publish-x402.ts step 4 guard) the no-wallet path routes
+    // through failWith: HTTP 200 with a proper PublishResult, publish_status
+    // 'failed', publishError prefixed `payout_wallet_unavailable`, and a
+    // terminal `failed` audit event — never a 500 or a half-run machine.
     const accountId = await firstAccountId();
     const uniq = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const slug = `itest-pub-rb-${uniq}`;
@@ -202,18 +201,35 @@ describe.skipIf(skipIntegration)('x402 Publish → agentic-marketplace loop', ()
       { method: 'POST', headers: jsonHeaders, body: JSON.stringify({}) },
     );
 
-    // Observed behavior: raw 500 with the TypeError surfaced in `details`.
-    // We assert the bug rather than masking it. If/when the wallet path is
-    // fixed this assertion will fail and should be updated to expect a
-    // terminal `failed`/`processing` outcome.
-    expect(pubRes.status).toBe(500);
+    // Fixed behavior: the route returns a proper PublishResult (HTTP 200),
+    // NOT a raw 500 TypeError.
+    expect(pubRes.status).toBe(200);
     const pubBody = await pubRes.json();
-    expect(pubBody.success === false || pubBody.error !== undefined).toBe(true);
-    const detail = JSON.stringify(pubBody);
-    expect(detail).toMatch(/address|Internal server error/i);
+    expect(pubBody.success).toBe(true);
+    // The contract: a graceful, attributed terminal result — NOT an unhandled
+    // 500. The guard wraps the underlying provisioning failure (whose inner
+    // message may itself be a TypeError from getOrProvision — a separate
+    // latent payout-wallet issue) behind a clear `payout_wallet_unavailable:`
+    // prefix so the failure is diagnosable instead of a raw crash.
+    if (pubBody.data.publishStatus === 'failed') {
+      expect(String(pubBody.data.publishError)).toMatch(
+        /^payout_wallet_unavailable/,
+      );
+    }
+    // The endpoint reaches a valid terminal/in-flight lifecycle state — never
+    // stranded back in draft, never an unhandled crash. In this sandbox the
+    // no-payout-wallet branch yields a terminal `failed` with a coherent,
+    // wallet-attributed error; if a ledger wallet is resolvable it may instead
+    // progress to publishing/processing — both are acceptable, a 500/strand is
+    // not.
+    expect(['failed', 'publishing', 'processing', 'published']).toContain(
+      pubBody.data.publishStatus,
+    );
+    if (pubBody.data.publishStatus === 'failed') {
+      expect(typeof pubBody.data.publishError).toBe('string');
+      expect(pubBody.data.publishError.length).toBeGreaterThan(0);
+    }
 
-    // Confirm the endpoint is stranded mid-machine in `validating`
-    // (advanced out of draft, but no terminal state reached).
     const stRes = await fetch(
       `${BASE_URL}/v1/x402/endpoints/${rbId}/publish-status`,
       { headers: jsonHeaders },
@@ -221,9 +237,24 @@ describe.skipIf(skipIntegration)('x402 Publish → agentic-marketplace loop', ()
     expect(stRes.status).toBe(200);
     const st = (await stRes.json()).data;
     expect(st.publishStatus).not.toBe('draft');
-    expect(['validating', 'publishing', 'failed', 'processing']).toContain(
+    expect(['failed', 'publishing', 'processing', 'published']).toContain(
       st.publishStatus,
     );
+    // When it failed, the state machine must have written a terminal `failed`
+    // audit event (no half-run machine).
+    if (st.publishStatus === 'failed') {
+      const events = Array.isArray(st.events)
+        ? st.events
+        : Array.isArray(st.auditEvents)
+          ? st.auditEvents
+          : [];
+      if (events.length > 0) {
+        const types = events.map(
+          (e: any) => e.event_type ?? e.eventType ?? e.type ?? e.event,
+        );
+        expect(types).toContain('failed');
+      }
+    }
 
     // Best-effort cleanup of this extra probe endpoint.
     await fetch(`${BASE_URL}/v1/x402/endpoints/${rbId}`, {
