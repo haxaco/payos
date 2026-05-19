@@ -73,7 +73,7 @@ const { data: execution } = await client.ap2.execute(mandate.id, {
 console.log('Payment executed:', execution.transfer_id);
 console.log('Remaining balance:', execution.mandate.remaining_amount);`;
 
-    const curlCreateExample = `curl https://api.payos.com/v1/ap2/mandates \\
+    const curlCreateExample = `curl https://api.getsly.ai/v1/ap2/mandates \\
   -X POST \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\

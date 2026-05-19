@@ -76,7 +76,7 @@ const { data: result } = await client.acp.complete(checkout.id, {
 
 console.log('Checkout completed:', result.status);`;
 
-    const curlCreateExample = `curl https://api.payos.com/v1/acp/checkouts \\
+    const curlCreateExample = `curl https://api.getsly.ai/v1/acp/checkouts \\
   -X POST \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
