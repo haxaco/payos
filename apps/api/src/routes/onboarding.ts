@@ -22,6 +22,7 @@ import {
   SMOKE_OUTCOMES,
   type SmokeOutcome,
 } from '../services/onboarding/smoke-test.js';
+import { runSampleSeed } from '../services/onboarding/sample-seed.js';
 
 const app = new Hono();
 
@@ -278,6 +279,29 @@ app.post('/smoke-test', async (c) => {
   } catch (error) {
     console.error('Onboarding smoke test failed:', error);
     return c.json({ error: 'Smoke test failed to run' }, 500);
+  }
+});
+
+/**
+ * POST /v1/onboarding/sample-seed
+ * The optional "Populate sample data" half of the demo-mode walkthrough.
+ * Idempotently creates a small set of demo artifacts (account, agent +
+ * auto-wallet, one x402 endpoint, one ACP checkout) in the tenant's
+ * sandbox so the dashboard pages aren't empty while they explore.
+ *
+ * Sandbox only. Re-clicks reuse anything already present.
+ */
+app.post('/sample-seed', async (c) => {
+  const ctx = c.get('ctx');
+  if (!ctx?.tenantId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  try {
+    const result = await runSampleSeed(c);
+    return c.json(result, result.ok ? 200 : 422);
+  } catch (error) {
+    console.error('Sample seed failed:', error);
+    return c.json({ error: 'Sample seed failed to run' }, 500);
   }
 });
 
