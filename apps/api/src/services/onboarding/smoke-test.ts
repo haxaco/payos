@@ -82,7 +82,19 @@ export async function runOnboardingSmokeTest(
     });
   }
 
-  const origin = new URL(c.req.url).origin;
+  // Build a self-fetch origin that survives TLS-terminating proxies. On
+  // Railway behind their edge, `c.req.url`'s protocol reflects the
+  // upstream HTTP scheme; self-fetching that hits an http→https 301 and
+  // Node's fetch spec-compliantly strips the Authorization header across
+  // the protocol-change redirect, so every nested call 401s. Honor
+  // X-Forwarded-Proto/Host (set by the proxy) and only fall back to
+  // c.req.url for direct/local dev.
+  const reqUrl = new URL(c.req.url);
+  const proto =
+    c.req.header('x-forwarded-proto') ||
+    reqUrl.protocol.replace(':', '');
+  const host = c.req.header('x-forwarded-host') || c.req.header('host') || reqUrl.host;
+  const origin = `${proto}://${host}`;
   const authz = c.req.header('authorization') || '';
   const xEnv = c.req.header('x-environment') || 'test';
 
