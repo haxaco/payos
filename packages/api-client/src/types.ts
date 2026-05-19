@@ -1795,3 +1795,33 @@ export interface MppProvisionWalletInput {
   testnet?: boolean;
   initialBalance?: number;
 }
+
+// ============================================
+// Notification Types (in-app dashboard drawer)
+// ============================================
+
+export type NotificationType =
+  | 'agent_action'
+  | 'stream_alert'
+  | 'compliance'
+  | 'system';
+
+/**
+ * In-app notification as rendered by the dashboard notifications drawer.
+ * `timestamp` is an ISO string mapped from the row's created_at.
+ */
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  href?: string;
+}
+
+export interface NotificationsListParams {
+  unread?: boolean;
+  limit?: number;
+  offset?: number;
+}

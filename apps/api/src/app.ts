@@ -26,6 +26,7 @@ import connectedAccountsRouter from './routes/organization/connected-accounts.js
 import organizationOnboardingRouter from './routes/organization/onboarding.js';
 import apiKeysRouter from './routes/api-keys.js';
 import accountsRouter from './routes/accounts.js';
+import notificationsRouter from './routes/notifications.js';
 import { merchantStatsOnAccountsRouter, merchantsAliasRouter } from './routes/merchants.js';
 import agentsRouter, { agentCardRouter } from './routes/agents.js';
 import transfersRouter from './routes/transfers.js';
@@ -378,6 +379,7 @@ v1.use('*', idempotencyMiddleware);
 // grant — the existing handler filter does the narrowing.
 // ============================================
 v1.use('/accounts/*', requireTenantScope());
+v1.use('/notifications/*', requireTenantScope());
 v1.use('/merchants/*', requireTenantScope());
 v1.use('/wallets/*', requireTenantScope({
   overrides: [
@@ -450,6 +452,7 @@ v1.route('/context', contextRouter);
 v1.route('/auth/scopes', authScopesRouter); // Epic 82 — agent-side scope request/inspect
 v1.route('/organization/scopes', organizationScopesRouter); // Epic 82 — tenant-owner issue/decide/revoke
 v1.route('/accounts', accountsRouter);
+v1.route('/notifications', notificationsRouter); // In-app dashboard notifications drawer
 v1.route('/accounts', merchantStatsOnAccountsRouter); // GET /v1/accounts/:id/merchant-stats
 v1.route('/merchants', merchantsAliasRouter);         // Cleaner namespace alias for /v1/ucp/merchants
 v1.route('/agents', agentsRouter);
