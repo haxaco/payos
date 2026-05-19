@@ -17,6 +17,12 @@
 
 import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sanitizeSearchInput } from '../../utils/helpers.js';
+
+// Full UUID — used to decide whether a search term can target the uuid
+// id / checkout_id columns (PostgREST can't ilike/cast uuid in .or()).
+const UUID_SEARCH_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import type {
   UCPOrder,
   UCPLineItem,
@@ -404,10 +410,13 @@ export async function listOrders(
     agent_id?: string;
     limit?: number;
     offset?: number;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
   } = {},
   supabase?: SupabaseClient
 ): Promise<{ data: UCPOrder[]; total: number }> {
-  const { status, agent_id, limit = 20, offset = 0 } = options;
+  const { status, agent_id, limit = 20, offset = 0, search, startDate, endDate } = options;
 
   // If supabase client provided, query database
   if (supabase) {
@@ -424,6 +433,34 @@ export async function listOrders(
 
     if (agent_id) {
       query = query.eq('agent_id', agent_id);
+    }
+
+    // Case-insensitive substring search. ucp_orders has no flat
+    // merchant/agent-name text; searchable text is the TEXT agent_id and
+    // the JSONB buyer's email/name. id / checkout_id are UUID columns
+    // (PostgREST can't ilike a uuid, and casts aren't allowed inside
+    // .or()), so we only exact-match those when the term is a full UUID.
+    if (search && search.trim()) {
+      const term = search.trim();
+      const safe = sanitizeSearchInput(term);
+      if (UUID_SEARCH_RE.test(term)) {
+        query = query.or(`id.eq.${term},checkout_id.eq.${term}`);
+      } else if (safe) {
+        query = query.or(
+          `agent_id.ilike.%${safe}%,buyer->>email.ilike.%${safe}%,buyer->>name.ilike.%${safe}%`,
+        );
+      }
+    }
+
+    // Inclusive created_at window. Ignore absent/invalid dates (no 400).
+    if (startDate && !Number.isNaN(Date.parse(startDate))) {
+      query = query.gte('created_at', new Date(startDate).toISOString());
+    }
+    if (endDate && !Number.isNaN(Date.parse(endDate))) {
+      const end = /T/.test(endDate)
+        ? new Date(endDate)
+        : new Date(`${endDate}T23:59:59.999Z`);
+      query = query.lte('created_at', end.toISOString());
     }
 
     const { data, error, count } = await query;

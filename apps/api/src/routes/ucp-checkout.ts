@@ -196,12 +196,15 @@ router.get('/', async (c) => {
 
   const status = c.req.query('status') as CheckoutStatus | undefined;
   const agent_id = c.req.query('agent_id') || undefined;
+  const search = c.req.query('search') || undefined;
+  const startDate = c.req.query('startDate') || undefined;
+  const endDate = c.req.query('endDate') || undefined;
   const limit = parseInt(c.req.query('limit') || '20', 10);
   const offset = parseInt(c.req.query('offset') || '0', 10);
 
   try {
     const supabase: any = createClient();
-    const result = await listCheckouts(ctx.tenantId, { status, agent_id, limit, offset }, supabase);
+    const result = await listCheckouts(ctx.tenantId, { status, agent_id, search, startDate, endDate, limit, offset }, supabase);
 
     return c.json({
       data: result.data,

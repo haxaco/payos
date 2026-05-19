@@ -17,6 +17,12 @@ import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { LimitService } from '../limits.js';
 import { getCircleFXService } from '../circle/fx.js';
+import { sanitizeSearchInput } from '../../utils/helpers.js';
+
+// Full UUID — used to decide whether a search term can target the uuid
+// id column (PostgREST can't ilike/cast uuid in .or()).
+const UUID_SEARCH_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import type {
   UCPCheckoutSession,
   UCPLineItem,
@@ -943,6 +949,62 @@ export async function completeCheckout(
         currency: existing.currency,
       }, supabase);
 
+      // Cross-tenant: if the checkout names a merchant that lives in a
+      // DIFFERENT Sly tenant (resolved via metadata.invu_merchant_id),
+      // mirror the completed order into the merchant's own tenant so the
+      // seller sees it in their dashboard. UCP parity with the ACP path
+      // (apps/api/src/routes/acp.ts ~1055). The merchant needs NO scope
+      // to receive — Sly mirrors it. Non-fatal.
+      try {
+        const invuId = (existing.metadata as any)?.invu_merchant_id;
+        if (invuId) {
+          const { data: macc } = await (supabase as any)
+            .from('accounts')
+            .select('id, tenant_id, balance_total, balance_available')
+            .eq('metadata->>invu_merchant_id', invuId)
+            .maybeSingle();
+          if (macc?.tenant_id && macc.tenant_id !== tenantId) {
+            const { data: srcRow } = await (supabase as any)
+              .from('ucp_orders')
+              .select('*')
+              .eq('id', order.id)
+              .maybeSingle();
+            if (srcRow) {
+              const mirrored = {
+                ...srcRow,
+                id: `${srcRow.id}-m`,
+                tenant_id: macc.tenant_id,
+                metadata: {
+                  ...(srcRow.metadata || {}),
+                  mirrored_from_tenant: tenantId,
+                  buyer_order_id: order.id,
+                },
+              };
+              await (supabase as any)
+                .from('ucp_orders')
+                .upsert(mirrored, { onConflict: 'id' });
+              // Credit the merchant account balance (major units) so the
+              // seller's account page shows the revenue, like ACP.
+              const major = (totalAmount || 0) / 100;
+              await (supabase as any)
+                .from('accounts')
+                .update({
+                  balance_total: (Number(macc.balance_total) || 0) + major,
+                  balance_available:
+                    (Number(macc.balance_available) || 0) + major,
+                })
+                .eq('id', macc.id)
+                .eq('tenant_id', macc.tenant_id);
+            }
+          }
+        }
+      } catch (mirrorErr: any) {
+        console.error(
+          '[UCP Checkout] cross-tenant order mirror failed:',
+          mirrorErr?.message || mirrorErr,
+        );
+      }
+
       // Mark checkout as completed with order_id
       const { data, error } = await supabase
         .from('ucp_checkout_sessions')
@@ -1159,11 +1221,14 @@ export async function listCheckouts(
     agent_id?: string;
     limit?: number;
     offset?: number;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
   } = {},
   supabase?: SupabaseClient,
   environment: 'test' | 'live' = 'test',
 ): Promise<{ data: UCPCheckoutSession[]; total: number }> {
-  const { status, agent_id, limit = 20, offset = 0 } = options;
+  const { status, agent_id, limit = 20, offset = 0, search, startDate, endDate } = options;
 
   // If supabase client provided, query database
   if (supabase) {
@@ -1181,6 +1246,34 @@ export async function listCheckouts(
 
     if (agent_id) {
       query = query.eq('agent_id', agent_id);
+    }
+
+    // Case-insensitive substring search. ucp_checkout_sessions has no flat
+    // merchant/agent-name text; searchable text is the TEXT agent_id and
+    // the JSONB buyer's email/name. id is a UUID column (PostgREST can't
+    // ilike a uuid, and casts aren't allowed inside .or()), so we only
+    // exact-match it when the search term is a full UUID.
+    if (search && search.trim()) {
+      const term = search.trim();
+      const safe = sanitizeSearchInput(term);
+      if (UUID_SEARCH_RE.test(term)) {
+        query = query.eq('id', term);
+      } else if (safe) {
+        query = query.or(
+          `agent_id.ilike.%${safe}%,buyer->>email.ilike.%${safe}%,buyer->>name.ilike.%${safe}%`,
+        );
+      }
+    }
+
+    // Inclusive created_at window. Ignore absent/invalid dates (no 400).
+    if (startDate && !Number.isNaN(Date.parse(startDate))) {
+      query = query.gte('created_at', new Date(startDate).toISOString());
+    }
+    if (endDate && !Number.isNaN(Date.parse(endDate))) {
+      const end = /T/.test(endDate)
+        ? new Date(endDate)
+        : new Date(`${endDate}T23:59:59.999Z`);
+      query = query.lte('created_at', end.toISOString());
     }
 
     const { data, error, count } = await query;

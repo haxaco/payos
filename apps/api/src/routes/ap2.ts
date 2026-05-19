@@ -522,6 +522,8 @@ ap2.get('/mandates', async (c) => {
   const agentId = c.req.query('agent_id');
   const accountId = c.req.query('account_id');
   const search = c.req.query('search');
+  const startDate = c.req.query('startDate');
+  const endDate = c.req.query('endDate');
   const offset = (page - 1) * limit;
 
   // Build query
@@ -545,6 +547,17 @@ ap2.get('/mandates', async (c) => {
   if (search) {
     const safe = sanitizeSearchInput(search);
     query = query.or(`mandate_id.ilike.%${safe}%,agent_name.ilike.%${safe}%`);
+  }
+
+  // Inclusive created_at window. Ignore absent/invalid dates (no 400).
+  if (startDate && !Number.isNaN(Date.parse(startDate))) {
+    query = query.gte('created_at', new Date(startDate).toISOString());
+  }
+  if (endDate && !Number.isNaN(Date.parse(endDate))) {
+    const end = /T/.test(endDate)
+      ? new Date(endDate)
+      : new Date(`${endDate}T23:59:59.999Z`);
+    query = query.lte('created_at', end.toISOString());
   }
 
   const { data: mandates, error, count } = await query;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
     Card,
@@ -60,16 +60,24 @@ export default function HostedCheckoutsPage() {
     const { isLoading: isAuthLoading } = useApiConfig();
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
+    // Debounce the search input so we don't fetch per keystroke.
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearch(search), 300);
+        return () => clearTimeout(t);
+    }, [search]);
+
     const { data, isLoading } = useQuery({
-        queryKey: ['ucp-hosted-checkouts', page, search, statusFilter],
+        queryKey: ['ucp-hosted-checkouts', page, debouncedSearch, statusFilter],
         queryFn: () => {
             if (!api) return Promise.resolve({ data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } });
             return api.ucp.checkouts.list({
                 limit: 10,
                 offset: (page - 1) * 10,
                 status: statusFilter !== 'all' ? statusFilter : undefined,
+                search: debouncedSearch || undefined,
             });
         },
         enabled: !!api

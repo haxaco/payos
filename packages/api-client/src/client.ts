@@ -1174,6 +1174,8 @@ export class SlyClient {
       if (params?.agentId) searchParams.set('agent_id', params.agentId);
       if (params?.accountId) searchParams.set('account_id', params.accountId);
       if (params?.search) searchParams.set('search', params.search);
+      if (params?.startDate) searchParams.set('startDate', params.startDate);
+      if (params?.endDate) searchParams.set('endDate', params.endDate);
       const query = searchParams.toString();
       return this.get<any>(`/ap2/mandates${query ? `?${query}` : ''}`).then(response => ({
         data: Array.isArray(response.data) ? response.data.map(transformMandate) : (response.data?.data || []).map(transformMandate),
@@ -1621,6 +1623,9 @@ export class SlyClient {
       if (params?.merchant_id) query.set('merchant_id', params.merchant_id);
       if (params?.agent_id) query.set('agent_id', params.agent_id);
       if (params?.customer_id) query.set('customer_id', params.customer_id);
+      if (params?.search) query.set('search', params.search);
+      if (params?.startDate) query.set('startDate', params.startDate);
+      if (params?.endDate) query.set('endDate', params.endDate);
 
       return this.get<PaginatedResponse<any>>(`/acp/checkouts${query.toString() ? `?${query.toString()}` : ''}`).then(response => ({
         ...response,
@@ -1894,12 +1899,15 @@ export class SlyClient {
       /**
        * List PayOS hosted checkout sessions
        */
-      list: (params?: { status?: string; agent_id?: string; limit?: number; offset?: number }) => {
+      list: (params?: { status?: string; agent_id?: string; limit?: number; offset?: number; search?: string; startDate?: string; endDate?: string }) => {
         const query = new URLSearchParams();
         if (params?.limit) query.set('limit', String(params.limit));
         if (params?.offset) query.set('offset', String(params.offset));
         if (params?.status) query.set('status', params.status);
         if (params?.agent_id) query.set('agent_id', params.agent_id);
+        if (params?.search) query.set('search', params.search);
+        if (params?.startDate) query.set('startDate', params.startDate);
+        if (params?.endDate) query.set('endDate', params.endDate);
         return this.get<PaginatedResponse<any>>(`/ucp/checkouts${query.toString() ? `?${query.toString()}` : ''}`);
       },
 
@@ -1959,12 +1967,15 @@ export class SlyClient {
       /**
        * List orders
        */
-      list: (params?: { status?: string; agent_id?: string; limit?: number; offset?: number }) => {
+      list: (params?: { status?: string; agent_id?: string; limit?: number; offset?: number; search?: string; startDate?: string; endDate?: string }) => {
         const query = new URLSearchParams();
         if (params?.limit) query.set('limit', String(params.limit));
         if (params?.offset) query.set('offset', String(params.offset));
         if (params?.status) query.set('status', params.status);
         if (params?.agent_id) query.set('agent_id', params.agent_id);
+        if (params?.search) query.set('search', params.search);
+        if (params?.startDate) query.set('startDate', params.startDate);
+        if (params?.endDate) query.set('endDate', params.endDate);
         return this.get<PaginatedResponse<any>>(`/ucp/orders${query.toString() ? `?${query.toString()}` : ''}`);
       },
 

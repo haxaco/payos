@@ -24,7 +24,7 @@ import { createLimitService } from '../services/limits.js';
 import { createCheckoutTelemetryService, extractMerchantDomain } from '../services/telemetry/checkout-telemetry.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
-import { getEnv } from '../utils/helpers.js';
+import { getEnv, sanitizeSearchInput } from '../utils/helpers.js';
 
 const app = new Hono();
 
@@ -466,6 +466,9 @@ app.get('/checkouts', async (c) => {
     const agent_id = c.req.query('agent_id');
     const merchant_id = c.req.query('merchant_id');
     const customer_id = c.req.query('customer_id');
+    const search = c.req.query('search');
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
 
     let query = supabase
       .from('acp_checkouts')
@@ -479,6 +482,28 @@ app.get('/checkouts', async (c) => {
     if (agent_id) query = query.eq('agent_id', agent_id);
     if (merchant_id) query = query.eq('merchant_id', merchant_id);
     if (customer_id) query = query.eq('customer_id', customer_id);
+
+    // Case-insensitive substring search across identifying text columns.
+    if (search && search.trim()) {
+      const safe = sanitizeSearchInput(search.trim());
+      if (safe) {
+        query = query.or(
+          `checkout_id.ilike.%${safe}%,merchant_name.ilike.%${safe}%,merchant_id.ilike.%${safe}%,agent_name.ilike.%${safe}%,agent_id.ilike.%${safe}%,customer_email.ilike.%${safe}%`,
+        );
+      }
+    }
+
+    // Inclusive created_at window. Ignore absent/invalid dates (no 400).
+    if (startDate && !Number.isNaN(Date.parse(startDate))) {
+      query = query.gte('created_at', new Date(startDate).toISOString());
+    }
+    if (endDate && !Number.isNaN(Date.parse(endDate))) {
+      // Make the end date inclusive of the whole day when a bare date is given.
+      const end = /T/.test(endDate)
+        ? new Date(endDate)
+        : new Date(`${endDate}T23:59:59.999Z`);
+      query = query.lte('created_at', end.toISOString());
+    }
 
     const { data: checkouts, error, count } = await query;
 

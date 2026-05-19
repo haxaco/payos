@@ -1159,6 +1159,8 @@ export interface MandatesListParams extends PaginationParams {
   agentId?: string;
   accountId?: string;
   search?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 // ============================================
@@ -1269,6 +1271,9 @@ export interface CheckoutsListParams extends PaginationParams {
   merchant_id?: string;
   agent_id?: string;
   customer_id?: string;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 // ============================================
