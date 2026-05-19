@@ -17,6 +17,11 @@ import {
   ProtocolId,
   OnboardingStepStatus,
 } from '../services/onboarding';
+import {
+  runOnboardingSmokeTest,
+  SMOKE_OUTCOMES,
+  type SmokeOutcome,
+} from '../services/onboarding/smoke-test.js';
 
 const app = new Hono();
 
@@ -233,6 +238,46 @@ app.post('/sandbox', async (c) => {
   } catch (error) {
     console.error('Failed to set sandbox mode:', error);
     return c.json({ error: 'Failed to set sandbox mode' }, 500);
+  }
+});
+
+/**
+ * POST /v1/onboarding/smoke-test
+ * The single "real step" of the outcome-first onboarding: runs one genuine
+ * agentic-commerce transaction (real rows, real protocol path, sandbox only)
+ * for the chosen outcome and reports exactly what happened.
+ *
+ * Body: { outcome: 'agent_spend' | 'api_monetization' | 'agent_checkout' }
+ */
+app.post('/smoke-test', async (c) => {
+  const ctx = c.get('ctx');
+  if (!ctx?.tenantId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  let outcome: SmokeOutcome;
+  try {
+    const body = await c.req.json();
+    outcome = body?.outcome;
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!SMOKE_OUTCOMES.includes(outcome)) {
+    return c.json(
+      {
+        error: `Invalid outcome. Expected one of: ${SMOKE_OUTCOMES.join(', ')}`,
+      },
+      400
+    );
+  }
+
+  try {
+    const result = await runOnboardingSmokeTest(c, outcome);
+    return c.json(result, result.ok ? 200 : 422);
+  } catch (error) {
+    console.error('Onboarding smoke test failed:', error);
+    return c.json({ error: 'Smoke test failed to run' }, 500);
   }
 });
 
