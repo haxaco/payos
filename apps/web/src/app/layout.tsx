@@ -12,9 +12,9 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Sly Dashboard',
   description: 'The Agentic Economy Platform',
-  icons: {
-    icon: '/favicon.ico',
-  },
+  // Favicon is served by Next.js App Router auto-detection of `app/icon.png`
+  // (the blue-arrows brand mark). Manual `icons` overrides used to point at a
+  // non-existent /favicon.ico, which is why no favicon was shown.
 };
 
 export default function RootLayout({
