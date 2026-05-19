@@ -48,7 +48,7 @@ const app = express();
 
 // Initialize provider
 const provider = new X402Provider({
-  apiUrl: 'https://api.payos.com',
+  apiUrl: 'https://api.getsly.ai',
   auth: process.env.PAYOS_API_KEY,
   accountId: process.env.PAYOS_ACCOUNT_ID
 });
@@ -78,7 +78,7 @@ app.listen(3000);`;
 
 // Initialize client
 const client = new X402Client({
-  apiUrl: 'https://api.payos.com',
+  apiUrl: 'https://api.getsly.ai',
   walletId: process.env.PAYOS_WALLET_ID,
   auth: process.env.PAYOS_API_KEY,
   debug: true
@@ -95,11 +95,11 @@ const response = await client.fetch('https://api.example.com/premium-data', {
 const data = await response.json();`;
 
   const curlExample = `# Get a quote
-curl https://api.payos.com/v1/x402/quote/{endpointId} \\
+curl https://api.getsly.ai/v1/x402/quote/{endpointId} \\
   -H "Authorization: Bearer YOUR_API_KEY"
 
 # Process payment
-curl https://api.payos.com/v1/x402/pay \\
+curl https://api.getsly.ai/v1/x402/pay \\
   -X POST \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
@@ -422,7 +422,7 @@ curl https://api.payos.com/v1/x402/pay \\
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <a 
-              href="/docs/X402_SDK_GUIDE.md" 
+              href="https://docs.getsly.ai" 
               target="_blank"
               className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
             >

@@ -87,7 +87,7 @@ console.log('To:', quote.to_amount, quote.to_currency);
 console.log('FX Rate:', quote.fx_rate);
 console.log('Fees:', quote.fees.total);`;
 
-    const curlTokenExample = `curl https://api.payos.com/v1/ucp/tokens \\
+    const curlTokenExample = `curl https://api.getsly.ai/v1/ucp/tokens \\
   -X POST \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
@@ -103,7 +103,7 @@ console.log('Fees:', quote.fees.total);`;
     }
   }'`;
 
-    const curlSettleExample = `curl https://api.payos.com/v1/ucp/settle \\
+    const curlSettleExample = `curl https://api.getsly.ai/v1/ucp/settle \\
   -X POST \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
@@ -155,13 +155,13 @@ console.log('Fees:', quote.fees.total);`;
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" asChild>
-                        <a href="https://ucp.dev/specification" target="_blank" rel="noopener noreferrer">
+                        <a href="https://docs.getsly.ai" target="_blank" rel="noopener noreferrer">
                             <Book className="mr-2 h-4 w-4" />
                             UCP Specification
                         </a>
                     </Button>
                     <Button variant="outline" asChild>
-                        <a href="https://docs.payos.com/ucp" target="_blank" rel="noopener noreferrer">
+                        <a href="https://docs.getsly.ai" target="_blank" rel="noopener noreferrer">
                             <ExternalLink className="mr-2 h-4 w-4" />
                             Full Documentation
                         </a>
