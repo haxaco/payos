@@ -6,3 +6,6 @@ export { RegisterAgentStep } from './register-agent-step';
 export { CreateMandateStep } from './create-mandate-step';
 export { TestPaymentStep } from './test-payment-step';
 export { FundWalletStep } from './fund-wallet-step';
+export { RegisterEndpointStep } from './register-endpoint-step';
+export { CreateCheckoutStep } from './create-checkout-step';
+export { InformationalStep } from './informational-step';
