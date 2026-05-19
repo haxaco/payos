@@ -122,6 +122,12 @@ export async function runOnboardingSmokeTest(
     r.json?.message ||
     (typeof r.json === 'string' ? r.json : `HTTP ${r.status}`);
 
+  // Throwaway artifacts created by this run, torn down in `finally` so
+  // repeated runs never accumulate junk. The shared sandbox account is
+  // intentionally reused, not deleted.
+  let createdEndpointId: string | undefined;
+  let createdCheckoutId: string | undefined;
+
   try {
     const supabase = createClient();
 
@@ -196,6 +202,7 @@ export async function runOnboardingSmokeTest(
           : `Checkout creation failed: ${errText(create)}`,
         reference: realId,
       });
+      createdCheckoutId = realId;
       if (!create.ok || !realId) {
         return finish(false, {
           error: `ACP checkout could not be created: ${errText(create)}`,
@@ -233,6 +240,7 @@ export async function runOnboardingSmokeTest(
       currency: 'USDC',
     });
     const endpointId = create.json?.id || create.json?.data?.id;
+    createdEndpointId = endpointId;
     steps.push({
       name:
         outcome === 'api_monetization'
@@ -304,5 +312,18 @@ export async function runOnboardingSmokeTest(
     return finish(false, {
       error: `Unexpected error running the test: ${e?.message || String(e)}`,
     });
+  } finally {
+    // Best-effort teardown of this run's throwaway artifacts. Failures are
+    // swallowed — cleanup must never change the result the user sees.
+    if (createdEndpointId) {
+      await call('DELETE', `/v1/x402/endpoints/${createdEndpointId}`).catch(
+        () => {}
+      );
+    }
+    if (createdCheckoutId) {
+      await call('DELETE', `/v1/acp/checkouts/${createdCheckoutId}`).catch(
+        () => {}
+      );
+    }
   }
 }
