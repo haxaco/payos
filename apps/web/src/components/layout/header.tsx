@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { LogOut, Settings, User, Search, ChevronDown, Check, Play, Square, AlertTriangle } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -12,6 +12,8 @@ import { NotificationsCenter } from '@/components/notifications/notifications-ce
 import { useDemoMode } from '@/components/demo/demo-mode-context';
 import { ScenarioSelector } from '@/components/demo/scenario-selector';
 import { useEnvironment, type Environment } from '@/lib/environment-context';
+import { useApiConfig, useApiFetch } from '@/lib/api-client';
+import { getDemoBranding } from '@/lib/demo-branding';
 import { toast } from 'sonner';
 
 interface HeaderProps {
@@ -23,11 +25,33 @@ export function Header({ user }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showEnvMenu, setShowEnvMenu] = useState(false);
   const [showProdConfirm, setShowProdConfirm] = useState(false);
+  const [showProdGate, setShowProdGate] = useState(false);
   const [showScenarioSelector, setShowScenarioSelector] = useState(false);
-  const { environment, setEnvironment } = useEnvironment();
+  const { environment, setEnvironment, productionApproved, productionStatus } = useEnvironment();
   const globalSearch = useGlobalSearch();
   const demoMode = useDemoMode();
   const queryClient = useQueryClient();
+
+  // YC demo: per-tenant branding swap. Reuses the same React Query key the
+  // sidebar uses, so this hook piggybacks on the existing /v1/auth/me fetch.
+  const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
+  const apiFetch = useApiFetch();
+  const { data: meData } = useQuery({
+    queryKey: ['auth-me', apiEnvironment],
+    queryFn: async () => {
+      const res = await apiFetch(`${apiUrl}/v1/auth/me`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!authToken && isConfigured,
+    staleTime: 5 * 60_000,
+  });
+  const me = meData?.data || meData;
+  // /v1/auth/me returns different shapes for session tokens vs API keys:
+  //   session: { user: {...}, tenant: { id, name, status } }
+  //   api key: { type, organizationId, ... }
+  const currentTenantId: string | undefined = me?.tenant?.id ?? me?.organizationId;
+  const tenantBranding = getDemoBranding(currentTenantId);
 
   const handleSignOut = async () => {
     const supabase = createSupabaseBrowserClient();
@@ -40,6 +64,13 @@ export function Header({ user }: HeaderProps) {
   const handleEnvironmentChange = (env: Environment) => {
     if (env === 'production' && environment !== 'production') {
       setShowEnvMenu(false);
+      // Open beta: production is gated until the tenant is approved. Show a
+      // clear modal that explains the approval process (and, depending on
+      // status, routes to the declaration form or asks them to wait).
+      if (!productionApproved) {
+        setShowProdGate(true);
+        return;
+      }
       setShowProdConfirm(true);
       return;
     }
@@ -67,6 +98,32 @@ export function Header({ user }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+        {/* YC demo: per-tenant brand chip — only renders for tenants in DEMO_BRANDING */}
+        {tenantBranding && (
+          <div className="mr-4 flex items-center gap-2.5 pr-4 border-r border-gray-200 dark:border-gray-800">
+            <div
+              className={`w-9 h-9 rounded-lg bg-gradient-to-br ${tenantBranding.gradient} flex items-center justify-center text-white text-xs font-bold tracking-wider shadow-sm`}
+            >
+              {tenantBranding.initials}
+            </div>
+            <div className="hidden md:flex flex-col">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-white leading-tight">
+                <span>{tenantBranding.name}</span>
+                <span className="text-base leading-none">{tenantBranding.countryFlag}</span>
+              </div>
+              {tenantBranding.tagline && (
+                <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: tenantBranding.dotColor }}
+                  />
+                  {tenantBranding.tagline}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Search - Now triggers global search modal */}
         <div className="flex-1 max-w-xl">
           <button
@@ -277,6 +334,71 @@ export function Header({ user }: HeaderProps) {
           </div>
         </>
       )}
+
+      {/* Production Access Gate (open beta — approval required) */}
+      {showProdGate && (() => {
+        const underReview =
+          productionStatus === 'declaration_pending' ||
+          productionStatus === 'production_suspended';
+        const denied = productionStatus === 'production_denied';
+        return (
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowProdGate(false)} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-orange-100 dark:bg-orange-950 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {underReview ? 'Production access — under review' : 'Production access requires approval'}
+                  </h3>
+                </div>
+
+                {underReview ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    Your request to move real funds is <strong>being reviewed</strong>. We approve
+                    accounts manually during this open beta — please hang tight and we&apos;ll email
+                    you as soon as you&apos;re approved. You can keep building in Sandbox meanwhile.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                      Sly is in <strong>open beta</strong>. Production (real funds on Base mainnet)
+                      is gated behind a quick approval so we can keep the rollout safe.
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                      {denied
+                        ? 'Your previous request was declined — you can review the notes and re-submit with more detail.'
+                        : 'Tell us a little about your use case (a few fields). We review each request manually and email you with a decision — then you can switch to Production.'}
+                    </p>
+                  </>
+                )}
+
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setShowProdGate(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    {underReview ? 'Got it' : 'Not now'}
+                  </button>
+                  {!underReview && (
+                    <button
+                      onClick={() => {
+                        setShowProdGate(false);
+                        router.push('/dashboard/settings/production-access');
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
+                    >
+                      {denied ? 'Review & re-apply' : 'Request production access'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </>
   );
 }
