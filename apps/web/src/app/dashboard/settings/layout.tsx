@@ -17,6 +17,7 @@ const settingsTabs: SettingsTab[] = (
     { href: '/dashboard/settings/verification-tiers', label: 'Verification Tiers' },
     { href: '/dashboard/settings/agent-tiers', label: 'Agent Tiers (KYA)' },
     { href: '/dashboard/settings/card-networks', label: 'Card Networks' },
+    { href: '/dashboard/settings/webhooks', label: 'Webhooks' },
   ] satisfies SettingsTab[]
 ).filter((t) => !t.feature || isWebFeatureEnabled(t.feature));
 

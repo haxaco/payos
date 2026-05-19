@@ -1825,3 +1825,110 @@ export interface NotificationsListParams {
   limit?: number;
   offset?: number;
 }
+
+// ============================================
+// Webhook Types (Story 27.5 — webhook delivery system)
+// ============================================
+
+/**
+ * A webhook endpoint subscription. Field names are snake_case as returned
+ * by the API (`webhook_endpoints` row, with `secret_hash` stripped). The
+ * one-time plaintext `secret` is NOT part of this type — it is only
+ * returned by `create` (see `webhooks.create`).
+ */
+export interface WebhookEndpoint {
+  id: string;
+  tenant_id: string;
+  url: string;
+  name?: string | null;
+  description?: string | null;
+  events: string[];
+  status: 'active' | 'disabled' | string;
+  secret_prefix?: string;
+  consecutive_failures?: number;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * A subscribable webhook event type from the `/webhooks/events` catalog.
+ */
+export interface WebhookEventType {
+  type: string;
+  description: string;
+}
+
+/**
+ * A webhook delivery attempt record (`webhook_deliveries` row). Field
+ * names are snake_case as returned by the API. `endpoint_url` is always
+ * present; `endpoint_id` is present on full-row reads (DLQ list).
+ */
+export interface WebhookDelivery {
+  id: string;
+  endpoint_id?: string;
+  endpoint_url: string;
+  event_type: string;
+  status: 'pending' | 'processing' | 'delivered' | 'failed' | 'dlq' | string;
+  last_response_code?: number | null;
+  last_response_body?: string | null;
+  attempts: number;
+  last_attempt_at?: string | null;
+  created_at: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Webhook dashboard statistics (`GET /webhooks/stats`). Typed loosely —
+ * the endpoint summary embeds a computed `health` field per endpoint and
+ * `recentFailures` is the last 10 failed/dlq deliveries.
+ */
+export interface WebhookStats {
+  period: {
+    hours: number;
+    startDate: string;
+    endDate: string;
+  };
+  summary: {
+    total: number;
+    pending: number;
+    processing: number;
+    delivered: number;
+    failed: number;
+    dlq: number;
+    successRate: string;
+    healthy: boolean;
+  };
+  endpoints: Array<
+    Pick<
+      WebhookEndpoint,
+      'id' | 'name' | 'url' | 'status' | 'consecutive_failures' | 'last_success_at' | 'last_failure_at'
+    > & { health: 'healthy' | 'degraded' | 'critical' | string }
+  >;
+  recentFailures: WebhookDelivery[];
+}
+
+export interface CreateWebhookInput {
+  url: string;
+  name?: string;
+  description?: string;
+  events: string[];
+}
+
+export interface UpdateWebhookInput {
+  url?: string;
+  name?: string;
+  description?: string;
+  events?: string[];
+  status?: 'active' | 'disabled';
+}
+
+export interface ReplayWebhooksInput {
+  deliveryIds?: string[];
+  eventTypes?: string[];
+  startDate?: string;
+  endDate?: string;
+  status?: 'failed' | 'dlq' | 'all';
+  limit?: number;
+}
