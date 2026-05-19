@@ -21,6 +21,9 @@ export interface TourStep {
   href?: string;
 }
 
+/** Canonical docs host. Surfaced as a persistent "Docs ↗" link in the engine. */
+export const SLY_DOCS_URL = 'https://docs.getsly.ai';
+
 export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: 'welcome',
@@ -45,6 +48,15 @@ export const TOUR_STEPS: readonly TourStep[] = [
     title: 'Wallets',
     body:
       'Where your funds live, scoped to sandbox or production. Sandbox wallets auto-fund with test USDC; live wallets require production approval.',
+    placement: 'right',
+  },
+  {
+    id: 'accounts',
+    selector: '[data-tour="nav-accounts"]',
+    href: '/dashboard/accounts',
+    title: 'Accounts',
+    body:
+      'The owners that hold your wallets — persons or businesses with their own KYC/KYB verification tiers. Wallets and agents both sit under an account.',
     placement: 'right',
   },
   {
@@ -93,35 +105,28 @@ export const TOUR_STEPS: readonly TourStep[] = [
     placement: 'right',
   },
   {
-    id: 'notif',
-    selector: '[data-tour="header-notifications"]',
-    title: 'Notifications',
+    id: 'transactions',
+    selector: '[data-tour="nav-transactions"]',
+    href: '/dashboard/transfers',
+    title: 'Transactions',
     body:
-      'Real-time updates: agents asking for approval, escalations to humans, payment settlements, production-access decisions.',
-    placement: 'bottom',
-  },
-  {
-    id: 'webhooks',
-    selector: '[data-tour="nav-settings"]',
-    href: '/dashboard/settings/webhooks',
-    title: 'Webhooks',
-    body:
-      'Stream every event to your own app — HMAC-signed with retries and a dead-letter queue.',
+      'The unified ledger. Every settlement, transfer and stream movement shows up here — the answer to "where did my money go?"',
     placement: 'right',
   },
   {
-    id: 'envswitch',
-    selector: '[data-tour="header-env-switch"]',
-    title: 'Sandbox ⇄ Production',
+    id: 'compliance',
+    selector: '[data-tour="nav-compliance"]',
+    href: '/dashboard/compliance',
+    title: 'Compliance',
     body:
-      'Sandbox is open self-serve. Production requires a one-time review with a deliberate treasury approval per payment — that gate is the security feature, not a missing step.',
-    placement: 'bottom',
+      'Anything regulatory that needs your attention — KYA/KYB reviews, flagged transactions, sanctions hits. A badge appears on the sidebar item when there\'s something open.',
+    placement: 'right',
   },
   {
     id: 'done',
     title: "You're set",
     body:
-      'Head to the Setup Guide and click "Run a live test" — that\'s the fastest way to see real agentic commerce on Sly.',
+      'Head to the Setup Guide and click "Run a live test" to see real agentic commerce on Sly in one click. Need depth on any of these? The Docs link in the footer of this tour stays one click away.',
     placement: 'center',
   },
 ] as const;
