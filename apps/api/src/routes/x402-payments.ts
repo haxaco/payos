@@ -192,24 +192,79 @@ function calculatePrice(
   return basePrice * applicableTier.priceMultiplier;
 }
 
-/**
- * Validate payment authorization signature (Phase 2)
- * For Phase 1, we skip signature verification
- */
-function validateSignature(
-  authorization: any,
-  signature?: string
-): boolean {
-  // Phase 1: Skip signature validation (internal ledger)
-  // Phase 2: Implement EIP-712 signature verification
+// EIP-712 typed-data definition for an x402 payment authorization. The buyer
+// wallet signs exactly these fields; the recovered signer must equal the
+// paying wallet's on-chain address.
+const X402_EIP712_DOMAIN = { name: 'SlyX402Payment', version: '1' } as const;
+const X402_EIP712_TYPES = {
+  Payment: [
+    { name: 'endpointId', type: 'string' },
+    { name: 'requestId', type: 'string' },
+    { name: 'amount', type: 'string' },
+    { name: 'currency', type: 'string' },
+    { name: 'walletId', type: 'string' },
+    { name: 'method', type: 'string' },
+    { name: 'path', type: 'string' },
+    { name: 'timestamp', type: 'uint256' },
+  ],
+} as const;
 
-  if (process.env.X402_PHASE === 'production') {
-    // TODO: Implement EIP-712 signature verification
-    // This would verify that the wallet owner signed this exact payment
-    console.warn('⚠️  EIP-712 signature verification not implemented (Phase 2)');
+/**
+ * Validate an x402 payment authorization signature.
+ *
+ * Open beta hardening: in the LIVE environment a payment from an on-chain
+ * wallet MUST carry a valid EIP-712 signature whose recovered signer matches
+ * the paying wallet's address — this closes the hole where forged/unsigned
+ * x402 payloads were accepted as authentic. Internal-ledger wallets (no
+ * on-chain address) remain tenant-authenticated. Sandbox/test keeps the
+ * permissive path so frictionless onboarding is unaffected.
+ */
+async function validateSignature(
+  authorization: any,
+  expectedAddress: string | null | undefined,
+  environment: 'test' | 'live'
+): Promise<{ valid: boolean; reason?: string }> {
+  if (environment !== 'live') {
+    return { valid: true }; // Frictionless sandbox.
   }
 
-  return true; // Phase 1: Trust internal auth
+  const isOnChain =
+    !!expectedAddress && /^0x[a-fA-F0-9]{40}$/.test(expectedAddress);
+  if (!isOnChain) {
+    // Internal/ledger wallet — the request is already tenant-authenticated
+    // and no on-chain key exists to sign with.
+    return { valid: true };
+  }
+
+  if (!authorization.signature) {
+    return { valid: false, reason: 'signature_required' };
+  }
+
+  try {
+    const { recoverTypedDataAddress } = await import('viem');
+    const recovered = await recoverTypedDataAddress({
+      domain: X402_EIP712_DOMAIN,
+      types: X402_EIP712_TYPES,
+      primaryType: 'Payment',
+      message: {
+        endpointId: String(authorization.endpointId),
+        requestId: String(authorization.requestId),
+        amount: String(authorization.amount),
+        currency: String(authorization.currency),
+        walletId: String(authorization.walletId),
+        method: String(authorization.method),
+        path: String(authorization.path),
+        timestamp: BigInt(authorization.timestamp),
+      },
+      signature: authorization.signature as `0x${string}`,
+    });
+    if (recovered.toLowerCase() !== (expectedAddress as string).toLowerCase()) {
+      return { valid: false, reason: 'signer_mismatch' };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, reason: 'invalid_signature' };
+  }
 }
 
 /**
@@ -672,10 +727,16 @@ app.post('/pay', async (c) => {
     // 5. VALIDATE SIGNATURE (Phase 2)
     // ============================================
 
-    if (!validateSignature(auth, auth.signature)) {
+    const sigCheck = await validateSignature(
+      auth,
+      (wallet as any)?.wallet_address,
+      getEnv(ctx)
+    );
+    if (!sigCheck.valid) {
       return c.json({
         error: 'Invalid payment signature',
-        code: 'INVALID_SIGNATURE'
+        code: 'INVALID_SIGNATURE',
+        reason: sigCheck.reason,
       }, 401);
     }
 

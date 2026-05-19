@@ -126,6 +126,10 @@ vi.mock('../../src/utils/auth.js', () => ({
   checkRateLimit: vi.fn(() => ({ allowed: true, retryAfter: 0 })),
   logSecurityEvent: vi.fn(),
   addRandomDelay: vi.fn(),
+  // Open beta: email-verification gate. Default to "not required" so existing
+  // provision tests exercise the normal path.
+  isEmailVerificationRequired: vi.fn(() => false),
+  isEmailVerified: vi.fn(() => true),
 }));
 
 describe('POST /v1/auth/provision', () => {

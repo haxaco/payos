@@ -32,7 +32,8 @@ app.get('/', async (c) => {
 
   try {
     const supabase = createClient();
-    const state = await getTenantOnboardingState(supabase, ctx.tenantId);
+    const env = ctx.environment === 'live' ? 'live' : 'test';
+    const state = await getTenantOnboardingState(supabase, ctx.tenantId, env);
     return c.json(state);
   } catch (error) {
     console.error('Failed to get onboarding state:', error);

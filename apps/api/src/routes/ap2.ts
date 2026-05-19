@@ -304,7 +304,32 @@ ap2.get('/mandates/:id', async (c) => {
     }
   }
 
-  return c.json({ data: { ...mandate, executions: executions || [], funding_source } });
+  // Join the funding account + authorized agent so the UI can render their
+  // names directly (without a racy secondary fetch that flashes "Unknown").
+  let account = null;
+  if (mandate.account_id) {
+    const { data: acct } = await supabase
+      .from('accounts')
+      .select('id, name')
+      .eq('id', mandate.account_id)
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
+      .maybeSingle();
+    if (acct) account = acct;
+  }
+  let agent = null;
+  if (mandate.agent_id && UUID_RE.test(mandate.agent_id)) {
+    const { data: ag } = await supabase
+      .from('agents')
+      .select('id, name')
+      .eq('id', mandate.agent_id)
+      .eq('tenant_id', ctx.tenantId)
+      .eq('environment', getEnv(ctx))
+      .maybeSingle();
+    if (ag) agent = ag;
+  }
+
+  return c.json({ data: { ...mandate, executions: executions || [], funding_source, account, agent } });
 });
 
 /**
@@ -631,9 +656,11 @@ ap2.post('/mandates/:id/execute', async (c) => {
     return c.json({ error: 'Amount exceeds remaining mandate budget' }, 400);
   }
 
-  // KYA limit enforcement — prevent mandate bypass of per-transaction limits
+  // KYA limit enforcement — prevent mandate bypass of per-transaction limits.
+  // Must pass the request environment so the per-tenant beta ceiling (LIVE
+  // only) is actually enforced on AP2 mandate execution.
   try {
-    const limitService = new LimitService(supabase);
+    const limitService = new LimitService(supabase, getEnv(ctx));
     const limitCheck = await limitService.checkTransactionLimit(mandate.agent_id, execAmount);
     if (!limitCheck.allowed) {
       return c.json({ error: `Limit check failed: ${limitCheck.reason}`, code: 'LIMIT_EXCEEDED', details: limitCheck }, 403);

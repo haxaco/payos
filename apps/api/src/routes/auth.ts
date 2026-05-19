@@ -12,6 +12,8 @@ import {
   checkRateLimit,
   logSecurityEvent,
   addRandomDelay,
+  isEmailVerificationRequired,
+  isEmailVerified,
 } from '../utils/auth.js';
 import { provisionTenant, TenantProvisioningError } from '../services/tenant-provisioning.js';
 import { generateAgentToken, verifyApiKey } from '../utils/crypto.js';
@@ -131,7 +133,12 @@ auth.post('/signup', async (c) => {
       body: JSON.stringify({
         email: validated.email,
         password: validated.password,
-        email_confirm: true,
+        // Open beta: when REQUIRE_EMAIL_VERIFICATION=true the user is NOT
+        // auto-confirmed — Supabase sends a verification email and production
+        // access stays blocked until email_confirmed_at is set (see
+        // requireVerifiedEmail). Default false preserves current behaviour
+        // (no lockout risk if SMTP is not configured in dev/test).
+        email_confirm: process.env.REQUIRE_EMAIL_VERIFICATION !== 'true',
         user_metadata: {
           name: validated.userName || validated.email.split('@')[0],
         },
@@ -755,6 +762,21 @@ auth.post('/provision', async (c) => {
     const { data: userData, error: authError } = await (supabase as any).auth.getUser(token);
     if (authError || !userData?.user) {
       return c.json({ error: 'Invalid or expired session token' }, 401);
+    }
+
+    // Open beta: block tenant provisioning for unverified emails when strict
+    // verification is enabled (closes the fake-email → tenant vector).
+    if (isEmailVerificationRequired() && !isEmailVerified(userData.user)) {
+      await logSecurityEvent('email_verification_required', 'warning', {
+        userId: userData.user.id,
+        reason: 'email_not_verified',
+        ip,
+        userAgent,
+      });
+      return c.json(
+        { error: 'Please verify your email address before provisioning an organization.', code: 'EMAIL_NOT_VERIFIED' },
+        403
+      );
     }
 
     const userId = userData.user.id;

@@ -8,12 +8,14 @@ import { KeyReveal } from '../shared/key-reveal';
 import { GlowButton } from '../shared/glow-button';
 
 interface ApiKeysStepProps {
-  apiKeys: { test: { key: string; prefix: string }; live: { key: string; prefix: string } };
+  // Open beta: only a sandbox (test) key is issued at signup. A live key is
+  // created later, after production access is approved.
+  apiKeys: { test: { key: string; prefix: string } };
   orgName: string;
   onNext: () => void;
 }
 
-function downloadKeysAsEnv(testKey: string, liveKey: string, orgName: string) {
+function downloadKeysAsEnv(testKey: string, orgName: string) {
   const content = [
     `# ${orgName} — Sly API Keys`,
     `# Generated: ${new Date().toISOString()}`,
@@ -22,8 +24,7 @@ function downloadKeysAsEnv(testKey: string, liveKey: string, orgName: string) {
     '# Sandbox (test mode)',
     `SLY_API_KEY=${testKey}`,
     '',
-    '# Production (live mode)',
-    `SLY_API_KEY_LIVE=${liveKey}`,
+    '# A live key becomes available after production access is approved.',
     '',
     '# API endpoint',
     'SLY_API_URL=https://api.getsly.ai',
@@ -62,7 +63,6 @@ export function ApiKeysStep({ apiKeys, orgName, onNext }: ApiKeysStepProps) {
 
   const keys = [
     { label: 'Sandbox (Test)', key: apiKeys.test.key, id: 'test', delay: 200 },
-    { label: 'Production (Live)', key: apiKeys.live.key, id: 'live', delay: 400 },
   ];
 
   return (
@@ -105,7 +105,8 @@ export function ApiKeysStep({ apiKeys, orgName, onNext }: ApiKeysStepProps) {
       <motion.div variants={fadeUp} className="text-center space-y-2">
         <h2 className="text-2xl font-bold text-foreground">Your API Keys</h2>
         <p className="text-sm text-muted-foreground">
-          Save these keys — they won&apos;t be shown again.
+          Save this key — it won&apos;t be shown again. You&apos;re in sandbox
+          mode; a live key unlocks after production access is approved.
         </p>
       </motion.div>
 
@@ -161,7 +162,7 @@ export function ApiKeysStep({ apiKeys, orgName, onNext }: ApiKeysStepProps) {
         <GlowButton
           variant="secondary"
           className="flex-1"
-          onClick={() => downloadKeysAsEnv(apiKeys.test.key, apiKeys.live.key, orgName)}
+          onClick={() => downloadKeysAsEnv(apiKeys.test.key, orgName)}
         >
           <Download className="h-4 w-4 mr-2" />
           Download .env

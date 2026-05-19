@@ -24,6 +24,7 @@ import { normalizeFields, buildDeprecationHeader, getEnv, logAudit } from '../ut
 import { triggerWorkflows } from '../services/workflow-trigger.js';
 import { trackOp } from '../services/ops/track-op.js';
 import { OpType } from '../services/ops/operation-types.js';
+import { checkFaucetDailyCap, FAUCET_DAILY_CAP_USDC } from '../services/faucet-cap.js';
 
 // Derive correct network name per blockchain (Solana uses solana-devnet/mainnet, others use {chain}-mainnet)
 function getNetworkName(blockchain: string): string {
@@ -80,6 +81,11 @@ const spendingPolicySchema = z.object({
     escalateAbove: z.number().positive().optional(),
   }).optional(),
 }).optional();
+
+// Open beta: a fresh internal wallet in sandbox is auto-seeded with test
+// USDC so onboarding never requires an external funding step before the
+// first agent payment. Live wallets always start at the requested balance.
+const INITIAL_TEST_BALANCE_USDC = 1000;
 
 // Schema for creating a NEW wallet (internal or Circle)
 // Story 51.1: Accept both accountId (new) and ownerAccountId (deprecated)
@@ -267,7 +273,18 @@ app.post('/', async (c) => {
     // Get the account ID (prefer new name, fall back to old)
     const accountId = validated.accountId || validated.ownerAccountId;
     if (!accountId) {
-      return c.json({ error: 'accountId is required' }, 400);
+      return c.json(
+        {
+          error: 'accountId is required',
+          code: 'VALIDATION_ERROR',
+          suggestion:
+            'Create an account first (POST /v1/accounts) and pass its id as `accountId`.',
+          relatedEndpoints: [
+            { method: 'POST', path: '/v1/accounts', description: 'Create an account to own the wallet' },
+          ],
+        },
+        400
+      );
     }
 
     const supabase = createClient();
@@ -383,6 +400,16 @@ app.post('/', async (c) => {
       }
     }
 
+    // Open beta: auto-seed ANY sandbox wallet (the onboarding wizard creates
+    // circle_custodial wallets, not internal — restricting to internal left
+    // real onboarded users at $0 and unable to make a first payment). In
+    // test/sandbox the ledger balance is test funds, so seeding regardless
+    // of wallet_type is correct and frictionless. Never applies to live.
+    const effectiveInitialBalance =
+      getEnv(ctx) === 'test' && validated.initialBalance === 0
+        ? INITIAL_TEST_BALANCE_USDC
+        : validated.initialBalance;
+
     // Create wallet record
     const { data: wallet, error: createError } = await supabase
       .from('wallets')
@@ -391,7 +418,7 @@ app.post('/', async (c) => {
         environment: getEnv(ctx),
         owner_account_id: accountId,
         managed_by_agent_id: validated.managedByAgentId || null,
-        balance: validated.initialBalance,
+        balance: effectiveInitialBalance,
         currency: validated.currency,
         spending_policy: validated.spendingPolicy || null,
         wallet_address: walletAddress,
@@ -433,7 +460,7 @@ app.post('/', async (c) => {
     }
 
     // If initial balance > 0, create a deposit transfer
-    if (validated.initialBalance > 0) {
+    if (effectiveInitialBalance > 0) {
       await supabase
         .from('transfers')
         .insert({
@@ -441,11 +468,14 @@ app.post('/', async (c) => {
           environment: getEnv(ctx),
           from_account_id: accountId,
           to_account_id: accountId,
-          amount: validated.initialBalance,
+          amount: effectiveInitialBalance,
           currency: validated.currency,
           type: 'internal',
           status: 'completed',
-          description: 'Initial wallet funding',
+          description:
+            effectiveInitialBalance !== validated.initialBalance
+              ? 'Sandbox test funding (auto-seeded)'
+              : 'Initial wallet funding',
           protocol_metadata: {
             protocol: 'x402',
             wallet_id: wallet.id,
@@ -601,7 +631,18 @@ app.post('/external', async (c) => {
     // Get the account ID (prefer new name, fall back to old)
     const accountId = validated.accountId || validated.ownerAccountId;
     if (!accountId) {
-      return c.json({ error: 'accountId is required' }, 400);
+      return c.json(
+        {
+          error: 'accountId is required',
+          code: 'VALIDATION_ERROR',
+          suggestion:
+            'Create an account first (POST /v1/accounts) and pass its id as `accountId`.',
+          relatedEndpoints: [
+            { method: 'POST', path: '/v1/accounts', description: 'Create an account to own the wallet' },
+          ],
+        },
+        400
+      );
     }
 
     const supabase = createClient();
@@ -1797,17 +1838,15 @@ app.post('/:id/test-fund', async (c) => {
     const ctx = c.get('ctx');
     const id = c.req.param('id');
 
-    // Check environment - only allow in sandbox/development
-    const isProduction = process.env.NODE_ENV === 'production' &&
-      !process.env.SANDBOX_MODE &&
-      ctx.apiKeyEnvironment !== 'test';
-
-    if (isProduction) {
+    // Open beta: a LIVE-environment request can NEVER be test-funded,
+    // regardless of NODE_ENV or SANDBOX_MODE (closes the prod bypass where
+    // SANDBOX_MODE=true would allow crediting a live wallet for free).
+    if (getEnv(ctx) === 'live') {
       return c.json({
         error: {
           code: 'TEST_FUNDING_NOT_ALLOWED',
-          message: 'Test funding is only available in sandbox mode',
-          suggestion: 'Use a test API key (pk_test_*) or enable sandbox mode',
+          message: 'Test funding is not available in the live environment',
+          suggestion: 'Use a sandbox/test context to fund test wallets.',
           docs_url: 'https://docs.payos.ai/sandbox',
         },
       }, 403);
@@ -1815,6 +1854,19 @@ app.post('/:id/test-fund', async (c) => {
 
     const body = await c.req.json();
     const validated = testFundSchema.parse(body);
+
+    // Open beta: per-tenant daily cap so a beta tenant can't mint unlimited
+    // sandbox USDC. In-memory is acceptable for the single-instance launch.
+    const faucetCap = checkFaucetDailyCap(ctx.tenantId, validated.amount);
+    if (!faucetCap.allowed) {
+      return c.json({
+        error: {
+          code: 'FAUCET_DAILY_CAP',
+          message: `Daily sandbox funding cap reached (${FAUCET_DAILY_CAP_USDC} USDC/tenant/day).`,
+          suggestion: 'Reuse existing test balances or wait until the cap resets (UTC midnight).',
+        },
+      }, 429);
+    }
 
     const supabase = createClient();
 

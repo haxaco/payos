@@ -36,6 +36,13 @@ interface ProcessorConfig {
   agentId?: string;
   /** Enable payment gating for amounts > threshold */
   paymentThreshold?: number;
+  /**
+   * Environment of the processed tasks. MUST be 'live' for live-environment
+   * settlement, else the per-tenant beta ceiling (enforced LIVE-only inside
+   * LimitService) is silently skipped on the A2A money path. Defaults to
+   * 'test' (frictionless sandbox).
+   */
+  environment?: 'test' | 'live';
 }
 
 export class A2ATaskProcessor {
@@ -58,7 +65,35 @@ export class A2ATaskProcessor {
       pollInterval: config.pollInterval ?? 5000,
       agentId: config.agentId ?? '',
       paymentThreshold: config.paymentThreshold ?? 500,
+      environment: config.environment ?? 'test',
     };
+  }
+
+  /**
+   * Resolve the environment for limit enforcement from the agent row (the
+   * agents table is environment-scoped), falling back to the configured
+   * environment. CRITICAL: the strict per-tenant beta ceiling inside
+   * LimitService only fires for 'live', so a wrong value here would silently
+   * disable the ceiling on the A2A money path.
+   */
+  private async resolveAgentEnvironment(
+    agentId: string | null | undefined,
+  ): Promise<'test' | 'live'> {
+    if (agentId) {
+      try {
+        const { data } = await this.supabase
+          .from('agents')
+          .select('environment')
+          .eq('id', agentId)
+          .maybeSingle();
+        if (data?.environment === 'live' || data?.environment === 'test') {
+          return data.environment;
+        }
+      } catch {
+        /* fall back to configured environment below */
+      }
+    }
+    return this.config.environment;
   }
 
   // --- R5: Structured correlation logging ---
@@ -268,7 +303,8 @@ export class A2ATaskProcessor {
       }
     }
     if (effectiveAmount > 0) {
-      const limitService = new LimitService(this.supabase);
+      const limitEnv = await this.resolveAgentEnvironment(agentCtx.agentId);
+      const limitService = new LimitService(this.supabase, limitEnv);
       const limitCheck = await limitService.checkTransactionLimit(agentCtx.agentId, effectiveAmount);
       if (!limitCheck.allowed) {
         const isKya = limitCheck.reason === 'kya_verification_required';
@@ -1082,7 +1118,8 @@ export class A2ATaskProcessor {
 
       // R4: Record usage after settlement for accurate daily/monthly limit tracking
       try {
-        const limitService = new LimitService(this.supabase);
+        const limitEnv = await this.resolveAgentEnvironment(mandate.agent_id);
+        const limitService = new LimitService(this.supabase, limitEnv);
         await limitService.recordUsage(mandate.agent_id, amount);
       } catch (err: any) {
         console.warn(`[A2A] Usage recording failed (non-fatal): ${err.message}`);
@@ -1230,7 +1267,8 @@ export class A2ATaskProcessor {
     // Limit check on caller agent before settlement
     if (callerAgentId && Number(skill.base_price) > 0) {
       try {
-        const limitService = new LimitService(this.supabase);
+        const limitEnv = await this.resolveAgentEnvironment(callerAgentId);
+        const limitService = new LimitService(this.supabase, limitEnv);
         const limitCheck = await limitService.checkTransactionLimit(callerAgentId, Number(skill.base_price));
         if (!limitCheck.allowed) {
           const isKya = limitCheck.reason === 'kya_verification_required';

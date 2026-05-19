@@ -1,6 +1,7 @@
 import { createClient } from '../db/client.js';
 import { createBalanceService } from '../services/balances.js';
 import { logAudit } from '../utils/helpers.js';
+import { LimitService } from '../services/limits.js';
 
 /**
  * Background worker for executing scheduled transfers
@@ -144,6 +145,54 @@ export class ScheduledTransferWorker {
     if (!toAccountId) {
       console.warn(`No destination account for schedule ${schedule.id}`);
       return;
+    }
+
+    // Open beta: an agent-initiated scheduled transfer must pass the same
+    // KYA + per-tenant beta-ceiling checks as an interactive transfer —
+    // otherwise scheduling is a way to bypass the ceiling. Non-agent
+    // (user/system/treasury) schedules are not agent-keyed and fall outside
+    // LimitService; they keep their existing balance check above.
+    if (schedule.initiated_by_type === 'agent' && schedule.initiated_by_id) {
+      const env: 'test' | 'live' =
+        schedule.environment === 'live' ? 'live' : 'test';
+      try {
+        const limitService = new LimitService(supabase, env);
+        const limitCheck = await limitService.checkTransactionLimit(
+          schedule.initiated_by_id,
+          parseFloat(schedule.amount),
+        );
+        if (!limitCheck.allowed) {
+          console.warn(
+            `[scheduled-transfers] Schedule ${schedule.id} blocked by limit: ${limitCheck.reason}`,
+          );
+          await logAudit(supabase, {
+            tenantId: schedule.tenant_id,
+            entityType: 'transfer_schedule',
+            entityId: schedule.id,
+            action: 'scheduled_transfer_limit_blocked',
+            actorType: 'system',
+            actorId: null,
+            actorName: 'scheduled-worker',
+            metadata: {
+              reason: limitCheck.reason,
+              limitType: limitCheck.limitType,
+              agentId: schedule.initiated_by_id,
+              amount: schedule.amount,
+              environment: env,
+            },
+          });
+          return; // Skip this execution; next_execution is not advanced.
+        }
+      } catch (limitErr: any) {
+        // Fail closed for agent-initiated live transfers; tolerate in sandbox.
+        if (env === 'live') {
+          console.error(
+            `[scheduled-transfers] Limit check error (schedule ${schedule.id}), skipping:`,
+            limitErr?.message,
+          );
+          return;
+        }
+      }
     }
 
     // Create transfer

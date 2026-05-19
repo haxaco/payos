@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createClient } from '../db/client.js';
-import { ValidationError, NotFoundError, ForbiddenError } from '../middleware/error.js';
+import { ValidationError, NotFoundError, ForbiddenError, ApiError } from '../middleware/error.js';
+import { isProductionApproved } from '../services/tenant-production-access.js';
 import {
   generateApiKey,
   hashApiKey,
@@ -105,12 +106,47 @@ apiKeys.post('/', async (c) => {
   const body = await c.req.json();
   const validated = createApiKeySchema.parse(body);
 
+  const supabase: any = createClient();
+
+  // Open beta: live keys are gated on tenant production approval. Creating a
+  // live key before approval is the core leak this closes.
+  if (validated.environment === 'live') {
+    const { data: tenantRow } = await (supabase.from('tenants') as any)
+      .select('production_access_status')
+      .eq('id', tenantId)
+      .single();
+    if (!isProductionApproved(tenantRow?.production_access_status)) {
+      await logSecurityEvent('live_key_create_blocked', 'warning', {
+        tenantId,
+        userId,
+        ip,
+        userAgent,
+        status: tenantRow?.production_access_status ?? 'unknown',
+      });
+      throw new ApiError(
+        'Live API keys require production access. Submit a production declaration first.',
+        403,
+        { productionAccessStatus: tenantRow?.production_access_status ?? 'sandbox_only' },
+        {
+          code: 'FORBIDDEN',
+          suggestion:
+            'Request production access from the dashboard, then create the live key once approved.',
+          relatedEndpoints: [
+            {
+              method: 'POST',
+              path: '/v1/tenants/declare-production',
+              description: 'Submit the T1 production declaration',
+            },
+          ],
+        }
+      );
+    }
+  }
+
   // Generate API key
   const key = generateApiKey(validated.environment);
   const keyPrefix = getKeyPrefix(key);
   const keyHash = hashApiKey(key);
-
-  const supabase: any = createClient();
 
   // Insert into database
   const { data: apiKey, error } = await (supabase
@@ -397,6 +433,32 @@ apiKeys.post('/:id/rotate', async (c) => {
       userAgent,
     });
     throw new ForbiddenError('You can only rotate your own API keys');
+  }
+
+  // Open beta: rotating a LIVE key must re-check production approval.
+  // Otherwise a suspended/denied (or never-approved-but-grandfather-missed)
+  // tenant could mint a fresh live key by rotating an old one — bypassing
+  // the live gate that POST /v1/api-keys enforces.
+  if (oldKey.environment === 'live') {
+    const { data: rotateTenant } = await (supabase.from('tenants') as any)
+      .select('production_access_status')
+      .eq('id', tenantId)
+      .single();
+    if (!isProductionApproved(rotateTenant?.production_access_status)) {
+      await logSecurityEvent('live_key_create_blocked', 'warning', {
+        tenantId,
+        userId,
+        ip,
+        userAgent,
+        status: rotateTenant?.production_access_status ?? 'unknown',
+      });
+      throw new ApiError(
+        'Cannot rotate a live API key: production access is not currently approved for this organization.',
+        403,
+        { productionAccessStatus: rotateTenant?.production_access_status ?? 'sandbox_only' },
+        { code: 'FORBIDDEN' }
+      );
+    }
   }
 
   // Generate new API key

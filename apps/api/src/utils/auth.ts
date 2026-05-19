@@ -233,7 +233,11 @@ export type SecurityEventType =
   | 'agent_onboard_screened'
   | 'agent_onboard_success'
   // Tenant provisioning
-  | 'tenant_provisioned';
+  | 'tenant_provisioned'
+  // Open beta production gating
+  | 'live_key_blocked'
+  | 'live_key_create_blocked'
+  | 'email_verification_required';
 
 export type SecurityEventSeverity = 'info' | 'warning' | 'critical' | 'error';
 
@@ -263,5 +267,23 @@ export async function logSecurityEvent(
 export async function addRandomDelay(minMs: number = 100, maxMs: number = 300): Promise<void> {
   const delay = minMs + Math.random() * (maxMs - minMs);
   await new Promise((resolve) => setTimeout(resolve, delay));
+}
+
+/**
+ * Open beta: gate security-critical actions (tenant provisioning, production
+ * declaration) on a verified email.
+ *
+ * Enforced only when REQUIRE_EMAIL_VERIFICATION=true so dev/test (and
+ * environments without SMTP) are unaffected by default. A Supabase user is
+ * considered verified when either `email_confirmed_at` or `confirmed_at` is
+ * set. Returns true when the action may proceed.
+ */
+export function isEmailVerificationRequired(): boolean {
+  return process.env.REQUIRE_EMAIL_VERIFICATION === 'true';
+}
+
+export function isEmailVerified(user: unknown): boolean {
+  const u = (user ?? {}) as { email_confirmed_at?: unknown; confirmed_at?: unknown };
+  return Boolean(u.email_confirmed_at || u.confirmed_at);
 }
 

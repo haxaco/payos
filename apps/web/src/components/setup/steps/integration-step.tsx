@@ -19,7 +19,7 @@ import { Celebration } from '../shared/celebration';
 import { toast } from 'sonner';
 
 interface IntegrationStepProps {
-  apiKeys: { test: { key: string; prefix: string }; live: { key: string; prefix: string } } | null;
+  apiKeys: { test: { key: string; prefix: string }; live?: { key: string; prefix: string } } | null;
   accountId: string | null;
   onComplete: () => void;
 }
@@ -160,7 +160,8 @@ export function IntegrationStep({ apiKeys, accountId, onComplete }: IntegrationS
   const [showCelebration, setShowCelebration] = useState(false);
 
   const testKey = apiKeys?.test.key || 'pk_test_...';
-  const liveKey = apiKeys?.live.key || 'pk_live_...';
+  // Live key is not issued until production access is approved — placeholder.
+  const liveKey = apiKeys?.live?.key || 'pk_live_...';
   const acctId = accountId || '<account_id>';
 
   const downloadMcpJson = useCallback(() => {

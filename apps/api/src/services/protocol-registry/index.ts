@@ -106,7 +106,12 @@ export async function checkPrerequisites(
  */
 export async function getOrganizationProtocolStatus(
   supabase: SupabaseClient,
-  tenantId: string
+  tenantId: string,
+  // Open beta: in sandbox/test every agentic-payments protocol is on by
+  // default with no prerequisite gate, so onboarding has no "enable" step.
+  // The gate only applies to `live`. Defaults to 'live' so any caller that
+  // doesn't pass an environment keeps the strict (safe) behaviour.
+  environment: 'test' | 'live' = 'live'
 ): Promise<OrganizationProtocolStatus> {
   // Get tenant settings for enabled protocols
   const { data: tenant, error: tenantError } = await supabase
@@ -120,8 +125,21 @@ export async function getOrganizationProtocolStatus(
 
   const protocols: Record<ProtocolId, ProtocolEnablementStatus> = {} as Record<ProtocolId, ProtocolEnablementStatus>;
 
+  const sandbox = environment === 'test';
+
   // Check status for each protocol
   for (const protocolId of getProtocolIds()) {
+    if (sandbox) {
+      // Frictionless sandbox: always enabled, prerequisites considered met.
+      protocols[protocolId] = {
+        enabled: true,
+        enabled_at: enabledProtocols[protocolId]?.enabled_at,
+        prerequisites_met: true,
+        missing_prerequisites: [],
+      };
+      continue;
+    }
+
     const { met, missing } = await checkPrerequisites(supabase, tenantId, protocolId);
     const enabledInfo = enabledProtocols[protocolId];
 
@@ -142,7 +160,9 @@ export async function getOrganizationProtocolStatus(
 export async function enableProtocol(
   supabase: SupabaseClient,
   tenantId: string,
-  protocolId: ProtocolId
+  protocolId: ProtocolId,
+  // See getOrganizationProtocolStatus: sandbox skips the prerequisite gate.
+  environment: 'test' | 'live' = 'live'
 ): Promise<EnableProtocolResult> {
   // Validate protocol ID
   if (!isValidProtocolId(protocolId)) {
@@ -153,15 +173,18 @@ export async function enableProtocol(
     };
   }
 
-  // Check prerequisites
-  const { met, missing } = await checkPrerequisites(supabase, tenantId, protocolId);
-  if (!met) {
-    return {
-      success: false,
-      protocol: protocolId,
-      error: 'prerequisites_not_met',
-      missing_prerequisites: missing,
-    };
+  // Check prerequisites — skipped entirely in sandbox so a fresh tenant can
+  // use agentic payments immediately without provisioning anything.
+  if (environment !== 'test') {
+    const { met, missing } = await checkPrerequisites(supabase, tenantId, protocolId);
+    if (!met) {
+      return {
+        success: false,
+        protocol: protocolId,
+        error: 'prerequisites_not_met',
+        missing_prerequisites: missing,
+      };
+    }
   }
 
   // Get current tenant settings

@@ -33,7 +33,9 @@ function getApiUrl(env: 'test' | 'live'): string {
 
 interface ApiKeys {
   test: { key: string; prefix: string };
-  live: { key: string; prefix: string };
+  // Open beta: a live key is not issued at signup — only after production
+  // access is approved.
+  live?: { key: string; prefix: string };
 }
 
 export default function SetupWizard() {
