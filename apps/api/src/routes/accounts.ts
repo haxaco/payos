@@ -13,6 +13,11 @@ import {
   sanitizeSearchInput,
   getEnv,
 } from '../utils/helpers.js';
+import {
+  deriveAccountBalance,
+  deriveAccountBalances,
+  pickDerivedTotal,
+} from '../services/balances.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../middleware/error.js';
 import { ErrorCode } from '@sly/types';
 import { onboardEntity, type OnboardingInput } from '../services/entity-onboarding.js';
@@ -25,6 +30,28 @@ import { createEDDReview } from '../services/kyc/enterprise-review.js';
 import { isSanctionedCountry } from '../services/kyc/screening.js';
 
 const accounts = new Hono();
+
+// ============================================
+// DERIVED BALANCE OVERLAY (wallets are source of truth)
+// --------------------------------------------
+// mapAccountFromDb() is synchronous and maps the (legacy/advisory) stored
+// accounts.balance_* columns. We overwrite the headline total/available with
+// the derived SUM(wallets.balance) AFTER mapping, keeping the response shape
+// identical. in_streams + buffer stay as the stored stream-overlay values
+// (not represented in wallets); available = max(0, total - in_streams -
+// buffer). See the DERIVED ACCOUNT BALANCE note in services/balances.ts.
+// ============================================
+function applyDerivedTotal(account: ReturnType<typeof mapAccountFromDb>, derivedTotal: number) {
+  const inStreams = account.balanceInStreams || 0;
+  const buffer = account.balanceBuffer || 0;
+  const available = Math.max(0, derivedTotal - inStreams - buffer);
+
+  account.balanceTotal = derivedTotal;
+  account.balanceAvailable = available;
+  account.balance.total = derivedTotal;
+  account.balance.available = available;
+  return account;
+}
 
 // ============================================
 // VALIDATION SCHEMAS
@@ -110,10 +137,20 @@ accounts.get('/', async (c) => {
     }
   }
   
+  // Derive balances from wallets for ALL accounts in this page in ONE query
+  // (grouped client-side by owner_account_id) — avoids N+1.
+  const walletSums = await deriveAccountBalances(
+    supabase,
+    accountIds,
+    ctx.tenantId,
+    getEnv(ctx)
+  );
+
   // Map to response format
   const accounts = (data || []).map(row => {
     const account = mapAccountFromDb(row);
     account.agents = agentCounts[row.id] || { count: 0, active: 0 };
+    applyDerivedTotal(account, pickDerivedTotal(walletSums.get(row.id), row.currency));
     return account;
   });
   
@@ -270,8 +307,17 @@ accounts.get('/:id', async (c) => {
   
   const account = mapAccountFromDb(data);
   account.agents = { count: agentCount, active: activeAgentCount };
-  
-  return c.json({ 
+
+  // Headline balance = SUM(wallets.balance) (wallets are source of truth).
+  const derived = await deriveAccountBalance(supabase, {
+    id: data.id,
+    tenant_id: data.tenant_id,
+    environment: data.environment,
+    currency: data.currency,
+  });
+  applyDerivedTotal(account, derived.total);
+
+  return c.json({
     data: account,
     links: {
       self: `/v1/accounts/${id}`,
@@ -506,7 +552,7 @@ accounts.get('/:id/balances', async (c) => {
   
   const { data, error } = await supabase
     .from('accounts')
-    .select('id, name, balance_total, balance_available, balance_in_streams, balance_buffer')
+    .select('id, name, tenant_id, environment, currency, balance_total, balance_available, balance_in_streams, balance_buffer')
     .eq('id', id)
     .eq('tenant_id', ctx.tenantId)
     .eq('environment', getEnv(ctx))
@@ -515,6 +561,15 @@ accounts.get('/:id/balances', async (c) => {
   if (error || !data) {
     throw new NotFoundError('Account', id);
   }
+
+  // Headline total/available are derived from wallets (source of truth).
+  // in_streams + buffer remain the stored stream-overlay values.
+  const derived = await deriveAccountBalance(supabase, {
+    id: data.id,
+    tenant_id: data.tenant_id,
+    environment: data.environment,
+    currency: data.currency,
+  });
 
   // Get stream counts
   const { data: streams } = await supabase
@@ -529,19 +584,25 @@ accounts.get('/:id/balances', async (c) => {
   
   const outflowPerMonth = outgoingStreams.reduce((sum, s) => sum + Number(s.flow_rate_per_month ?? 0), 0);
   const inflowPerMonth = incomingStreams.reduce((sum, s) => sum + Number(s.flow_rate_per_month ?? 0), 0);
-  const availableBalance = Number(data.balance_available ?? 0) || 0;
+
+  // total = SUM(wallets.balance); in_streams/buffer = stored stream overlay;
+  // available = max(0, total - in_streams - buffer).
+  const inStreamsTotal = Number(data.balance_in_streams ?? 0) || 0;
+  const bufferTotal = Number(data.balance_buffer ?? 0) || 0;
+  const derivedTotal = derived.total;
+  const availableBalance = Math.max(0, derivedTotal - inStreamsTotal - bufferTotal);
 
   const responseBody: any = {
     data: {
       accountId: data.id,
       accountName: data.name,
       balance: {
-        total: Number(data.balance_total ?? 0) || 0,
+        total: derivedTotal,
         available: availableBalance,
         inStreams: {
-          total: Number(data.balance_in_streams ?? 0) || 0,
-          buffer: Number(data.balance_buffer ?? 0) || 0,
-          streaming: (Number(data.balance_in_streams ?? 0) || 0) - (Number(data.balance_buffer ?? 0) || 0),
+          total: inStreamsTotal,
+          buffer: bufferTotal,
+          streaming: inStreamsTotal - bufferTotal,
         },
         currency: 'USDC',
       },

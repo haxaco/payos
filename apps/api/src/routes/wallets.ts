@@ -1334,33 +1334,38 @@ app.post('/:id/deposit', async (c) => {
       return c.json({ error: 'Failed to deposit funds' }, 500);
     }
 
-    // Create transfer record
-    const { data: transfer, error: transferError } = await supabase
-      .from('transfers')
-      .insert({
-        tenant_id: ctx.tenantId,
-        environment: getEnv(ctx),
-        from_account_id: fromAccountId,
-        to_account_id: wallet.owner_account_id,
-        amount: validated.amount,
+    // Record the deposit as an audit-ledger entry, NOT a transfers row.
+    // A deposit is a wallet credit (external funds -> this wallet); it is
+    // NOT an account-to-account money movement, and no accounts debit/credit
+    // occurs here. Inserting a `transfers` row (from_account -> to_account,
+    // type 'internal', status 'completed') would falsely claim an internal
+    // transfer that never happened and corrupt transfer-derived
+    // reconciliation. Mirror the correct wallet-credit path (test-fund) which
+    // records the balance change via logAudit.
+    await logAudit(supabase, {
+      tenantId: ctx.tenantId,
+      entityType: 'wallet',
+      entityId: wallet.id,
+      action: 'deposit',
+      actorType: ctx.actorType || 'user',
+      actorId: ctx.userId || ctx.actorId || 'system',
+      actorName: ctx.userName || ctx.actorName || 'System',
+      changes: {
+        previous_balance: Number(wallet.balance ?? 0),
+        deposited_amount: validated.amount,
+        new_balance: newBalance,
         currency: wallet.currency,
-        type: 'internal',
-        status: 'completed',
-        description: validated.reference || 'Wallet deposit',
-        protocol_metadata: {
-          protocol: 'x402',
-          wallet_id: wallet.id,
-          operation: 'deposit'
-        }
-      } as any)
-      .select()
-      .single();
-
-    if (transferError) {
-      console.error('Error creating transfer record:', transferError);
-      // Note: balance already updated, but transfer record failed
-      // In production, this should be a transaction
-    }
+        reference: validated.reference,
+      },
+      metadata: {
+        environment: getEnv(ctx),
+        source: 'deposit_endpoint',
+        funding_account_id: fromAccountId,
+        protocol: 'x402',
+        wallet_id: wallet.id,
+        operation: 'deposit',
+      },
+    });
 
     // Fire workflow auto-triggers (fire-and-forget)
     triggerWorkflows(supabase, ctx.tenantId, 'wallet', 'update', {
@@ -1386,7 +1391,6 @@ app.post('/:id/deposit', async (c) => {
         previousBalance: Number(wallet.balance ?? 0),
         depositAmount: validated.amount,
         newBalance,
-        transferId: transfer?.id,
         currency: wallet.currency
       }
     });
