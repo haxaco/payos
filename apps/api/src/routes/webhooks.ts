@@ -200,7 +200,13 @@ app.get('/events', async (c) => {
       { type: 'settlement.initiated', description: 'A settlement was initiated' },
       { type: 'settlement.completed', description: 'A settlement completed successfully' },
       { type: 'settlement.failed', description: 'A settlement failed' },
-      
+
+      // Agent task / approval events (human-in-the-loop)
+      { type: 'task.input_required', description: 'An agent task needs human input/approval' },
+      { type: 'payment.approval_required', description: 'An agent payment exceeded policy and needs human approval' },
+      { type: 'payment.approval_decided', description: 'An agent payment approval was approved or rejected' },
+      { type: 'payment.approval_executed', description: 'An approved agent payment was executed' },
+
       // Test event
       { type: 'webhook.test', description: 'Test webhook event' },
       

@@ -9,6 +9,7 @@ import { startScopeHeartbeatWorker } from './workers/scope-heartbeat.js';
 import { startAutoRefillWorker } from './workers/agent-auto-refill.js';
 import { startAgentEoaSyncWorker, stopAgentEoaSyncWorker } from './workers/agent-eoa-sync.js';
 import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
+import { webhookProcessorWorker } from './workers/webhook-processor.js';
 import { SettlementWindowProcessor } from './workers/settlement-window-processor.js';
 import { TreasuryWorker } from './workers/treasury-worker.js';
 import { getA2ATaskWorker } from './workers/a2a-task-worker.js';
@@ -38,6 +39,7 @@ const host = process.env.API_HOST || '0.0.0.0';
 const enableScheduledTransfers = process.env.ENABLE_SCHEDULED_TRANSFERS === 'true';
 const mockMode = process.env.MOCK_SCHEDULED_TRANSFERS === 'true' || process.env.NODE_ENV === 'development';
 const enableWebhookCleanup = process.env.ENABLE_WEBHOOK_CLEANUP !== 'false'; // Enabled by default
+const enableWebhookProcessor = process.env.ENABLE_WEBHOOK_PROCESSOR !== 'false'; // Enabled by default — flushes queued webhook deliveries + retries
 const enableSettlementWindows = process.env.ENABLE_SETTLEMENT_WINDOWS !== 'false'; // Enabled by default
 const enableTreasuryWorker = process.env.ENABLE_TREASURY_WORKER !== 'false'; // Enabled by default
 const enableA2AWorker = process.env.ENABLE_A2A_WORKER !== 'false'; // Enabled by default
@@ -58,6 +60,7 @@ console.log(`
 ║  Workers:                                        ║
 ║  ⚙️  Scheduled Transfers: ${(enableScheduledTransfers ? (mockMode ? 'MOCK' : 'REAL') : 'OFF').padEnd(22)}║
 ║  🧹 Webhook Cleanup: ${(enableWebhookCleanup ? 'ON' : 'OFF').padEnd(26)}║
+║  📡 Webhook Processor: ${(enableWebhookProcessor ? 'ON' : 'OFF').padEnd(24)}║
 ║  ⏱️  Settlement Windows: ${(enableSettlementWindows ? 'ON' : 'OFF').padEnd(23)}║
 ║  💰 Treasury Sync: ${(enableTreasuryWorker ? 'ON' : 'OFF').padEnd(28)}║
 ║  🤖 A2A Task Worker: ${(enableA2AWorker ? 'ON' : 'OFF').padEnd(25)}║
@@ -132,6 +135,16 @@ startAgentEoaSyncWorker();
 if (enableWebhookCleanup) {
   webhookCleanupWorker.start().catch((error) => {
     console.error('❌ Failed to start webhook cleanup worker:', error);
+  });
+}
+
+// Start webhook DELIVERY processor - Story 27.5 (webhook hardening).
+// Without this, queue_webhook_delivery rows sit in webhook_deliveries
+// 'pending' forever and nothing is ever delivered/retried — the same
+// silent-failure class as the dead approval webhook this work fixes.
+if (enableWebhookProcessor) {
+  webhookProcessorWorker.start().catch((error) => {
+    console.error('❌ Failed to start webhook processor worker:', error);
   });
 }
 
@@ -217,6 +230,9 @@ const shutdown = async (signal: string) => {
   stopScopeHeartbeatWorker();
   if (enableWebhookCleanup) {
     webhookCleanupWorker.stop();
+  }
+  if (enableWebhookProcessor) {
+    webhookProcessorWorker.stop();
   }
   if (settlementWindowProcessor) {
     settlementWindowProcessor.stop();

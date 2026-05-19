@@ -21,6 +21,8 @@ import type {
 } from './types.js';
 import { normalizeParts } from './types.js';
 import { taskEventBus, type AuditContext } from './task-event-bus.js';
+import { createNotification } from '../notifications.js';
+import { webhookService } from '../webhooks.js';
 
 /** Default maximum messages to include in context window (Story 58.18). */
 const DEFAULT_MAX_CONTEXT_MESSAGES = 100;
@@ -419,7 +421,7 @@ export class A2ATaskService {
   ): Promise<A2ATask | null> {
     const { data: cur } = await this.supabase
       .from('a2a_tasks')
-      .select('state, metadata')
+      .select('state, metadata, agent_id, context_id')
       .eq('id', taskId)
       .eq('tenant_id', this.tenantId)
       .eq('environment', this.environment)
@@ -430,13 +432,57 @@ export class A2ATaskService {
         // Already parked for a different reason — don't clobber. Return the
         // current task so callers see a non-null result and don't treat this
         // as an error. The task is still input-required, just for the
-        // earlier reason.
+        // earlier reason. NOTE: this is the dedupe early-return — there is NO
+        // real state transition here, so we deliberately do NOT emit the
+        // notification/webhook (the original park already emitted them).
         return this.getTask(taskId);
       }
     }
-    return this.updateTaskState(taskId, 'input-required', statusMessage, {
+
+    const task = await this.updateTaskState(taskId, 'input-required', statusMessage, {
       input_required_context: context,
     });
+
+    // Emit "agent task needs a human" side-effects ONLY on a genuine
+    // transition. updateTaskState returns null when the row was already
+    // terminal / not found / not authorized — none of which is a real
+    // input-required transition, so we skip emission in that case too.
+    if (task) {
+      const reason = context.reason_code || statusMessage || 'input_required';
+      const agentId = (cur?.agent_id as string | undefined) ?? null;
+      const contextId =
+        (cur?.context_id as string | undefined) ?? task.contextId ?? null;
+
+      // In-app notification (fire-and-forget; createNotification never throws,
+      // but guard the chain anyway so the task state machine can never be
+      // delayed or broken by notification I/O).
+      void createNotification({
+        tenantId: this.tenantId,
+        type: 'compliance',
+        title: 'Action required',
+        message: `Agent task needs input: ${statusMessage || context.reason_code}`,
+        href: agentId
+          ? `/dashboard/agents/${agentId}`
+          : '/dashboard/agents',
+        metadata: { taskId, reason },
+      }).catch((err) =>
+        console.error('[task-service] input-required notify error:', err),
+      );
+
+      // Outbound webhook (fire-and-forget; wrapped so a queue failure can
+      // NEVER throw into or delay setInputRequired's caller / the worker).
+      void (async () => {
+        await webhookService.emitTaskInputRequired(
+          this.tenantId,
+          { id: taskId, agentId, contextId },
+          reason,
+        );
+      })().catch((err) =>
+        console.error('[task-service] input-required webhook error:', err),
+      );
+    }
+
+    return task;
   }
 
   /**

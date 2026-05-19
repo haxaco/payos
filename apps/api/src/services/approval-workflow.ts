@@ -14,6 +14,7 @@ import type { PolicyContext } from './spending-policy.js';
 import { trackOp } from './ops/track-op.js';
 import { OpType } from './ops/operation-types.js';
 import { createNotification } from './notifications.js';
+import { webhookService } from './webhooks.js';
 
 // ============================================
 // Types
@@ -335,11 +336,8 @@ export class ApprovalWorkflowService {
       },
     });
 
-    // Send webhook notification
-    const eventType = decision.decision === 'approve'
-      ? 'payment.approval_approved'
-      : 'payment.approval_rejected';
-    this.sendApprovalWebhook(approval, eventType).catch(err => {
+    // Send webhook notification (decided = approved or rejected)
+    this.sendApprovalWebhook(approval, 'payment.approval_decided').catch(err => {
       console.error('[ApprovalWorkflow] Failed to send webhook:', err);
     });
 
@@ -488,75 +486,46 @@ export class ApprovalWorkflowService {
   }
 
   /**
-   * Send webhook notification for approval events.
+   * Emit an approval lifecycle webhook through the robust delivery system.
+   *
+   * Delegates to WebhookService.emitApprovalEvent → queue_webhook_delivery →
+   * webhook_deliveries → HMAC-signed delivery with retry/DLQ by the
+   * webhook-processor worker (mirrors how transfers emit events). Tenant-scoped
+   * (passes the approval's own tenantId) and idempotent (key derived from
+   * approval id + event type). Fire-and-forget at the call sites via `.catch()`;
+   * this method never throws into the approval critical path.
+   *
+   * NOTE: signing happens in the delivery worker per subscribed endpoint
+   * secret — the old direct-fetch + local HMAC against the non-existent
+   * `tenants.webhook_url` columns is removed (it was dead code that silently
+   * never fired).
    */
   private async sendApprovalWebhook(
     approval: PaymentApproval,
-    eventType: string
+    eventType:
+      | 'payment.approval_required'
+      | 'payment.approval_decided'
+      | 'payment.approval_executed'
   ): Promise<void> {
-    // Get tenant's webhook URL
-    const { data: tenant } = await this.supabase
-      .from('tenants')
-      .select('webhook_url, webhook_secret')
-      .eq('id', approval.tenantId)
-      .single();
-
-    if (!tenant?.webhook_url) {
-      return; // No webhook configured
-    }
-
-    // Build webhook payload
-    const payload = {
-      event: eventType,
-      timestamp: new Date().toISOString(),
-      data: {
-        approval_id: approval.id,
-        wallet_id: approval.walletId,
-        agent_id: approval.agentId,
+    try {
+      await webhookService.emitApprovalEvent(approval.tenantId, eventType, {
+        id: approval.id,
+        walletId: approval.walletId,
+        agentId: approval.agentId,
         protocol: approval.protocol,
         amount: approval.amount,
         currency: approval.currency,
         status: approval.status,
-        expires_at: approval.expiresAt,
-        decided_by: approval.decidedBy,
-        decided_at: approval.decidedAt,
-        decision_reason: approval.decisionReason,
-        executed_transfer_id: approval.executedTransferId,
-        executed_at: approval.executedAt,
-        recipient: approval.recipient
-      }
-    };
-
-    try {
-      // Queue webhook delivery (using existing webhook infrastructure if available)
-      // For now, attempt direct delivery
-      const response = await fetch(tenant.webhook_url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-PayOS-Event': eventType,
-          'X-PayOS-Signature': this.signWebhook(payload, tenant.webhook_secret)
-        },
-        body: JSON.stringify(payload)
+        recipient: approval.recipient,
+        decidedBy: approval.decidedBy,
+        decidedAt: approval.decidedAt,
+        decisionReason: approval.decisionReason,
+        executedTransferId: approval.executedTransferId,
+        expiresAt: approval.expiresAt,
       });
-
-      if (!response.ok) {
-        console.warn(`[ApprovalWorkflow] Webhook delivery failed: ${response.status}`);
-      }
     } catch (err) {
-      console.error('[ApprovalWorkflow] Webhook delivery error:', err);
+      console.error('[ApprovalWorkflow] Failed to queue approval webhook:', err);
     }
-  }
-
-  private signWebhook(payload: any, secret?: string): string {
-    if (!secret) return '';
-    
-    // Simple HMAC signature
-    const crypto = require('crypto');
-    return crypto
-      .createHmac('sha256', secret)
-      .update(JSON.stringify(payload))
-      .digest('hex');
   }
 }
 
