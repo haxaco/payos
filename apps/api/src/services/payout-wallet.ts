@@ -10,8 +10,30 @@
  * CLAUDE.md "Never skip tenant filtering".
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { WalletRequiredError } from '../middleware/error.js';
+import { ApiError, ValidationError, WalletRequiredError } from '../middleware/error.js';
 import { getCdpCredentials } from './coinbase/cdp-client.js';
+
+/**
+ * Payout-wallet provisioning failed for an attributable, non-bug reason —
+ * CDP credentials absent in this environment, the CDP SDK not installed, the
+ * provider's interface drifted, or the provider returned no usable address.
+ *
+ * This is deliberately NOT a raw Error/TypeError: the publish-x402 flow
+ * catches anything thrown here and surfaces `err.message` as
+ * `payout_wallet_unavailable: <message>`, so the message must name the cause.
+ * 422 (not 500) because it is an environment/config gap, not a server bug.
+ */
+class PayoutWalletProvisioningError extends ApiError {
+  constructor(message: string, details?: unknown) {
+    super(`Payout wallet provisioning unavailable: ${message}`, 422, details, {
+      code: 'PAYOUT_WALLET_PROVISIONING_UNAVAILABLE',
+      suggestion:
+        'Bind an on-chain payout wallet manually (POST /v1/x402/wallets) or configure CDP credentials for this environment before enabling auto-provisioning.',
+      docsUrl: 'https://docs.payos.ai/x402/publish',
+    });
+    this.name = 'PayoutWalletProvisioningError';
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Network mapping
@@ -126,7 +148,12 @@ export async function getOrProvision(
     .limit(1);
 
   if (error) {
-    throw new Error(`Failed to query tenant_payout_wallets: ${error.message}`);
+    throw new ApiError(
+      `Failed to query tenant_payout_wallets: ${error.message}`,
+      500,
+      { tenantId, accountId, network },
+      { code: 'PAYOUT_WALLET_QUERY_FAILED' }
+    );
   }
 
   if (rows && rows.length > 0) {
@@ -141,6 +168,17 @@ export async function getOrProvision(
   // @coinbase/x402; we lazy-import to keep the service runnable in tests
   // without CDP creds set.
   const address = await provisionCdpSmartWallet(caip2);
+
+  // provisionCdpSmartWallet already guards its return, but assert the contract
+  // here too: this is the value that becomes the on-chain payTo, and a bad
+  // address must surface as a typed/attributable error rather than poisoning
+  // the row or throwing a raw TypeError further downstream.
+  if (!address || !isEvmAddress(address)) {
+    throw new PayoutWalletProvisioningError(
+      `CDP provisioning returned no usable EVM address for network ${caip2}`,
+      { network: caip2 }
+    );
+  }
 
   const { data: inserted, error: insertErr } = await supabase
     .from('tenant_payout_wallets')
@@ -157,8 +195,11 @@ export async function getOrProvision(
     .single();
 
   if (insertErr || !inserted) {
-    throw new Error(
-      `Failed to persist auto-provisioned wallet: ${insertErr?.message || 'no row returned'}`
+    throw new ApiError(
+      `Failed to persist auto-provisioned wallet: ${insertErr?.message || 'no row returned'}`,
+      500,
+      { tenantId, accountId, network: caip2 },
+      { code: 'PAYOUT_WALLET_PERSIST_FAILED' }
     );
   }
   return rowToWallet(inserted);
@@ -178,7 +219,7 @@ export async function bind(
   provider: 'cdp' | 'privy' | 'external' = 'external'
 ): Promise<PayoutWalletRow> {
   if (!isEvmAddress(address)) {
-    throw new Error(`Invalid EVM address: ${address}`);
+    throw new ValidationError(`Invalid EVM address: ${address}`, { address });
   }
   const caip2 = mapSlyNetworkToCAIP2(network);
 
@@ -191,8 +232,14 @@ export async function bind(
     .limit(1);
 
   if (existing && existing.length > 0) {
-    throw new Error(
-      `Payout wallet already bound for account ${accountId} on ${caip2} — call update instead`
+    throw new ApiError(
+      `Payout wallet already bound for account ${accountId} on ${caip2} — call update instead`,
+      409,
+      { accountId, network: caip2 },
+      {
+        code: 'PAYOUT_WALLET_ALREADY_BOUND',
+        suggestion: 'Use the update endpoint to change the bound payout wallet instead of binding a new one.',
+      }
     );
   }
 
@@ -211,7 +258,12 @@ export async function bind(
     .single();
 
   if (error || !data) {
-    throw new Error(`Failed to bind payout wallet: ${error?.message || 'no row returned'}`);
+    throw new ApiError(
+      `Failed to bind payout wallet: ${error?.message || 'no row returned'}`,
+      500,
+      { tenantId, accountId, network: caip2 },
+      { code: 'PAYOUT_WALLET_BIND_FAILED' }
+    );
   }
   return rowToWallet(data);
 }
@@ -231,14 +283,17 @@ export async function bind(
 async function provisionCdpSmartWallet(caip2Network: string): Promise<string> {
   const creds = getCdpCredentials();
   if (!creds) {
-    throw new Error(
-      'CDP credentials missing (set CDP_API_KEY_ID/CDP_API_KEY_NAME and CDP_API_KEY_SECRET/CDP_API_KEY_PRIVATE_KEY). Cannot auto-provision wallet.'
+    throw new PayoutWalletProvisioningError(
+      `CDP credentials not configured for network ${caip2Network} ` +
+        '(set CDP_API_KEY_ID/CDP_API_KEY_NAME and CDP_API_KEY_SECRET/CDP_API_KEY_PRIVATE_KEY)',
+      { network: caip2Network, reason: 'cdp_credentials_missing' }
     );
   }
   if (!creds.walletSecret) {
-    throw new Error(
+    throw new PayoutWalletProvisioningError(
       'CDP_WALLET_SECRET not set — required by @coinbase/cdp-sdk 1.40+ for wallet ' +
-        'create/sign operations. Obtain it from portal.cdp.coinbase.com (Wallet Secret tab on the API key).'
+        'create/sign operations. Obtain it from portal.cdp.coinbase.com (Wallet Secret tab on the API key).',
+      { network: caip2Network, reason: 'cdp_wallet_secret_missing' }
     );
   }
   const { apiKeyId, apiKeySecret, walletSecret } = creds;
@@ -251,34 +306,56 @@ async function provisionCdpSmartWallet(caip2Network: string): Promise<string> {
     const mod: any = await (Function('return import("@coinbase/cdp-sdk")')() as Promise<any>);
     CdpClient = mod?.CdpClient;
   } catch (err) {
-    throw new Error(
-      `@coinbase/cdp-sdk is not installed — cannot auto-provision wallet. Install it or bind a wallet manually. (${(err as Error).message})`
+    throw new PayoutWalletProvisioningError(
+      `@coinbase/cdp-sdk is not installed — install it or bind a wallet manually (${(err as Error).message})`,
+      { network: caip2Network, reason: 'cdp_sdk_missing' }
     );
   }
 
   if (!CdpClient) {
-    throw new Error('@coinbase/cdp-sdk did not export CdpClient — wallet provisioning unsupported.');
+    throw new PayoutWalletProvisioningError(
+      '@coinbase/cdp-sdk did not export CdpClient — wallet provisioning unsupported on this SDK version',
+      { network: caip2Network, reason: 'cdp_sdk_interface_drift' }
+    );
   }
 
-  const cdp = new CdpClient({ apiKeyId, apiKeySecret, walletSecret });
   // The CDP SDK's exact method name varies across minor versions; we try
   // the documented one first and fall back to alternatives without
-  // exploding on an interface drift.
+  // exploding on an interface drift. Wrap construction + the provider call
+  // so a raw provider exception (including the historical
+  // `TypeError: Cannot read properties of undefined (reading 'address')`)
+  // becomes a typed, attributable error rather than an opaque 500.
   let addr: string | undefined;
-  if (cdp?.evm?.createSmartAccount) {
-    const out = await cdp.evm.createSmartAccount({});
-    addr = out?.address;
-  } else if (cdp?.smartAccounts?.create) {
-    const out = await cdp.smartAccounts.create({});
-    addr = out?.address;
-  } else if (cdp?.evm?.createAccount) {
-    const out = await cdp.evm.createAccount({});
-    addr = out?.address;
+  try {
+    const cdp = new CdpClient({ apiKeyId, apiKeySecret, walletSecret });
+    if (cdp?.evm?.createSmartAccount) {
+      const out = await cdp.evm.createSmartAccount({});
+      addr = out?.address;
+    } else if (cdp?.smartAccounts?.create) {
+      const out = await cdp.smartAccounts.create({});
+      addr = out?.address;
+    } else if (cdp?.evm?.createAccount) {
+      const out = await cdp.evm.createAccount({});
+      addr = out?.address;
+    } else {
+      throw new PayoutWalletProvisioningError(
+        'installed @coinbase/cdp-sdk exposes no known smart-account create method ' +
+          '(evm.createSmartAccount / smartAccounts.create / evm.createAccount)',
+        { network: caip2Network, reason: 'cdp_sdk_interface_drift' }
+      );
+    }
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new PayoutWalletProvisioningError(
+      `CDP provider call failed for network ${caip2Network}: ${(err as Error).message}`,
+      { network: caip2Network, reason: 'cdp_provider_error' }
+    );
   }
 
   if (!addr || !isEvmAddress(addr)) {
-    throw new Error(
-      `CDP wallet provisioning returned no usable address for network ${caip2Network}`
+    throw new PayoutWalletProvisioningError(
+      `CDP wallet provisioning returned no usable address for network ${caip2Network}`,
+      { network: caip2Network, reason: 'cdp_no_address' }
     );
   }
   return addr;
