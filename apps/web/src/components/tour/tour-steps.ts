@@ -1,0 +1,127 @@
+// Tour steps for the Sly dashboard product tour.
+//
+// Each step targets an element by `selector` (a `data-tour="..."` anchor we
+// add to the existing UI). When `selector` is omitted, the step renders
+// centered with no spotlight — used for welcome / done.
+//
+// `href` makes the engine navigate before showing the step, so the anchor is
+// guaranteed to be on screen. Tour works on any tenant (empty or seeded) —
+// the steps describe what each surface IS, never specific rows.
+
+export type TourPlacement = 'top' | 'bottom' | 'left' | 'right' | 'center';
+
+export interface TourStep {
+  id: string;
+  /** CSS selector for an element with a `data-tour="..."` attribute. */
+  selector?: string;
+  title: string;
+  body: string;
+  placement?: TourPlacement;
+  /** If set, router.push(href) before showing this step. */
+  href?: string;
+}
+
+export const TOUR_STEPS: readonly TourStep[] = [
+  {
+    id: 'welcome',
+    title: 'Welcome to Sly',
+    body:
+      'Sly is the agentic-commerce platform — AI agents pay for things, get paid for APIs, and check out as autonomous shoppers. This one-minute tour shows you where each piece lives. Press Esc anytime to exit.',
+    placement: 'center',
+  },
+  {
+    id: 'setup',
+    selector: '[data-tour="nav-setup-guide"]',
+    href: '/dashboard/onboarding',
+    title: 'Setup Guide',
+    body:
+      'Start here. Pick what you want to build — Sly already provisioned a sandbox wallet, agent and protocol enablement. The live test runs a real transaction in one click.',
+    placement: 'right',
+  },
+  {
+    id: 'wallets',
+    selector: '[data-tour="nav-wallets"]',
+    href: '/dashboard/wallets',
+    title: 'Wallets',
+    body:
+      'Where your funds live, scoped to sandbox or production. Sandbox wallets auto-fund with test USDC; live wallets require production approval.',
+    placement: 'right',
+  },
+  {
+    id: 'agents',
+    selector: '[data-tour="nav-agents"]',
+    href: '/dashboard/agents',
+    title: 'Agents',
+    body:
+      'AI actors that hold limits, KYA tiers, and can sign payments. Each agent gets a key, a wallet and per-period spending policy.',
+    placement: 'right',
+  },
+  {
+    id: 'x402',
+    selector: '[data-tour="nav-agentic-x402"]',
+    href: '/dashboard/agentic-payments/x402/endpoints',
+    title: 'x402 — get paid per API call',
+    body:
+      'The flagship primitive: charge AI agents a micropayment for every request to your API. Sly returns a 402 challenge, the agent pays, your handler runs.',
+    placement: 'right',
+  },
+  {
+    id: 'acp',
+    selector: '[data-tour="nav-agentic-acp"]',
+    href: '/dashboard/agentic-payments/acp/checkouts',
+    title: 'ACP — agent checkouts',
+    body:
+      'Agent-to-merchant checkouts. Shopping agents open a cart, settle in one shot, and you ship.',
+    placement: 'right',
+  },
+  {
+    id: 'ap2',
+    selector: '[data-tour="nav-agentic-ap2"]',
+    href: '/dashboard/agentic-payments/ap2/mandates',
+    title: 'AP2 — recurring mandates',
+    body:
+      'Standing instructions an agent executes within limits you set — perfect for subscriptions, top-ups and autonomous refills.',
+    placement: 'right',
+  },
+  {
+    id: 'ucp',
+    selector: '[data-tour="nav-agentic-ucp"]',
+    href: '/dashboard/agentic-payments/ucp/hosted-checkouts',
+    title: 'UCP — universal checkout',
+    body:
+      'Hosted checkout for stores, including Pix and SPEI corridors. Drop a link, your customer pays.',
+    placement: 'right',
+  },
+  {
+    id: 'notif',
+    selector: '[data-tour="header-notifications"]',
+    title: 'Notifications',
+    body:
+      'Real-time updates: agents asking for approval, escalations to humans, payment settlements, production-access decisions.',
+    placement: 'bottom',
+  },
+  {
+    id: 'webhooks',
+    selector: '[data-tour="nav-settings"]',
+    href: '/dashboard/settings/webhooks',
+    title: 'Webhooks',
+    body:
+      'Stream every event to your own app — HMAC-signed with retries and a dead-letter queue.',
+    placement: 'right',
+  },
+  {
+    id: 'envswitch',
+    selector: '[data-tour="header-env-switch"]',
+    title: 'Sandbox ⇄ Production',
+    body:
+      'Sandbox is open self-serve. Production requires a one-time review with a deliberate treasury approval per payment — that gate is the security feature, not a missing step.',
+    placement: 'bottom',
+  },
+  {
+    id: 'done',
+    title: "You're set",
+    body:
+      'Head to the Setup Guide and click "Run a live test" — that\'s the fastest way to see real agentic commerce on Sly.',
+    placement: 'center',
+  },
+] as const;
