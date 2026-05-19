@@ -219,7 +219,7 @@ const X402_EIP712_TYPES = {
  * on-chain address) remain tenant-authenticated. Sandbox/test keeps the
  * permissive path so frictionless onboarding is unaffected.
  */
-async function validateSignature(
+export async function validateSignature(
   authorization: any,
   expectedAddress: string | null | undefined,
   environment: 'test' | 'live'
