@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { LogOut, Settings, User, Search, ChevronDown, Check, Play, Square, AlertTriangle } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -12,8 +12,6 @@ import { NotificationsCenter } from '@/components/notifications/notifications-ce
 import { useDemoMode } from '@/components/demo/demo-mode-context';
 import { ScenarioSelector } from '@/components/demo/scenario-selector';
 import { useEnvironment, type Environment } from '@/lib/environment-context';
-import { useApiConfig, useApiFetch } from '@/lib/api-client';
-import { getDemoBranding } from '@/lib/demo-branding';
 import { toast } from 'sonner';
 
 interface HeaderProps {
@@ -31,27 +29,6 @@ export function Header({ user }: HeaderProps) {
   const globalSearch = useGlobalSearch();
   const demoMode = useDemoMode();
   const queryClient = useQueryClient();
-
-  // YC demo: per-tenant branding swap. Reuses the same React Query key the
-  // sidebar uses, so this hook piggybacks on the existing /v1/auth/me fetch.
-  const { authToken, isConfigured, apiEnvironment, apiUrl } = useApiConfig();
-  const apiFetch = useApiFetch();
-  const { data: meData } = useQuery({
-    queryKey: ['auth-me', apiEnvironment],
-    queryFn: async () => {
-      const res = await apiFetch(`${apiUrl}/v1/auth/me`);
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: !!authToken && isConfigured,
-    staleTime: 5 * 60_000,
-  });
-  const me = meData?.data || meData;
-  // /v1/auth/me returns different shapes for session tokens vs API keys:
-  //   session: { user: {...}, tenant: { id, name, status } }
-  //   api key: { type, organizationId, ... }
-  const currentTenantId: string | undefined = me?.tenant?.id ?? me?.organizationId;
-  const tenantBranding = getDemoBranding(currentTenantId);
 
   const handleSignOut = async () => {
     const supabase = createSupabaseBrowserClient();
@@ -98,32 +75,6 @@ export function Header({ user }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 h-16 flex items-center justify-between px-6 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        {/* YC demo: per-tenant brand chip — only renders for tenants in DEMO_BRANDING */}
-        {tenantBranding && (
-          <div className="mr-4 flex items-center gap-2.5 pr-4 border-r border-gray-200 dark:border-gray-800">
-            <div
-              className={`w-9 h-9 rounded-lg bg-gradient-to-br ${tenantBranding.gradient} flex items-center justify-center text-white text-xs font-bold tracking-wider shadow-sm`}
-            >
-              {tenantBranding.initials}
-            </div>
-            <div className="hidden md:flex flex-col">
-              <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-white leading-tight">
-                <span>{tenantBranding.name}</span>
-                <span className="text-base leading-none">{tenantBranding.countryFlag}</span>
-              </div>
-              {tenantBranding.tagline && (
-                <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: tenantBranding.dotColor }}
-                  />
-                  {tenantBranding.tagline}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Search - Now triggers global search modal */}
         <div className="flex-1 max-w-xl">
           <button
