@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 import {
   Card,
   CardContent,
@@ -188,7 +189,7 @@ export default function NewX402EndpointPage() {
 
       router.push(`/dashboard/x402/endpoints/${created.id}`);
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to create endpoint');
+      toast.error(getApiErrorMessage(err, 'Failed to create endpoint'));
       setSubmitting(false);
     }
   };

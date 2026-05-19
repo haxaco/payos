@@ -48,7 +48,7 @@ const updatePaymentMethodSchema = z.object({
 // ============================================
 // GET /payment-methods - List all payment methods for tenant
 // ============================================
-paymentMethods.get('/', async (c) => {
+paymentMethods.get('/payment-methods', async (c) => {
   const ctx = c.get('ctx');
   const supabase: any = createClient();
 
@@ -80,32 +80,11 @@ paymentMethods.get('/', async (c) => {
   });
 });
 
-// ============================================
-// GET /payment-methods/:id - Get single payment method
-// ============================================
-paymentMethods.get('/:id', async (c) => {
-  const ctx = c.get('ctx');
-  const supabase: any = createClient();
-  const id = c.req.param('id');
-
-  if (!isValidUUID(id)) {
-    throw new ValidationError('Invalid payment method ID');
-  }
-
-  const { data, error } = await supabase
-    .from('payment_methods')
-    .select('*')
-    .eq('id', id)
-    .eq('tenant_id', ctx.tenantId)
-    .eq('environment', getEnv(ctx))
-    .single();
-
-  if (error || !data) {
-    throw new NotFoundError('Payment method not found');
-  }
-
-  return c.json({ data });
-});
+// NOTE: the canonical "get single payment method" route is
+// `GET /payment-methods/:id` defined below. A legacy root-relative
+// `get('/:id')` duplicate was removed here — it only resolved under the old
+// '/payment-methods' mount and would be a `/v1/:id` catch-all at the root
+// mount.
 
 // ============================================
 // GET /v1/accounts/:accountId/payment-methods - List payment methods
@@ -557,8 +536,10 @@ cardTransactionsRouter.get('/spending-summary', async (c) => {
   return c.json({ data: summary?.[0] || {} });
 });
 
-// Mount card transactions routes
-paymentMethods.route('/:id/transactions', cardTransactionsRouter);
+// Mount card transactions routes. Explicitly prefixed (not root-relative
+// '/:id/transactions') so it resolves at /v1/payment-methods/:id/transactions
+// under the v1-root mount — matches the api-client path.
+paymentMethods.route('/payment-methods/:id/transactions', cardTransactionsRouter);
 
 export default paymentMethods;
 

@@ -673,6 +673,11 @@ export interface CreatePaymentMethodInput {
   // Wallet fields
   walletNetwork?: WalletNetwork;
   walletAddress?: string;
+  // Card fields (server requires cardLastFour for type 'card'; never the
+  // full PAN/CVV — only the last 4 are stored/displayed)
+  cardLastFour?: string;
+  cardId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PaymentMethodsListParams extends PaginationParams {

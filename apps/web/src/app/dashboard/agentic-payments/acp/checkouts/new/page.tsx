@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useApiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
 
 const checkoutSchema = z.object({
@@ -119,7 +120,7 @@ export default function CreateCheckoutPage() {
             toast.success('Checkout created successfully');
             router.push('/dashboard/agentic-payments/acp/checkouts');
         } catch (error: any) {
-            toast.error(error.message || 'Failed to create checkout');
+            toast.error(getApiErrorMessage(error, 'Failed to create checkout'));
         } finally {
             setIsSubmitting(false);
         }

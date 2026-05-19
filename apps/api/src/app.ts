@@ -43,6 +43,7 @@ import { compliance as complianceRouter } from './routes/compliance.js';
 import relationshipsRouter from './routes/relationships.js';
 import x402EndpointsRouter from './routes/x402-endpoints.js';
 import tenantPayoutWalletsRouter from './routes/tenant-payout-wallets.js';
+import tenantsRouter from './routes/tenants.js';
 import walletsRouter from './routes/wallets.js';
 import x402PaymentsRouter from './routes/x402-payments.js';
 import x402AnalyticsRouter from './routes/x402-analytics.js';
@@ -451,11 +452,18 @@ v1.route('/refunds', refundsRouter);
 v1.route('/scheduled-transfers', scheduledTransfersRouter);
 v1.route('/exports', exportsRouter);
 v1.route('/disputes', disputesRouter);
-v1.route('/payment-methods', paymentMethodsRouter);
+// payment-methods router self-prefixes every route (/payment-methods*,
+// /accounts/:accountId/payment-methods) so it is mounted at the v1 root.
+// Previously mounted at '/payment-methods', which double-prefixed the
+// account-scoped + by-id routes → 404s (the api-client / SDK paths were
+// unreachable). All routes are now explicitly prefixed (no '/' or '/:id'
+// catch-all), so the root mount has no conflicts.
+v1.route('/', paymentMethodsRouter);
 v1.route('/card-transactions', cardTransactionsRouter);
 v1.route('/compliance', complianceRouter);
 v1.route('/x402/endpoints', x402EndpointsRouter);
 v1.route('/tenant-payout-wallets', tenantPayoutWalletsRouter);
+v1.route('/tenants', tenantsRouter);
 v1.route('/x402/analytics', x402AnalyticsRouter);
 v1.route('/x402', x402PaymentsRouter);
 v1.route('/settlement', settlementRouter);
@@ -499,8 +507,8 @@ v1.route('/mpp', mppRouter); // Machine Payments Protocol (Epic 71)
 v1.route('/composition', compositionRouter); // Multi-protocol composition (Epic 71)
 v1.route('/support', supportRouter); // Support tools for Intercom Fin
 v1.route('/agents', agentConnectAuthRouter); // Agent key-pair auth + liveness (Epic 72)
-// NOTE: Removed catch-all payment-methods mount to prevent route conflicts
-// Payment methods are already accessible at /v1/payment-methods
+// payment-methods is mounted once at the v1 root (see note above) — its
+// routes are all explicitly prefixed so there is no catch-all conflict.
 // Account-specific payment methods handled via accounts router
 
 app.route('/v1', v1);

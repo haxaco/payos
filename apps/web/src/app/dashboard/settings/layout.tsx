@@ -3,16 +3,22 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@sly/ui';
+import { isWebFeatureEnabled, type WebFeature } from '@/lib/feature-flags';
 
-const settingsTabs = [
-  { href: '/dashboard/settings', label: 'General', exact: true },
-  { href: '/dashboard/settings/team', label: 'Team' },
-  { href: '/dashboard/settings/settlement-rules', label: 'Settlement Rules' },
-  { href: '/dashboard/settings/templates', label: 'Templates' },
-  { href: '/dashboard/settings/verification-tiers', label: 'Verification Tiers' },
-  { href: '/dashboard/settings/agent-tiers', label: 'Agent Tiers (KYA)' },
-  { href: '/dashboard/settings/card-networks', label: 'Card Networks' },
-];
+type SettingsTab = { href: string; label: string; exact?: boolean; feature?: WebFeature };
+
+const settingsTabs: SettingsTab[] = (
+  [
+    { href: '/dashboard/settings', label: 'General', exact: true },
+    { href: '/dashboard/settings/team', label: 'Team' },
+    { href: '/dashboard/settings/settlement-rules', label: 'Settlement Rules' },
+    // Templates is WIP (mock-only, no backend) — gated behind a feature flag.
+    { href: '/dashboard/settings/templates', label: 'Templates', feature: 'templates' },
+    { href: '/dashboard/settings/verification-tiers', label: 'Verification Tiers' },
+    { href: '/dashboard/settings/agent-tiers', label: 'Agent Tiers (KYA)' },
+    { href: '/dashboard/settings/card-networks', label: 'Card Networks' },
+  ] satisfies SettingsTab[]
+).filter((t) => !t.feature || isWebFeatureEnabled(t.feature));
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

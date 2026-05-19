@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
-import { Activity, Plus, Search, Filter, Play, Pause } from 'lucide-react';
+import { Activity, Plus, Search, Filter, Play, Pause, X } from 'lucide-react';
 import Link from 'next/link';
 import type { Stream } from '@sly/api-client';
 import { CardListSkeleton } from '@/components/ui/skeletons';
 import { StreamsEmptyState, SearchEmptyState } from '@/components/ui/empty-state';
+import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/lib/api-error';
 
 export default function StreamsPage() {
   const api = useApiClient();
@@ -14,6 +16,31 @@ export default function StreamsPage() {
   const [streams, setStreams] = useState<Stream[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Create-stream modal state
+  const [showCreate, setShowCreate] = useState(false);
+  const [acctOptions, setAcctOptions] = useState<{ id: string; name: string }[]>([]);
+  const [senderId, setSenderId] = useState('');
+  const [receiverId, setReceiverId] = useState('');
+  const [flowRate, setFlowRate] = useState('');
+  const [funding, setFunding] = useState('');
+  const [streamDesc, setStreamDesc] = useState('');
+  const [creatingStream, setCreatingStream] = useState(false);
+
+  useEffect(() => {
+    if (!showCreate || !api || !isConfigured) return;
+    (async () => {
+      try {
+        const res: any = await api.accounts.list({ limit: 100 });
+        const raw = res?.data?.data ?? res?.data ?? res ?? [];
+        const list = Array.isArray(raw) ? raw : [];
+        setAcctOptions(list.map((a: any) => ({ id: a.id, name: a.name })));
+      } catch {
+        setAcctOptions([]);
+      }
+    })();
+  }, [showCreate, api, isConfigured]);
 
   useEffect(() => {
     async function fetchStreams() {
@@ -39,7 +66,7 @@ export default function StreamsPage() {
     }
 
     fetchStreams();
-  }, [api]);
+  }, [api, refreshKey]);
 
   const filteredStreams = streams.filter((stream: any) =>
     stream.sender.accountName.toLowerCase().includes(search.toLowerCase()) ||
@@ -97,7 +124,10 @@ export default function StreamsPage() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Streams</h1>
           <p className="text-gray-600 dark:text-gray-400">Manage money streaming payments</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus className="h-4 w-4" />
           Create Stream
         </button>
@@ -179,6 +209,93 @@ export default function StreamsPage() {
           ))
         )}
       </div>
+
+      {/* Create Stream modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-950 p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Create Stream</h2>
+              <button
+                onClick={() => setShowCreate(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+              Continuous per-month money flow between two accounts.
+            </p>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!senderId || !receiverId) { toast.error('Select sender and receiver accounts'); return; }
+                if (senderId === receiverId) { toast.error('Sender and receiver must differ'); return; }
+                const rate = Number(flowRate);
+                if (!Number.isFinite(rate) || rate <= 0) { toast.error('Enter a positive monthly flow rate'); return; }
+                if (!api) { toast.error('API client not ready'); return; }
+                setCreatingStream(true);
+                try {
+                  await api.streams.create({
+                    senderAccountId: senderId,
+                    receiverAccountId: receiverId,
+                    flowRatePerMonth: rate,
+                    fundingAmount: funding ? Number(funding) : undefined,
+                    description: streamDesc.trim() || undefined,
+                  });
+                  toast.success('Stream created');
+                  setShowCreate(false);
+                  setSenderId(''); setReceiverId(''); setFlowRate(''); setFunding(''); setStreamDesc('');
+                  setRefreshKey((k) => k + 1);
+                } catch (err) {
+                  toast.error(getApiErrorMessage(err, 'Failed to create stream'));
+                } finally {
+                  setCreatingStream(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From <span className="text-red-500">*</span></label>
+                  <select value={senderId} onChange={(e) => setSenderId(e.target.value)} className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white">
+                    <option value="">Select…</option>
+                    {acctOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To <span className="text-red-500">*</span></label>
+                  <select value={receiverId} onChange={(e) => setReceiverId(e.target.value)} className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white">
+                    <option value="">Select…</option>
+                    {acctOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flow / month (USDC) <span className="text-red-500">*</span></label>
+                  <input type="number" min={0} step="0.01" value={flowRate} onChange={(e) => setFlowRate(e.target.value)} placeholder="5000" className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Funding <span className="text-gray-400">(opt)</span></label>
+                  <input type="number" min={0} step="0.01" value={funding} onChange={(e) => setFunding(e.target.value)} placeholder="10000" className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description <span className="text-gray-400">(opt)</span></label>
+                <input value={streamDesc} onChange={(e) => setStreamDesc(e.target.value)} placeholder="e.g. Monthly salary" className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white" />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">Cancel</button>
+                <button type="submit" disabled={creatingStream} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                  {creatingStream ? 'Creating…' : 'Create Stream'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
