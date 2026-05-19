@@ -21,6 +21,12 @@ import {
 } from '../services/email.js';
 import { getTenantResourceUsage, updateTenantLimits } from '../services/tenant-limits.js';
 import { createClient } from '../db/client.js';
+import {
+  listProductionDeclarations,
+  reviewProductionAccess,
+  setBetaCeiling,
+} from '../services/tenant-production-access.js';
+import { createNotification } from '../services/notifications.js';
 
 const betaAdmin = new Hono();
 
@@ -151,6 +157,135 @@ betaAdmin.post('/applications/:id/reject', async (c) => {
   }
 
   return c.json({ application });
+});
+
+// ============================================
+// Production-access review queue (Open Beta Hardening — Step 5)
+// All routes below are platform-admin gated by the betaAdmin.use('*') guard.
+// ============================================
+
+const ceilingOverrideSchema = z
+  .object({
+    perTx: z.number().positive().nullable().optional(),
+    daily: z.number().positive().nullable().optional(),
+    monthly: z.number().positive().nullable().optional(),
+    disabled: z.boolean().optional(),
+  })
+  .strict();
+
+// GET /admin/beta/production-declarations?status=declaration_pending
+betaAdmin.get('/production-declarations', async (c) => {
+  const status = c.req.query('status') || 'declaration_pending';
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = parseInt(c.req.query('limit') || '50');
+  const supabase = createClient();
+  const result = await listProductionDeclarations(supabase, status, page, limit);
+  return c.json(result);
+});
+
+// POST /admin/beta/production-declarations/:tenantId/approve
+betaAdmin.post('/production-declarations/:tenantId/approve', async (c) => {
+  const tenantId = c.req.param('tenantId');
+  let body: { notes?: string; ceilingOverride?: unknown } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    // body optional
+  }
+  const ceilingOverride = body.ceilingOverride
+    ? ceilingOverrideSchema.parse(body.ceilingOverride)
+    : undefined;
+  const supabase = createClient();
+  const result = await reviewProductionAccess(
+    supabase,
+    tenantId,
+    'production_approved',
+    'platform_admin',
+    body.notes ?? null,
+    ceilingOverride
+  );
+
+  // Fire-and-forget in-app notification (tenant-wide).
+  createNotification({
+    tenantId,
+    type: 'compliance',
+    title: 'Production access approved',
+    message:
+      'Your tenant has been approved for production. You can now create a live API key.',
+    href: '/dashboard/settings/production-access',
+  }).catch((err) =>
+    console.error('[notifications] production approve notify failed:', err),
+  );
+
+  return c.json({
+    tenantId,
+    ...result,
+    message:
+      'Tenant approved for production. They can now create a live API key via POST /v1/api-keys.',
+  });
+});
+
+// POST /admin/beta/production-declarations/:tenantId/deny
+betaAdmin.post('/production-declarations/:tenantId/deny', async (c) => {
+  const tenantId = c.req.param('tenantId');
+  let notes: string | null = null;
+  try {
+    notes = (await c.req.json())?.notes ?? null;
+  } catch {
+    // body optional
+  }
+  const supabase = createClient();
+  const result = await reviewProductionAccess(
+    supabase,
+    tenantId,
+    'production_denied',
+    'platform_admin',
+    notes
+  );
+
+  // Fire-and-forget in-app notification (tenant-wide).
+  createNotification({
+    tenantId,
+    type: 'compliance',
+    title: 'Production access declined',
+    message: notes
+      ? `Your production access request was declined: ${notes}`
+      : 'Your production access request was declined. Review the requirements and re-declare.',
+    href: '/dashboard/settings/production-access',
+  }).catch((err) =>
+    console.error('[notifications] production deny notify failed:', err),
+  );
+
+  return c.json({ tenantId, ...result });
+});
+
+// POST /admin/beta/production-declarations/:tenantId/suspend
+betaAdmin.post('/production-declarations/:tenantId/suspend', async (c) => {
+  const tenantId = c.req.param('tenantId');
+  let notes: string | null = null;
+  try {
+    notes = (await c.req.json())?.notes ?? null;
+  } catch {
+    // body optional
+  }
+  const supabase = createClient();
+  const result = await reviewProductionAccess(
+    supabase,
+    tenantId,
+    'production_suspended',
+    'platform_admin',
+    notes
+  );
+  return c.json({ tenantId, ...result });
+});
+
+// POST /admin/beta/production-declarations/:tenantId/set-ceiling
+betaAdmin.post('/production-declarations/:tenantId/set-ceiling', async (c) => {
+  const tenantId = c.req.param('tenantId');
+  const override = ceilingOverrideSchema.parse(await c.req.json());
+  const supabase = createClient();
+  await setBetaCeiling(supabase, tenantId, 'platform_admin', override);
+  return c.json({ tenantId, updated: true });
 });
 
 // ============================================
