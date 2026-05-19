@@ -13,6 +13,7 @@ import { randomUUID } from 'crypto';
 import type { PolicyContext } from './spending-policy.js';
 import { trackOp } from './ops/track-op.js';
 import { OpType } from './ops/operation-types.js';
+import { createNotification } from './notifications.js';
 
 // ============================================
 // Types
@@ -170,6 +171,23 @@ export class ApprovalWorkflowService {
     this.sendApprovalWebhook(approval, 'payment.approval_required').catch(err => {
       console.error('[ApprovalWorkflow] Failed to send webhook:', err);
     });
+
+    // In-app notification (fire-and-forget, tenant-wide).
+    const requester = approval.requestedByName || 'An agent';
+    const recipientLabel =
+      approval.recipient?.merchant_name ||
+      approval.recipient?.merchant ||
+      approval.recipient?.vendor ||
+      approval.recipient?.name;
+    const recipientSuffix = recipientLabel ? ` to ${recipientLabel}` : '';
+    createNotification({
+      tenantId: approval.tenantId,
+      type: 'compliance',
+      title: 'Approval required',
+      message: `${requester} requested approval for a ${approval.amount} ${approval.currency} ${approval.protocol} payment${recipientSuffix}`,
+      href: '/dashboard/approvals',
+      metadata: { approvalId: approval.id, protocol: approval.protocol, agentId: approval.agentId },
+    }).catch(err => console.error('[notifications] approval required notify error:', err));
 
     return approval;
   }

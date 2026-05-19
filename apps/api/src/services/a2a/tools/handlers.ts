@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AgentContext } from './context-injector.js';
+import { createNotification } from '../../notifications.js';
 
 export interface ToolResult {
   success: boolean;
@@ -295,6 +296,29 @@ async function handleEscalateToHuman(
     data: { state: 'input-required', statusMessage: `Escalated: ${reason}` },
     timestamp: new Date().toISOString(),
   });
+
+  // In-app notification (fire-and-forget, tenant-wide).
+  void (async () => {
+    try {
+      const { data: agentRow } = await supabase
+        .from('agents')
+        .select('name')
+        .eq('id', ctx.agentId)
+        .eq('tenant_id', ctx.tenantId)
+        .single();
+      const agentLabel = (agentRow as { name?: string } | null)?.name || 'An agent';
+      await createNotification({
+        tenantId: ctx.tenantId,
+        type: 'compliance',
+        title: 'Agent escalated to a human',
+        message: `${agentLabel} escalated a task for human review: ${reason}`,
+        href: `/dashboard/agents/${ctx.agentId}`,
+        metadata: { taskId, agentId: ctx.agentId, reason },
+      });
+    } catch (err) {
+      console.error('[notifications] escalation notify error:', err);
+    }
+  })();
 
   return {
     success: true,
