@@ -30,7 +30,7 @@ import { checkRateLimit, logSecurityEvent } from '../utils/auth.js';
 import { isFeatureEnabled } from '../config/environment.js';
 import { getCircleServiceForTenant } from '../services/circle/index.js';
 import { screenSignup } from '../services/kyc/screening.js';
-import { sendAgentClaimEmail } from '../services/email.js';
+import { sendAgentClaimEmail, CLAIM_EMAIL_WINDOW_MS, CLAIM_EMAIL_MAX_PER_RECIPIENT, CLAIM_EMAIL_MAX_PER_IP } from '../services/email.js';
 
 function getClientInfo(c: any): { ip: string; userAgent: string } {
   const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
@@ -687,14 +687,32 @@ router.post('/one-click', async (c) => {
     // Self-registered agents stay at KYA tier 0 until a human owner claims
     // them. If a contact email was supplied, send claim instructions
     // (fire-and-forget — never block or fail registration on email delivery).
+    //
+    // SPAM GUARD: public endpoint — rate-limit the claim email per recipient
+    // AND per source IP so a lifted closed beta can't be used to mailbomb an
+    // arbitrary address. Throttled sends are skipped + logged; signup still
+    // succeeds. (Mirrors the guard in auth.ts agent-signup.)
     if (email) {
-      sendAgentClaimEmail({
-        to: email,
-        agentName: agent.name,
-        agentId: agent.id,
-      }).catch((err) => {
-        console.error('[agent-onboard] Claim email failed (non-fatal):', err);
-      });
+      void (async () => {
+        try {
+          const norm = email.trim().toLowerCase();
+          const masked = norm.replace(/^(.).*(@.*)$/, '$1***$2');
+          const perRecipient = await checkRateLimit(`claim_email_to:${norm}`, CLAIM_EMAIL_WINDOW_MS, CLAIM_EMAIL_MAX_PER_RECIPIENT);
+          const perIp = await checkRateLimit(`claim_email_ip:${ip}`, CLAIM_EMAIL_WINDOW_MS, CLAIM_EMAIL_MAX_PER_IP);
+          if (!perRecipient.allowed || !perIp.allowed) {
+            await logSecurityEvent('agent_claim_email_throttled', 'warning', {
+              maskedEmail: masked,
+              ip,
+              agentId: agent.id,
+              reason: !perRecipient.allowed ? 'per_recipient' : 'per_ip',
+            });
+            return;
+          }
+          await sendAgentClaimEmail({ to: email, agentName: agent.name, agentId: agent.id });
+        } catch (err) {
+          console.error('[agent-onboard] Claim email failed (non-fatal):', err);
+        }
+      })();
     }
 
     return c.json(response, 201);

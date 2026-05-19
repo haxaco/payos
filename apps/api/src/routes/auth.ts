@@ -18,7 +18,7 @@ import {
 import { provisionTenant, TenantProvisioningError } from '../services/tenant-provisioning.js';
 import { generateAgentToken, verifyApiKey } from '../utils/crypto.js';
 import { logAudit } from '../utils/helpers.js';
-import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail, sendBetaApplicationReceivedEmail, sendBetaNewApplicationNotification, sendAgentClaimEmail } from '../services/email.js';
+import { sendInviteAcceptedEmail, sendWelcomeEmail, sendAccountLockedEmail, getUserEmail, sendBetaApplicationReceivedEmail, sendBetaNewApplicationNotification, sendAgentClaimEmail, CLAIM_EMAIL_WINDOW_MS, CLAIM_EMAIL_MAX_PER_RECIPIENT, CLAIM_EMAIL_MAX_PER_IP } from '../services/email.js';
 import { isFeatureEnabled } from '../config/environment.js';
 import { validateBetaCode, redeemBetaCode, submitApplication, trackFunnelEvent } from '../services/beta-access.js';
 
@@ -1540,15 +1540,35 @@ auth.post('/agent-signup', async (c) => {
     // Self-registered agents stay at KYA tier 0 until a human owner claims
     // them. If an owner email was supplied, send the claim instructions
     // (fire-and-forget — never block or fail signup on email delivery).
+    //
+    // SPAM GUARD: this endpoint is public; once the closed-beta gate is
+    // lifted, an attacker could POST agent-signup with an arbitrary
+    // `ownerEmail` to mailbomb a victim. Rate-limit the claim email per
+    // recipient AND per source IP before sending. Throttled sends are
+    // silently skipped (signup still succeeds) and logged as a security
+    // event. Limits are deliberately conservative.
     const ownerEmail = parsed.data.ownerEmail;
     if (ownerEmail) {
-      sendAgentClaimEmail({
-        to: ownerEmail,
-        agentName: agent.name,
-        agentId: agent.id,
-      }).catch((err) => {
-        console.error('[agent-signup] Claim email failed (non-fatal):', err);
-      });
+      void (async () => {
+        try {
+          const norm = ownerEmail.trim().toLowerCase();
+          const masked = norm.replace(/^(.).*(@.*)$/, '$1***$2');
+          const perRecipient = await checkRateLimit(`claim_email_to:${norm}`, CLAIM_EMAIL_WINDOW_MS, CLAIM_EMAIL_MAX_PER_RECIPIENT);
+          const perIp = await checkRateLimit(`claim_email_ip:${ip}`, CLAIM_EMAIL_WINDOW_MS, CLAIM_EMAIL_MAX_PER_IP);
+          if (!perRecipient.allowed || !perIp.allowed) {
+            await logSecurityEvent('agent_claim_email_throttled', 'warning', {
+              maskedEmail: masked,
+              ip,
+              agentId: agent.id,
+              reason: !perRecipient.allowed ? 'per_recipient' : 'per_ip',
+            });
+            return;
+          }
+          await sendAgentClaimEmail({ to: ownerEmail, agentName: agent.name, agentId: agent.id });
+        } catch (err) {
+          console.error('[agent-signup] Claim email failed (non-fatal):', err);
+        }
+      })();
     }
 
     return c.json({

@@ -398,6 +398,14 @@ export async function sendBetaNewApplicationNotification(params: {
   );
 }
 
+// Claim-email anti-abuse limits. The agent-signup / one-click endpoints are
+// public (and fully public once the closed beta is lifted), so an attacker
+// could mailbomb an arbitrary `ownerEmail`. Callers rate-limit the send per
+// recipient and per source IP using these conservative defaults.
+export const CLAIM_EMAIL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
+export const CLAIM_EMAIL_MAX_PER_RECIPIENT = 3; // a real owner needs at most a few
+export const CLAIM_EMAIL_MAX_PER_IP = 10; // one source can't blast many victims
+
 /**
  * Sent to the owner when an AI agent self-registers (agent-signup / one-click).
  * The agent stays at KYA tier 0 until the owner claims it into their own tenant.
