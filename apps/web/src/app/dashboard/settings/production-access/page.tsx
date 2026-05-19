@@ -43,7 +43,10 @@ export default function ProductionAccessPage() {
     queryFn: async () => {
       const res = await apiFetch(`${apiUrl}/v1/tenants/production-status`);
       if (!res.ok) throw new Error('Failed to load production status');
-      return res.json();
+      // Unwrap the { success, data, meta } response envelope — reading the
+      // flat body made this page always fall back to 'sandbox_only'.
+      const body = await res.json();
+      return body?.data ?? body;
     },
   });
 
@@ -109,7 +112,9 @@ export default function ProductionAccessPage() {
 
       {status === 'declaration_pending' && (
         <p className="text-sm text-muted-foreground">
-          Your declaration is under review. We&apos;ll email you once a decision is made.
+          Your declaration is under review. We approve accounts manually during this
+          open beta phase — please hang tight and we&apos;ll email you as soon as a
+          decision is made. You can keep building in Sandbox in the meantime.
         </p>
       )}
 
