@@ -88,7 +88,13 @@ export const WEBHOOK_EVENT_TYPES = {
   'settlement.initiated': 'A settlement was initiated',
   'settlement.completed': 'A settlement completed successfully',
   'settlement.failed': 'A settlement failed',
-  
+
+  // Agent task / approval events (human-in-the-loop)
+  'task.input_required': 'An agent task needs human input/approval',
+  'payment.approval_required': 'An agent payment exceeded policy and needs human approval',
+  'payment.approval_decided': 'An agent payment approval was approved or rejected',
+  'payment.approval_executed': 'An approved agent payment was executed',
+
   // Test event
   'webhook.test': 'Test webhook event',
 } as const;
@@ -146,7 +152,19 @@ const MAX_RESPONSE_BODY_LENGTH = 1000;
 // ============================================
 
 export class WebhookService {
-  private supabase = createClient();
+  // Lazily constructed so that merely importing this module (and the
+  // module-level `webhookService` singleton) never calls createClient().
+  // This matters because task-service.ts now imports webhookService for
+  // the input-required webhook; eager construction would throw at import
+  // time in environments without Supabase env vars (e.g. unit tests) and
+  // break unrelated suites at collection time.
+  private _supabase: ReturnType<typeof createClient> | null = null;
+  private get supabase(): ReturnType<typeof createClient> {
+    if (!this._supabase) {
+      this._supabase = createClient();
+    }
+    return this._supabase;
+  }
 
   /**
    * Queue a webhook for delivery to all subscribed endpoints
@@ -541,6 +559,95 @@ export class WebhookService {
         completed_at: transfer.completed_at,
       },
     });
+  }
+
+  /**
+   * Emit a webhook event for a payment approval (Epic 18.R2 / webhook hardening).
+   *
+   * Routes "agent payment needs a human" lifecycle events through the robust
+   * delivery system (queue → webhook_deliveries → HMAC-signed delivery with
+   * retry/DLQ by the webhook-processor worker). Mirrors emitTransferEvent.
+   *
+   * Idempotency key is `${approval.id}:${eventType}` so the same approval
+   * lifecycle event is only ever delivered once per endpoint, even if the
+   * emit path runs more than once (retries, double-fire).
+   */
+  async emitApprovalEvent(
+    tenantId: string,
+    eventType:
+      | 'payment.approval_required'
+      | 'payment.approval_decided'
+      | 'payment.approval_executed',
+    approval: {
+      id: string;
+      walletId: string;
+      agentId?: string;
+      protocol: string;
+      amount: number;
+      currency: string;
+      status: string;
+      recipient?: unknown;
+      decidedBy?: string;
+      decidedAt?: string;
+      decisionReason?: string;
+      executedTransferId?: string;
+      expiresAt?: string;
+    },
+  ): Promise<string[]> {
+    return this.queueWebhook(
+      tenantId,
+      {
+        type: eventType,
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        data: {
+          approval_id: approval.id,
+          wallet_id: approval.walletId,
+          agent_id: approval.agentId ?? null,
+          protocol: approval.protocol,
+          amount: approval.amount,
+          currency: approval.currency,
+          status: approval.status,
+          recipient: approval.recipient ?? null,
+          decided_by: approval.decidedBy ?? null,
+          decided_at: approval.decidedAt ?? null,
+          decision_reason: approval.decisionReason ?? null,
+          executed_transfer_id: approval.executedTransferId ?? null,
+          expires_at: approval.expiresAt ?? null,
+        },
+      },
+      { idempotencyKey: `${approval.id}:${eventType}` },
+    );
+  }
+
+  /**
+   * Emit a webhook event when an agent task needs human input/approval
+   * (the single chokepoint: TaskService.setInputRequired).
+   *
+   * Idempotency key is `${task.id}:input_required:${reason}` so re-entry
+   * into the same input-required reason for a task dedupes per endpoint.
+   */
+  async emitTaskInputRequired(
+    tenantId: string,
+    task: { id: string; agentId?: string | null; contextId?: string | null },
+    reason: string,
+  ): Promise<string[]> {
+    return this.queueWebhook(
+      tenantId,
+      {
+        type: 'task.input_required',
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        data: {
+          task_id: task.id,
+          agent_id: task.agentId ?? null,
+          context_id: task.contextId ?? null,
+          reason,
+          state: 'input-required',
+        },
+      },
+      { idempotencyKey: `${task.id}:input_required:${reason}` },
+    );
   }
 
   /**

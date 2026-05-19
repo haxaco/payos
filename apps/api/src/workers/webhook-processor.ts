@@ -46,10 +46,6 @@ class WebhookProcessor {
 
     // Process retries
     this.processRetryLoop();
-
-    // Graceful shutdown
-    process.on('SIGINT', () => this.stop());
-    process.on('SIGTERM', () => this.stop());
   }
 
   private async processPendingLoop(): Promise<void> {
@@ -95,18 +91,35 @@ class WebhookProcessor {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
     }
-
-    process.exit(0);
   }
 }
 
 // ============================================
-// Main
+// Singleton Instance
 // ============================================
 
-const processor = new WebhookProcessor();
-processor.start().catch((error) => {
-  console.error('[WebhookProcessor] Fatal error:', error);
-  process.exit(1);
-});
+export const webhookProcessorWorker = new WebhookProcessor();
+
+// ============================================
+// Main (if run directly)
+// ============================================
+
+// Only run if this is the main module (standalone process). When imported
+// by the API server (index.ts) the singleton is started/stopped there
+// instead, so queued deliveries flush in-process.
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  process.on('SIGINT', () => {
+    webhookProcessorWorker.stop();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    webhookProcessorWorker.stop();
+    process.exit(0);
+  });
+  webhookProcessorWorker.start().catch((error) => {
+    console.error('[WebhookProcessor] Fatal error:', error);
+    process.exit(1);
+  });
+}
 
