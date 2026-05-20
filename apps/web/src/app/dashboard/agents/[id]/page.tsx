@@ -2703,11 +2703,10 @@ function ActivityTab({ agentId }: { agentId: string }) {
 
 // ─── Agent Readiness Pill ──────────────────────────────
 // Compact "can this agent actually shop?" glance next to the status pill.
-// Rolls up four checks (provisioned EOA · on-chain funds · auto-refill ·
-// KYA tier) into a single Ready / Partial / Setup / Blocked state, with a
-// hover popover that spells each check out. Keeps tenants from having to
-// flip between the Wallet tab, KYA tab, and agent detail to confirm an
-// agent can run.
+// Rolls up three checks (provisioned EOA · on-chain funds · KYA tier) into
+// a single Ready / Partial / Setup / Blocked state, with a hover popover
+// that spells each check out. Keeps tenants from having to flip between
+// the Wallet tab, KYA tab, and agent detail to confirm an agent can run.
 
 function AgentReadinessPill({
   agentId,
@@ -2719,8 +2718,7 @@ function AgentReadinessPill({
   kyaTier: number | undefined;
 }) {
   const api = useApiClient();
-  const apiFetch = useApiFetch();
-  const { apiUrl, apiEnvironment } = useApiConfig();
+  const { apiEnvironment } = useApiConfig();
 
   // Agent wallets — want to know if an EOA exists and its balance.
   const { data: walletData } = useTanstackQuery({
@@ -2738,29 +2736,10 @@ function AgentReadinessPill({
     staleTime: 30_000,
   });
 
-  // Auto-refill policy — unlocks the "has-fallback-funding" check even
-  // when the EOA balance is currently low.
-  const { data: autoRefill } = useTanstackQuery({
-    queryKey: ['readiness-auto-refill', agentId, apiEnvironment],
-    queryFn: async () => {
-      try {
-        const res = await apiFetch(`${apiUrl}/v1/agents/${agentId}/auto-refill`);
-        if (!res.ok) return null;
-        const body = await res.json();
-        return body.data || body;
-      } catch {
-        return null;
-      }
-    },
-    enabled: !!apiUrl,
-    staleTime: 60_000,
-  });
-
   const eoa = (walletData?.all_wallets || []).find((w: any) => w.wallet_type === 'agent_eoa');
   const provisioned = !!eoa;
   const eoaBalance = eoa ? Number(eoa.balance || 0) : 0;
-  const hasAutoRefill = !!autoRefill?.enabled;
-  const funded = eoaBalance > 0 || hasAutoRefill;
+  const funded = eoaBalance > 0;
   const isActive = agentStatus === 'active';
   const tier = typeof kyaTier === 'number' ? kyaTier : null;
 
@@ -2795,9 +2774,7 @@ function AgentReadinessPill({
               label={
                 eoaBalance > 0
                   ? `Funded (${eoaBalance.toFixed(3)} USDC on-chain)`
-                  : hasAutoRefill
-                    ? 'Auto-refill enabled (falls back to Circle master)'
-                    : 'No funds; auto-refill off'
+                  : 'No funds — tenant tops up the EOA directly'
               }
             />
             <ReadinessLine

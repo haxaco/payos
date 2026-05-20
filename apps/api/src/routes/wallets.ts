@@ -918,8 +918,7 @@ app.get('/:id', async (c) => {
     //  - agent_eoa: transfers initiated by the agent that manages this
     //    EOA (external x402 calls use initiated_by_id = agent_id and
     //    don't set protocol_metadata.wallet_id), OR transfers whose
-    //    external to_address matches this EOA (e.g. auto-refill
-    //    deposits from the Circle master).
+    //    external to_address matches this EOA (tenant-funded deposits).
     //  - everything else: legacy wildcard on protocol_metadata.wallet_id.
     const buildTxQuery = () => {
       let q = supabase

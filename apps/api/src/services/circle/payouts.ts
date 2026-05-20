@@ -563,7 +563,13 @@ export class CirclePayoutsError extends Error {
 let defaultPayoutsClient: CirclePayoutsClient | null = null;
 
 /**
- * Get the default Circle Payouts client
+ * Get the default Circle Payouts client.
+ *
+ * Used for SETTLEMENT TRANSIT ONLY — outbound fiat payouts on tenant-
+ * initiated rails (Pix in BRL, SPEI in MXN) where Sly routes the tenant's
+ * USDC through a Circle Mint operational pool and Circle delivers fiat to
+ * the recipient's bank. NOT a tenant treasury or platform-owned float; Sly
+ * does not subsidise customer wallets.
  */
 export function getCirclePayoutsClient(): CirclePayoutsClient {
   if (!defaultPayoutsClient) {
@@ -572,19 +578,14 @@ export function getCirclePayoutsClient(): CirclePayoutsClient {
     //   CIRCLE_API_KEY            → Web3 Services / Programmable Wallets
     //                               (faucet drips, wallet creation). What
     //                               the FAUCET path uses.
-    //   CIRCLE_PAYMENTS_API_KEY   → Circle Mint / Business Account
-    //                               (master-wallet balance reads, outbound
-    //                               USDC transfers). What THIS Payouts
+    //   CIRCLE_PAYMENTS_API_KEY   → Circle Mint / Business Account (the
+    //                               settlement operational pool — Pix/SPEI
+    //                               outbound payouts). What THIS Payouts
     //                               client needs.
     //
     // The two keys are NOT interchangeable: a W3S key returns 401/403 on
-    // the Mint endpoints (POST /v1/transfers, GET /v1/businessAccount/*).
-    // Previously this client read CIRCLE_API_KEY and silently failed —
-    // surfacing in the dashboard as "Circle master wallet · unreachable"
-    // and on `POST /v1/agents/:id/fund-eoa` as a `CIRCLE_PAYOUT_FAILED 401`.
-    //
-    // Prefer the dedicated payments key; fall back to CIRCLE_API_KEY for
-    // installs that only have a single key set (the legacy shape).
+    // the Mint endpoints. Prefer the dedicated payments key; fall back to
+    // CIRCLE_API_KEY for installs that only have a single key set.
     const apiKey =
       process.env.CIRCLE_PAYMENTS_API_KEY || process.env.CIRCLE_API_KEY;
 
