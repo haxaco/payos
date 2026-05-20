@@ -27,6 +27,7 @@ import {
     User,
     Filter,
     Package,
+    Plus,
 } from 'lucide-react';
 import { useApiClient, useApiConfig } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/utils';
@@ -118,6 +119,15 @@ export default function HostedCheckoutsPage() {
                         Hosted checkout sessions for agentic commerce
                     </p>
                 </div>
+                <Link
+                    href="/dashboard/agentic-payments/ucp/hosted-checkouts/new"
+                    aria-label="Create a new UCP hosted checkout"
+                >
+                    <Button>
+                        <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
+                        Create Checkout
+                    </Button>
+                </Link>
             </div>
 
             <Card>
