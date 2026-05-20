@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Mandate } from "@sly/api-client";
 import { useApiClient } from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-error";
 
 import {
     Dialog,
@@ -93,7 +94,10 @@ export function ExecutePaymentDialog({
             onSuccess?.();
         } catch (error) {
             console.error(error);
-            toast.error("Failed to execute payment");
+            // Surface the real API error (e.g. Epic 82 'treasury scope required',
+            // mandate-policy violations, insufficient balance) instead of a
+            // generic string — matches the pattern used elsewhere in the app.
+            toast.error(getApiErrorMessage(error, "Failed to execute payment"));
         } finally {
             setIsSubmitting(false);
         }
