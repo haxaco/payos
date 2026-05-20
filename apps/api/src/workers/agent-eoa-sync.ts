@@ -53,11 +53,18 @@ async function syncOnce(): Promise<void> {
   let synced = 0;
   let failed = 0;
   try {
+    // sync_enabled=false is an explicit opt-out — used by operators for
+    // wallets where the off-chain ledger is the authoritative balance
+    // (e.g. demo tenants whose ledger reflects platform-internal x402
+    // micropayments that don't move on-chain). Without this filter the
+    // worker silently overwrote those balances back to on-chain every 5
+    // minutes, defeating the opt-out.
     const { data: rows, error } = await supabase
       .from('wallets')
       .select('id, tenant_id, wallet_address, environment, sync_data')
       .eq('wallet_type', 'agent_eoa')
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .neq('sync_enabled', false);
     if (error) {
       console.warn(`[EoaSync] Fetch failed: ${error.message}`);
       return;
