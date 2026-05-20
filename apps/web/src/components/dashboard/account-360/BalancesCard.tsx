@@ -1,16 +1,19 @@
 import { AccountContext } from '@/types/context';
+import { formatCurrency as uiFormatCurrency } from '@sly/ui';
 
 interface BalancesCardProps {
     balances: AccountContext['balances'];
 }
 
 export function BalancesCard({ balances }: BalancesCardProps) {
-    const formatCurrency = (amount: string, currency: string) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: currency,
-        }).format(parseFloat(amount));
-    };
+    // Delegate to @sly/ui's formatCurrency which handles fiat AND
+    // crypto/stablecoin codes. The previous local impl called
+    // Intl.NumberFormat with style:'currency' directly — that throws
+    // RangeError 'Invalid currency code' on USDC/EURC, which is the
+    // currency on most Sly wallet balances (would have crashed the
+    // Account 360 view; same root cause as PR #82).
+    const formatCurrency = (amount: string, currency: string) =>
+        uiFormatCurrency(parseFloat(amount), currency);
 
     return (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm">
