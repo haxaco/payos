@@ -31,7 +31,13 @@ import { MandateUtilizationBar } from "@/components/ap2/mandate-utilization-bar"
 import { ExecutePaymentDialog } from "@/components/ap2/execute-payment-dialog";
 import { ProtocolBadge } from "@/components/agentic-payments/protocol-badge";
 import { MandateActionsMenu } from "@/components/ap2/mandate-actions-menu";
-import { VirtualCard } from "@/components/ap2/virtual-card";
+// Virtual Card (Issue a virtual debit card linked to the mandate) is
+// hidden until we wire a real card-issuing integration. The current
+// component is mock-only — it renders a hardcoded fake PAN/expiry/CVC
+// after flipping a metadata flag, with no Stripe Issuing, Visa VIC, or
+// Mastercard Agent Pay backing. Component preserved at
+// apps/web/src/components/ap2/virtual-card.tsx for the future real
+// integration.
 import { PolicyCheckPanel, deriveMandatePolicyRules } from "@/components/policy-check-panel";
 import { PaymentHandlerDisplay } from "@/components/payment/payment-logos";
 
@@ -305,7 +311,6 @@ export default function MandateDetailPage() {
                         </CardContent>
                     </Card>
 
-                    <VirtualCard mandate={mandate} />
                 </div>
             </div>
 
