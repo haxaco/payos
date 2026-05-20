@@ -129,10 +129,20 @@ export async function runOnboardingSmokeTest(
     }
   };
 
-  const errText = (r: CallResult): string =>
-    r.json?.error ||
-    r.json?.message ||
-    (typeof r.json === 'string' ? r.json : `HTTP ${r.status}`);
+  // Robust id extractor: the response-wrapper middleware double-nests
+  // some create responses as `{success, data: { data: {...} } }`. Without
+  // this we'd silently fail to extract the new account/endpoint/checkout
+  // id on a brand-new tenant (where the create path actually runs vs the
+  // reuse-existing path that older test tenants hit).
+  const pickId = (j: any): string | undefined =>
+    j?.data?.data?.id || j?.data?.id || j?.id;
+  const errText = (r: CallResult): string => {
+    const e = r.json?.error;
+    if (e && typeof e === 'object' && e.message) return e.message as string;
+    if (typeof e === 'string') return e;
+    if (typeof r.json?.message === 'string') return r.json.message;
+    return `HTTP ${r.status}`;
+  };
 
   // Throwaway artifacts created by this run, torn down in `finally` so
   // repeated runs never accumulate junk. The shared sandbox account is
@@ -160,7 +170,7 @@ export async function runOnboardingSmokeTest(
         type: 'business',
         name: 'Sandbox Test Account',
       });
-      accountId = r.json?.id || r.json?.data?.id;
+      accountId = pickId(r.json);
       if (!accountId) {
         steps.push({
           name: 'Provision sandbox account',
@@ -203,8 +213,8 @@ export async function runOnboardingSmokeTest(
         currency: 'USDC',
       });
       const realId =
-        create.json?.data?.id ||
-        create.json?.id ||
+        pickId(create.json) ||
+        create.json?.data?.data?.checkout_id ||
         create.json?.data?.checkout_id;
       steps.push({
         name: 'Agent created a real checkout',
@@ -251,7 +261,7 @@ export async function runOnboardingSmokeTest(
       basePrice: 0.01,
       currency: 'USDC',
     });
-    const endpointId = create.json?.id || create.json?.data?.id;
+    const endpointId = pickId(create.json);
     createdEndpointId = endpointId;
     steps.push({
       name:
