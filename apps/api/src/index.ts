@@ -6,7 +6,6 @@ import { startIdempotencyCleanupWorker } from './workers/idempotency-cleanup.js'
 import { startX402ExpiredCleanupWorker } from './workers/x402-expired-cleanup.js';
 import { startScopeExpirationSweeper } from './workers/scope-expiration-sweeper.js';
 import { startScopeHeartbeatWorker } from './workers/scope-heartbeat.js';
-import { startAutoRefillWorker } from './workers/agent-auto-refill.js';
 import { startAgentEoaSyncWorker, stopAgentEoaSyncWorker } from './workers/agent-eoa-sync.js';
 import { webhookCleanupWorker } from './workers/webhook-cleanup.js';
 import { webhookProcessorWorker } from './workers/webhook-processor.js';
@@ -47,7 +46,6 @@ const enableA2AWorker = process.env.ENABLE_A2A_WORKER !== 'false'; // Enabled by
 const enableAsyncSettlement = process.env.ENABLE_ASYNC_SETTLEMENT !== 'false'; // Enabled by default
 const enableBatchSettlement = process.env.ENABLE_BATCH_SETTLEMENT !== 'false'; // Enabled by default
 const enableReviewTimeout = process.env.ENABLE_REVIEW_TIMEOUT !== 'false'; // Enabled by default
-const enableAutoRefill = process.env.ENABLE_AGENT_AUTO_REFILL !== 'false'; // Enabled by default
 const enableX402PublishPoller = process.env.ENABLE_X402_PUBLISH_POLLER !== 'false'; // Enabled by default
 
 console.log(`
@@ -68,7 +66,6 @@ console.log(`
 ║  ⚡ Async Settlement: ${(enableAsyncSettlement ? 'ON' : 'OFF').padEnd(24)}║
 ║  📦 Batch Settlement: ${(enableBatchSettlement ? 'ON' : 'OFF').padEnd(23)}║
 ║  ✅ Review Timeout: ${(enableReviewTimeout ? 'ON' : 'OFF').padEnd(26)}║
-║  💧 Agent Auto-Refill: ${(enableAutoRefill ? 'ON' : 'OFF').padEnd(23)}║
 ║  📊 Ops Tracker: ON                             ║
 ╚══════════════════════════════════════════════════╝
 `);
@@ -209,13 +206,6 @@ if (enableReviewTimeout) {
   reviewTimeoutWorker.start(reviewInterval);
 }
 
-// Start agent auto-refill worker — tops up opted-in agent EOAs from Circle master
-let stopAutoRefill: (() => void) | null = null;
-if (enableAutoRefill) {
-  const refillInterval = parseInt(process.env.AGENT_AUTO_REFILL_INTERVAL_MS || String(5 * 60 * 1000));
-  stopAutoRefill = startAutoRefillWorker(refillInterval);
-}
-
 // Start x402 publish-status poller (One-Click Publish epic) — confirms
 // catalog visibility on agentic.market for endpoints whose first settle landed.
 let x402PublishPoller: ReturnType<typeof getX402PublishPoller> | null = null;
@@ -259,9 +249,6 @@ const shutdown = async (signal: string) => {
   }
   if (reviewTimeoutWorker) {
     reviewTimeoutWorker.stop();
-  }
-  if (stopAutoRefill) {
-    stopAutoRefill();
   }
   if (x402PublishPoller) {
     x402PublishPoller.stop();

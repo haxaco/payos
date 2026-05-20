@@ -2233,16 +2233,6 @@ export function createMcpServer(
         };
       }
 
-      case 'agent_fund_eoa': {
-        const { agentId: _providedAgentId, amount } = args as { agentId?: string; amount?: string };
-        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
-        const result = await ctx.sly.request(`/v1/agents/${agentId}/fund-eoa`, {
-          method: 'POST',
-          body: JSON.stringify({ amount: amount || '1' }),
-        });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
-
       case 'agent_refill_faucet': {
         const _providedAgentId = (args as { agentId?: string }).agentId;
         const agentId = await resolveAgentId(ctx, _providedAgentId, name);
@@ -2351,45 +2341,6 @@ export function createMcpServer(
             wallet_id: walletId,
             preset_amount_usdc: presetAmountUsdc,
           }),
-        });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
-
-      case 'agent_enable_auto_refill': {
-        const { agentId: _providedAgentId, threshold, target, dailyCap } = args as {
-          agentId?: string;
-          threshold: number;
-          target: number;
-          dailyCap?: number;
-        };
-        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
-        const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            enabled: true,
-            threshold,
-            target,
-            dailyCap: dailyCap ?? 5,
-          }),
-        });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
-
-      case 'agent_disable_auto_refill': {
-        const _providedAgentId = (args as { agentId?: string }).agentId;
-        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
-        const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
-          method: 'PATCH',
-          body: JSON.stringify({ enabled: false }),
-        });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
-
-      case 'agent_auto_refill_status': {
-        const _providedAgentId = (args as { agentId?: string }).agentId;
-        const agentId = await resolveAgentId(ctx, _providedAgentId, name);
-        const result = await ctx.sly.request(`/v1/agents/${agentId}/auto-refill`, {
-          method: 'GET',
         });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }

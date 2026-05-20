@@ -278,18 +278,6 @@ export function DepositModal({
                 All options deliver USDC directly to your wallet. Sly never holds your money.
               </p>
 
-              {/* EOA-specific quick tip: auto-refill is the zero-effort
-                  path for agent wallets. Pointer to where it lives. */}
-              {isAgentEoa && (
-                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                  <p className="text-xs text-blue-800 dark:text-blue-200">
-                    <strong>Tip:</strong> skip one-off top-ups by enabling{' '}
-                    <strong>Auto-refill</strong> on the agent&apos;s Wallet tab.
-                    Sly will top up this EOA from the tenant Circle master
-                    whenever it runs low, with a per-day cap you control.
-                  </p>
-                </div>
-              )}
             </div>
           )}
 
@@ -329,16 +317,6 @@ export function DepositModal({
                   Only send <strong>USDC on {networkDisplay}</strong> to this address. Sending other tokens or using the wrong network may result in permanent loss.
                 </p>
               </div>
-
-              {isAgentEoa && (
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                  <p className="text-xs text-blue-800 dark:text-blue-200">
-                    <strong>Tip:</strong> you can also enable auto-refill on the agent&apos;s Wallet tab —
-                    Sly will top up this EOA from the tenant Circle master whenever it runs low, with
-                    a per-day cap you control.
-                  </p>
-                </div>
-              )}
 
               {!isAgentEoa && (
                 <button onClick={() => setPhase('select-provider')} className="w-full text-center text-sm text-blue-600 dark:text-blue-400 hover:underline">

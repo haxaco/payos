@@ -606,38 +606,6 @@ export class X402Client {
   }
 
   /**
-   * Fund the agent's managed EVM EOA by bridging USDC from its Circle custodial
-   * wallet. Required before the EOA can pay external x402 endpoints — the
-   * signature it produces is only redeemable if the EOA actually holds USDC.
-   */
-  async fundEvmAddress(amount: string = '1'): Promise<{
-    txId: string;
-    destinationAddress: string;
-    amount: string;
-  }> {
-    if (!this.config.agentId) {
-      throw new Error('agentId is required for EVM funding');
-    }
-    const response = await this.config.fetcher(
-      `${this.config.apiUrl}/v1/agents/${this.config.agentId}/fund-eoa`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({ amount }),
-      },
-    );
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({})) as { error?: string };
-      throw new Error(`fundEvmAddress failed: ${err.error || response.statusText}`);
-    }
-    const body = await response.json() as { data?: any };
-    return body.data || body as any;
-  }
-
-  /**
    * Fetch an EXTERNAL x402-protected URL and handle the payment using a
    * spec-compliant EIP-3009 signature. This is the opposite of `fetch()`
    * above: fetch() uses Sly's internal /v1/x402/pay flow; this uses the

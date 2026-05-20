@@ -1937,18 +1937,6 @@ export const tools: Tool[] = [
     },
   },
   {
-    name: 'agent_fund_eoa',
-    description: 'Bridge USDC from an agent\'s Circle custodial wallet to their managed EVM EOA. Required before the EOA can pay external x402 endpoints on-chain.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        agentId: { type: 'string', description: 'UUID of the agent' },
-        amount: { type: 'string', description: 'USDC amount as decimal string (default "1")', default: '1' },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'agent_refill_faucet',
     description: 'Request a Circle testnet faucet drip to top up the agent\'s Circle custodial wallet. Rate-limited by Circle (~1 drip per 2 hours per address).',
     inputSchema: {
@@ -2083,43 +2071,6 @@ export const tools: Tool[] = [
       required: ['walletId'],
     },
   },
-  {
-    name: 'agent_enable_auto_refill',
-    description: 'Enable automatic USDC top-ups for an agent EOA. A background worker watches the on-chain balance and tops it up from the tenant Circle master whenever it falls below `threshold`, refilling up to `target`. All refills are bounded by a per-day cap and KYA limits. Returns the saved policy.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        agentId: { type: 'string', description: 'UUID of the agent' },
-        threshold: { type: 'number', description: 'USDC balance below which the worker will refill (e.g. 0.20)' },
-        target: { type: 'number', description: 'USDC balance the worker will refill UP TO (must be > threshold). E.g. 1.00' },
-        dailyCap: { type: 'number', description: 'Max USDC auto-refilled per UTC day. Default: 5.00' },
-      },
-      required: ['threshold', 'target'],
-    },
-  },
-  {
-    name: 'agent_disable_auto_refill',
-    description: 'Turn off automatic USDC top-ups for an agent EOA. The existing policy (threshold/target/daily cap) is preserved so re-enabling is a single call. Running refills are not aborted, but no new ones will be attempted.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        agentId: { type: 'string', description: 'UUID of the agent' },
-      },
-      required: [],
-    },
-  },
-  {
-    name: 'agent_auto_refill_status',
-    description: 'Read the current auto-refill policy and last-run state for an agent. Returns enabled flag, threshold, target, dailyCap, dailySpent (resets at UTC midnight), lastRunAt, lastStatus (ok | master_underfunded | circle_error | capped | config_invalid | no_evm_key | rpc_error | skipped_dust), and lastError.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        agentId: { type: 'string', description: 'UUID of the agent' },
-      },
-      required: [],
-    },
-  },
-
   // ==========================================================================
   // A2A Tools (Google Agent-to-Agent Protocol)
   // ==========================================================================

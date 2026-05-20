@@ -17,8 +17,8 @@ export interface RequestContext {
   userId?: string;
   userRole?: 'owner' | 'admin' | 'member' | 'viewer';
   userName?: string;
-  // Verified email from the Supabase JWT. Read by endpoints that need to gate
-  // on platform-staff (@getsly.ai) — see /v1/agents/circle/master-balance.
+  // Verified email from the Supabase JWT. Read by endpoints that need to
+  // gate on platform-staff (@getsly.ai).
   userEmail?: string;
   // For API key auth
   apiKeyId?: string;

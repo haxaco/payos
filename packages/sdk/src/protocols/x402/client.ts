@@ -234,32 +234,6 @@ export class SlyX402Client {
   }
 
   /**
-   * Bridge USDC from the agent's Circle custodial wallet to their managed EOA.
-   * Required before the EOA can pay external x402 endpoints on-chain.
-   */
-  async fundEvmAddress(agentId: string, amount: string = '1'): Promise<{
-    txId: string;
-    destinationAddress: string;
-    amount: string;
-  }> {
-    const envConfig = getEnvironmentConfig(this.config.environment);
-    const response = await fetch(`${envConfig.apiUrl}/v1/agents/${agentId}/fund-eoa`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({ amount }),
-    });
-    if (!response.ok) {
-      const err = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(`fundEvmAddress failed: ${err.error || response.statusText}`);
-    }
-    const body = (await response.json()) as { data?: any };
-    return body.data || (body as any);
-  }
-
-  /**
    * Parse 402 response
    */
   private async parse402Response(response: Response): Promise<X402Response> {
