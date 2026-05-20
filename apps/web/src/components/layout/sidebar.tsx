@@ -304,7 +304,9 @@ export function Sidebar() {
     { href: '/dashboard/wallets', label: 'Wallets', icon: Wallet, tourAnchor: 'nav-wallets' },
     { href: '/dashboard/accounts', label: 'Accounts', icon: Users, tourAnchor: 'nav-accounts' },
     { href: '/dashboard/transfers', label: 'Transactions', icon: ArrowLeftRight, tourAnchor: 'nav-transactions' },
-    { href: '/dashboard/cards', label: 'Cards', icon: CreditCard },
+    // Cards (Visa VIC + Mastercard Agent Pay) — hidden until we have
+    // sandbox credentials for either network. Stripe-backed card
+    // processing remains available via /dashboard/payment-handlers.
   ];
 
   const operationsNav: NavItemDef[] = [
