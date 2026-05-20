@@ -27,20 +27,29 @@ import {
   Label,
 } from '@sly/ui';
 import { useApiClient } from '@/lib/api-client';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getApiErrorMessage } from '@/lib/api-error';
 
-// Handler picker shape — `value` is the string written to
-// payment_config.handlers; `disabled` flags handlers we don't yet
-// support end-to-end. "Sly Wallet (USDC)" is intentionally listed
-// disabled with a "Coming soon" hint so the gap is visible.
+// Handler picker shape. The backend takes wallet-pay via a different
+// signal than the handler string: `completeCheckout` (services/ucp/
+// checkout.ts:757-824) prefers the wallet-debit path when `agent_id`
+// is present and the agent has a managed wallet with sufficient
+// balance — it bypasses the external handler entirely. So "Sly Wallet"
+// here means "settle via agent wallet"; the handler string itself
+// becomes a fallback if the wallet path fails before authorization.
 interface HandlerOption {
   value: string;
   label: string;
   description: string;
-  disabled?: boolean;
 }
 const HANDLER_OPTIONS: HandlerOption[] = [
+  {
+    value: 'wallet',
+    label: 'Sly Wallet (USDC) — debit from agent',
+    description:
+      'Settles by debiting the selected agent’s Sly wallet (USDC). No external handler call.',
+  },
   {
     value: 'sly',
     label: 'Sly LATAM (Pix / SPEI)',
@@ -51,32 +60,32 @@ const HANDLER_OPTIONS: HandlerOption[] = [
     label: 'Stripe',
     description: 'Card processing via your connected Stripe account.',
   },
-  {
-    value: 'wallet',
-    label: 'Sly Wallet (USDC)',
-    description: 'Pay directly from a Sly USDC wallet — coming soon.',
-    disabled: true,
-  },
 ];
 
-const checkoutSchema = z.object({
-  currency: z.string().length(3),
-  buyer_name: z.string().optional(),
-  buyer_email: z.string().email().optional().or(z.literal('')),
-  merchant_name: z.string().min(1, 'Merchant name is required'),
-  handler: z.string().min(1),
-  expires_in_hours: z.coerce.number().int().min(1).max(168),
-  items: z
-    .array(
-      z.object({
-        name: z.string().min(1, 'Item name is required'),
-        description: z.string().optional(),
-        quantity: z.coerce.number().int().positive(),
-        unit_price_dollars: z.coerce.number().nonnegative(),
-      })
-    )
-    .min(1, 'At least one item is required'),
-});
+const checkoutSchema = z
+  .object({
+    currency: z.string().length(3),
+    buyer_name: z.string().optional(),
+    buyer_email: z.string().email().optional().or(z.literal('')),
+    merchant_name: z.string().min(1, 'Merchant name is required'),
+    handler: z.string().min(1),
+    agent_id: z.string().optional(),
+    expires_in_hours: z.coerce.number().int().min(1).max(168),
+    items: z
+      .array(
+        z.object({
+          name: z.string().min(1, 'Item name is required'),
+          description: z.string().optional(),
+          quantity: z.coerce.number().int().positive(),
+          unit_price_dollars: z.coerce.number().nonnegative(),
+        })
+      )
+      .min(1, 'At least one item is required'),
+  })
+  .refine((d) => d.handler !== 'wallet' || !!d.agent_id, {
+    message: 'Pick an agent — wallet pay debits the selected agent’s Sly wallet.',
+    path: ['agent_id'],
+  });
 
 type CheckoutFormValues = z.infer<typeof checkoutSchema>;
 
@@ -107,13 +116,28 @@ export default function CreateUcpCheckoutPage() {
       buyer_name: '',
       buyer_email: '',
       merchant_name: '',
-      handler: 'sly',
+      handler: 'wallet',
+      agent_id: '',
       expires_in_hours: 24,
       items: [
         { name: '', description: '', quantity: 1, unit_price_dollars: 0 },
       ],
     },
   });
+
+  // Agents for the wallet-pay picker. Only listed (and required) when
+  // the user chooses the "Sly Wallet" handler; the backend uses
+  // `agent_id` to trigger the wallet-debit path on completion.
+  const { data: agentsResponse } = useQuery({
+    queryKey: ['agents', 'for-ucp-create'],
+    queryFn: async () => {
+      if (!api) throw new Error('API client not initialized');
+      return api.agents.list({ limit: 100 });
+    },
+    enabled: !!api,
+  });
+  const agents: Array<{ id: string; name?: string | null }> =
+    (agentsResponse as any)?.data ?? [];
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -161,6 +185,12 @@ export default function CreateUcpCheckoutPage() {
         payment_config: { handlers: [data.handler] },
         expires_in_hours: data.expires_in_hours,
         metadata: { merchant_name: data.merchant_name },
+        // agent_id is what the backend keys on to take the wallet-pay
+        // path during completion. Only attach when the user picked
+        // "Sly Wallet" and selected an agent.
+        ...(data.handler === 'wallet' && data.agent_id
+          ? { agent_id: data.agent_id }
+          : {}),
       };
       if (data.buyer_name || data.buyer_email) {
         payload.buyer = {
@@ -263,9 +293,8 @@ export default function CreateUcpCheckoutPage() {
                 className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 {HANDLER_OPTIONS.map((h) => (
-                  <option key={h.value} value={h.value} disabled={!!h.disabled}>
+                  <option key={h.value} value={h.value}>
                     {h.label}
-                    {h.disabled ? ' — coming soon' : ''}
                   </option>
                 ))}
               </select>
@@ -274,6 +303,34 @@ export default function CreateUcpCheckoutPage() {
                   ?.description}
               </p>
             </div>
+
+            {form.watch('handler') === 'wallet' && (
+              <div>
+                <Label htmlFor="agent_id">Agent</Label>
+                <select
+                  id="agent_id"
+                  {...form.register('agent_id')}
+                  className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Pick an agent…</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name || a.id.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+                {form.formState.errors.agent_id && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {form.formState.errors.agent_id.message}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  On completion, Sly debits this agent’s wallet for the total.
+                  Requires sufficient USDC balance and triggers the Epic 82
+                  treasury-scope check just like any other settlement path.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
