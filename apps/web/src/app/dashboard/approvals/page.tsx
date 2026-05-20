@@ -24,6 +24,7 @@ import { CardListSkeleton } from '@/components/ui/skeletons';
 import { usePagination } from '@/hooks/usePagination';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { toast } from 'sonner';
+import { formatCurrency } from '@sly/ui';
 import { cn } from '@sly/ui';
 
 // Protocol configuration
@@ -88,14 +89,11 @@ const STATUS_CONFIG: Record<ApprovalStatus, { label: string; color: string; bgCo
   },
 };
 
-function formatCurrency(amount: number, currency: string = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
+// formatCurrency is imported from @sly/ui — it handles both ISO 4217 fiat
+// (USD/EUR) and crypto/stablecoin codes (USDC/EURC/...). The previous
+// local implementation called Intl.NumberFormat with style:'currency'
+// directly, which throws RangeError "Invalid currency code" on USDC —
+// crashing the page for any real approval (Sly's primary currency is USDC).
 
 function formatDate(date: string): string {
   return new Date(date).toLocaleDateString('en-US', {
