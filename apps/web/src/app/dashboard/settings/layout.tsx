@@ -16,7 +16,9 @@ const settingsTabs: SettingsTab[] = (
     { href: '/dashboard/settings/templates', label: 'Templates', feature: 'templates' },
     { href: '/dashboard/settings/verification-tiers', label: 'Verification Tiers' },
     { href: '/dashboard/settings/agent-tiers', label: 'Agent Tiers (KYA)' },
-    { href: '/dashboard/settings/card-networks', label: 'Card Networks' },
+    // Card Networks (Visa VIC + Mastercard Agent Pay) — hidden until we
+    // have sandbox credentials. Stripe-backed cards available via
+    // /dashboard/payment-handlers in the meantime.
     { href: '/dashboard/settings/webhooks', label: 'Webhooks' },
   ] satisfies SettingsTab[]
 ).filter((t) => !t.feature || isWebFeatureEnabled(t.feature));
