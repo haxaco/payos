@@ -207,6 +207,14 @@ export async function declareProduction(
     throw new Error(`Failed to record production declaration: ${error.message}`);
   }
 
+  // Bump the production-access epoch so any cached JWT ctx for this tenant
+  // is forced to re-resolve on the next request. Without this, the
+  // dashboard reads stale `sandbox_only` from the cached ctx for up to
+  // 60s (JWT_CACHE_TTL_MS) after declaration — making the page look like
+  // the submit silently no-op'd. Admin actions (approve/deny/suspend)
+  // already bump; tenant declare was the missing one.
+  bumpProductionEpoch(actor.tenantId);
+
   await logAudit(supabase, {
     tenantId: actor.tenantId,
     entityType: 'tenant',

@@ -29,7 +29,7 @@ const STATUS_META: Record<string, { label: string; icon: typeof Shield; tone: st
 
 export default function ProductionAccessPage() {
   const apiFetch = useApiFetch();
-  const { apiUrl } = useApiConfig();
+  const { apiUrl, isConfigured, isLoading: isAuthLoading } = useApiConfig();
   const queryClient = useQueryClient();
   const { refreshProductionStatus } = useEnvironment();
 
@@ -48,6 +48,21 @@ export default function ProductionAccessPage() {
       const body = await res.json();
       return body?.data ?? body;
     },
+    // Wait until ApiClientProvider has resolved the auth token before
+    // firing the first fetch. Without this gate, the very first GET
+    // raced ahead of authToken hydration, came back 401, and react-query
+    // paused the query — leaving the page permanently stuck on the
+    // pre-fetch fallback (`sandbox_only`) even after the underlying
+    // declaration was accepted by the API. This was the real root
+    // cause of "submit + DB updates correctly + UI never refreshes".
+    enabled: isConfigured && !isAuthLoading,
+    // Always fetch fresh on mount + after window focus. The status here
+    // gates a money-movement feature; staleness leads to "I submitted
+    // but the form still shows Sandbox only" confusion. Overrides the
+    // global QueryClient defaults (`refetchOnMount: false`).
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   const declare = useMutation({
@@ -66,17 +81,21 @@ export default function ProductionAccessPage() {
       if (!res.ok) throw new Error(body?.error || 'Submission failed');
       return body;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Production access requested', {
         description: 'We review declarations manually and will email you with a decision.',
       });
-      queryClient.invalidateQueries({ queryKey: ['production-status'] });
+      // Force-refetch the status (await it) so the form swaps to the
+      // "Under review" state immediately on success. Plain invalidate
+      // schedules a refetch but doesn't guarantee it runs before the
+      // user sees the page; refetchQueries does both.
+      await queryClient.refetchQueries({ queryKey: ['production-status'] });
       void refreshProductionStatus();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (isLoading) {
+  if (isLoading || isAuthLoading) {
     return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
   }
 
