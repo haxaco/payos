@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Identical geometry to light.svg. Only fills/strokes change for dark-mode contrast. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="2 6 138 56" fill="none">
+  <g transform="translate(8, 10)">
+    <path d="M4 14 Q4 4, 14 4 L34 4 L34 0 L44 8 L34 16 L34 12 L18 12 Q12 12, 12 18" stroke="#F8FAFC" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+    <path d="M40 30 Q40 40, 30 40 L10 40 L10 44 L0 36 L10 28 L10 32 L26 32 Q32 32, 32 26" stroke="#F8FAFC" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+  </g>
+  <text x="72" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="28" font-weight="700" fill="#F8FAFC">Sly</text>
+  <text x="72" y="58" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="500" fill="#94A3B8" letter-spacing="1">INTERNAL</text>
+</svg>
