@@ -56,6 +56,7 @@ import cardsVaultOpenAPIRouter from './routes/openapi/cards-vault.js';
 import cardTransactionsOpenAPIRouter from './routes/openapi/card-transactions.js';
 import reputationOpenAPIRouter from './routes/openapi/reputation.js';
 import capabilitiesOpenAPIRouter from './routes/openapi/capabilities.js';
+import tenantsOpenAPIRouter from './routes/openapi/tenants.js';
 
 export function buildOpenAPIApp(): OpenAPIHono {
   const app = new OpenAPIHono();
@@ -108,6 +109,7 @@ export function buildOpenAPIApp(): OpenAPIHono {
   app.route('/v1/card-transactions', cardTransactionsOpenAPIRouter);
   app.route('/v1/reputation', reputationOpenAPIRouter);
   app.route('/v1/capabilities', capabilitiesOpenAPIRouter);
+  app.route('/v1/tenants', tenantsOpenAPIRouter);
 
   return app;
 }

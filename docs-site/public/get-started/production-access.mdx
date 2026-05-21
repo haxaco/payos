@@ -1,0 +1,252 @@
+---
+title: "Production access"
+description: "Open beta is sandbox-by-default. Request live access by submitting a lightweight declaration; a Sly admin approves before live API keys and live money movement unlock."
+---
+
+Every new Sly tenant starts in **sandbox-only mode**. Test (`pk_test_`) keys work immediately and let you build the full integration against the production API surface — only the live-money-movement paths are gated behind a manual approval.
+
+You request live access by submitting a one-time declaration; a Sly admin reviews and approves (or denies) the request. Until then, any attempt to create a `pk_live_` key, set `X-Environment: live` on a JWT session, or call a money-moving endpoint with a live key returns `403 FORBIDDEN`.
+
+## State machine
+
+```
+sandbox_only ─declare→ declaration_pending ─approve→ production_approved
+                  │                                       │
+                  └─deny→ production_denied               └─suspend→ production_suspended
+                            │
+                            └─re-declare→ declaration_pending
+```
+
+| State | What it means | Live keys usable? |
+|---|---|---|
+| `sandbox_only`         | Default for new tenants. No declaration submitted yet. | ❌ |
+| `declaration_pending`  | Declaration submitted; awaiting Sly admin review. | ❌ |
+| `production_approved`  | Approved — `pk_live_` keys can be minted and used. | ✅ |
+| `production_denied`    | Admin denied the request. Re-declaration allowed. | ❌ |
+| `production_suspended` | Previously approved, then suspended by an admin. | ❌ |
+
+## What unlocks at `production_approved`
+
+- **Live API keys** — `POST /v1/api-keys` accepts `environment: 'live'` (was blocked).
+- **Live JWT sessions** — dashboard users can flip the env toggle to **Production** in the header; `X-Environment: live` headers are honored (instead of silently downgraded to `test` with `liveBlocked: true`).
+- **Live agent tokens** — agents claimed into the tenant resolve to `environment: 'live'` when the tenant is approved.
+- **Strict beta ceilings apply** (see [Beta ceilings](#beta-ceilings)). Approval doesn't grant unlimited volume — it grants *audited* volume up to a conservative cap.
+
+Approval **does not** auto-mint a live key. Once your tenant is approved, you create the live key yourself via `POST /v1/api-keys` with `{ environment: 'live' }` or the dashboard's API Keys page.
+
+## Request production access
+
+<Steps>
+  <Step title="Sign in as the organization owner">
+    Only an **owner** signed in via the dashboard (JWT session) can submit a declaration. API keys and agent tokens cannot.
+  </Step>
+  <Step title="Submit the declaration">
+    Send a `POST /v1/tenants/declare-production` with your intended use case and accepted terms. SSO identity (verified email, name, provider, organization) is auto-attached server-side — you don't re-enter it.
+  </Step>
+  <Step title="Wait for review">
+    Status flips to `declaration_pending`. Sly admins review manually. You'll receive an email + an in-app notification on decision.
+  </Step>
+  <Step title="On approval, mint your live key">
+    Status flips to `production_approved`. Go to **Dashboard → API Keys → New Key → Live**, or `POST /v1/api-keys { environment: 'live' }`.
+  </Step>
+</Steps>
+
+### `POST /v1/tenants/declare-production`
+
+Owner-JWT only. Allowed from `sandbox_only` and `production_denied`; rejected from `declaration_pending`, `production_approved`, and `production_suspended`.
+
+<CodeGroup>
+
+```bash curl
+curl https://api.getsly.ai/v1/tenants/declare-production \
+  -X POST \
+  -H "Authorization: Bearer $SLY_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "intended_use_case": "B2B procurement payments — we are integrating Sly to move USDC for buyer agents purchasing supplies from verified vendor agents. Expected mix: ACP checkouts + AP2 mandates.",
+    "expected_monthly_volume_usd": 5000,
+    "website_url": "https://acme-procurement.example.com",
+    "accepted_terms": true
+  }'
+```
+
+```ts node
+import { Sly } from '@sly_ai/sdk';
+
+const sly = new Sly({ apiKey: process.env.SLY_JWT! });
+
+const result = await sly.tenants.declareProduction({
+  intended_use_case:
+    'B2B procurement payments — buyer agents purchasing supplies from ' +
+    'verified vendor agents. Expected mix: ACP checkouts + AP2 mandates.',
+  expected_monthly_volume_usd: 5000,
+  website_url: 'https://acme-procurement.example.com',
+  accepted_terms: true,
+});
+
+console.log(result.status); // 'declaration_pending'
+```
+
+```python python
+import os
+import requests
+
+response = requests.post(
+    "https://api.getsly.ai/v1/tenants/declare-production",
+    headers={"Authorization": f"Bearer {os.environ['SLY_JWT']}"},
+    json={
+        "intended_use_case": (
+            "B2B procurement payments — buyer agents purchasing supplies "
+            "from verified vendor agents."
+        ),
+        "expected_monthly_volume_usd": 5000,
+        "website_url": "https://acme-procurement.example.com",
+        "accepted_terms": True,
+    },
+)
+print(response.json()["status"])  # 'declaration_pending'
+```
+
+</CodeGroup>
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `intended_use_case` | string (20–1000 chars) | ✅ | Free-form description of what you're building. The denser this is, the faster the review. |
+| `expected_monthly_volume_usd` | positive number | optional | Best-effort estimate. Influences your initial beta ceiling. |
+| `website_url` | URL | optional | Public-facing site or repo. Speeds up identity verification. |
+| `accepted_terms` | literal `true` | ✅ | Acceptance of the live-money-movement terms. |
+
+**Response** — HTTP `202 Accepted`
+
+```json
+{
+  "status": "declaration_pending",
+  "kyaTier": 1,
+  "message": "Production access requested. We review declarations manually and will email you once a decision is made."
+}
+```
+
+**Error responses**
+
+| Status | Code | When |
+|---|---|---|
+| 403 | `FORBIDDEN` | Caller is not an owner-JWT (e.g. API key, agent token, or non-owner user). |
+| 403 | — | Tenant is in a state that does not allow declaration (`declaration_pending`, `production_approved`, `production_suspended`). |
+| 400 | `INVALID_REQUEST_FORMAT` | Body fails schema validation (use case too short, terms not accepted, invalid URL). |
+
+### `GET /v1/tenants/production-status`
+
+Read the current state — used by the dashboard's Production Access page to render the gating banner and live-key CTA. Callable by any tenant context (owner JWT, member JWT, tenant API key).
+
+<CodeGroup>
+
+```bash curl
+curl https://api.getsly.ai/v1/tenants/production-status \
+  -H "Authorization: Bearer $SLY_API_KEY" \
+  -H "X-Environment: test"
+```
+
+```ts node
+import { Sly } from '@sly_ai/sdk';
+
+const sly = new Sly({ apiKey: process.env.SLY_API_KEY! });
+const status = await sly.tenants.getProductionStatus();
+
+if (status.status === 'production_approved') {
+  console.log('Live keys unlocked. Beta ceiling:', status.ceiling);
+}
+```
+
+```python python
+import os
+import requests
+
+response = requests.get(
+    "https://api.getsly.ai/v1/tenants/production-status",
+    headers={
+        "Authorization": f"Bearer {os.environ['SLY_API_KEY']}",
+        "X-Environment": "test",
+    },
+)
+print(response.json())
+```
+
+</CodeGroup>
+
+**Response shape**
+
+```json
+{
+  "status": "production_approved",
+  "kyaTier": 1,
+  "declaredAt": "2026-05-14T18:02:11.000Z",
+  "reviewedAt": "2026-05-15T10:24:50.000Z",
+  "reviewNotes": "Approved — strong use case, clear ACP integration.",
+  "declaration": {
+    "intended_use_case": "B2B procurement payments — ...",
+    "expected_monthly_volume_usd": 5000,
+    "website_url": "https://acme-procurement.example.com",
+    "identity": {
+      "email": "owner@acme-procurement.example.com",
+      "name": "Jane Owner",
+      "provider": "google",
+      "organization_name": "Acme Procurement"
+    }
+  },
+  "ceiling": {
+    "perTx": 100,
+    "daily": 500,
+    "monthly": 2000,
+    "disabled": false,
+    "source": "platform_default"
+  }
+}
+```
+
+## Beta ceilings
+
+Approval doesn't unlock unlimited volume. During the open beta, every approved tenant operates under a **strict platform-wide aggregate cap** across all of its agents, regardless of per-agent KYA tier. The ceiling is enforced **only in the `live` environment** — sandbox/test is unthrottled so onboarding, testing, and marketplace simulations stay fast.
+
+| Limit | Default | What it means |
+|---|---|---|
+| `perTx` | $100 | Largest single transaction (sum of items in one settlement). |
+| `daily` | $500 | Sum of all live transactions tenant-wide in a UTC day. |
+| `monthly` | $2,000 | Sum of all live transactions tenant-wide in a calendar month. |
+
+Defaults live in `apps/api/src/config/beta-ceilings.ts`. Per-tenant overrides — `beta_ceiling_per_tx`, `beta_ceiling_daily`, `beta_ceiling_monthly`, `beta_ceiling_disabled` — are admin-settable as trust builds.
+
+When a live transaction would breach the ceiling, the API returns:
+
+```json
+{
+  "error": "Transaction blocked by tenant beta ceiling",
+  "code": "LIMIT_EXCEEDED",
+  "reason": "exceeds_tenant_beta_ceiling_per_tx",
+  "amount": 150,
+  "limit": 100
+}
+```
+
+Variants: `exceeds_tenant_beta_ceiling_daily`, `exceeds_tenant_beta_ceiling_monthly`. The same gate fires across all eight money paths (transfers, x402, ACP, AP2, UCP, streams) — there's a single chokepoint in `LimitService._checkTransactionLimitInner`.
+
+## Re-declaring after a denial
+
+If your declaration is denied, you can submit a revised one. Same endpoint, same shape — strengthen the `intended_use_case` based on the denial notes (returned in `reviewNotes` on `GET /v1/tenants/production-status`) and re-`POST` it. The state machine permits `production_denied → declaration_pending`.
+
+## How long does review take?
+
+Manual review during the open beta typically lands within **1–3 business days**. We'll email the declaration owner the moment a decision is made; the in-app notification fires simultaneously.
+
+If you need a faster decision for a time-sensitive integration pilot, mention it in `intended_use_case` and we'll prioritize the review.
+
+## Dashboard equivalent
+
+If you prefer not to script the declaration, the dashboard exposes the same flow at **Settings → Production Access**. The form's fields map 1:1 to the JSON body above; submission hits the same endpoint server-side and rewrites the status banner in place.
+
+## Related
+
+- [Authentication overview](/authentication/overview) — how `pk_test_` vs `pk_live_` keys differ and which routes require which scope
+- [Environments](/get-started/environments) — the test/live split, sandbox-only behavior, and what the `X-Environment` header does
+- [Scope grants](/agents/scope-grants) — Epic 82's per-action `treasury` scope, the *other* gate that fires on any money-moving call regardless of production status

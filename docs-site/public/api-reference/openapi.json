@@ -21973,6 +21973,120 @@
           }
         }
       }
+    },
+    "/v1/tenants/declare-production": {
+      "post": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Submit a production-access declaration",
+        "description": "Owner-JWT only. Moves the tenant from `sandbox_only` (or `production_denied`) to `declaration_pending` for manual Sly admin review. SSO identity (verified email, name, provider, organization) is auto-attached server-side — you don't re-enter it. See [Production access](/get-started/production-access) for the full lifecycle.",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductionDeclarationInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Declaration accepted; tenant is now `declaration_pending`. Approval emails + in-app notifications fire on the admin decision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclareProductionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body fails schema validation (use case too short, terms not accepted, invalid URL).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an owner-JWT (e.g. API key, agent token, member/viewer role), or the tenant is in a state that does not permit a new declaration (already pending, approved, or suspended).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tenants/production-status": {
+      "get": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Get the current production-access state",
+        "description": "Returns the tenant production-access status, the most recently submitted declaration, review timestamps, admin notes, and the effective beta-spend ceiling. Used by the dashboard Production Access page to render the gating banner and live-key CTA. Callable by any authenticated tenant context (owner JWT, member JWT, tenant API key).",
+        "x-visibility": "public",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current production-access state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionStatus"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -28215,6 +28329,186 @@
           "name",
           "description",
           "parameters"
+        ]
+      },
+      "ProductionAccessStatus": {
+        "type": "string",
+        "enum": [
+          "sandbox_only",
+          "declaration_pending",
+          "production_approved",
+          "production_denied",
+          "production_suspended"
+        ]
+      },
+      "DeclareProductionResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ProductionAccessStatus"
+          },
+          "kyaTier": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "kyaTier",
+          "message"
+        ]
+      },
+      "ProductionDeclarationInput": {
+        "type": "object",
+        "properties": {
+          "intended_use_case": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 1000,
+            "description": "Free-form description of the integration. The denser the description, the faster the review."
+          },
+          "expected_monthly_volume_usd": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Best-effort monthly volume estimate. Influences the initial beta ceiling."
+          },
+          "website_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public-facing site or repo. Speeds up identity verification."
+          },
+          "accepted_terms": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Acceptance of the live-money-movement terms. Must be true."
+          }
+        },
+        "required": [
+          "intended_use_case",
+          "accepted_terms"
+        ]
+      },
+      "DeclarationIdentity": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "description": "SSO provider (e.g. google, github)."
+          },
+          "organization_name": {
+            "type": "string"
+          }
+        }
+      },
+      "BetaCeiling": {
+        "type": "object",
+        "properties": {
+          "perTx": {
+            "type": "number",
+            "description": "Largest single transaction allowed (USDC)."
+          },
+          "daily": {
+            "type": "number",
+            "description": "Tenant-wide daily aggregate cap (UTC day, USDC)."
+          },
+          "monthly": {
+            "type": "number",
+            "description": "Tenant-wide monthly aggregate cap (calendar month, USDC)."
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "When true, the ceiling is not enforced (admin escape hatch)."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "platform_default",
+              "override"
+            ]
+          }
+        },
+        "required": [
+          "perTx",
+          "daily",
+          "monthly",
+          "disabled",
+          "source"
+        ]
+      },
+      "ProductionStatus": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ProductionAccessStatus"
+          },
+          "kyaTier": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "description": "Tenant KYA tier — 0 sandbox, 1 declared, 2 verified, 3 trusted."
+          },
+          "declaredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "reviewNotes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Admin-set note attached on approve/deny. Useful context for re-declaration after a denial."
+          },
+          "declaration": {
+            "type": "object",
+            "properties": {
+              "intended_use_case": {
+                "type": "string"
+              },
+              "expected_monthly_volume_usd": {
+                "type": "number"
+              },
+              "website_url": {
+                "type": "string"
+              },
+              "identity": {
+                "$ref": "#/components/schemas/DeclarationIdentity"
+              }
+            },
+            "description": "Declaration payload as last submitted, including SSO identity auto-attached server-side."
+          },
+          "ceiling": {
+            "$ref": "#/components/schemas/BetaCeiling"
+          }
+        },
+        "required": [
+          "status",
+          "kyaTier",
+          "declaredAt",
+          "reviewedAt",
+          "reviewNotes",
+          "declaration",
+          "ceiling"
         ]
       }
     },
