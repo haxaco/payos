@@ -109,3 +109,8 @@ apps/api/scripts/mcp-data.js
 apps/api/scripts/skills-data.js
 apps/api/scripts/catalog-data.json
 .vercel
+
+# Demo recording engine — caches, never commit
+apps/demo/_shots/.tts-cache/
+apps/demo/_shots/.video-cache/
+docs/demos/*/_narr/
