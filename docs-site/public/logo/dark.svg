@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Identical geometry to light.svg. Only the wordmark fill changes (slate-900 → white)
-     so the mark + text scale identically on light and dark backgrounds. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="2 6 134 50" fill="none">
-  <!-- S-arrow mark: two opposing curved arrows forming an S -->
-  <g transform="translate(8, 10)">
-    <!-- top arrow: left-to-right, pointing right -->
-    <path d="M4 14 Q4 4, 14 4 L34 4 L34 0 L44 8 L34 16 L34 12 L18 12 Q12 12, 12 18" stroke="#60A5FA" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
-    <!-- bottom arrow: right-to-left, pointing left -->
-    <path d="M40 30 Q40 40, 30 40 L10 40 L10 44 L0 36 L10 28 L10 32 L26 32 Q32 32, 32 26" stroke="#60A5FA" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
-  </g>
-  <!-- Wordmark -->
-  <text x="72" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="#F8FAFC">Sly</text>
+<!--
+  Public docs navbar logo — dark theme.
+
+  Identical geometry to light.svg. The mark is the same brand PNG (it's the
+  blue arrows on transparent background — same against any backdrop). Only
+  the wordmark fill changes: slate-50 instead of slate-900 so it stays
+  legible on dark backgrounds.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 95">
+  <image href="/logo/mark.png" x="0" y="0" width="57" height="95" preserveAspectRatio="xMidYMid meet"/>
+  <text x="72" y="72" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="64" font-weight="700" fill="#F8FAFC">Sly</text>
 </svg>
