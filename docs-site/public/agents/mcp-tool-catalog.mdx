@@ -136,9 +136,12 @@ Tools are grouped by resource. All respect the calling agent's [KYA tier](/agent
 
 | Tool | Purpose |
 |---|---|
-| `sly_agent_fund_eoa` | Fund agent's externally-owned account |
-| `sly_agent_refill_faucet` | Refill sandbox faucet |
+| `sly_agent_refill_faucet` | Request a Circle testnet faucet drip to top up the agent's Circle custodial wallet |
 | `sly_agent_evm_key_provision` | Provision a fresh EVM keypair for the agent |
+
+<Note>
+  Sly does **not** subsidise agent EOA top-ups. Tenants fund their own agent wallets: on testnet via the free Circle W3S faucet (above), on mainnet by transferring USDC the tenant already owns directly to the agent's EOA address on-chain.
+</Note>
 
 ## Example invocation
 

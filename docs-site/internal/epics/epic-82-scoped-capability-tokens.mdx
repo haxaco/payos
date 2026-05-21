@@ -27,7 +27,7 @@ Source spec: [`docs/prd/epics/epic-82-scoped-capability-tokens.md`](https://gith
 
 - **API-key path for issue / decide / revoke** — tenant API keys can drive the lifecycle without a JWT login. `granted_by_user_id` auto-resolves to the tenant's primary owner. Audit marker: `request_summary.granted_via_api_key: true`.
 - **Environment scoping** — `auth_scope_grants` and `auth_scope_audit` carry an `environment` column denormalized from agent.environment at insert time. All read endpoints default to caller-env scoping; `?env=all` opts out.
-- **Treasury gates** — `POST /v1/agents/:id/smart-wallet/send-usdc` and `POST /v1/agents/:id/fund-eoa` previously hardcoded "agent can only act on own wallet." Now route through `treasury` scope when calling on a sibling. Self-action bypasses the gate.
+- **Treasury gates** — `POST /v1/agents/:id/smart-wallet/send-usdc` and `POST /v1/agents/:id/fund-eoa` previously hardcoded "agent can only act on own wallet." Now route through `treasury` scope when calling on a sibling. Self-action bypasses the gate. <Note>**Update (PR #89, 2026-05-20):** `fund-eoa` was removed when Sly stopped subsidising agent EOA top-ups — tenants now fund agents directly. The treasury gates listed below for `x402/pay`, `acp/*/complete`, `ap2/*/execute`, `ucp/*/complete` cover the surviving fund-movement surface.</Note>
 - **Searchable agent filter popover** — replaces the chip wall once tenants have many agents. Backed by `@sly/ui` Popover, scoped to current env.
 - **`?agent_id=` param** on `/v1/organization/scopes` and `.../audit` — powers the per-agent tab.
 
@@ -54,15 +54,20 @@ Closed the last untested code path. All six AC PASS. Self-action exemption verif
 
 ## Currently gated routes
 
-| Method | Path                                            | Required scope (sibling only) |
+| Method | Path                                            | Required scope                |
 |--------|-------------------------------------------------|-------------------------------|
-| GET    | `/v1/agents/:id`                                | `tenant_read`                 |
-| PATCH  | `/v1/agents/:id`                                | `tenant_write`                |
-| POST   | `/v1/agents/:agentId/wallet/freeze`             | `tenant_write`                |
-| POST   | `/v1/agents/:agentId/wallet/unfreeze`           | `tenant_write`                |
-| PUT    | `/v1/agents/:agentId/wallet/policy`             | `tenant_write`                |
-| POST   | `/v1/agents/:id/smart-wallet/send-usdc`         | `treasury`                    |
-| POST   | `/v1/agents/:id/fund-eoa`                       | `treasury`                    |
+| GET    | `/v1/agents/:id`                                | `tenant_read` (sibling)       |
+| PATCH  | `/v1/agents/:id`                                | `tenant_write` (sibling)      |
+| POST   | `/v1/agents/:agentId/wallet/freeze`             | `tenant_write` (sibling)      |
+| POST   | `/v1/agents/:agentId/wallet/unfreeze`           | `tenant_write` (sibling)      |
+| PUT    | `/v1/agents/:agentId/wallet/policy`             | `tenant_write` (sibling)      |
+| POST   | `/v1/agents/:id/smart-wallet/send-usdc`         | `treasury` (sibling)          |
+| POST   | `/v1/x402/pay`                                  | `treasury`                    |
+| POST   | `/v1/acp/checkouts/:id/complete`                | `treasury`                    |
+| POST   | `/v1/ap2/mandates/:id/execute`                  | `treasury`                    |
+| POST   | `/v1/ucp/checkouts/:id/complete`                | `treasury`                    |
+
+<Note>`/v1/agents/:id/fund-eoa` was in the original Epic 82 gated set but was **removed in PR #89** when Sly stopped subsidising agent EOAs.</Note>
 
 Adding more gates: import `guardSiblingScope` from `apps/api/src/services/auth/scopes/guard.ts`, call it at the top of the handler with the target agent id and the required scope. Same-agent / non-agent callers pass through unchanged.
 
