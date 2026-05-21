@@ -35,6 +35,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Sly-devs/sly"
-  }
+  },
+  "private": true
 }
-
