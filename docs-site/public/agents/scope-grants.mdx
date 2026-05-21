@@ -17,7 +17,7 @@ This is the same model as Unix `sudo`: low-friction baseline, traceable elevatio
     Mutate sibling agent state — policies, skills, status, freeze. Standing grants capped at 15 minutes.
   </Card>
   <Card title="treasury" icon="vault">
-    Move funds between sibling agents — `send-usdc`, `fund-eoa`. **One_shot only** (DB-enforced).
+    Move funds — settlement on `x402/pay`, `acp/checkouts/:id/complete`, `ap2/mandates/:id/execute`, `ucp/checkouts/:id/complete`, and sibling `send-usdc`. **One_shot only** (DB-enforced).
   </Card>
 </CardGroup>
 
@@ -217,15 +217,18 @@ A live-env dashboard never shows test-env scope events and vice versa. Issuing a
 
 ## Currently gated routes
 
-| Method | Path                                            | Required scope (sibling only) |
+| Method | Path                                            | Required scope                |
 |--------|-------------------------------------------------|-------------------------------|
-| GET    | `/v1/agents/:id`                                | `tenant_read`                 |
-| PATCH  | `/v1/agents/:id`                                | `tenant_write`                |
-| POST   | `/v1/agents/:agentId/wallet/freeze`             | `tenant_write`                |
-| POST   | `/v1/agents/:agentId/wallet/unfreeze`           | `tenant_write`                |
-| PUT    | `/v1/agents/:agentId/wallet/policy`             | `tenant_write`                |
-| POST   | `/v1/agents/:id/smart-wallet/send-usdc`         | `treasury`                    |
-| POST   | `/v1/agents/:id/fund-eoa`                       | `treasury`                    |
+| GET    | `/v1/agents/:id`                                | `tenant_read` (sibling)       |
+| PATCH  | `/v1/agents/:id`                                | `tenant_write` (sibling)      |
+| POST   | `/v1/agents/:agentId/wallet/freeze`             | `tenant_write` (sibling)      |
+| POST   | `/v1/agents/:agentId/wallet/unfreeze`           | `tenant_write` (sibling)      |
+| PUT    | `/v1/agents/:agentId/wallet/policy`             | `tenant_write` (sibling)      |
+| POST   | `/v1/agents/:id/smart-wallet/send-usdc`         | `treasury` (sibling)          |
+| POST   | `/v1/x402/pay`                                  | `treasury`                    |
+| POST   | `/v1/acp/checkouts/:id/complete`                | `treasury`                    |
+| POST   | `/v1/ap2/mandates/:id/execute`                  | `treasury`                    |
+| POST   | `/v1/ucp/checkouts/:id/complete`                | `treasury`                    |
 
 Same-agent calls (where caller's `actorId` equals the target id) bypass the gate. Tenant API keys + JWT users are unaffected — their existing tenant-wide auth is preserved.
 
